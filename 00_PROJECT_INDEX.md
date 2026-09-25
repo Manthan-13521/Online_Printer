@@ -13,6 +13,23 @@ The commercial and technical model is:
 
 > **One shop = one isolated PrintGo installation + one-time software/setup sale + shop-owned production infrastructure.**
 
+The hard deployment invariant is:
+
+```text
+ONE PrintGo production deployment
+= ONE shop
+= ONE customer-facing domain/site
+= ONE Cloudflare Worker deployment
+= ONE D1 database
+= ONE R2 storage environment
+= ONE shop Razorpay account
+= that shop's Windows Agent(s) and printer(s)
+```
+
+PrintGo V2 is not multi-tenant. The deployment boundary provides shop isolation: there is no tenant selector, tenant-aware routing, shared multi-shop production database or bucket, runtime shop switching, or centralized multi-shop admin portal. The same private source code is reused for separate deployments, and those deployments never share production customer, order, payment, or PDF data.
+
+One installation may support multiple Windows Agents and printers for its single shop. This does not introduce multi-tenancy.
+
 The developer/vendor keeps the private source code.
 
 Each shop owns and pays for its own:

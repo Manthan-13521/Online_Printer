@@ -19,6 +19,14 @@ The architecture must be:
 - compatible with a one-time-sale business model
 - free-tier-conscious without depending on "free forever"
 
+## 1.1 Deployment invariant
+
+PrintGo V2 is not a multi-tenant application. One production deployment represents exactly one shop, one customer-facing site/domain, one Worker, one D1 database, one R2 environment, and one shop-owned Razorpay account. The same private source code is deployed independently for other shops.
+
+No deployment has a tenant selector, tenant-routing layer, shared multi-shop production database, cross-shop R2 bucket, runtime shop switching, or centralized multi-shop admin portal. Records in a deployment inherently belong to that installation, so `shop_id` is not added to every table merely for tenant isolation.
+
+A shop may use multiple Agents and printers within its one isolated deployment.
+
 ---
 
 # 2. Production components
@@ -76,23 +84,25 @@ The browser must never be trusted to decide:
 
 D1 stores structured metadata.
 
-Suggested initial tables:
+Initial data concepts:
 
-- `shops`
+- one-row `installation` profile/settings
 - `admins`
 - `admin_sessions`
-- `settings`
-- `pricing_rules`
+- `print_rates`
+- `file_size_service_charges`
 - `printers`
 - `agents`
-- `orders`
-- `order_events`
-- `payments`
-- `uploads`
 - `agent_pair_codes`
+- `orders`
+- `uploads`
+- `payments`
+- `payment_provider_events`
+- `print_attempts`
+- `order_events`
 - `audit_logs`
 
-The schema can be normalized differently if implementation proves simpler, but the separation of responsibilities must remain clear.
+The schema can be normalized differently if implementation proves simpler, but the separation of responsibilities must remain clear. It must not become a collection of tenants/shops inside one deployment.
 
 D1 stores **metadata only**.
 
@@ -470,13 +480,14 @@ PRINT_FAILED
 ADMIN_ACTION_REQUIRED
 PRINTED
 COMPLETED
-FILE_EXPIRED
 CANCELLED
 ```
 
 Not every state must become a separate database value if implementation can safely combine some, but transitions must remain controlled.
 
 Arbitrary API requests must never directly set any status.
+
+`FILE_EXPIRED` is an upload/storage lifecycle outcome, not an operational order state. A successfully completed order remains `COMPLETED` after its PDF is deleted, while the upload record moves to `EXPIRED`, `DELETE_PENDING`, or `DELETED`. This preserves commercial and reporting history.
 
 ---
 
@@ -738,8 +749,8 @@ Shop Razorpay
 - settlement
 
 Shop Windows PC
-- PrintGo Agent
-- configured printer
+- PrintGo Agent(s)
+- configured printer(s)
 ```
 
 Developer/vendor:
@@ -752,4 +763,4 @@ Installer/build process
 Documentation
 ```
 
-This ownership boundary is part of the business model and should not be casually redesigned.
+This ownership boundary is part of the business model and should not be casually redesigned. Separate shop deployments do not share production data or payment infrastructure.

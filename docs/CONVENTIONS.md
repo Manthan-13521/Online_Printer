@@ -12,6 +12,10 @@ Use distinct types and fields for distinct trust domains:
 
 Do not expose internal database IDs unless an API specifically needs them. Never put secrets in identifiers or logs.
 
+## Deployment scope
+
+One deployed installation represents one shop. D1 and R2 are isolated by deployment, not by runtime tenant middleware. Do not add `shop_id` to every table, a tenant selector, or cross-shop routing. The one-row `installation` record describes the current shop; multiple Agents and printers may belong to it.
+
 ## Time
 
 - Persist instants in UTC.
@@ -34,7 +38,7 @@ Do not expose internal database IDs unless an API specifically needs them. Never
 
 ## Status vocabulary
 
-Order statuses are defined once in `@printgo/domain`. APIs and applications must import them instead of spreading string literals. This Phase 0 vocabulary does not implement persistence or transition logic; the controlled state machine is a Phase 1 deliverable.
+Order statuses and transitions are defined once in `@printgo/domain`. APIs and applications must import them instead of spreading string literals. PDF deletion is an upload/storage lifecycle and never replaces a completed order's `COMPLETED` state.
 
 ## Security and privacy
 

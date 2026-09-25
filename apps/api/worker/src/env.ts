@@ -1,5 +1,5 @@
 export interface WorkerEnv {
-  /** Added to Wrangler configuration when Phase 1 provisions D1. */
+  /** Configured for the current installation when its local/production D1 exists. */
   DB?: D1Database;
   /** Added when Phase 4 provisions the private upload bucket. */
   PDF_BUCKET?: R2Bucket;

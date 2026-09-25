@@ -23,6 +23,12 @@ If a later phase exposes a real architecture problem, revise the architecture in
 
 Do not silently redesign core decisions inside implementation code.
 
+## 1.1 Single-shop deployment invariant
+
+PrintGo V2 is not multi-tenant. One production deployment equals one shop, one customer-facing site/domain, one Worker, one D1 database, one R2 environment, and one shop-owned Razorpay account. The private source code is reused for separate, isolated shop deployments.
+
+Do not add a tenant selector, tenant routing, a shared multi-shop database or bucket, runtime shop switching, a centralized multi-shop admin portal, or `shop_id` columns solely for tenant isolation. Each deployment's records inherently belong to its one installation. Multiple Agents and printers within that shop remain allowed.
+
 ---
 
 # 2. Phase 0 — Repository and specification freeze
@@ -87,7 +93,7 @@ Acceptance:
 
 Implement:
 
-- shop/settings
+- one-row installation/shop settings
 - admin
 - pricing
 - printer
@@ -538,6 +544,7 @@ Per shop:
 - Razorpay per shop
 - Windows PrintGo Agent
 - private GitHub source
+- one shop per isolated production deployment; no runtime multi-tenancy
 
 ## Business model
 

@@ -33,6 +33,12 @@ Avoid:
 - unnecessary account registration
 - confusing printer terminology
 
+## 1.1 Installation scope
+
+Every production PrintGo installation serves exactly one shop and one customer-facing site/domain. It uses that shop's isolated Cloudflare Worker, D1 database, R2 environment, and Razorpay account. PrintGo V2 has no tenant selector, shop switcher, shared multi-shop admin portal, or cross-shop production data.
+
+The same private source code may be installed separately for many shops. A single shop installation may support multiple Windows Agents and printers without becoming multi-tenant.
+
 ---
 
 # 2. Customer flow

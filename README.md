@@ -2,7 +2,7 @@
 
 PrintGo V2 is a production-oriented online printing system installed separately for each print/xerox shop. Customers will upload a PDF, choose print settings, pay the shop through Razorpay, track the job, and collect the printed output. Each shop owns its Cloudflare infrastructure, Razorpay account, production data, Windows computer, and printer; the developer retains the private source repository.
 
-The project is currently in **Phase 0 — Repository and Specification Freeze**. No production business workflow has been implemented yet.
+The project has completed **Phase 1 — D1 Database Schema & Domain Model**. No production authentication, upload, payment, or printing workflow has been implemented yet.
 
 ## Source of truth
 
@@ -26,7 +26,7 @@ packages/pricing        Money/pricing foundations
 packages/auth           Shared auth-safe types
 packages/shared         Deliberately generic utilities
 packages/api-contract   Shared API response contracts
-database/               Future D1 migrations and development seeds
+database/               D1 migrations and synthetic development seeds
 docs/                   Focused engineering conventions
 tests/                  Future cross-workspace/integration tests
 scripts/                Future repeatable project scripts
@@ -59,8 +59,14 @@ pnpm test
 pnpm build
 ```
 
-See [`docs/DEVELOPMENT.md`](./docs/DEVELOPMENT.md) for workspace details and [`docs/CONVENTIONS.md`](./docs/CONVENTIONS.md) for foundational data conventions.
+See [`docs/DEVELOPMENT.md`](./docs/DEVELOPMENT.md) for workspace details, [`docs/CONVENTIONS.md`](./docs/CONVENTIONS.md) for foundational conventions, and [`docs/DATA_MODEL.md`](./docs/DATA_MODEL.md) for the finalized D1 model.
+
+Validate the migration and deterministic development seed against local Cloudflare D1 with:
+
+```bash
+pnpm db:validate
+```
 
 ## Deployment boundary
 
-Production resources are provisioned later and belong to the individual shop. Phase 0 does not provision Cloudflare Pages, Worker, D1, R2, Razorpay, or Windows installation resources.
+One production deployment represents exactly one shop. It has one domain/site, Worker, D1 database, R2 environment, and shop-owned Razorpay account; it may have multiple Agents and printers. Separate shop deployments reuse the private source code but share no production data. Production resources are provisioned in later phases.

@@ -9,6 +9,7 @@
   },
   "scripts": {
     "build": "pnpm -r --if-present build",
+    "db:validate": "sh scripts/validate-d1-local.sh",
     "dev:customer": "pnpm --filter @printgo/customer dev",
     "dev:admin": "pnpm --filter @printgo/admin dev",
     "dev:worker": "pnpm --filter @printgo/worker dev",
@@ -17,7 +18,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
-    "typecheck": "pnpm -r --if-present typecheck"
+    "typecheck": "tsc --noEmit && pnpm -r --if-present typecheck"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.0",

@@ -19,6 +19,7 @@
       "@printgo/api-contract": ["packages/api-contract/src/index.ts"],
       "@printgo/auth": ["packages/auth/src/index.ts"],
       "@printgo/domain": ["packages/domain/src/index.ts"],
+      "@printgo/domain/*": ["packages/domain/src/*"],
       "@printgo/pricing": ["packages/pricing/src/index.ts"],
       "@printgo/shared": ["packages/shared/src/index.ts"],
       "@printgo/validation": ["packages/validation/src/index.ts"]

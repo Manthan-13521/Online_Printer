@@ -7,6 +7,7 @@
 - Put code in `shared` only when it is environment-neutral and genuinely reused.
 - Do not import browser or Node APIs into domain and contract packages.
 - Phase-specific features and migrations belong in their scheduled phase.
+- One production deployment is one shop. Do not introduce tenant routing, runtime shop switching, shared multi-shop storage, or `shop_id` columns solely for isolation.
 
 ## Setup
 
@@ -19,6 +20,7 @@ pnpm lint
 pnpm typecheck
 pnpm test
 pnpm build
+pnpm db:validate
 ```
 
 Web and Worker development servers are intentionally separate so their production boundaries remain visible. Start them with the root `dev:*` commands.
@@ -38,7 +40,7 @@ Frontend variables prefixed with `VITE_` are public. Razorpay secrets, session s
 
 ## Cloudflare resources
 
-The Worker config is safe for local development and contains no account IDs or resource IDs. D1 and R2 binding names are reserved in TypeScript as `DB` and `PDF_BUCKET`; actual shop-owned resources and environment-specific bindings are added in their implementation/deployment phases. Customer and Admin Vite outputs are suitable for separate Cloudflare Pages projects.
+The Worker config is safe for local development and contains no account IDs or resource IDs. D1 and R2 binding names are reserved in TypeScript as `DB` and `PDF_BUCKET`; actual shop-owned resources and environment-specific bindings are added in their implementation/deployment phases. Each production deployment receives its own D1/R2 resources. Customer and Admin Vite outputs are suitable for separate Cloudflare Pages projects.
 
 ## Verification policy
 

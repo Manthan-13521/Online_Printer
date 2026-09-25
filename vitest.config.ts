@@ -8,6 +8,12 @@ export default defineConfig({
       "@printgo/api-contract": fileURLToPath(
         new URL("./packages/api-contract/src/index.ts", import.meta.url),
       ),
+      "@printgo/domain": fileURLToPath(
+        new URL("./packages/domain/src/index.ts", import.meta.url),
+      ),
+      "@printgo/shared": fileURLToPath(
+        new URL("./packages/shared/src/index.ts", import.meta.url),
+      ),
     },
   },
   test: {

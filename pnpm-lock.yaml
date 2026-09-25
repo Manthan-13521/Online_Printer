@@ -289,13 +289,21 @@ importers:
 
   packages/auth: {}
 
-  packages/domain: {}
+  packages/domain:
+    dependencies:
+      '@printgo/shared':
+        specifier: workspace:*
+        version: link:../shared
 
   packages/pricing: {}
 
   packages/shared: {}
 
-  packages/validation: {}
+  packages/validation:
+    dependencies:
+      '@printgo/domain':
+        specifier: workspace:*
+        version: link:../domain
 
 packages:
 
