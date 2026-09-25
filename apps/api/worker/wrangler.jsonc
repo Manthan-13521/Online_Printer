@@ -1,0 +1,12 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "printgo-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "workers_dev": true,
+  // Shop-owned D1 and R2 bindings are added when those resources are created.
+  // Reserved binding names: DB and PDF_BUCKET.
+  "observability": {
+    "enabled": true,
+  },
+}

@@ -1,0 +1,11 @@
+dist
+coverage
+node_modules
+.wrangler
+pnpm-lock.yaml
+
+# Project constitution is edited deliberately, not mechanically reformatted.
+00_PROJECT_INDEX.md
+01_TECHNICAL_ARCHITECTURE.md
+02_PRODUCT_REQUIREMENTS_AND_UX.md
+03_BUILD_PHASES_AND_AI_HANDOFF.md

@@ -1,0 +1,32 @@
+{
+  "name": "printgo-v2",
+  "version": "0.0.0",
+  "private": true,
+  "description": "PrintGo V2 single-shop online printing system",
+  "packageManager": "pnpm@12.6.0",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "build": "pnpm -r --if-present build",
+    "dev:customer": "pnpm --filter @printgo/customer dev",
+    "dev:admin": "pnpm --filter @printgo/admin dev",
+    "dev:worker": "pnpm --filter @printgo/worker dev",
+    "dev:agent": "pnpm --filter @printgo/windows-agent dev",
+    "lint": "eslint . --max-warnings 0",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "typecheck": "pnpm -r --if-present typecheck"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.0",
+    "@types/node": "^22.0.0",
+    "eslint": "^10.0.0",
+    "globals": "^16.0.0",
+    "prettier": "^3.0.0",
+    "typescript": "^5.0.0",
+    "typescript-eslint": "^8.0.0",
+    "vitest": "^3.0.0"
+  }
+}
