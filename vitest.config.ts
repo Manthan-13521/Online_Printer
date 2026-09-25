@@ -11,6 +11,12 @@ export default defineConfig({
       "@printgo/domain": fileURLToPath(
         new URL("./packages/domain/src/index.ts", import.meta.url),
       ),
+      "@printgo/auth": fileURLToPath(
+        new URL("./packages/auth/src/index.ts", import.meta.url),
+      ),
+      "@printgo/validation": fileURLToPath(
+        new URL("./packages/validation/src/index.ts", import.meta.url),
+      ),
       "@printgo/shared": fileURLToPath(
         new URL("./packages/shared/src/index.ts", import.meta.url),
       ),

@@ -1,0 +1,18 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "printgo-api-local",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "workers_dev": true,
+  "vars": {
+    "APP_ENV": "development",
+    "ADMIN_ALLOWED_ORIGIN": "http://localhost:5174",
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "printgo-local",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+    },
+  ],
+}

@@ -37,6 +37,16 @@ Errors use:
 
 Future requests should receive a non-secret correlation/request ID suitable for safe logs and support. Logs must minimize personal data and never include credentials or private tracking tokens.
 
-## Phase 0 route
+## Implemented routes
 
-`GET /health` is the only implemented route. It reports that the Worker process is available; it does not assert that future D1, R2, Razorpay, Agent, or printer dependencies are ready.
+`GET /health` reports that the Worker process is available; it does not assert that future R2, Razorpay, Agent, or printer dependencies are ready.
+
+The Phase 2 Admin authentication surface is:
+
+- `POST /api/admin/auth/login`
+- `GET /api/admin/auth/me`
+- `POST /api/admin/auth/logout`
+- `POST /api/admin/auth/sessions/revoke-all`
+- `POST /api/admin/auth/change-password`
+
+All state-changing Admin requests require the exactly configured trusted `Origin`. Credentialed CORS never uses a wildcard. Protected handlers derive the admin from the server-side session cookie; a browser-supplied admin ID never grants authority.

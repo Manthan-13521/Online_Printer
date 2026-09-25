@@ -16,6 +16,8 @@ Use Node.js 22+ and the pnpm version declared in the root `package.json`.
 ```bash
 corepack enable
 pnpm install
+pnpm db:setup:local
+pnpm admin:bootstrap
 pnpm lint
 pnpm typecheck
 pnpm test
@@ -23,7 +25,9 @@ pnpm build
 pnpm db:validate
 ```
 
-Web and Worker development servers are intentionally separate so their production boundaries remain visible. Start them with the root `dev:*` commands.
+Web and Worker development servers are intentionally separate so their production boundaries remain visible. For Admin development, run `pnpm dev:worker` and `pnpm dev:admin` in separate terminals, then open `http://localhost:5174/admin`. The Worker uses persistent local D1 state in `.wrangler/local` and trusts only the configured Admin development origin.
+
+`pnpm db:setup:local` creates the local schema and deterministic non-credential seed. Run `pnpm admin:bootstrap` next. It reads a 12–128 character password without terminal echo, hashes it before calling Wrangler, and removes its mode-`0600` temporary SQL file. It defaults to login `admin`; use `pnpm admin:bootstrap -- dev-admin` for another synthetic identifier. Re-running it resets the single admin and revokes existing sessions.
 
 ## Environment strategy
 
@@ -33,14 +37,14 @@ Committed example files contain placeholders only. Create ignored local files be
 | ------------ | ----------------------------------- | ------------ | ------------------------------- |
 | Customer web | `apps/web/customer/.env.example`    | `.env.local` | Public API URL only             |
 | Admin web    | `apps/web/admin/.env.example`       | `.env.local` | Public API URL only             |
-| Worker       | `apps/api/worker/.dev.vars.example` | `.dev.vars`  | Local backend secrets           |
+| Worker       | `apps/api/worker/.dev.vars.example` | `.dev.vars`  | Future provider secrets         |
 | Agent        | `apps/agent/windows/.env.example`   | `.env.local` | Local API/pairing configuration |
 
-Frontend variables prefixed with `VITE_` are public. Razorpay secrets, session signing material, Agent credentials, and Cloudflare credentials must never be placed in frontend files. Production Worker secrets will be configured through Cloudflare secret management during deployment, not committed configuration.
+Frontend variables prefixed with `VITE_` are public. Razorpay secrets, Agent credentials, and Cloudflare credentials must never be placed in frontend files. Admin sessions are opaque random tokens and do not require a signing secret. Production Worker secrets will be configured through Cloudflare secret management during deployment, not committed configuration.
 
 ## Cloudflare resources
 
-The Worker config is safe for local development and contains no account IDs or resource IDs. D1 and R2 binding names are reserved in TypeScript as `DB` and `PDF_BUCKET`; actual shop-owned resources and environment-specific bindings are added in their implementation/deployment phases. Each production deployment receives its own D1/R2 resources. Customer and Admin Vite outputs are suitable for separate Cloudflare Pages projects.
+The main Worker config contains no account IDs or resource IDs. `wrangler.dev.jsonc` contains only a local placeholder D1 ID and non-secret development origin. Actual shop-owned resources and the production origin are added during deployment. Each production deployment receives its own D1/R2 resources. Customer and Admin Vite outputs are suitable for separate Cloudflare Pages projects.
 
 ## Verification policy
 

@@ -5,9 +5,9 @@ import { routeRequest } from "./router";
 export { routeRequest } from "./router";
 
 export default {
-  fetch(request: Request): Response {
+  async fetch(request: Request, env: WorkerEnv): Promise<Response> {
     try {
-      return routeRequest(request);
+      return await routeRequest(request, env);
     } catch (caught: unknown) {
       console.error("Unhandled Worker request error", {
         error: caught instanceof Error ? caught.name : "UnknownError",

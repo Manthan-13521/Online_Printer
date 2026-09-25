@@ -10,6 +10,10 @@ import {
   isSidesMode,
   isValidCopies,
   isValidPdfSizeBytes,
+  normalizeLoginIdentifier,
+  validateAdminLoginInput,
+  validateAdminPasswordChangeInput,
+  validatePassword,
 } from "./index";
 
 describe("foundational domain validation", () => {
@@ -30,5 +34,38 @@ describe("foundational domain validation", () => {
     expect(isSidesMode("DOUBLE")).toBe(true);
     expect(isOrderStatus("COMPLETED")).toBe(true);
     expect(isOrderStatus("FILE_EXPIRED")).toBe(false);
+  });
+});
+
+describe("admin authentication validation", () => {
+  it("normalizes login identifiers but never changes passwords", () => {
+    expect(normalizeLoginIdentifier("  Shop-ADMIN  ")).toBe("shop-admin");
+    const result = validateAdminLoginInput({
+      loginIdentifier: " ADMIN ",
+      password: "  spaced passphrase  ",
+    });
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        loginIdentifier: "admin",
+        password: "  spaced passphrase  ",
+      },
+    });
+  });
+
+  it("enforces password length without arbitrary complexity rules", () => {
+    expect(validatePassword("").ok).toBe(false);
+    expect(validatePassword("all words are fine").ok).toBe(true);
+    expect(validatePassword("x".repeat(129)).ok).toBe(false);
+  });
+
+  it("rejects mismatched password confirmation", () => {
+    expect(
+      validateAdminPasswordChangeInput({
+        currentPassword: "current password",
+        newPassword: "new long password",
+        confirmNewPassword: "different pass",
+      }).ok,
+    ).toBe(false);
   });
 });

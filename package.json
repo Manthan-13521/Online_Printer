@@ -8,8 +8,10 @@
     "node": ">=22.0.0"
   },
   "scripts": {
+    "admin:bootstrap": "pnpm --filter @printgo/auth build && node scripts/bootstrap-admin.mjs",
     "build": "pnpm -r --if-present build",
     "db:validate": "sh scripts/validate-d1-local.sh",
+    "db:setup:local": "sh scripts/setup-d1-local.sh",
     "dev:customer": "pnpm --filter @printgo/customer dev",
     "dev:admin": "pnpm --filter @printgo/admin dev",
     "dev:worker": "pnpm --filter @printgo/worker dev",

@@ -1,6 +1,6 @@
 # PrintGo Data Model
 
-**Status:** Finalized for Phase 1
+**Status:** Phase 1 schema finalized; Phase 2 authentication behavior documented
 
 **Database:** Cloudflare D1 / SQLite
 
@@ -67,11 +67,11 @@ Exactly one row (`id = 1`) holds the current shop's identity and installation-le
 
 ### `admins`
 
-Foundational record for the single V1 administrator. A constant unique `singleton_key` enforces at most one account. Only password hashes will be stored; Phase 1 seeds no administrator.
+Record for the single V1 administrator. A constant unique `singleton_key` enforces at most one account. `password_hash` stores the versioned PBKDF2 representation; no seed contains an administrator or plaintext password.
 
 ### `admin_sessions`
 
-Phase 2 foundation for hashed session tokens, expiry, revocation, and last-seen time. Raw session tokens do not belong in D1.
+Stores only SHA-256 hashes of high-entropy opaque session tokens, plus expiry and revocation. Raw session tokens exist only in HttpOnly cookies and do not belong in D1. Expiry and admin-active status are checked server-side. `last_seen_at_ms` is intentionally not written on every request.
 
 ### `print_rates`
 
@@ -122,6 +122,8 @@ Append-only operational timeline for status changes and order events. `orders.st
 ### `audit_logs`
 
 Separate security/administrative audit history with actor, action, entity, minimal JSON metadata, and time. It is not the customer-visible order timeline.
+
+Phase 2 records `ADMIN_LOGIN_SUCCESS`, `ADMIN_LOGOUT`, `ADMIN_PASSWORD_CHANGED`, and `ADMIN_SESSIONS_REVOKED` here. Passwords, password hashes, raw session tokens, and cookies are never audit metadata.
 
 ## Order state model
 
