@@ -308,6 +308,49 @@ describe("AgentService", () => {
     );
   });
 
+  it("reuses an active test-print command instead of scheduling a duplicate", async () => {
+    const activeCommand = {
+      commandId: "existing-command",
+      printerId: "printer_1",
+      agentId: "agent_123",
+      status: "SUBMITTED" as const,
+      spoolerJobId: "42",
+      failureCode: null,
+      failureDetail: null,
+      createdAt: new Date(1_400_000).toISOString(),
+      expiresAt: new Date(1_800_000).toISOString(),
+      claimedAt: new Date(1_450_000).toISOString(),
+      finishedAt: null,
+    };
+    const repo = createMockRepository({
+      findPrinterById: vi.fn(() =>
+        Promise.resolve({
+          id: "printer_1",
+          agentId: "agent_123",
+          displayName: "Canon",
+          windowsPrinterName: "Canon",
+          enabled: true,
+          status: "ONLINE",
+        }),
+      ),
+      findAgentById: vi.fn(() =>
+        Promise.resolve({
+          id: "agent_123",
+          displayName: "Front Desk PC",
+          isActive: true,
+          lastHeartbeatAtMs: 1_495_000,
+        }),
+      ),
+      getLatestTestPrintCommand: vi.fn(() => Promise.resolve(activeCommand)),
+    });
+
+    const service = new AgentService(repo, () => 1_500_000);
+    await expect(
+      service.requestTestPrint("printer_1", "admin_1"),
+    ).resolves.toEqual(activeCommand);
+    expect(repo.createTestPrintCommand).not.toHaveBeenCalled();
+  });
+
   it("rejects test print request when printer is not found", async () => {
     const repo = createMockRepository({
       findPrinterById: vi.fn(() => Promise.resolve(null)),

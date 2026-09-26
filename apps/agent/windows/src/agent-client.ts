@@ -27,13 +27,52 @@ export class AgentApiError extends Error {
   }
 }
 
+export function normalizeAgentServerUrl(rawUrl: string): string {
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    throw new AgentApiError(
+      "INVALID_SERVER_URL",
+      0,
+      "PrintGo server URL is invalid.",
+    );
+  }
+  const isLoopback =
+    url.hostname === "localhost" ||
+    url.hostname === "127.0.0.1" ||
+    url.hostname === "[::1]";
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && isLoopback)) {
+    throw new AgentApiError(
+      "INSECURE_SERVER_URL",
+      0,
+      "PrintGo Agent requires HTTPS except for a loopback development server.",
+    );
+  }
+  if (url.username || url.password || url.search || url.hash) {
+    throw new AgentApiError(
+      "INVALID_SERVER_URL",
+      0,
+      "PrintGo server URL must not contain credentials, query parameters, or a fragment.",
+    );
+  }
+  if (url.pathname !== "/") {
+    throw new AgentApiError(
+      "INVALID_SERVER_URL",
+      0,
+      "PrintGo server URL must be an origin without a path.",
+    );
+  }
+  return url.origin;
+}
+
 export class AgentClient {
   async pair(
     serverUrl: string,
     pairCode: string,
     displayName: string,
   ): Promise<AgentPairData> {
-    const cleanUrl = serverUrl.replace(/\/$/u, "");
+    const cleanUrl = normalizeAgentServerUrl(serverUrl);
     const payload: AgentPairRequest = {
       pairCode,
       displayName,
@@ -81,7 +120,7 @@ export class AgentClient {
     agentSecret: string,
     report: AgentHeartbeatRequest,
   ): Promise<AgentHeartbeatData> {
-    const cleanUrl = serverUrl.replace(/\/$/u, "");
+    const cleanUrl = normalizeAgentServerUrl(serverUrl);
 
     let response: Response;
     try {
@@ -134,7 +173,7 @@ export class AgentClient {
     commandId: string,
     report: AgentReportCommandRequest,
   ): Promise<void> {
-    const cleanUrl = serverUrl.replace(/\/$/u, "");
+    const cleanUrl = normalizeAgentServerUrl(serverUrl);
     let response: Response;
     try {
       response = await fetch(

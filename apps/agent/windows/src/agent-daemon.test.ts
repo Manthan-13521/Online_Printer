@@ -106,6 +106,32 @@ describe("AgentDaemon", () => {
     expect(store.save).toHaveBeenCalledWith(creds);
   });
 
+  it("does not write the one-time pair code to status logs", async () => {
+    const messages: string[] = [];
+    const daemon = new AgentDaemon({
+      client: {
+        pair: vi.fn(() =>
+          Promise.resolve({
+            agentId: "agent_1",
+            agentSecret: "secret_1",
+            displayName: "Front Desk PC",
+          }),
+        ),
+      } as unknown as AgentClient,
+      credentialStore: createMockStore(),
+      printerAdapter: createMockAdapter(),
+      onStatusChange: (message) => messages.push(message),
+    });
+
+    await daemon.pair(
+      "https://api.printgo.shop",
+      "SECRET-PAIR-CODE",
+      "Front Desk PC",
+    );
+
+    expect(messages.join(" ")).not.toContain("SECRET-PAIR-CODE");
+  });
+
   it("sends heartbeats on start and on timer intervals", async () => {
     const store = createMockStore({
       agentId: "agent_1",

@@ -1,5 +1,10 @@
 import * as os from "node:os";
-import { AgentApiError, AgentAuthError, AgentClient } from "./agent-client.js";
+import {
+  AgentApiError,
+  AgentAuthError,
+  AgentClient,
+  normalizeAgentServerUrl,
+} from "./agent-client.js";
 import { AgentDaemon } from "./agent-daemon.js";
 import {
   DevelopmentPrinterAdapter,
@@ -29,12 +34,30 @@ export {
   generateDiagnosticPdfBuffer,
   createDiagnosticPdfFile,
 } from "./printing/diagnostic-pdf.js";
+export {
+  IDENTIFICATION_SHEET_PRINT_SETTINGS,
+  IdentificationSheetError,
+  createIdentificationSheetFile,
+  generateIdentificationSheetBuffer,
+  printIdentificationSheet,
+  withIdentificationSheetFile,
+} from "./printing/identification-sheet.js";
+export type {
+  IdentificationSheetErrorCode,
+  IdentificationSheetRenderOptions,
+} from "./printing/identification-sheet.js";
+export { buildOrderPrintPlan } from "./printing/order-print-plan.js";
+export type {
+  BuildOrderPrintPlanInput,
+  OrderPrintPlanStep,
+} from "./printing/order-print-plan.js";
 export { monitorSpoolJob } from "./printing/spool-monitor.js";
 export { UnavailablePrinterAdapter } from "./printing/unavailable-printer-adapter.js";
 export {
   AgentClient,
   AgentApiError,
   AgentAuthError,
+  normalizeAgentServerUrl,
   AgentDaemon,
   WindowsPrinterAdapter,
   DevelopmentPrinterAdapter,
@@ -83,9 +106,7 @@ async function runCli(): Promise<void> {
   });
 
   if (pairCodeArg) {
-    console.log(
-      `[PrintGo Agent] Initiating pairing with code ${pairCodeArg}...`,
-    );
+    console.log("[PrintGo Agent] Initiating pairing with a one-time code...");
     try {
       await daemon.pair(serverUrl, pairCodeArg, displayName);
     } catch (err: unknown) {

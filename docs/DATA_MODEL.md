@@ -127,6 +127,8 @@ Allows multiple printers per Agent. Updated on every heartbeat pulse (~30s). Ope
 
 Stores administrator-initiated diagnostic test print commands. Commands have bounded 5-minute lifetimes (`TEST_PRINT_COMMAND_LIFETIME_MS = 300_000`). Status values follow the controlled vocabulary (`PENDING`, `CLAIMED`, `SUBMITTED`, `BLOCKED`, `SUCCEEDED`, `FAILED`, `EXPIRED`). Windows spooler job IDs are tracked per command. `BLOCKED` status captures recoverable physical issues (`failure_code`, `failure_detail`) and is never automatically resubmitted.
 
+The service reuses the latest active command for a repeated Admin request, and Agent reports follow a forward-only state path. Repeating the same report is idempotent; a terminal result cannot be rewritten as a different outcome.
+
 ### `orders`
 
 The current commercial and operational source of truth. It stores customer/request snapshots, print selections, immutable pricing amounts, current order status, printer assignment, and claim-lease fields.
@@ -164,6 +166,8 @@ Minimal webhook idempotency ledger. `(provider, provider_event_id)` is unique, s
 ### `print_attempts`
 
 Append-oriented history for each submission/retry. `(order_id, attempt_number)` is unique, and `(printer_id, agent_id)` must describe the actual Agent-controlled printer. Windows spool job IDs are indexed with their Agent for reconciliation but are not assumed globally unique forever because Windows may recycle identifiers. `BLOCKED` is distinct from `FAILED`: a blocked spool job may still continue and must not trigger a duplicate submission.
+
+`identification_sheet_included` is the existing Phase 10 recording point for whether the one local identification sheet was included in that physical attempt. Phase 9 adds no schema and does not create print attempts. Identification sheets are temporary Agent-local PDFs and are never stored in D1 or R2.
 
 ### `order_events`
 

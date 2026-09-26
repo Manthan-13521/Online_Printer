@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import type {
   PrintJobStatus,
@@ -100,7 +101,8 @@ Get-CimInstance Win32_Printer | Select-Object Name, Default, WorkOffline, Printe
 
     const escapedName = printerId.replace(/'/g, "''");
     const psCommand = `
-Get-CimInstance Win32_Printer -Filter "Name = '$([regex]::Escape('${escapedName}'))'" | Select-Object Name, Color, CapabilityDescriptions, PrinterPaperNames | ConvertTo-Json -Compress
+$printer = '${escapedName}'
+Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $printer } | Select-Object Name, Color, CapabilityDescriptions, PrinterPaperNames | ConvertTo-Json -Compress
     `.trim();
 
     try {
@@ -174,7 +176,8 @@ Get-CimInstance Win32_Printer -Filter "Name = '$([regex]::Escape('${escapedName}
 
     const escapedName = printerId.replace(/'/g, "''");
     const psCommand = `
-Get-CimInstance Win32_Printer -Filter "Name = '$([regex]::Escape('${escapedName}'))'" | Select-Object Name, WorkOffline, PrinterStatus, DetectedErrorState | ConvertTo-Json -Compress
+$printer = '${escapedName}'
+Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $printer } | Select-Object Name, WorkOffline, PrinterStatus, DetectedErrorState | ConvertTo-Json -Compress
     `.trim();
 
     try {
@@ -271,13 +274,6 @@ Get-CimInstance Win32_Printer -Filter "Name = '$([regex]::Escape('${escapedName}
     settingsParts.push("fit");
     const settingsString = settingsParts.join(",");
 
-    const requiresAdvancedEngine =
-      settings.sides !== "ONE_SIDED" ||
-      settings.colorMode === "COLOUR" ||
-      settings.paperSize === "A3" ||
-      settings.copies > 1 ||
-      Boolean(settings.pageRange);
-
     const docIdentifier =
       submission.documentTitle ??
       path.basename(
@@ -289,19 +285,23 @@ Get-CimInstance Win32_Printer -Filter "Name = '$([regex]::Escape('${escapedName}
     const escapedPdfPath = submission.localPdfPath.replace(/'/g, "''");
     const escapedSettings = settingsString.replace(/'/g, "''");
     const escapedDocIdentifier = docIdentifier.replace(/'/g, "''");
+    const bundledSumatraPath = path.resolve(
+      path.dirname(fileURLToPath(import.meta.url)),
+      "../../vendor/SumatraPDF.exe",
+    );
+    const escapedBundledSumatraPath = bundledSumatraPath.replace(/'/g, "''");
 
     const psScript = `
 $printer = '${escapedPrinterName}'
 $pdf = '${escapedPdfPath}'
 $docIdentifier = '${escapedDocIdentifier}'
 $settings = '${escapedSettings}'
-$requiresAdvanced = ${requiresAdvancedEngine ? "$true" : "$false"}
 
 # 1. Resolve SumatraPDF executable location
 $sumatra = $env:PRINTGO_SUMATRA_PATH
 if (-not $sumatra -or -not (Test-Path $sumatra)) {
     $candidates = @(
-        "$PSScriptRoot\\vendor\\SumatraPDF.exe",
+        '${escapedBundledSumatraPath}',
         "$env:ProgramFiles\\SumatraPDF\\SumatraPDF.exe",
         "\${env:ProgramFiles(x86)}\\SumatraPDF\\SumatraPDF.exe",
         "$env:LOCALAPPDATA\\SumatraPDF\\SumatraPDF.exe"
@@ -321,43 +321,29 @@ if (-not $sumatra -or -not (Test-Path $sumatra)) {
 }
 
 # 2. Record pre-submission spooler job IDs for this exact printer
-$beforeIds = @(Get-CimInstance Win32_PrintJob -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "$printer,*" } | ForEach-Object { [int]$_.JobId })
+$beforeIds = @(Get-CimInstance Win32_PrintJob -ErrorAction SilentlyContinue | Where-Object { $_.Name.StartsWith("$printer,") } | ForEach-Object { [int]$_.JobId })
 
-if ($sumatra -and (Test-Path $sumatra)) {
-    # Deterministic headless print execution via SumatraPDF
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = $sumatra
-    $psi.Arguments = "-print-to \`"$printer\`" -print-settings \`"$settings\`" -silent \`"$pdf\`""
-    $psi.CreateNoWindow = $true
-    $psi.UseShellExecute = $false
-    $psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
-    $proc = [System.Diagnostics.Process]::Start($psi)
-    if ($proc) {
-        $exited = $proc.WaitForExit(30000)
-        if (-not $exited) {
-            $proc.Kill()
-            throw "SumatraPDF print process timed out after 30 seconds."
-        }
-        if ($proc.ExitCode -ne 0) {
-            throw "SumatraPDF exited with error code $($proc.ExitCode)."
-        }
-    }
-} else {
-    # If SumatraPDF is missing and advanced options were specified, FAIL CLOSED immediately
-    if ($requiresAdvanced) {
-        throw "Deterministic printing with settings (duplex, colour, paper size, page range, or multiple copies) requires SumatraPDF engine. SumatraPDF.exe was not found."
-    }
-    # For standard 1-page A4 diagnostic print, isolate legacy fallback
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = $pdf
-    $psi.Verb = "PrintTo"
-    $psi.Arguments = "\`"$printer\`""
-    $psi.CreateNoWindow = $true
-    $psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
-    $proc = [System.Diagnostics.Process]::Start($psi)
-    if ($proc) {
-        $proc.WaitForExit(10000)
-    }
+if (-not $sumatra -or -not (Test-Path $sumatra)) {
+    throw "Deterministic PDF printing requires SumatraPDF.exe. No unverified Windows PrintTo fallback is permitted."
+}
+
+$psi = New-Object System.Diagnostics.ProcessStartInfo
+$psi.FileName = $sumatra
+$psi.Arguments = "-print-to \`"$printer\`" -print-settings \`"$settings\`" -silent \`"$pdf\`""
+$psi.CreateNoWindow = $true
+$psi.UseShellExecute = $false
+$psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
+$proc = [System.Diagnostics.Process]::Start($psi)
+if (-not $proc) {
+    throw "SumatraPDF print process could not be started."
+}
+$exited = $proc.WaitForExit(30000)
+if (-not $exited) {
+    $proc.Kill()
+    throw "SumatraPDF print process timed out after 30 seconds."
+}
+if ($proc.ExitCode -ne 0) {
+    throw "SumatraPDF exited with error code $($proc.ExitCode)."
 }
 
 # 3. Correlate spooler job strictly using document identifier, printer queue, and pre-submission IDs
@@ -368,9 +354,9 @@ $matchedJob = $null
 for ($i = 0; $i -lt 8; $i++) {
     Start-Sleep -Milliseconds 400
     $afterJobs = @(Get-CimInstance Win32_PrintJob -ErrorAction SilentlyContinue | Where-Object {
-        $_.Name -like "$printer,*" -and
+        $_.Name.StartsWith("$printer,") -and
         $beforeIds -notcontains [int]$_.JobId -and
-        ($_.Document -like "*$docIdentifier*" -or $_.Document -like "*$fileNameWithoutExt*" -or $_.Document -like "*$fileName*")
+        ($_.Document.Contains($docIdentifier) -or $_.Document.Contains($fileNameWithoutExt) -or $_.Document.Contains($fileName))
     })
     if ($afterJobs.Count -gt 0) {
         $matchedJob = $afterJobs[0]
@@ -381,26 +367,15 @@ for ($i = 0; $i -lt 8; $i++) {
 if ($matchedJob) {
     @{
         spoolJobId = [string]$matchedJob.JobId
-        engineUsed = if ($sumatra -and (Test-Path $sumatra)) { "sumatrapdf" } else { "fallback" }
+        engineUsed = "sumatrapdf"
     } | ConvertTo-Json -Compress
 } else {
-    # Fast despool or stripped title fallback - strictly scoped to target printer and pre-IDs
-    $fallbackJob = @(Get-CimInstance Win32_PrintJob -ErrorAction SilentlyContinue | Where-Object {
-        $_.Name -like "$printer,*" -and
-        $beforeIds -notcontains [int]$_.JobId
-    }) | Select-Object -First 1
-
-    if ($fallbackJob) {
-        @{
-            spoolJobId = [string]$fallbackJob.JobId
-            engineUsed = if ($sumatra -and (Test-Path $sumatra)) { "sumatrapdf" } else { "fallback" }
-        } | ConvertTo-Json -Compress
-    } else {
-        @{
-            spoolJobId = "spool-$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
-            engineUsed = if ($sumatra -and (Test-Path $sumatra)) { "sumatrapdf" } else { "fallback" }
-        } | ConvertTo-Json -Compress
-    }
+    # The job may have despooled before observation. Never claim an unrelated
+    # queue entry merely because it appeared after submission.
+    @{
+        spoolJobId = "unobserved-$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
+        engineUsed = "sumatrapdf"
+    } | ConvertTo-Json -Compress
 }
     `.trim();
 
@@ -414,11 +389,11 @@ if ($matchedJob) {
           spoolJobId?: string;
           engineUsed?: string;
         };
-        spoolJobId = parsed.spoolJobId || `spool-${Date.now()}`;
+        spoolJobId = parsed.spoolJobId || `unobserved-${Date.now()}`;
         engineUsed = parsed.engineUsed;
       } catch {
         // Fallback for simple string output in tests
-        spoolJobId = output || `spool-${Date.now()}`;
+        spoolJobId = output || `unobserved-${Date.now()}`;
       }
 
       return { spoolJobId, engineUsed };
@@ -453,7 +428,7 @@ $intId = 0
 $isInt = [int]::TryParse($targetId, [ref]$intId)
 
 $job = Get-CimInstance Win32_PrintJob -ErrorAction SilentlyContinue | Where-Object {
-  $_.Name -like "$printer,*" -and ($_.Name -like "*$targetId*" -or ($isInt -and [int]$_.JobId -eq $intId))
+  $_.Name.StartsWith("$printer,") -and $isInt -and [int]$_.JobId -eq $intId
 } | Select-Object -First 1
 
 if (-not $job) {
@@ -592,7 +567,7 @@ $intId = 0
 $isInt = [int]::TryParse($targetId, [ref]$intId)
 
 $job = Get-CimInstance Win32_PrintJob -ErrorAction SilentlyContinue | Where-Object {
-  $_.Name -like "$printer,*" -and ($_.Name -like "*$targetId*" -or ($isInt -and [int]$_.JobId -eq $intId))
+  $_.Name.StartsWith("$printer,") -and $isInt -and [int]$_.JobId -eq $intId
 } | Select-Object -First 1
 
 if ($job) {

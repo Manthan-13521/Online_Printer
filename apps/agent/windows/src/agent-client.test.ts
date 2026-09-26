@@ -74,6 +74,36 @@ describe("AgentClient", () => {
     ).rejects.toThrow(AgentApiError);
   });
 
+  it("rejects non-loopback HTTP before sending pairing credentials", async () => {
+    global.fetch = vi.fn();
+    const client = new AgentClient();
+
+    await expect(
+      client.pair("http://printgo.example", "ABCD-EFGH", "Shop PC"),
+    ).rejects.toMatchObject({ code: "INSECURE_SERVER_URL" });
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it("allows loopback HTTP for local development", async () => {
+    global.fetch = vi.fn().mockResolvedValueOnce(
+      mockResponse(201, true, {
+        ok: true,
+        data: {
+          agentId: "agent_local",
+          agentSecret: "secret_local",
+          displayName: "Local PC",
+        },
+      }),
+    );
+
+    await new AgentClient().pair(
+      "http://127.0.0.1:8787",
+      "ABCD-EFGH",
+      "Local PC",
+    );
+    expect(global.fetch).toHaveBeenCalled();
+  });
+
   it("sends heartbeat with auth headers", async () => {
     global.fetch = vi.fn().mockResolvedValueOnce(
       mockResponse(200, true, {

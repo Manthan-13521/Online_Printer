@@ -2,11 +2,11 @@
 
 PrintGo V2 is a production-oriented online printing system installed separately for each print/xerox shop. Customers will upload a PDF, choose print settings, pay the shop through Razorpay, track the job, and collect the printed output. Each shop owns its Cloudflare infrastructure, Razorpay account, production data, Windows computer, and printer; the developer retains the private source repository.
 
-The project has completed **Phase 8 — Printer Adapter, Test Printing & Windows Spooler Foundation**.
+The project has completed **Phase 9 — Identification Sheet Generation & Placement**.
 The Windows Agent now features a modular printer adapter interface, pure TypeScript diagnostic PDF generation,
 Windows print spooler job submission (`Win32_PrintJob`), bounded spool monitoring, strict `BLOCKED != FAILED`
 semantics (never auto-resubmitting recoverable conditions), and end-to-end test print execution triggered
-from the Admin PWA. Customer PDF printing and order leasing remain scheduled for Phase 9 and 10.
+from the Admin PWA. The Agent can now generate and submit one local identification sheet with fixed safe settings and can plan `FIRST`/`LAST` placement. Customer PDF download, order leasing, and customer-document printing remain deferred to Phase 10.
 
 ## Source of truth
 
@@ -20,8 +20,9 @@ Read these documents before each major phase:
 Phase documentation: [`docs/CUSTOMER_UPLOAD.md`](./docs/CUSTOMER_UPLOAD.md),
 [`docs/PAYMENTS.md`](./docs/PAYMENTS.md),
 [`docs/CUSTOMER_TRACKING.md`](./docs/CUSTOMER_TRACKING.md),
-[`docs/WINDOWS_AGENT.md`](./docs/WINDOWS_AGENT.md), and
-[`docs/PRINTER_TESTING.md`](./docs/PRINTER_TESTING.md).
+[`docs/WINDOWS_AGENT.md`](./docs/WINDOWS_AGENT.md),
+[`docs/PRINTER_TESTING.md`](./docs/PRINTER_TESTING.md), and
+[`docs/IDENTIFICATION_SHEET.md`](./docs/IDENTIFICATION_SHEET.md).
 
 ## Repository layout
 
@@ -79,6 +80,7 @@ See [`docs/DEVELOPMENT.md`](./docs/DEVELOPMENT.md) for workspace details,
 [`docs/CUSTOMER_TRACKING.md`](./docs/CUSTOMER_TRACKING.md) for private
 account-free tracking,
 [`docs/WINDOWS_AGENT.md`](./docs/WINDOWS_AGENT.md) for Windows Agent pairing and printer discovery,
+[`docs/IDENTIFICATION_SHEET.md`](./docs/IDENTIFICATION_SHEET.md) for the local one-sheet planner and privacy boundary,
 [`docs/CONVENTIONS.md`](./docs/CONVENTIONS.md) for foundational conventions,
 and [`docs/DATA_MODEL.md`](./docs/DATA_MODEL.md) for the finalized D1 model.
 

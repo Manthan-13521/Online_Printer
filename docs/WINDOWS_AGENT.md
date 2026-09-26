@@ -2,7 +2,7 @@
 
 The PrintGo Windows Agent (`apps/agent/windows`) connects the physical print shop computer and connected printers to the Cloudflare Worker API. It establishes persistent agent identity, securely stores credentials, discovers local printers, periodically reports status and capabilities, executes test print commands via the Windows print spooler, and feeds the cloud payment readiness gate.
 
-Customer PDF printing and order leasing are strictly deferred to **Phase 9 and 10**. Phase 8 implements diagnostic test printing and spooler status observation. See [PRINTER_TESTING.md](./PRINTER_TESTING.md) for full test printing documentation.
+Customer PDF download, printing, and order leasing are strictly deferred to **Phase 10**. Phase 9 adds only local identification-sheet generation and placement planning. See [PRINTER_TESTING.md](./PRINTER_TESTING.md) and [IDENTIFICATION_SHEET.md](./IDENTIFICATION_SHEET.md).
 
 ---
 
@@ -84,6 +84,15 @@ Agent pairing allows a shop computer running the Windows Agent to establish a tr
    ```
 7. The plaintext `agentSecret` is never stored in the database.
 
+Pairing does not count as a heartbeat. A newly paired Agent remains offline for
+readiness purposes until its first authenticated heartbeat succeeds.
+
+The Agent accepts HTTPS origins only. Plain HTTP is permitted solely for
+`localhost`, `127.0.0.1`, or `[::1]` development. Server URLs containing user
+credentials, query parameters, fragments, or paths are rejected before a pair
+code or Agent secret is sent. Pair codes and Agent secrets are never written to
+Agent status logs.
+
 ---
 
 ## 3. Credential Storage
@@ -101,7 +110,7 @@ The Agent must store its credentials (`agentId`, `agentSecret`, `serverUrl`, `di
     `%LOCALAPPDATA%\PrintGo\agent-credentials.dat`
   - No plaintext credentials exist on disk.
 - **Non-Windows / Development Fallback (`DevelopmentCredentialStore`)**:
-  - On non-Windows platforms (macOS, Linux) or in development environments, credentials fall back to a local JSON file in `~/.printgo/agent-credentials.json` with restricted directory permissions.
+  - On non-Windows development platforms, credentials fall back to a local JSON file at `~/.printgo/agent-credentials.local.json` with file mode `0600`. This plaintext development fallback is forbidden in production.
 
 ---
 
@@ -154,6 +163,7 @@ Once paired, the `AgentDaemon` maintains a background pulse:
    - Rejects revoked or inactive agents with 401 `AGENT_UNAUTHORIZED`.
    - Updates `agents.last_heartbeat_at`.
    - Upserts discovered printers into `printers`, preserving admin toggles (`enabled`).
+   - Marks a previously known printer `OFFLINE` when it is absent from the latest successful Agent report, and refreshes `last_status_at_ms` for every reported printer.
    - Responds with `{ ok: true, data: { acknowledged: true, serverTimeMs: 1234567890 } }`.
 5. **Revocation & Auto-Stop**:
    - If the Worker responds with 401 `AGENT_UNAUTHORIZED`, the `AgentDaemon` immediately terminates its heartbeat timer and shuts down cleanly to avoid log spamming.
@@ -166,14 +176,14 @@ Prior to Phase 7, payment creation in production was intentionally hard-coded to
 
 When a customer submits `POST /api/customer/payments/create`, the server validates:
 
-1. **Shop Online Printing Setting**: `shop_settings.online_printing_enabled === 1`. If disabled, returns `ONLINE_PRINTING_DISABLED`.
-2. **Online Agent Heartbeat**: At least one active agent has sent a heartbeat within the last 90 seconds (`nowMs - last_heartbeat_at <= 90_000`). If none, returns `NO_ONLINE_AGENT`.
-3. **Online Enabled Printer**: At least one printer belonging to an active online agent is marked `enabled === 1` and has status `ONLINE` or `UNKNOWN`. If none, returns `NO_ONLINE_PRINTER`.
+1. **Shop Online Printing Setting**: `installation.online_printing_enabled === 1`. If disabled, returns `ONLINE_PRINTING_DISABLED`.
+2. **Online Agent Heartbeat**: At least one active agent has sent a heartbeat within the last 90 seconds (`nowMs - last_heartbeat_at <= 90_000`). If none, returns `AGENT_OFFLINE`.
+3. **Online Enabled Printer**: At least one printer belonging to an active online agent is marked `enabled === 1` and has status `ONLINE` or `UNKNOWN`. If none is configured, returns `NO_CONFIGURED_PRINTER`; unavailable states return `PRINTER_UNAVAILABLE`.
 4. **Print Capability Matching**: The enabled online printer must satisfy the customer's print options:
-   - If `colorMode === "COLOUR"`, printer must have `colour === true`.
-   - If `sides !== "ONE_SIDED"` (i.e. `TWO_SIDED_LONG` or `TWO_SIDED_SHORT`), printer must have `duplex === true`.
+   - If `colorMode === "COLOR"`, printer must have `colour === true`.
+   - If `sides === "DOUBLE"`, printer must have `duplex === true`.
    - The requested `paperSize` (e.g. `A4`) must be included in `paperSizes`.
-   - If no online printer can satisfy the requested options, returns `NO_MATCHING_PRINTER`.
+   - A mismatch returns `PAPER_SIZE_UNSUPPORTED`, `COLOR_MODE_UNSUPPORTED`, `SIDES_MODE_UNSUPPORTED`, or `PRINTER_UNAVAILABLE`.
 
 ### Development Bypass
 
@@ -203,6 +213,11 @@ The Windows Agent integrates with the Windows Print Spooler subsystem via PowerS
 - **Diagnostic PDF Generation**:
   - Pure TypeScript raw single-page A4 generator creates a clean diagnostic page with timestamp, agent name, printer name, and command ID.
   - Customer PDFs from R2 are strictly not printed or downloaded in Phase 8.
+- **Identification Sheet Generation (Phase 9)**:
+  - Generates one local A4, black-and-white, single-sided sheet with a public job code, masked phone, customer print summary, frozen amount, and bounded instructions.
+  - Uses the same exact named printer with one copy and page range `1`; it never inherits customer copies, colour, paper size, or duplex settings.
+  - Deletes the temporary PDF after successful or failed submission and never uploads it to D1 or R2.
+  - Does not claim orders, download customer PDFs, or execute customer-document printing.
 - **`BLOCKED != FAILED` Rule**:
   - Recoverable conditions (`PAPER_OUT`, `PAPER_JAM`, `OFFLINE`, `DOOR_OPEN`, `USER_INTERVENTION`) are reported as `BLOCKED`.
   - The job is **NEVER automatically resubmitted**, preventing duplicate printing once paper is loaded.
@@ -216,7 +231,7 @@ The Windows Agent integrates with the Windows Print Spooler subsystem via PowerS
 
 ```bash
 # From repository root
-pnpm --filter @printgo/agent-windows dev -- --pair <PAIR_CODE> --server http://localhost:8787 --name "Local Dev PC"
+pnpm --filter @printgo/windows-agent dev -- --pair <PAIR_CODE> --server http://localhost:8787 --name "Local Dev PC"
 ```
 
 ### CLI Arguments

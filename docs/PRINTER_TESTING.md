@@ -84,15 +84,15 @@ SumatraPDF.exe -print-to "<exact_printer>" -print-settings "<copies>x,paper=<pap
 
 ### Third-Party Component Specification
 
-| Property                 | Details                                                                                                                                                                                                                                                                 |
-| :----------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Name**                 | SumatraPDF (Portable Command-Line PDF Engine)                                                                                                                                                                                                                           |
-| **Version Strategy**     | Pinned 64-bit release (e.g., v3.5.2 portable single binary)                                                                                                                                                                                                             |
-| **License**              | GPLv3 (with Apache 2.0 / MuPDF components)                                                                                                                                                                                                                              |
-| **Redistribution Terms** | Redistributable alongside PrintGo as an independent external binary (CLI execution qualifies as mere aggregation under GPL FAQ, preserving proprietary boundaries of PrintGo). Source code is open on GitHub.                                                           |
-| **Binary Size**          | ~14.5 MB single portable executable (zero DLLs, zero registry writes, zero installation)                                                                                                                                                                                |
-| **Why Needed**           | Only zero-dependency Windows utility that supports comprehensive programmatic headless print setting overrides (paper size, duplex, color mode, copies, page range, scaling) without interactive UI, COM dependencies, or Adobe Acrobat.                                |
-| **How Bundled**          | Placed in `apps/agent/windows/vendor/SumatraPDF.exe` via the Windows installer. Resolved dynamically in order: (1) `PRINTGO_SUMATRA_PATH` environment variable, (2) bundled application vendor path, (3) standard Program Files / AppData locations, (4) system `PATH`. |
+| Property                   | Details                                                                                                                                                                                                                                                                                                      |
+| :------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Name**                   | SumatraPDF (Portable Command-Line PDF Engine)                                                                                                                                                                                                                                                                |
+| **Version Strategy**       | Pinned 64-bit release (e.g., v3.5.2 portable single binary)                                                                                                                                                                                                                                                  |
+| **License**                | GPLv3 (with Apache 2.0 / MuPDF components)                                                                                                                                                                                                                                                                   |
+| **Redistribution Review**  | SumatraPDF is GPLv3-licensed. The repository does not make a legal conclusion about installer redistribution or proprietary-boundary treatment. Pinning, notices, source-offer obligations, and installer distribution must receive an explicit licensing review before release.                             |
+| **Binary Size**            | ~14.5 MB single portable executable (zero DLLs, zero registry writes, zero installation)                                                                                                                                                                                                                     |
+| **Why Needed**             | Only zero-dependency Windows utility that supports comprehensive programmatic headless print setting overrides (paper size, duplex, color mode, copies, page range, scaling) without interactive UI, COM dependencies, or Adobe Acrobat.                                                                     |
+| **Resolution / Packaging** | Resolved in order from (1) `PRINTGO_SUMATRA_PATH`, (2) the intended packaged path `apps/agent/windows/vendor/SumatraPDF.exe`, (3) standard Program Files / AppData locations, or (4) system `PATH`. The binary is not committed here; installer packaging and licensing review remain release prerequisites. |
 
 ---
 
@@ -120,31 +120,31 @@ PrintGo **never silently downgrades** customer settings:
 - **DUPLEX on Simplex Printer**: If a printer does not support duplex (`duplex === false`), submission throws `UnsupportedPrintSettingError`. Downgrading to single-sided is prohibited.
 - **Copies**: Must be an integer >= 1 and <= 100. Values <= 0 throw `InvalidPrintSettingError`.
 - **Page Range**: Parsed and validated via `parsePageRange()`. Malformed ranges throw `InvalidPrintSettingError`.
-- **Missing SumatraPDF Guard**: If SumatraPDF is missing from the host machine and any non-default option is requested (A3, color, duplex, page range, or copies > 1), submission immediately fails closed with an informative error rather than executing an unverified fallback.
+- **Missing SumatraPDF Guard**: If SumatraPDF is missing, every PDF submission fails closed. The adapter has no `PrintTo` fallback, including for a one-page A4 diagnostic or identification sheet.
 
 ---
 
 ## 5. Spooler Correlation & Job Isolation
 
-PrintGo implements multi-factor correlation to guarantee that the Agent tracks **only its own print jobs** and never claims an unrelated document printed by another application:
+PrintGo uses conservative multi-factor correlation so the Agent tracks only a queue row that matches its own submission:
 
 1. **Pre-Submission Job ID Snapshot**:
    Before launching the print engine, the Agent records all active job IDs for the specific printer:
-   `$beforeIds = @(Get-CimInstance Win32_PrintJob | Where-Object { $_.Name -like "$printer,*" } | ForEach-Object { [int]$_.JobId })`
+   `$beforeIds = @(Get-CimInstance Win32_PrintJob | Where-Object { $_.Name.StartsWith("$printer,") } | ForEach-Object { [int]$_.JobId })`
 2. **Unique Document Identifier**:
    The diagnostic or order PDF filename includes an unpredictable unique token (e.g., `printgo-test-<commandId>`).
 3. **Correlation Query**:
    The Agent polls `Win32_PrintJob` requiring:
-   - Target printer queue match: `$_.Name -like "$printer,*"`
+   - Exact target printer queue prefix: `$_.Name.StartsWith("$printer,")`
    - Exclusion of pre-existing jobs: `$beforeIds -notcontains [int]$_.JobId`
-   - Document title match: `$_.Document -like "*$docIdentifier*"`
+   - Literal document title containment: `$_.Document.Contains($docIdentifier)`
 4. **Isolation Guarantee**:
    If another application (Chrome, Microsoft Word, Windows Update) submits a print job to the shop printer during the same second, its job ID will not match `$docIdentifier` and will **never be claimed or monitored by PrintGo**.
 
 ### Documented Spooler Limitations
 
-- Certain specialized or legacy printer drivers replace the document title with a static string (e.g., `"RAW"` or `"Document"`). In such rare environments, the correlation engine uses printer-scoped temporal exclusion (`$beforeIds`) as a secondary safeguard.
-- On ultra-fast RAM-spooled local printers, small documents may despool and be removed within 200ms before `Get-CimInstance` polls. The monitor handles this gracefully via `COMPLETED_OR_REMOVED`.
+- Certain drivers replace the document title with a static string. In that case PrintGo does not attach to an arbitrary new queue row; it reports an unobserved submission after the bounded correlation window.
+- On ultra-fast RAM-spooled local printers, small documents may despool before `Get-CimInstance` observes the titled queue entry. The adapter returns an `unobserved-*` correlation value rather than attaching to an unrelated new queue job. This records successful engine handoff without claiming that a specific spooler row was observed.
 
 ---
 
@@ -162,7 +162,7 @@ The deterministic printing architecture is designed for headless, unattended bac
 
 1. `monitorSpoolJob` polls `getJobStatus` up to a bounded deadline (default: 15 seconds, 1-second intervals).
 2. Spooler status bitmask mapping (`Win32_PrintJob.JobStatus` & `Win32_PrintJob.StatusMask`):
-   - **`COMPLETED_OR_REMOVED`**: Job was successfully spooled and handed off to physical printer hardware. Marked `SUCCEEDED`.
+   - **`COMPLETED_OR_REMOVED`**: The tracked queue row is no longer present after engine handoff. For a fast-despooled `unobserved-*` submission, this does not prove that paper physically exited the printer.
    - **`BLOCKED`**: The spooler reported a recoverable physical condition:
      - `PAPER_OUT` (`JobStatus` contains "PaperOut", bit `0x40`)
      - `PAPER_JAM` (`JobStatus` contains "Jam", "PaperJam")
@@ -171,7 +171,7 @@ The deterministic printing architecture is designed for headless, unattended bac
      - `USER_INTERVENTION` (bit `0x400`)
      - **CRITICAL RULE**: The job remains in the spooler and is **NEVER automatically resubmitted**. Reloading paper or closing the door causes the printer to resume printing from the spooler automatically; resubmitting would cause duplicate printing.
    - **`FAILED`**: The spooler reported a fatal, unrecoverable error (`Status == "Error"`, bit `0x02`).
-   - **`PRINTING` / Timeout**: If the spooler is still actively spooling or printing when the 15-second wait deadline expires, the job was accepted by the spooler and is reported as `SUCCEEDED` (or left in progress).
+   - **`PRINTING` / Timeout**: If the spooler is still active after the bounded 15-second observation window, the daemon records the diagnostic command as accepted (`SUCCEEDED`) without resubmitting. This status does not prove physical page output.
 
 ---
 

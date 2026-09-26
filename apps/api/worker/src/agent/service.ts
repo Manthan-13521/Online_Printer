@@ -202,6 +202,19 @@ export class AgentService {
       throw new AgentError("AGENT_OFFLINE");
     }
 
+    const existing = await this.repository.getLatestTestPrintCommand(
+      printerId,
+      nowMs,
+    );
+    if (
+      existing &&
+      (existing.status === "PENDING" ||
+        existing.status === "CLAIMED" ||
+        existing.status === "SUBMITTED")
+    ) {
+      return existing;
+    }
+
     const commandId = crypto.randomUUID();
     const expiresAtMs = nowMs + TEST_PRINT_COMMAND_LIFETIME_MS;
 

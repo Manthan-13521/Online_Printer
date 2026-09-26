@@ -210,26 +210,19 @@ export class D1AgentRepository implements AgentRepository {
     credentialHash: string;
     nowMs: number;
   }): Promise<boolean> {
-    const updateResult = await this.db
-      .prepare(
-        `UPDATE agent_pair_codes
-         SET used_at_ms = ?, paired_agent_id = ?
-         WHERE id = ? AND used_at_ms IS NULL AND expires_at_ms > ?`,
-      )
-      .bind(input.nowMs, input.agentId, input.pairCodeId, input.nowMs)
-      .run();
-
-    if (updateResult.meta.changes !== 1) {
-      return false;
-    }
-
-    await this.db.batch([
+    // D1 batches are transactional. Create the Agent first so the pair-code
+    // foreign key never points at a row that does not yet exist, while the
+    // guarded INSERT still makes one-time code consumption race-safe.
+    const results = await this.db.batch([
       this.db
         .prepare(
           `INSERT INTO agents (
              id, display_name, credential_hash, is_active, paired_at_ms,
              last_heartbeat_at_ms, created_at_ms, updated_at_ms
-           ) VALUES (?, ?, ?, 1, ?, ?, ?, ?)`,
+           )
+           SELECT ?, ?, ?, 1, ?, NULL, ?, ?
+           FROM agent_pair_codes
+           WHERE id = ? AND used_at_ms IS NULL AND expires_at_ms > ?`,
         )
         .bind(
           input.agentId,
@@ -238,17 +231,52 @@ export class D1AgentRepository implements AgentRepository {
           input.nowMs,
           input.nowMs,
           input.nowMs,
+          input.pairCodeId,
           input.nowMs,
+        ),
+      this.db
+        .prepare(
+          `UPDATE agent_pair_codes
+           SET used_at_ms = ?, paired_agent_id = ?
+           WHERE id = ? AND used_at_ms IS NULL AND expires_at_ms > ?
+             AND EXISTS (SELECT 1 FROM agents WHERE id = ?)`,
+        )
+        .bind(
+          input.nowMs,
+          input.agentId,
+          input.pairCodeId,
+          input.nowMs,
+          input.agentId,
         ),
       this.db
         .prepare(
           `INSERT INTO audit_logs (
              id, actor_type, actor_id, action, entity_type, entity_id, created_at_ms
-           ) VALUES (?, 'AGENT', ?, 'AGENT_PAIRED', 'AGENT', ?, ?)`,
+           )
+           SELECT ?, 'AGENT', ?, 'AGENT_PAIRED', 'AGENT', ?, ?
+           FROM agent_pair_codes
+           WHERE id = ? AND paired_agent_id = ?`,
         )
-        .bind(crypto.randomUUID(), input.agentId, input.agentId, input.nowMs),
+        .bind(
+          crypto.randomUUID(),
+          input.agentId,
+          input.agentId,
+          input.nowMs,
+          input.pairCodeId,
+          input.agentId,
+        ),
     ]);
 
+    const inserted = results[0]?.meta.changes ?? 0;
+    const consumed = results[1]?.meta.changes ?? 0;
+    if (inserted === 0 && consumed === 0) {
+      return false;
+    }
+    if (inserted !== 1 || consumed !== 1) {
+      throw new Error(
+        "Agent pairing transaction produced an inconsistent result.",
+      );
+    }
     return true;
   }
 
@@ -343,32 +371,24 @@ export class D1AgentRepository implements AgentRepository {
       const existing = existingMap.get(p.windowsPrinterName);
 
       if (existing) {
-        const changed =
-          existing.status !== p.status ||
-          existing.status_reason !== p.statusReason ||
-          existing.capabilities_json !== capsJson ||
-          existing.display_name !== p.displayName;
-
-        if (changed) {
-          statements.push(
-            this.db
-              .prepare(
-                `UPDATE printers
-                 SET display_name = ?, status = ?, status_reason = ?,
-                     capabilities_json = ?, last_status_at_ms = ?, updated_at_ms = ?
-                 WHERE id = ?`,
-              )
-              .bind(
-                p.displayName,
-                p.status,
-                p.statusReason,
-                capsJson,
-                input.nowMs,
-                input.nowMs,
-                existing.id,
-              ),
-          );
-        }
+        statements.push(
+          this.db
+            .prepare(
+              `UPDATE printers
+               SET display_name = ?, status = ?, status_reason = ?,
+                   capabilities_json = ?, last_status_at_ms = ?, updated_at_ms = ?
+               WHERE id = ?`,
+            )
+            .bind(
+              p.displayName,
+              p.status,
+              p.statusReason,
+              capsJson,
+              input.nowMs,
+              input.nowMs,
+              existing.id,
+            ),
+        );
       } else {
         const autoEnable = isFirstRegistration && (p.isDefault || index === 0);
         statements.push(
@@ -393,6 +413,25 @@ export class D1AgentRepository implements AgentRepository {
               input.nowMs,
               input.nowMs,
             ),
+        );
+      }
+    }
+
+    const reportedPrinterNames = new Set(
+      input.printers.map((printer) => printer.windowsPrinterName),
+    );
+    for (const existing of existingPrinters.results) {
+      if (!reportedPrinterNames.has(existing.windows_printer_name)) {
+        statements.push(
+          this.db
+            .prepare(
+              `UPDATE printers
+               SET status = 'OFFLINE',
+                   status_reason = 'Not reported by latest Agent heartbeat',
+                   last_status_at_ms = ?, updated_at_ms = ?
+               WHERE id = ?`,
+            )
+            .bind(input.nowMs, input.nowMs, existing.id),
         );
       }
     }
@@ -655,6 +694,7 @@ export class D1AgentRepository implements AgentRepository {
          FROM printer_test_commands c
          JOIN printers p ON c.printer_id = p.id
          WHERE c.agent_id = ? AND c.status = 'PENDING' AND c.expires_at_ms > ?
+           AND p.enabled = 1
          ORDER BY c.created_at_ms ASC
          LIMIT 1`,
       )
@@ -708,6 +748,31 @@ export class D1AgentRepository implements AgentRepository {
       input.status === "BLOCKED";
     const finishedAtMs = isTerminal ? input.nowMs : null;
 
+    const current = await this.db
+      .prepare(
+        `SELECT status FROM printer_test_commands
+         WHERE id = ? AND agent_id = ?`,
+      )
+      .bind(input.commandId, input.agentId)
+      .first<{ status: string }>();
+    if (!current) {
+      return false;
+    }
+    if (current.status === input.status) {
+      return true;
+    }
+
+    const allowed =
+      (current.status === "CLAIMED" &&
+        ["SUBMITTED", "BLOCKED", "SUCCEEDED", "FAILED"].includes(
+          input.status,
+        )) ||
+      (current.status === "SUBMITTED" &&
+        ["BLOCKED", "SUCCEEDED", "FAILED"].includes(input.status));
+    if (!allowed) {
+      return false;
+    }
+
     const updateResult = await this.db
       .prepare(
         `UPDATE printer_test_commands
@@ -716,7 +781,7 @@ export class D1AgentRepository implements AgentRepository {
              failure_code = ?,
              failure_detail = ?,
              finished_at_ms = COALESCE(?, finished_at_ms)
-         WHERE id = ? AND agent_id = ?`,
+         WHERE id = ? AND agent_id = ? AND status = ?`,
       )
       .bind(
         input.status,
@@ -726,6 +791,7 @@ export class D1AgentRepository implements AgentRepository {
         finishedAtMs,
         input.commandId,
         input.agentId,
+        current.status,
       )
       .run();
 

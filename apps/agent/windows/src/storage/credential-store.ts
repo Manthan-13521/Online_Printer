@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import * as fs from "node:fs/promises";
+import * as os from "node:os";
 import * as path from "node:path";
 
 export interface AgentCredentials {
@@ -13,6 +14,39 @@ export interface CredentialStore {
   load(): Promise<AgentCredentials | null>;
   save(credentials: AgentCredentials): Promise<void>;
   clear(): Promise<void>;
+}
+
+function parseCredentials(json: string): AgentCredentials {
+  const value: unknown = JSON.parse(json);
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Credential file has an invalid structure.");
+  }
+  const record = value as Record<string, unknown>;
+  const agentId = record.agentId;
+  const agentSecret = record.agentSecret;
+  const serverUrl = record.serverUrl;
+  const displayName = record.displayName;
+  const required = ["agentId", "agentSecret", "serverUrl", "displayName"];
+  if (
+    required.some(
+      (key) =>
+        typeof record[key] !== "string" || record[key].trim().length === 0,
+    ) ||
+    typeof agentSecret !== "string" ||
+    agentSecret.length < 30 ||
+    agentSecret.length > 80 ||
+    typeof agentId !== "string" ||
+    typeof serverUrl !== "string" ||
+    typeof displayName !== "string"
+  ) {
+    throw new Error("Credential file has invalid or incomplete fields.");
+  }
+  return {
+    agentId,
+    agentSecret,
+    serverUrl,
+    displayName,
+  };
 }
 
 function execPowerShellWithInput(
@@ -81,7 +115,7 @@ $plainBytes = [System.Security.Cryptography.ProtectedData]::Unprotect($cipherByt
 
       const json = stdout.trim();
       if (!json) return null;
-      return JSON.parse(json) as AgentCredentials;
+      return parseCredentials(json);
     } catch (err: unknown) {
       if ((err as NodeJS.ErrnoException).code === "ENOENT") {
         return null;
@@ -108,7 +142,10 @@ $cipherBytes = [System.Security.Cryptography.ProtectedData]::Protect($plainBytes
     const stdout = await execPowerShellWithInput(psScript, plainBase64);
 
     const protectedBase64 = stdout.trim();
-    await fs.mkdir(path.dirname(this.filePath), { recursive: true });
+    await fs.mkdir(path.dirname(this.filePath), {
+      recursive: true,
+      mode: 0o700,
+    });
     await fs.writeFile(this.filePath, protectedBase64, {
       encoding: "utf8",
       mode: 0o600,
@@ -134,13 +171,14 @@ export class DevelopmentCredentialStore implements CredentialStore {
 
   constructor(filePath?: string) {
     this.filePath =
-      filePath ?? path.resolve(process.cwd(), ".agent-credentials.local.json");
+      filePath ??
+      path.join(os.homedir(), ".printgo", "agent-credentials.local.json");
   }
 
   async load(): Promise<AgentCredentials | null> {
     try {
       const data = await fs.readFile(this.filePath, "utf8");
-      return JSON.parse(data) as AgentCredentials;
+      return parseCredentials(data);
     } catch (err: unknown) {
       if ((err as NodeJS.ErrnoException).code === "ENOENT") {
         return null;
@@ -150,7 +188,10 @@ export class DevelopmentCredentialStore implements CredentialStore {
   }
 
   async save(credentials: AgentCredentials): Promise<void> {
-    await fs.mkdir(path.dirname(this.filePath), { recursive: true });
+    await fs.mkdir(path.dirname(this.filePath), {
+      recursive: true,
+      mode: 0o700,
+    });
     await fs.writeFile(this.filePath, JSON.stringify(credentials, null, 2), {
       encoding: "utf8",
       mode: 0o600,

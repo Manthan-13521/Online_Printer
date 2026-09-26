@@ -435,3 +435,19 @@ export type AdminTogglePrinterResponse = ApiResponse<{
 export type AdminRevokeAgentResponse = ApiResponse<{
   revoked: true;
 }>;
+
+export interface IdentificationSheetData {
+  jobCode: string;
+  customerName: string;
+  maskedPhone: string;
+  paperSize: PaperSize;
+  colorMode: ColorMode;
+  sides: SidesMode;
+  pageRange: string;
+  copies: number;
+  amountPaidPaise: number;
+  currency: "INR";
+  instructions: string | null;
+  paidAtMs: number;
+  shopName?: string | undefined;
+}

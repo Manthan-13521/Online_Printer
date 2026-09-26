@@ -32,6 +32,21 @@ export function validateAndNormalizePrintSettings(
   if (!printerName) {
     throw new InvalidPrintSettingError("Target printer name is required.");
   }
+  if (printerName !== submission.printerId.trim()) {
+    throw new InvalidPrintSettingError(
+      "Printer setting must match the exact submitted printer ID.",
+    );
+  }
+  if (/\p{Cc}|"/u.test(printerName)) {
+    throw new InvalidPrintSettingError(
+      "Printer name contains unsupported control or quote characters.",
+    );
+  }
+  if (/\p{Cc}|"/u.test(submission.localPdfPath)) {
+    throw new InvalidPrintSettingError(
+      "PDF path contains unsupported control or quote characters.",
+    );
+  }
 
   const raw = submission.settings ?? {};
 

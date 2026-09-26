@@ -395,7 +395,37 @@ describe("WindowsPrinterAdapter with mock executor", () => {
 
     const submitScript = scripts.find((s) => s.includes("$beforeIds"))!;
     expect(submitScript).toContain("$beforeIds -notcontains [int]$_.JobId");
-    expect(submitScript).toContain('$_.Document -like "*$docIdentifier*"');
+    expect(submitScript).toContain("$_.Document.Contains($docIdentifier)");
+    expect(submitScript).not.toContain("$fallbackJob");
+  });
+
+  it("never falls back to the nondeterministic Windows PrintTo verb", async () => {
+    const { executor, scripts } = createScriptCapturingExecutor("113");
+    const adapter = new WindowsPrinterAdapter(executor);
+
+    await adapter.submitPdfJob({
+      printerId: "Exact Queue",
+      localPdfPath: "C:\\jobs\\one-page.pdf",
+    });
+
+    const submitScript = scripts.find((script) => script.includes("$sumatra"))!;
+    expect(submitScript).not.toContain('$psi.Verb = "PrintTo"');
+    expect(submitScript).toContain(
+      "No unverified Windows PrintTo fallback is permitted",
+    );
+  });
+
+  it("rejects a settings printer name that differs from the submitted printer", async () => {
+    const { executor } = createScriptCapturingExecutor("114");
+    const adapter = new WindowsPrinterAdapter(executor);
+
+    await expect(
+      adapter.submitPdfJob({
+        printerId: "Validated Queue",
+        localPdfPath: "C:\\jobs\\doc.pdf",
+        settings: { printerName: "Different Queue" },
+      }),
+    ).rejects.toThrow(/match the exact submitted printer ID/i);
   });
 
   it("observes COMPLETED_OR_REMOVED when spooler removes job", async () => {

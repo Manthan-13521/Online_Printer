@@ -55,7 +55,7 @@ export class AgentDaemon {
     pairCode: string,
     displayName: string,
   ): Promise<AgentCredentials> {
-    this.log(`Pairing with server ${serverUrl} using code ${pairCode}...`);
+    this.log(`Pairing with server ${serverUrl} using a one-time code...`);
     const pairResult = await this.client.pair(serverUrl, pairCode, displayName);
 
     const creds: AgentCredentials = {

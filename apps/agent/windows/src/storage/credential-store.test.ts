@@ -30,7 +30,7 @@ describe("DevelopmentCredentialStore", () => {
     const store = new DevelopmentCredentialStore(testFile);
     const creds: AgentCredentials = {
       agentId: "agent_42",
-      agentSecret: "super_secret_token_12345",
+      agentSecret: "super_secret_token_123456789012345",
       serverUrl: "https://api.printgo.shop",
       displayName: "Front Desk PC",
     };
@@ -44,7 +44,7 @@ describe("DevelopmentCredentialStore", () => {
     const store = new DevelopmentCredentialStore(testFile);
     const creds: AgentCredentials = {
       agentId: "agent_42",
-      agentSecret: "super_secret_token_12345",
+      agentSecret: "super_secret_token_123456789012345",
       serverUrl: "https://api.printgo.shop",
       displayName: "Front Desk PC",
     };
@@ -54,5 +54,15 @@ describe("DevelopmentCredentialStore", () => {
 
     await store.clear();
     expect(await store.load()).toBeNull();
+  });
+
+  it("rejects malformed or incomplete credential files", async () => {
+    await fs.writeFile(
+      testFile,
+      JSON.stringify({ agentId: "agent_42", agentSecret: "short" }),
+    );
+    const store = new DevelopmentCredentialStore(testFile);
+
+    await expect(store.load()).rejects.toThrow(/invalid or incomplete/i);
   });
 });
