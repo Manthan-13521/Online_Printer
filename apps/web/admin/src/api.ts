@@ -12,6 +12,7 @@ import type {
   AdminRevokeAgentResponse,
   AdminSettingsResponse,
   AdminSettingsUpdateRequest,
+  AdminTestPrintResponse,
   AdminTogglePrinterResponse,
   ApiFailure,
 } from "@printgo/api-contract";
@@ -141,5 +142,19 @@ export const adminApi = {
       method: "PUT",
       body: JSON.stringify({ enabled }),
     });
+  },
+  requestTestPrint(printerId: string): Promise<AdminTestPrintResponse> {
+    return request(
+      `/api/admin/printers/${encodeURIComponent(printerId)}/test-print`,
+      {
+        method: "POST",
+        body: "{}",
+      },
+    );
+  },
+  getTestPrintStatus(printerId: string): Promise<AdminTestPrintResponse> {
+    return request(
+      `/api/admin/printers/${encodeURIComponent(printerId)}/test-print`,
+    );
   },
 };

@@ -1,6 +1,7 @@
 import {
   validateAgentHeartbeatInput,
   validateAgentPairInput,
+  validateReportCommandInput,
 } from "@printgo/validation";
 
 import type { WorkerEnv } from "../env";
@@ -52,7 +53,8 @@ function mapAgentError(caught: unknown): Response {
     }
     if (
       caught.code === "AGENT_NOT_FOUND" ||
-      caught.code === "PRINTER_NOT_FOUND"
+      caught.code === "PRINTER_NOT_FOUND" ||
+      caught.code === "COMMAND_NOT_FOUND"
     ) {
       return error(404, caught.code, "Requested resource not found.", NO_STORE);
     }
@@ -116,6 +118,42 @@ export async function handleAgentRequest(
         );
       }
       const result = await service.heartbeat(token, validation.value);
+      return ok(result, 200, NO_STORE);
+    } catch (caught) {
+      return mapAgentError(caught);
+    }
+  }
+
+  const reportMatch = /^\/api\/agent\/commands\/([^/]+)\/report$/u.exec(
+    pathname,
+  );
+  if (request.method === "POST" && reportMatch) {
+    const token = bearerToken(request);
+    if (!token) {
+      return error(
+        401,
+        "AGENT_UNAUTHORIZED",
+        "Agent authentication token required.",
+        NO_STORE,
+      );
+    }
+    try {
+      const commandId = decodeURIComponent(reportMatch[1] ?? "");
+      const rawBody = await readJson(request);
+      const validation = validateReportCommandInput(rawBody);
+      if (!validation.ok) {
+        return error(
+          400,
+          "VALIDATION_ERROR",
+          validation.issues[0]?.message ?? "Invalid command report payload.",
+          NO_STORE,
+        );
+      }
+      const result = await service.reportCommand(
+        token,
+        commandId,
+        validation.value,
+      );
       return ok(result, 200, NO_STORE);
     } catch (caught) {
       return mapAgentError(caught);

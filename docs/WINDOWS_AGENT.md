@@ -1,8 +1,8 @@
 # Windows Agent Pairing, Heartbeats & Printer Readiness
 
-The PrintGo Windows Agent (`apps/agent/windows`) connects the physical print shop computer and connected printers to the Cloudflare Worker API. It establishes persistent agent identity, securely stores credentials, discovers local printers, periodically reports status and capabilities, and feeds the cloud payment readiness gate.
+The PrintGo Windows Agent (`apps/agent/windows`) connects the physical print shop computer and connected printers to the Cloudflare Worker API. It establishes persistent agent identity, securely stores credentials, discovers local printers, periodically reports status and capabilities, executes test print commands via the Windows print spooler, and feeds the cloud payment readiness gate.
 
-Customer PDF printing and job execution are strictly deferred to **Phase 8**. Phase 7 focuses entirely on connectivity, discovery, pairing security, and the readiness gate.
+Customer PDF printing and order leasing are strictly deferred to **Phase 9 and 10**. Phase 8 implements diagnostic test printing and spooler status observation. See [PRINTER_TESTING.md](./PRINTER_TESTING.md) for full test printing documentation.
 
 ---
 
@@ -192,7 +192,25 @@ The Admin PWA at `/admin/printers` provides operational controls:
 
 ---
 
-## 7. Manual Testing & Verification
+## 7. Printer Adapter & Spool Monitoring (Phase 8)
+
+The Windows Agent integrates with the Windows Print Spooler subsystem via PowerShell and CIM/WMI:
+
+- **`PrinterAdapter` Interface**:
+  - `submitPdfJob(printerName, pdfPath, settings)`: Uses `Start-Process -FilePath $pdfPath -Verb PrintTo -ArgumentList "`"$printerName`"" -PassThru` to submit PDF jobs to the designated printer.
+  - `getJobStatus(printerName, spoolJobId)`: Queries `Win32_PrintJob` and maps status bits into `QUEUED`, `PRINTING`, `BLOCKED`, `COMPLETED_OR_REMOVED`, or `FAILED`.
+  - `cancelJob(printerName, spoolJobId)`: Cancels a print job in the spooler queue.
+- **Diagnostic PDF Generation**:
+  - Pure TypeScript raw single-page A4 generator creates a clean diagnostic page with timestamp, agent name, printer name, and command ID.
+  - Customer PDFs from R2 are strictly not printed or downloaded in Phase 8.
+- **`BLOCKED != FAILED` Rule**:
+  - Recoverable conditions (`PAPER_OUT`, `PAPER_JAM`, `OFFLINE`, `DOOR_OPEN`, `USER_INTERVENTION`) are reported as `BLOCKED`.
+  - The job is **NEVER automatically resubmitted**, preventing duplicate printing once paper is loaded.
+  - See [PRINTER_TESTING.md](./PRINTER_TESTING.md) for full details.
+
+---
+
+## 8. Manual Testing & Verification
 
 ### Running the Windows Agent Locally (Development Mode)
 
@@ -209,4 +227,4 @@ pnpm --filter @printgo/agent-windows dev -- --pair <PAIR_CODE> --server http://l
 - `--clear`: Clear locally stored credentials and exit.
 
 > [!NOTE]
-> On macOS and Linux development hosts, `DevelopmentPrinterAdapter` and `DevelopmentCredentialStore` are used automatically. Real Windows printer discovery and DPAPI encryption require a Windows host and were not exercised on non-Windows test environments.
+> On macOS and Linux development hosts, `DevelopmentPrinterAdapter` and `DevelopmentCredentialStore` are used automatically. Real Windows printer discovery, DPAPI encryption, and spooler test printing require a Windows host and were not exercised on non-Windows test environments.

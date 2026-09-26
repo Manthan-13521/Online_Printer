@@ -1,6 +1,7 @@
 import type {
   AdminAgentDetails,
   AdminPrinterDetails,
+  AdminTestPrintDetails,
 } from "@printgo/api-contract";
 import { useEffect, useState } from "react";
 
@@ -45,6 +46,14 @@ export function PrinterPage({
     null,
   );
 
+  // Phase 8: Test print tracking per printer
+  const [testPrints, setTestPrints] = useState<
+    Record<string, AdminTestPrintDetails | null>
+  >({});
+  const [requestingTestPrintId, setRequestingTestPrintId] = useState<
+    string | null
+  >(null);
+
   async function loadPrinters(isManual = false) {
     if (isManual) setRefreshing(true);
     setError(null);
@@ -52,6 +61,17 @@ export function PrinterPage({
       const response = await adminApi.getPrinters();
       if (response.ok) {
         setAgents(response.data.agents);
+        setTestPrints((prev) => {
+          const next = { ...prev };
+          for (const agent of response.data.agents) {
+            for (const printer of agent.printers) {
+              if (printer.latestTestPrint) {
+                next[printer.id] = printer.latestTestPrint;
+              }
+            }
+          }
+          return next;
+        });
       }
     } catch (caught: unknown) {
       if (caught instanceof AdminApiError && caught.status === 401) {
@@ -64,6 +84,43 @@ export function PrinterPage({
       setRefreshing(false);
     }
   }
+
+  const hasActiveTestPrints = Object.values(testPrints).some(
+    (tp) =>
+      tp &&
+      (tp.status === "PENDING" ||
+        tp.status === "CLAIMED" ||
+        tp.status === "SUBMITTED"),
+  );
+
+  useEffect(() => {
+    if (!hasActiveTestPrints) return;
+    const interval = setInterval(() => {
+      const activePrinters = Object.entries(testPrints).filter(
+        ([, tp]) =>
+          tp &&
+          (tp.status === "PENDING" ||
+            tp.status === "CLAIMED" ||
+            tp.status === "SUBMITTED"),
+      );
+      for (const [printerId] of activePrinters) {
+        void adminApi
+          .getTestPrintStatus(printerId)
+          .then((res) => {
+            if (res.ok) {
+              setTestPrints((prev) => ({
+                ...prev,
+                [printerId]: res.data.testPrint,
+              }));
+            }
+          })
+          .catch(() => {
+            // Ignore background poll errors
+          });
+      }
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [hasActiveTestPrints, testPrints]);
 
   useEffect(() => {
     void loadPrinters();
@@ -146,6 +203,30 @@ export function PrinterPage({
       setError(friendlyAdminError(caught));
     } finally {
       setTogglingPrinterId(null);
+    }
+  }
+
+  async function handleRequestTestPrint(printer: AdminPrinterDetails) {
+    setRequestingTestPrintId(printer.id);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await adminApi.requestTestPrint(printer.id);
+      if (res.ok) {
+        setTestPrints((prev) => ({
+          ...prev,
+          [printer.id]: res.data.testPrint,
+        }));
+        setNotice(`Test print requested for "${printer.displayName}".`);
+      }
+    } catch (caught: unknown) {
+      if (caught instanceof AdminApiError && caught.status === 401) {
+        onSessionExpired("Your session has expired. Please sign in again.");
+        return;
+      }
+      setError(friendlyAdminError(caught));
+    } finally {
+      setRequestingTestPrintId(null);
     }
   }
 
@@ -414,6 +495,15 @@ export function PrinterPage({
                       ? caps.paperSizes.join(", ")
                       : "Standard Sizes";
 
+                  const testPrint =
+                    testPrints[printer.id] ?? printer.latestTestPrint;
+                  const isRequesting = requestingTestPrintId === printer.id;
+                  const isTestPrintActive =
+                    testPrint &&
+                    (testPrint.status === "PENDING" ||
+                      testPrint.status === "CLAIMED" ||
+                      testPrint.status === "SUBMITTED");
+
                   return (
                     <div
                       key={printer.id}
@@ -422,85 +512,213 @@ export function PrinterPage({
                         border: "1px solid var(--border-color, #e0e0e0)",
                         borderRadius: "8px",
                         display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        gap: "1rem",
+                        flexDirection: "column",
+                        gap: "0.75rem",
                         opacity: printer.enabled ? 1 : 0.65,
                       }}
                     >
-                      <div>
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          gap: "1rem",
+                        }}
+                      >
+                        <div>
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "0.5rem",
+                            }}
+                          >
+                            <strong style={{ fontSize: "1.05rem" }}>
+                              {printer.displayName}
+                            </strong>
+                            <span
+                              style={{
+                                display: "inline-block",
+                                padding: "0.15rem 0.5rem",
+                                borderRadius: "10px",
+                                fontSize: "0.75rem",
+                                fontWeight: 600,
+                                backgroundColor:
+                                  printer.status === "ONLINE"
+                                    ? "#e6f4ea"
+                                    : printer.status === "OFFLINE"
+                                      ? "#fce8e6"
+                                      : "#feefe3",
+                                color:
+                                  printer.status === "ONLINE"
+                                    ? "#137333"
+                                    : printer.status === "OFFLINE"
+                                      ? "#c5221f"
+                                      : "#b06000",
+                              }}
+                            >
+                              {printer.status}
+                            </span>
+                          </div>
+                          <p
+                            className="muted"
+                            style={{ margin: "0.2rem 0", fontSize: "0.85rem" }}
+                          >
+                            Windows Queue:{" "}
+                            <code>{printer.windowsPrinterName}</code>
+                            {printer.statusReason
+                              ? ` • Notice: ${printer.statusReason}`
+                              : ""}
+                          </p>
+                          <p
+                            style={{
+                              margin: "0.3rem 0 0 0",
+                              fontSize: "0.8rem",
+                              color: "var(--muted-color, #666)",
+                            }}
+                          >
+                            {colorText} • {duplexText} • Paper: {sizesText}
+                          </p>
+                        </div>
                         <div
                           style={{
                             display: "flex",
-                            alignItems: "center",
                             gap: "0.5rem",
+                            alignItems: "center",
                           }}
                         >
-                          <strong style={{ fontSize: "1.05rem" }}>
-                            {printer.displayName}
-                          </strong>
-                          <span
-                            style={{
-                              display: "inline-block",
-                              padding: "0.15rem 0.5rem",
-                              borderRadius: "10px",
-                              fontSize: "0.75rem",
-                              fontWeight: 600,
-                              backgroundColor:
-                                printer.status === "ONLINE"
-                                  ? "#e6f4ea"
-                                  : printer.status === "OFFLINE"
-                                    ? "#fce8e6"
-                                    : "#feefe3",
-                              color:
-                                printer.status === "ONLINE"
-                                  ? "#137333"
-                                  : printer.status === "OFFLINE"
-                                    ? "#c5221f"
-                                    : "#b06000",
-                            }}
+                          {printer.enabled ? (
+                            <button
+                              className="secondary-button"
+                              disabled={
+                                isRequesting ||
+                                isTestPrintActive ||
+                                !agent.isOnline
+                              }
+                              onClick={() =>
+                                void handleRequestTestPrint(printer)
+                              }
+                              type="button"
+                              title={
+                                !agent.isOnline ? "Agent is offline" : undefined
+                              }
+                            >
+                              {isRequesting
+                                ? "Sending test page…"
+                                : isTestPrintActive
+                                  ? "Testing in progress…"
+                                  : testPrint
+                                    ? "Try Test Print Again"
+                                    : "Test Print"}
+                            </button>
+                          ) : null}
+                          <button
+                            className={
+                              printer.enabled
+                                ? "secondary-button"
+                                : "primary-button"
+                            }
+                            disabled={isBusy}
+                            onClick={() => void handleTogglePrinter(printer)}
+                            type="button"
                           >
-                            {printer.status}
-                          </span>
+                            {isBusy
+                              ? "Updating…"
+                              : printer.enabled
+                                ? "Disable"
+                                : "Enable"}
+                          </button>
                         </div>
-                        <p
-                          className="muted"
-                          style={{ margin: "0.2rem 0", fontSize: "0.85rem" }}
-                        >
-                          Windows Queue:{" "}
-                          <code>{printer.windowsPrinterName}</code>
-                          {printer.statusReason
-                            ? ` • Notice: ${printer.statusReason}`
-                            : ""}
-                        </p>
-                        <p
+                      </div>
+
+                      {testPrint ? (
+                        <div
+                          className="test-print-status"
+                          role="status"
                           style={{
-                            margin: "0.3rem 0 0 0",
-                            fontSize: "0.8rem",
-                            color: "var(--muted-color, #666)",
+                            padding: "0.6rem 0.85rem",
+                            borderRadius: "6px",
+                            fontSize: "0.85rem",
+                            backgroundColor:
+                              testPrint.status === "SUCCEEDED"
+                                ? "#e6f4ea"
+                                : testPrint.status === "BLOCKED"
+                                  ? "#fef7e0"
+                                  : testPrint.status === "FAILED" ||
+                                      testPrint.status === "EXPIRED"
+                                    ? "#fce8e6"
+                                    : "#e8f0fe",
+                            color:
+                              testPrint.status === "SUCCEEDED"
+                                ? "#137333"
+                                : testPrint.status === "BLOCKED"
+                                  ? "#b06000"
+                                  : testPrint.status === "FAILED" ||
+                                      testPrint.status === "EXPIRED"
+                                    ? "#c5221f"
+                                    : "#1a73e8",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
                           }}
                         >
-                          {colorText} • {duplexText} • Paper: {sizesText}
-                        </p>
-                      </div>
-                      <div>
-                        <button
-                          className={
-                            printer.enabled
-                              ? "secondary-button"
-                              : "primary-button"
-                          }
-                          disabled={isBusy}
-                          onClick={() => void handleTogglePrinter(printer)}
-                          type="button"
-                        >
-                          {isBusy
-                            ? "Updating…"
-                            : printer.enabled
-                              ? "Disable"
-                              : "Enable"}
-                        </button>
-                      </div>
+                          <div>
+                            {isRequesting && <span>Sending test page…</span>}
+                            {!isRequesting &&
+                              testPrint.status === "PENDING" && (
+                                <span>Waiting for Agent…</span>
+                              )}
+                            {!isRequesting &&
+                              testPrint.status === "CLAIMED" && (
+                                <span>Agent claimed command…</span>
+                              )}
+                            {!isRequesting &&
+                              testPrint.status === "SUBMITTED" && (
+                                <span>
+                                  Submitted to printer…
+                                  {testPrint.spoolerJobId
+                                    ? ` (Spooler Job #${testPrint.spoolerJobId})`
+                                    : ""}
+                                </span>
+                              )}
+                            {!isRequesting &&
+                              testPrint.status === "SUCCEEDED" && (
+                                <span>Test page submitted successfully.</span>
+                              )}
+                            {!isRequesting &&
+                              testPrint.status === "BLOCKED" && (
+                                <span>
+                                  Printer needs attention:{" "}
+                                  {testPrint.failureDetail ||
+                                    testPrint.failureCode ||
+                                    "Printer is blocked"}
+                                </span>
+                              )}
+                            {!isRequesting && testPrint.status === "FAILED" && (
+                              <span>
+                                Test print failed
+                                {testPrint.failureDetail
+                                  ? `: ${testPrint.failureDetail}`
+                                  : ""}
+                              </span>
+                            )}
+                            {!isRequesting &&
+                              testPrint.status === "EXPIRED" && (
+                                <span>
+                                  Test print timed out waiting for Agent.
+                                </span>
+                              )}
+                          </div>
+                          {testPrint.finishedAt ? (
+                            <span
+                              className="muted"
+                              style={{ fontSize: "0.75rem" }}
+                            >
+                              {formatRelativeTime(testPrint.finishedAt)}
+                            </span>
+                          ) : null}
+                        </div>
+                      ) : null}
                     </div>
                   );
                 })}

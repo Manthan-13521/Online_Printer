@@ -1,10 +1,14 @@
+import * as fs from "node:fs/promises";
 import type {
   AgentHeartbeatRequest,
   AgentPrinterReport,
+  AgentTestPrintCommand,
 } from "@printgo/api-contract";
 import { AGENT_HEARTBEAT_INTERVAL_MS } from "@printgo/domain";
 import { AgentAuthError, AgentClient } from "./agent-client.js";
+import { createDiagnosticPdfFile } from "./printing/diagnostic-pdf.js";
 import type { PrinterAdapter } from "./printing/printer-adapter.js";
+import { monitorSpoolJob } from "./printing/spool-monitor.js";
 import type {
   AgentCredentials,
   CredentialStore,
@@ -33,6 +37,7 @@ export class AgentDaemon {
   private timer: NodeJS.Timeout | null = null;
   private running = false;
   private isBeating = false;
+  private readonly executedCommandIds = new Set<string>();
 
   constructor(options: AgentDaemonOptions) {
     this.client = options.client ?? new AgentClient();
@@ -141,7 +146,7 @@ export class AgentDaemon {
         printers: printerReports,
       };
 
-      await this.client.sendHeartbeat(
+      const heartbeatData = await this.client.sendHeartbeat(
         this.credentials.serverUrl,
         this.credentials.agentId,
         this.credentials.agentSecret,
@@ -151,6 +156,11 @@ export class AgentDaemon {
       this.log(
         `Heartbeat acknowledged by ${this.credentials.serverUrl} (${printerReports.length} printers reported).`,
       );
+
+      // Check if server returned a diagnostic test command
+      if (heartbeatData.nextCommand?.type === "TEST_PRINT") {
+        await this.handleTestPrintCommand(heartbeatData.nextCommand);
+      }
     } catch (err: unknown) {
       if (err instanceof AgentAuthError) {
         this.log(
@@ -166,6 +176,127 @@ export class AgentDaemon {
       }
     } finally {
       this.isBeating = false;
+    }
+  }
+
+  private async handleTestPrintCommand(
+    command: AgentTestPrintCommand,
+  ): Promise<void> {
+    if (!this.credentials) return;
+
+    // Idempotency: each command ID is executed at most once
+    if (this.executedCommandIds.has(command.commandId)) {
+      this.log(
+        `Command ${command.commandId} was already executed. Ignoring duplicate.`,
+      );
+      return;
+    }
+
+    // Expiration check: ignore expired commands
+    if (Date.now() >= command.expiresAtMs) {
+      this.log(`Command ${command.commandId} has expired. Ignoring.`);
+      return;
+    }
+
+    this.executedCommandIds.add(command.commandId);
+    this.log(
+      `Executing test print command ${command.commandId} for printer ${command.windowsPrinterName}...`,
+    );
+
+    let tempPdfPath: string | null = null;
+    try {
+      // 1. Generate local diagnostic document
+      tempPdfPath = await createDiagnosticPdfFile({
+        printerDisplayName: command.windowsPrinterName,
+        agentDisplayName: this.credentials.displayName,
+        commandId: command.commandId,
+      });
+
+      // 2. Submit to Windows printer via adapter
+      const submission = await this.printerAdapter.submitPdfJob({
+        printerId: command.windowsPrinterName,
+        localPdfPath: tempPdfPath,
+        copies: 1,
+        settings: {
+          copies: 1,
+          paperSize: "A4",
+          colorMode: "BLACK_AND_WHITE",
+          sides: "ONE_SIDED",
+          pageRange: "all",
+        },
+      });
+
+      this.log(
+        `Test page submitted to spooler (Spool ID: ${submission.spoolJobId}). Reporting SUBMITTED...`,
+      );
+
+      // Report SUBMITTED status to Worker
+      await this.client.reportCommand(
+        this.credentials.serverUrl,
+        this.credentials.agentId,
+        this.credentials.agentSecret,
+        command.commandId,
+        {
+          status: "SUBMITTED",
+          spoolerJobId: submission.spoolJobId,
+        },
+      );
+
+      // 3. Monitor spool status (bounded wait)
+      const observed = await monitorSpoolJob(
+        this.printerAdapter,
+        command.windowsPrinterName,
+        submission.spoolJobId,
+      );
+
+      this.log(
+        `Observed spool status for job ${submission.spoolJobId}: ${observed.state}`,
+      );
+
+      // 4. Report final result
+      let finalStatus: "SUCCEEDED" | "BLOCKED" | "FAILED" = "SUCCEEDED";
+      if (observed.state === "BLOCKED") {
+        finalStatus = "BLOCKED";
+      } else if (observed.state === "FAILED") {
+        finalStatus = "FAILED";
+      }
+
+      await this.client.reportCommand(
+        this.credentials.serverUrl,
+        this.credentials.agentId,
+        this.credentials.agentSecret,
+        command.commandId,
+        {
+          status: finalStatus,
+          spoolerJobId: submission.spoolJobId,
+          failureCode: observed.failureCode ?? null,
+          failureDetail: observed.message ?? null,
+        },
+      );
+    } catch (err: unknown) {
+      this.log(
+        `Test print failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      try {
+        await this.client.reportCommand(
+          this.credentials.serverUrl,
+          this.credentials.agentId,
+          this.credentials.agentSecret,
+          command.commandId,
+          {
+            status: "FAILED",
+            failureCode: "PRINTER_ERROR",
+            failureDetail: err instanceof Error ? err.message : String(err),
+          },
+        );
+      } catch {
+        // Best-effort reporting
+      }
+    } finally {
+      // 5. Always clean up temporary diagnostic PDF file
+      if (tempPdfPath) {
+        await fs.unlink(tempPdfPath).catch(() => {});
+      }
     }
   }
 

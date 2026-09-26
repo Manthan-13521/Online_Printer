@@ -1,11 +1,20 @@
 import type {
   AdminAgentDetails,
+  AdminTestPrintDetails,
   AgentHeartbeatData,
   AgentPairData,
+  AgentReportCommandData,
 } from "@printgo/api-contract";
 import { hashSessionToken } from "@printgo/auth";
-import { AGENT_PAIR_CODE_LIFETIME_MS } from "@printgo/domain";
-import type { ValidatedAgentHeartbeatInput } from "@printgo/validation";
+import {
+  AGENT_HEARTBEAT_TIMEOUT_MS,
+  AGENT_PAIR_CODE_LIFETIME_MS,
+  TEST_PRINT_COMMAND_LIFETIME_MS,
+} from "@printgo/domain";
+import type {
+  ValidatedAgentHeartbeatInput,
+  ValidatedReportCommandInput,
+} from "@printgo/validation";
 
 import {
   generateAgentSecret,
@@ -20,7 +29,10 @@ export type AgentErrorCode =
   | "PAIR_CODE_ALREADY_USED"
   | "AGENT_UNAUTHORIZED"
   | "AGENT_NOT_FOUND"
-  | "PRINTER_NOT_FOUND";
+  | "PRINTER_NOT_FOUND"
+  | "PRINTER_DISABLED"
+  | "AGENT_OFFLINE"
+  | "COMMAND_NOT_FOUND";
 
 export class AgentError extends Error {
   constructor(readonly code: AgentErrorCode) {
@@ -120,9 +132,15 @@ export class AgentService {
       printers: input.printers,
     });
 
+    const nextCommand = await this.repository.claimPendingTestPrintCommand(
+      agent.id,
+      nowMs,
+    );
+
     return {
       acknowledged: true,
       serverTimeMs: nowMs,
+      ...(nextCommand ? { nextCommand } : {}),
     };
   }
 
@@ -157,5 +175,88 @@ export class AgentService {
       throw new AgentError("PRINTER_NOT_FOUND");
     }
     return true;
+  }
+
+  async requestTestPrint(
+    printerId: string,
+    adminId: string,
+  ): Promise<AdminTestPrintDetails> {
+    const printer = await this.repository.findPrinterById(printerId);
+    if (!printer) {
+      throw new AgentError("PRINTER_NOT_FOUND");
+    }
+    if (!printer.enabled) {
+      throw new AgentError("PRINTER_DISABLED");
+    }
+
+    const agent = await this.repository.findAgentById(printer.agentId);
+    if (!agent || !agent.isActive) {
+      throw new AgentError("AGENT_NOT_FOUND");
+    }
+
+    const nowMs = this.now();
+    if (
+      !agent.lastHeartbeatAtMs ||
+      nowMs - agent.lastHeartbeatAtMs > AGENT_HEARTBEAT_TIMEOUT_MS
+    ) {
+      throw new AgentError("AGENT_OFFLINE");
+    }
+
+    const commandId = crypto.randomUUID();
+    const expiresAtMs = nowMs + TEST_PRINT_COMMAND_LIFETIME_MS;
+
+    return this.repository.createTestPrintCommand({
+      id: commandId,
+      printerId,
+      agentId: printer.agentId,
+      adminId,
+      expiresAtMs,
+      nowMs,
+    });
+  }
+
+  async reportCommand(
+    rawSecret: string,
+    commandId: string,
+    input: ValidatedReportCommandInput,
+  ): Promise<AgentReportCommandData> {
+    const credentialHash = await hashSessionToken(rawSecret);
+    const agent =
+      await this.repository.findAgentByCredentialHash(credentialHash);
+
+    if (!agent || !agent.isActive) {
+      throw new AgentError("AGENT_UNAUTHORIZED");
+    }
+
+    const nowMs = this.now();
+    const reported = await this.repository.reportTestPrintCommand({
+      commandId,
+      agentId: agent.id,
+      status: input.status,
+      spoolerJobId: input.spoolerJobId ?? null,
+      failureCode: input.failureCode ?? null,
+      failureDetail: input.failureDetail ?? null,
+      nowMs,
+    });
+
+    if (!reported) {
+      throw new AgentError("COMMAND_NOT_FOUND");
+    }
+
+    return {
+      acknowledged: true,
+      commandId,
+      status: input.status,
+    };
+  }
+
+  async getLatestTestPrint(
+    printerId: string,
+  ): Promise<AdminTestPrintDetails | null> {
+    const printer = await this.repository.findPrinterById(printerId);
+    if (!printer) {
+      throw new AgentError("PRINTER_NOT_FOUND");
+    }
+    return this.repository.getLatestTestPrintCommand(printerId, this.now());
   }
 }

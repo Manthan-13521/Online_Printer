@@ -1,7 +1,10 @@
 import type {
   AdminAgentDetails,
   AdminPrinterDetails,
+  AdminTestPrintDetails,
+  AgentTestPrintCommand,
   PrinterCapabilitySummary,
+  TestPrintCommandStatus,
 } from "@printgo/api-contract";
 import { AGENT_HEARTBEAT_TIMEOUT_MS } from "@printgo/domain";
 import type { ValidatedPrinterReport } from "@printgo/validation";
@@ -19,6 +22,51 @@ export interface StoredPairCode {
   expiresAtMs: number;
   usedAtMs: number | null;
   pairedAgentId: string | null;
+}
+
+export interface PrinterTestCommandRow {
+  id: string;
+  printer_id: string;
+  agent_id: string;
+  status: string;
+  spooler_job_id: string | null;
+  failure_code: string | null;
+  failure_detail: string | null;
+  created_at_ms: number;
+  expires_at_ms: number;
+  claimed_at_ms: number | null;
+  finished_at_ms: number | null;
+}
+
+export function toAdminTestPrintDetails(
+  row: PrinterTestCommandRow,
+  nowMs?: number,
+): AdminTestPrintDetails {
+  let status = row.status;
+  if (
+    status === "PENDING" &&
+    nowMs !== undefined &&
+    nowMs >= row.expires_at_ms
+  ) {
+    status = "EXPIRED";
+  }
+  return {
+    commandId: row.id,
+    printerId: row.printer_id,
+    agentId: row.agent_id,
+    status: status as TestPrintCommandStatus,
+    spoolerJobId: row.spooler_job_id,
+    failureCode: row.failure_code,
+    failureDetail: row.failure_detail,
+    createdAt: new Date(row.created_at_ms).toISOString(),
+    expiresAt: new Date(row.expires_at_ms).toISOString(),
+    claimedAt: row.claimed_at_ms
+      ? new Date(row.claimed_at_ms).toISOString()
+      : null,
+    finishedAt: row.finished_at_ms
+      ? new Date(row.finished_at_ms).toISOString()
+      : null,
+  };
 }
 
 export interface AgentRepository {
@@ -39,6 +87,7 @@ export interface AgentRepository {
   findAgentByCredentialHash(
     credentialHash: string,
   ): Promise<StoredAgent | null>;
+  findAgentById(agentId: string): Promise<StoredAgent | null>;
   updateHeartbeat(input: {
     agentId: string;
     nowMs: number;
@@ -56,6 +105,39 @@ export interface AgentRepository {
     adminId: string;
     nowMs: number;
   }): Promise<boolean>;
+  findPrinterById(printerId: string): Promise<{
+    id: string;
+    agentId: string;
+    displayName: string;
+    windowsPrinterName: string;
+    enabled: boolean;
+    status: string;
+  } | null>;
+  createTestPrintCommand(input: {
+    id: string;
+    printerId: string;
+    agentId: string;
+    adminId: string;
+    expiresAtMs: number;
+    nowMs: number;
+  }): Promise<AdminTestPrintDetails>;
+  claimPendingTestPrintCommand(
+    agentId: string,
+    nowMs: number,
+  ): Promise<AgentTestPrintCommand | null>;
+  reportTestPrintCommand(input: {
+    commandId: string;
+    agentId: string;
+    status: "SUBMITTED" | "BLOCKED" | "SUCCEEDED" | "FAILED";
+    spoolerJobId?: string | null;
+    failureCode?: string | null;
+    failureDetail?: string | null;
+    nowMs: number;
+  }): Promise<boolean>;
+  getLatestTestPrintCommand(
+    printerId: string,
+    nowMs?: number,
+  ): Promise<AdminTestPrintDetails | null>;
 }
 
 interface AgentRow {
@@ -195,6 +277,29 @@ export class D1AgentRepository implements AgentRepository {
       : null;
   }
 
+  async findAgentById(agentId: string): Promise<StoredAgent | null> {
+    const row = await this.db
+      .prepare(
+        `SELECT id, display_name, is_active, last_heartbeat_at_ms
+         FROM agents WHERE id = ?`,
+      )
+      .bind(agentId)
+      .first<{
+        id: string;
+        display_name: string;
+        is_active: number;
+        last_heartbeat_at_ms: number | null;
+      }>();
+    return row
+      ? {
+          id: row.id,
+          displayName: row.display_name,
+          isActive: row.is_active === 1,
+          lastHeartbeatAtMs: row.last_heartbeat_at_ms,
+        }
+      : null;
+  }
+
   async updateHeartbeat(input: {
     agentId: string;
     nowMs: number;
@@ -296,21 +401,43 @@ export class D1AgentRepository implements AgentRepository {
   }
 
   async listAgentsWithPrinters(nowMs: number): Promise<AdminAgentDetails[]> {
-    const [agentResults, printerResults] = await this.db.batch([
-      this.db.prepare(
-        `SELECT id, display_name, is_active, paired_at_ms, last_heartbeat_at_ms
+    const [agentResults, printerResults, testCommandResults] =
+      await this.db.batch([
+        this.db.prepare(
+          `SELECT id, display_name, is_active, paired_at_ms, last_heartbeat_at_ms
          FROM agents ORDER BY created_at_ms ASC`,
-      ),
-      this.db.prepare(
-        `SELECT id, agent_id, display_name, windows_printer_name, enabled,
+        ),
+        this.db.prepare(
+          `SELECT id, agent_id, display_name, windows_printer_name, enabled,
                 status, status_reason, capabilities_json, last_status_at_ms
          FROM printers ORDER BY windows_printer_name ASC`,
-      ),
-    ]);
+        ),
+        this.db.prepare(
+          `SELECT ptc.id, ptc.printer_id, ptc.agent_id, ptc.status, ptc.spooler_job_id,
+                ptc.failure_code, ptc.failure_detail, ptc.created_at_ms, ptc.expires_at_ms,
+                ptc.claimed_at_ms, ptc.finished_at_ms
+         FROM printer_test_commands ptc
+         INNER JOIN (
+           SELECT printer_id, MAX(created_at_ms) as max_created
+           FROM printer_test_commands
+           GROUP BY printer_id
+         ) latest ON ptc.printer_id = latest.printer_id AND ptc.created_at_ms = latest.max_created`,
+        ),
+      ]);
 
     const agentRows = (agentResults?.results ?? []) as unknown as AgentRow[];
     const printerRows = (printerResults?.results ??
       []) as unknown as PrinterRow[];
+    const testCommandRows = (testCommandResults?.results ??
+      []) as unknown as PrinterTestCommandRow[];
+
+    const latestTestPrintByPrinter = new Map<string, AdminTestPrintDetails>();
+    for (const tcr of testCommandRows) {
+      latestTestPrintByPrinter.set(
+        tcr.printer_id,
+        toAdminTestPrintDetails(tcr, nowMs),
+      );
+    }
 
     const printersByAgent = new Map<string, AdminPrinterDetails[]>();
     for (const pr of printerRows) {
@@ -337,6 +464,7 @@ export class D1AgentRepository implements AgentRepository {
         lastStatusAt: pr.last_status_at_ms
           ? new Date(pr.last_status_at_ms).toISOString()
           : null,
+        latestTestPrint: latestTestPrintByPrinter.get(pr.id) ?? null,
       });
       printersByAgent.set(pr.agent_id, list);
     }
@@ -424,5 +552,222 @@ export class D1AgentRepository implements AgentRepository {
       return true;
     }
     return false;
+  }
+
+  async findPrinterById(printerId: string): Promise<{
+    id: string;
+    agentId: string;
+    displayName: string;
+    windowsPrinterName: string;
+    enabled: boolean;
+    status: string;
+  } | null> {
+    const row = await this.db
+      .prepare(
+        `SELECT id, agent_id, display_name, windows_printer_name, enabled, status
+         FROM printers WHERE id = ?`,
+      )
+      .bind(printerId)
+      .first<{
+        id: string;
+        agent_id: string;
+        display_name: string;
+        windows_printer_name: string;
+        enabled: number;
+        status: string;
+      }>();
+    return row
+      ? {
+          id: row.id,
+          agentId: row.agent_id,
+          displayName: row.display_name,
+          windowsPrinterName: row.windows_printer_name,
+          enabled: row.enabled === 1,
+          status: row.status,
+        }
+      : null;
+  }
+
+  async createTestPrintCommand(input: {
+    id: string;
+    printerId: string;
+    agentId: string;
+    adminId: string;
+    expiresAtMs: number;
+    nowMs: number;
+  }): Promise<AdminTestPrintDetails> {
+    await this.db.batch([
+      this.db
+        .prepare(
+          `INSERT INTO printer_test_commands (
+             id, printer_id, agent_id, status, created_at_ms, expires_at_ms
+           ) VALUES (?, ?, ?, 'PENDING', ?, ?)`,
+        )
+        .bind(
+          input.id,
+          input.printerId,
+          input.agentId,
+          input.nowMs,
+          input.expiresAtMs,
+        ),
+      this.db
+        .prepare(
+          `INSERT INTO audit_logs (
+             id, actor_type, actor_id, action, entity_type, entity_id, created_at_ms
+           ) VALUES (?, 'ADMIN', ?, 'TEST_PRINT_REQUESTED', 'PRINTER', ?, ?)`,
+        )
+        .bind(crypto.randomUUID(), input.adminId, input.printerId, input.nowMs),
+    ]);
+
+    return {
+      commandId: input.id,
+      printerId: input.printerId,
+      agentId: input.agentId,
+      status: "PENDING",
+      spoolerJobId: null,
+      failureCode: null,
+      failureDetail: null,
+      createdAt: new Date(input.nowMs).toISOString(),
+      expiresAt: new Date(input.expiresAtMs).toISOString(),
+      claimedAt: null,
+      finishedAt: null,
+    };
+  }
+
+  async claimPendingTestPrintCommand(
+    agentId: string,
+    nowMs: number,
+  ): Promise<AgentTestPrintCommand | null> {
+    // 1. Mark expired pending commands for this agent
+    await this.db
+      .prepare(
+        `UPDATE printer_test_commands
+         SET status = 'EXPIRED', finished_at_ms = ?
+         WHERE agent_id = ? AND status = 'PENDING' AND expires_at_ms <= ?`,
+      )
+      .bind(nowMs, agentId, nowMs)
+      .run();
+
+    // 2. Find oldest pending command with printer info
+    const pending = await this.db
+      .prepare(
+        `SELECT c.id, c.printer_id, c.expires_at_ms, p.windows_printer_name
+         FROM printer_test_commands c
+         JOIN printers p ON c.printer_id = p.id
+         WHERE c.agent_id = ? AND c.status = 'PENDING' AND c.expires_at_ms > ?
+         ORDER BY c.created_at_ms ASC
+         LIMIT 1`,
+      )
+      .bind(agentId, nowMs)
+      .first<{
+        id: string;
+        printer_id: string;
+        expires_at_ms: number;
+        windows_printer_name: string;
+      }>();
+
+    if (!pending) {
+      return null;
+    }
+
+    // 3. Atomically claim it
+    const updateResult = await this.db
+      .prepare(
+        `UPDATE printer_test_commands
+         SET status = 'CLAIMED', claimed_at_ms = ?
+         WHERE id = ? AND status = 'PENDING'`,
+      )
+      .bind(nowMs, pending.id)
+      .run();
+
+    if (updateResult.meta.changes !== 1) {
+      return null;
+    }
+
+    return {
+      commandId: pending.id,
+      type: "TEST_PRINT",
+      printerId: pending.printer_id,
+      windowsPrinterName: pending.windows_printer_name,
+      expiresAtMs: pending.expires_at_ms,
+    };
+  }
+
+  async reportTestPrintCommand(input: {
+    commandId: string;
+    agentId: string;
+    status: "SUBMITTED" | "BLOCKED" | "SUCCEEDED" | "FAILED";
+    spoolerJobId?: string | null;
+    failureCode?: string | null;
+    failureDetail?: string | null;
+    nowMs: number;
+  }): Promise<boolean> {
+    const isTerminal =
+      input.status === "SUCCEEDED" ||
+      input.status === "FAILED" ||
+      input.status === "BLOCKED";
+    const finishedAtMs = isTerminal ? input.nowMs : null;
+
+    const updateResult = await this.db
+      .prepare(
+        `UPDATE printer_test_commands
+         SET status = ?,
+             spooler_job_id = COALESCE(?, spooler_job_id),
+             failure_code = ?,
+             failure_detail = ?,
+             finished_at_ms = COALESCE(?, finished_at_ms)
+         WHERE id = ? AND agent_id = ?`,
+      )
+      .bind(
+        input.status,
+        input.spoolerJobId ?? null,
+        input.failureCode ?? null,
+        input.failureDetail ?? null,
+        finishedAtMs,
+        input.commandId,
+        input.agentId,
+      )
+      .run();
+
+    if (updateResult.meta.changes !== 1) {
+      return false;
+    }
+
+    await this.db
+      .prepare(
+        `INSERT INTO audit_logs (
+           id, actor_type, actor_id, action, entity_type, entity_id, created_at_ms
+         ) VALUES (?, 'AGENT', ?, ?, 'PRINTER_TEST_COMMAND', ?, ?)`,
+      )
+      .bind(
+        crypto.randomUUID(),
+        input.agentId,
+        `TEST_PRINT_${input.status}`,
+        input.commandId,
+        input.nowMs,
+      )
+      .run();
+
+    return true;
+  }
+
+  async getLatestTestPrintCommand(
+    printerId: string,
+    nowMs?: number,
+  ): Promise<AdminTestPrintDetails | null> {
+    const row = await this.db
+      .prepare(
+        `SELECT id, printer_id, agent_id, status, spooler_job_id,
+                failure_code, failure_detail, created_at_ms, expires_at_ms,
+                claimed_at_ms, finished_at_ms
+         FROM printer_test_commands
+         WHERE printer_id = ?
+         ORDER BY created_at_ms DESC
+         LIMIT 1`,
+      )
+      .bind(printerId)
+      .first<PrinterTestCommandRow>();
+
+    return row ? toAdminTestPrintDetails(row, nowMs) : null;
   }
 }

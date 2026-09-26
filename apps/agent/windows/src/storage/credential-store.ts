@@ -174,5 +174,13 @@ export function createDefaultCredentialStore(
   if (process.platform === "win32") {
     return new WindowsDpapiCredentialStore(customPath);
   }
+  if (
+    process.env.NODE_ENV === "production" ||
+    process.env.APP_ENV === "production"
+  ) {
+    throw new Error(
+      "Production PrintGo Agent requires Windows DPAPI credential storage. Development credential storage is forbidden in production.",
+    );
+  }
   return new DevelopmentCredentialStore(customPath);
 }

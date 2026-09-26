@@ -21,8 +21,15 @@ export type {
   PrinterStatus,
   PrinterSummary,
   PrintSubmission,
+  PrintSettings,
+  SpoolJobState,
   SubmittedPrintJob,
 } from "./printing/printer-adapter.js";
+export {
+  generateDiagnosticPdfBuffer,
+  createDiagnosticPdfFile,
+} from "./printing/diagnostic-pdf.js";
+export { monitorSpoolJob } from "./printing/spool-monitor.js";
 export { UnavailablePrinterAdapter } from "./printing/unavailable-printer-adapter.js";
 export {
   AgentClient,

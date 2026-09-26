@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { AdminAuthService } from "../auth/service";
 import type { WorkerEnv } from "../env";
 import { handleAdminPrinterRequest } from "./admin-routes";
-import type { AgentService } from "./service";
+import { AgentError, type AgentService } from "./service";
 
 const admin = {
   id: "admin_100",
@@ -63,6 +63,36 @@ function createMockAgentService(): AgentService {
     ),
     revokeAgent: vi.fn(() => Promise.resolve()),
     togglePrinter: vi.fn(() => Promise.resolve()),
+    requestTestPrint: vi.fn(() =>
+      Promise.resolve({
+        commandId: "cmd-test-1",
+        printerId: "printer_1",
+        agentId: "agent_1",
+        status: "PENDING" as const,
+        spoolerJobId: null,
+        failureCode: null,
+        failureDetail: null,
+        createdAt: "2026-09-26T12:00:00.000Z",
+        expiresAt: "2026-09-26T12:05:00.000Z",
+        claimedAt: null,
+        finishedAt: null,
+      }),
+    ),
+    getLatestTestPrint: vi.fn(() =>
+      Promise.resolve({
+        commandId: "cmd-test-1",
+        printerId: "printer_1",
+        agentId: "agent_1",
+        status: "SUCCEEDED" as const,
+        spoolerJobId: "spool-12",
+        failureCode: null,
+        failureDetail: null,
+        createdAt: "2026-09-26T12:00:00.000Z",
+        expiresAt: "2026-09-26T12:05:00.000Z",
+        claimedAt: "2026-09-26T12:00:10.000Z",
+        finishedAt: "2026-09-26T12:00:15.000Z",
+      }),
+    ),
   } as unknown as AgentService;
 }
 
@@ -210,5 +240,141 @@ describe("Admin Printer & Agent HTTP Routes", () => {
       false,
       "admin_100",
     );
+  });
+
+  it("handles test print request", async () => {
+    const authService = createMockAuth();
+    const agentService = createMockAgentService();
+
+    const request = new Request(
+      "https://api.example.com/api/admin/printers/printer_1/test-print",
+      {
+        method: "POST",
+        headers: {
+          Origin: env.ADMIN_ALLOWED_ORIGIN,
+          Cookie: "__Host-printgo_admin=valid_token",
+        },
+      },
+    );
+
+    const response = await handleAdminPrinterRequest(
+      request,
+      env,
+      agentService,
+      authService,
+    );
+    expect(response.status).toBe(201);
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      data: {
+        testPrint: {
+          commandId: "cmd-test-1",
+          printerId: "printer_1",
+          status: "PENDING",
+        },
+      },
+    });
+    expect(agentService.requestTestPrint).toHaveBeenCalledWith(
+      "printer_1",
+      "admin_100",
+    );
+  });
+
+  it("handles get latest test print status", async () => {
+    const authService = createMockAuth();
+    const agentService = createMockAgentService();
+
+    const request = new Request(
+      "https://api.example.com/api/admin/printers/printer_1/test-print",
+      {
+        method: "GET",
+        headers: {
+          Origin: env.ADMIN_ALLOWED_ORIGIN,
+          Cookie: "__Host-printgo_admin=valid_token",
+        },
+      },
+    );
+
+    const response = await handleAdminPrinterRequest(
+      request,
+      env,
+      agentService,
+      authService,
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      data: {
+        testPrint: {
+          commandId: "cmd-test-1",
+          printerId: "printer_1",
+          status: "SUCCEEDED",
+          spoolerJobId: "spool-12",
+        },
+      },
+    });
+    expect(agentService.getLatestTestPrint).toHaveBeenCalledWith("printer_1");
+  });
+
+  it("returns 400 when test print is requested on disabled printer", async () => {
+    const authService = createMockAuth();
+    const agentService = createMockAgentService();
+    vi.mocked(agentService.requestTestPrint).mockRejectedValueOnce(
+      new AgentError("PRINTER_DISABLED"),
+    );
+
+    const request = new Request(
+      "https://api.example.com/api/admin/printers/printer_1/test-print",
+      {
+        method: "POST",
+        headers: {
+          Origin: env.ADMIN_ALLOWED_ORIGIN,
+          Cookie: "__Host-printgo_admin=valid_token",
+        },
+      },
+    );
+
+    const response = await handleAdminPrinterRequest(
+      request,
+      env,
+      agentService,
+      authService,
+    );
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      ok: false,
+      error: { code: "PRINTER_DISABLED" },
+    });
+  });
+
+  it("returns 400 when test print is requested for offline agent", async () => {
+    const authService = createMockAuth();
+    const agentService = createMockAgentService();
+    vi.mocked(agentService.requestTestPrint).mockRejectedValueOnce(
+      new AgentError("AGENT_OFFLINE"),
+    );
+
+    const request = new Request(
+      "https://api.example.com/api/admin/printers/printer_1/test-print",
+      {
+        method: "POST",
+        headers: {
+          Origin: env.ADMIN_ALLOWED_ORIGIN,
+          Cookie: "__Host-printgo_admin=valid_token",
+        },
+      },
+    );
+
+    const response = await handleAdminPrinterRequest(
+      request,
+      env,
+      agentService,
+      authService,
+    );
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      ok: false,
+      error: { code: "AGENT_OFFLINE" },
+    });
   });
 });

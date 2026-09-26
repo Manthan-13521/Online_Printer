@@ -5,6 +5,8 @@ import type {
   AgentPairData,
   AgentPairRequest,
   AgentPairResponse,
+  AgentReportCommandRequest,
+  AgentReportCommandResponse,
 } from "@printgo/api-contract";
 
 export class AgentAuthError extends Error {
@@ -123,5 +125,51 @@ export class AgentClient {
     }
 
     return data.data;
+  }
+
+  async reportCommand(
+    serverUrl: string,
+    agentId: string,
+    agentSecret: string,
+    commandId: string,
+    report: AgentReportCommandRequest,
+  ): Promise<void> {
+    const cleanUrl = serverUrl.replace(/\/$/u, "");
+    let response: Response;
+    try {
+      response = await fetch(
+        `${cleanUrl}/api/agent/commands/${encodeURIComponent(commandId)}/report`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${agentSecret}`,
+            "X-PrintGo-Agent-Id": agentId,
+          },
+          body: JSON.stringify(report),
+        },
+      );
+    } catch (err: unknown) {
+      throw new AgentApiError(
+        "NETWORK_ERROR",
+        0,
+        `Command report network failure: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
+    if (response.status === 401) {
+      throw new AgentAuthError(
+        "Agent authentication failed while reporting command.",
+      );
+    }
+
+    const data = (await response.json()) as AgentReportCommandResponse;
+    if (!data.ok) {
+      throw new AgentApiError(
+        data.error.code ?? "REPORT_FAILED",
+        response.status,
+        data.error.message ?? "Command report rejected by server.",
+      );
+    }
   }
 }

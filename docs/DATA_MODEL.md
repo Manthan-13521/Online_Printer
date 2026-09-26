@@ -27,6 +27,11 @@ timestamps to `orders`. The initial schema already provides the unique
 `tracking_token_hash` column. No raw token, customer account, recovery secret,
 or tenant field is stored.
 
+Migration `0005_printer_test_commands.sql` creates the `printer_test_commands`
+table for tracking short-lived diagnostic test print requests initiated by shop
+administrators. Test print commands have bounded lifetimes (5 minutes) and
+track physical spooler status without accessing customer orders or customer PDFs.
+
 ## Deployment invariant
 
 PrintGo V2 is not multi-tenant.
@@ -117,6 +122,10 @@ Stores a one-time Crockford Base32 pairing-code SHA-256 hash (`code_hash`), 10-m
 ### `printers`
 
 Allows multiple printers per Agent. Updated on every heartbeat pulse (~30s). Operational status uses the controlled vocabulary (`ONLINE`, `OFFLINE`, `BLOCKED`, `UNKNOWN`). Capabilities JSON stores `{ colour: boolean, duplex: boolean, paperSizes: string[] }`. An admin toggle (`enabled = 0 / 1`) allows disabling a printer without removing history, immediately impacting payment readiness calculation.
+
+### `printer_test_commands`
+
+Stores administrator-initiated diagnostic test print commands. Commands have bounded 5-minute lifetimes (`TEST_PRINT_COMMAND_LIFETIME_MS = 300_000`). Status values follow the controlled vocabulary (`PENDING`, `CLAIMED`, `SUBMITTED`, `BLOCKED`, `SUCCEEDED`, `FAILED`, `EXPIRED`). Windows spooler job IDs are tracked per command. `BLOCKED` status captures recoverable physical issues (`failure_code`, `failure_detail`) and is never automatically resubmitted.
 
 ### `orders`
 

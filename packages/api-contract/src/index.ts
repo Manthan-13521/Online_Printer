@@ -334,12 +334,65 @@ export interface AgentHeartbeatRequest {
   printers: readonly AgentPrinterReport[];
 }
 
+export interface AgentTestPrintCommand {
+  type: "TEST_PRINT";
+  commandId: string;
+  printerId: string;
+  windowsPrinterName: string;
+  expiresAtMs: number;
+}
+
 export interface AgentHeartbeatData {
   acknowledged: true;
   serverTimeMs: number;
+  nextCommand?: AgentTestPrintCommand | null;
 }
 
 export type AgentHeartbeatResponse = ApiResponse<AgentHeartbeatData>;
+
+export interface AgentReportCommandRequest {
+  status: "SUBMITTED" | "BLOCKED" | "SUCCEEDED" | "FAILED";
+  spoolerJobId?: string | null;
+  failureCode?: string | null;
+  failureDetail?: string | null;
+}
+
+export interface AgentReportCommandData {
+  acknowledged: true;
+  commandId: string;
+  status: "SUBMITTED" | "BLOCKED" | "SUCCEEDED" | "FAILED";
+}
+
+export type AgentReportCommandResponse = ApiResponse<AgentReportCommandData>;
+
+export type TestPrintCommandStatus =
+  | "PENDING"
+  | "CLAIMED"
+  | "SUBMITTED"
+  | "BLOCKED"
+  | "SUCCEEDED"
+  | "FAILED"
+  | "EXPIRED";
+
+export interface AdminTestPrintDetails {
+  commandId: string;
+  printerId: string;
+  agentId: string;
+  status: TestPrintCommandStatus;
+  spoolerJobId: string | null;
+  failureCode: string | null;
+  failureDetail: string | null;
+  createdAt: string;
+  expiresAt: string;
+  claimedAt: string | null;
+  finishedAt: string | null;
+}
+
+export interface AdminTestPrintResponseData {
+  testPrint: AdminTestPrintDetails;
+}
+
+export type AdminTestPrintResponse = ApiResponse<AdminTestPrintResponseData>;
 
 export interface AdminPrinterDetails {
   id: string;
@@ -351,6 +404,7 @@ export interface AdminPrinterDetails {
   statusReason: string | null;
   capabilities: PrinterCapabilitySummary | null;
   lastStatusAt: string | null;
+  latestTestPrint?: AdminTestPrintDetails | null;
 }
 
 export interface AdminAgentDetails {

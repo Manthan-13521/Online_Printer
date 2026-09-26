@@ -726,3 +726,76 @@ export function validateAgentHeartbeatInput(
         },
       };
 }
+
+export interface ValidatedReportCommandInput {
+  status: "SUBMITTED" | "BLOCKED" | "SUCCEEDED" | "FAILED";
+  spoolerJobId: string | null;
+  failureCode: string | null;
+  failureDetail: string | null;
+}
+
+export function validateReportCommandInput(
+  value: unknown,
+): ValidationResult<ValidatedReportCommandInput> {
+  if (typeof value !== "object" || value === null) {
+    return {
+      ok: false,
+      issues: [
+        {
+          path: [],
+          code: "INVALID_REQUEST",
+          message: "Request body must be a JSON object.",
+        },
+      ],
+    };
+  }
+
+  const record = value as Record<string, unknown>;
+  const status = record.status;
+  if (
+    status !== "SUBMITTED" &&
+    status !== "BLOCKED" &&
+    status !== "SUCCEEDED" &&
+    status !== "FAILED"
+  ) {
+    return {
+      ok: false,
+      issues: [
+        {
+          path: ["status"],
+          code: "INVALID_STATUS",
+          message:
+            "Command report status must be SUBMITTED, BLOCKED, SUCCEEDED, or FAILED.",
+        },
+      ],
+    };
+  }
+
+  const spoolerJobId =
+    typeof record.spoolerJobId === "string" &&
+    record.spoolerJobId.trim().length > 0
+      ? record.spoolerJobId.trim().slice(0, 100)
+      : null;
+
+  const failureCode =
+    typeof record.failureCode === "string" &&
+    record.failureCode.trim().length > 0
+      ? record.failureCode.trim().slice(0, 50)
+      : null;
+
+  const failureDetail =
+    typeof record.failureDetail === "string" &&
+    record.failureDetail.trim().length > 0
+      ? record.failureDetail.trim().slice(0, 500)
+      : null;
+
+  return {
+    ok: true,
+    value: {
+      status,
+      spoolerJobId,
+      failureCode,
+      failureDetail,
+    },
+  };
+}

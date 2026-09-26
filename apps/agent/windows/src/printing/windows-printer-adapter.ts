@@ -196,27 +196,230 @@ Get-CimInstance Win32_Printer -Filter "Name = '$([regex]::Escape('${escapedName}
     }
   }
 
-  submitPdfJob(submission: PrintSubmission): Promise<SubmittedPrintJob> {
-    void submission;
-    return Promise.reject(
-      new Error("Printing jobs is intentionally deferred until Phase 8."),
-    );
+  async submitPdfJob(submission: PrintSubmission): Promise<SubmittedPrintJob> {
+    this.ensureWindows();
+
+    if (!submission.printerId || submission.printerId.trim().length === 0) {
+      throw new Error("Target printer ID is required for print submission.");
+    }
+    if (
+      !submission.localPdfPath ||
+      submission.localPdfPath.trim().length === 0
+    ) {
+      throw new Error("Local PDF path is required for print submission.");
+    }
+
+    const escapedPrinterName = submission.printerId.replace(/'/g, "''");
+    const escapedPdfPath = submission.localPdfPath.replace(/'/g, "''");
+
+    const psScript = `
+$printer = '${escapedPrinterName}'
+$pdf = '${escapedPdfPath}'
+
+$beforeIds = @(Get-CimInstance Win32_PrintJob -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "$printer,*" } | ForEach-Object { [int]$_.JobId })
+
+$psi = New-Object System.Diagnostics.ProcessStartInfo
+$psi.FileName = $pdf
+$psi.Verb = "PrintTo"
+$psi.Arguments = "\`"$printer\`""
+$psi.CreateNoWindow = $true
+$psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
+$proc = [System.Diagnostics.Process]::Start($psi)
+if ($proc) {
+  $proc.WaitForExit(10000)
+}
+Start-Sleep -Milliseconds 400
+
+$afterJobs = @(Get-CimInstance Win32_PrintJob -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "$printer,*" })
+$newJob = $afterJobs | Where-Object { $beforeIds -notcontains [int]$_.JobId } | Select-Object -First 1
+
+if ($newJob) {
+  $newJob.JobId
+} else {
+  "spool-submitted"
+}
+    `.trim();
+
+    try {
+      const output = (await this.executor(psScript)).trim();
+      const spoolJobId = output || `spool-${Date.now()}`;
+      return { spoolJobId };
+    } catch (err: unknown) {
+      throw new Error(
+        `Failed to submit print job to printer '${submission.printerId}': ${err instanceof Error ? err.message : String(err)}`,
+        { cause: err },
+      );
+    }
   }
 
-  getJobStatus(spoolJobId: string): Promise<PrintJobStatus> {
-    void spoolJobId;
-    return Promise.reject(
-      new Error(
-        "Job status inspection is intentionally deferred until Phase 8.",
-      ),
-    );
+  async getJobStatus(
+    printerId: string,
+    spoolJobId: string,
+  ): Promise<PrintJobStatus> {
+    this.ensureWindows();
+
+    const escapedPrinterName = printerId.replace(/'/g, "''");
+    const escapedJobId = spoolJobId.replace(/'/g, "''");
+
+    const psScript = `
+$printer = '${escapedPrinterName}'
+$targetId = '${escapedJobId}'
+$intId = 0
+$isInt = [int]::TryParse($targetId, [ref]$intId)
+
+$job = Get-CimInstance Win32_PrintJob -ErrorAction SilentlyContinue | Where-Object {
+  $_.Name -like "$printer,*" -and ($_.Name -like "*$targetId*" -or ($isInt -and [int]$_.JobId -eq $intId))
+} | Select-Object -First 1
+
+if (-not $job) {
+  "REMOVED"
+} else {
+  @{
+    JobId = [string]$job.JobId
+    JobStatus = [string]$job.JobStatus
+    Status = [string]$job.Status
+    StatusMask = [int]$job.StatusMask
+  } | ConvertTo-Json -Compress
+}
+    `.trim();
+
+    try {
+      const output = (await this.executor(psScript)).trim();
+      if (!output || output === "REMOVED") {
+        return {
+          state: "COMPLETED_OR_REMOVED",
+          spoolJobId,
+          message: "Spool job completed and handed off to printer.",
+        };
+      }
+
+      const parsed = JSON.parse(output) as {
+        JobId?: string;
+        JobStatus?: string;
+        Status?: string;
+        StatusMask?: number;
+      };
+
+      const mask = parsed.StatusMask ?? 0;
+      const jobStatus = (parsed.JobStatus ?? "").toLowerCase();
+      const status = (parsed.Status ?? "").toLowerCase();
+
+      // Check for blocked states (CRITICAL RULE: BLOCKED != FAILED)
+      if (
+        (mask & 0x0040) !== 0 ||
+        jobStatus.includes("paperout") ||
+        jobStatus.includes("paper out")
+      ) {
+        return {
+          state: "BLOCKED",
+          spoolJobId,
+          failureCode: "PAPER_OUT",
+          message: "Printer is out of paper.",
+        };
+      }
+      if (jobStatus.includes("jam")) {
+        return {
+          state: "BLOCKED",
+          spoolJobId,
+          failureCode: "PAPER_JAM",
+          message: "Printer paper jam.",
+        };
+      }
+      if (jobStatus.includes("door") || jobStatus.includes("cover")) {
+        return {
+          state: "BLOCKED",
+          spoolJobId,
+          failureCode: "DOOR_OPEN",
+          message: "Printer door or cover open.",
+        };
+      }
+      if (
+        (mask & 0x0400) !== 0 ||
+        jobStatus.includes("user intervention") ||
+        jobStatus.includes("userintervention")
+      ) {
+        return {
+          state: "BLOCKED",
+          spoolJobId,
+          failureCode: "USER_INTERVENTION",
+          message: "User intervention required.",
+        };
+      }
+      if ((mask & 0x0020) !== 0 || jobStatus.includes("offline")) {
+        return {
+          state: "BLOCKED",
+          spoolJobId,
+          failureCode: "OFFLINE",
+          message: "Printer is offline.",
+        };
+      }
+      if ((mask & 0x0200) !== 0) {
+        return {
+          state: "BLOCKED",
+          spoolJobId,
+          failureCode: "PRINTER_ERROR",
+          message: "Printer device queue is blocked.",
+        };
+      }
+
+      // Check for failure states
+      if (
+        (mask & 0x0002) !== 0 ||
+        status === "error" ||
+        jobStatus === "error"
+      ) {
+        return {
+          state: "FAILED",
+          spoolJobId,
+          failureCode: "PRINTER_ERROR",
+          message: "Spooler error occurred.",
+        };
+      }
+
+      // In-flight progress states
+      if ((mask & 0x0008) !== 0 || jobStatus.includes("spooling")) {
+        return { state: "SPOOLING", spoolJobId };
+      }
+      if ((mask & 0x0010) !== 0 || jobStatus.includes("printing")) {
+        return { state: "PRINTING", spoolJobId };
+      }
+
+      return { state: "QUEUED", spoolJobId };
+    } catch (err: unknown) {
+      return {
+        state: "UNKNOWN",
+        spoolJobId,
+        failureCode: "UNKNOWN",
+        message: err instanceof Error ? err.message : String(err),
+      };
+    }
   }
 
-  cancelJob(spoolJobId: string): Promise<void> {
-    void spoolJobId;
-    return Promise.reject(
-      new Error("Job cancellation is intentionally deferred until Phase 8."),
-    );
+  async cancelJob(printerId: string, spoolJobId: string): Promise<void> {
+    this.ensureWindows();
+    const escapedPrinterName = printerId.replace(/'/g, "''");
+    const escapedJobId = spoolJobId.replace(/'/g, "''");
+
+    const psScript = `
+$printer = '${escapedPrinterName}'
+$targetId = '${escapedJobId}'
+$intId = 0
+$isInt = [int]::TryParse($targetId, [ref]$intId)
+
+$job = Get-CimInstance Win32_PrintJob -ErrorAction SilentlyContinue | Where-Object {
+  $_.Name -like "$printer,*" -and ($_.Name -like "*$targetId*" -or ($isInt -and [int]$_.JobId -eq $intId))
+} | Select-Object -First 1
+
+if ($job) {
+  $job | Remove-CimInstance
+}
+    `.trim();
+
+    try {
+      await this.executor(psScript);
+    } catch {
+      // Best-effort cancellation
+    }
   }
 }
 
@@ -261,6 +464,22 @@ export class DevelopmentPrinterAdapter implements PrinterAdapter {
     },
   ];
 
+  private simulatedJobs = new Map<
+    string,
+    {
+      printerId: string;
+      submittedAt: number;
+      mockStatus?: PrintJobStatus;
+    }
+  >();
+
+  setSimulatedJobStatus(spoolJobId: string, status: PrintJobStatus): void {
+    const job = this.simulatedJobs.get(spoolJobId);
+    if (job) {
+      job.mockStatus = status;
+    }
+  }
+
   listPrinters(): Promise<readonly PrinterSummary[]> {
     return Promise.resolve(this.printers.map((p) => p.summary));
   }
@@ -286,32 +505,59 @@ export class DevelopmentPrinterAdapter implements PrinterAdapter {
   }
 
   submitPdfJob(submission: PrintSubmission): Promise<SubmittedPrintJob> {
-    void submission;
-    return Promise.reject(
-      new Error("Printing jobs is intentionally deferred until Phase 8."),
-    );
+    const spoolJobId = `dev-spool-${Date.now()}`;
+    this.simulatedJobs.set(spoolJobId, {
+      printerId: submission.printerId,
+      submittedAt: Date.now(),
+    });
+    return Promise.resolve({ spoolJobId });
   }
 
-  getJobStatus(spoolJobId: string): Promise<PrintJobStatus> {
-    void spoolJobId;
-    return Promise.reject(
-      new Error(
-        "Job status inspection is intentionally deferred until Phase 8.",
-      ),
-    );
+  getJobStatus(printerId: string, spoolJobId: string): Promise<PrintJobStatus> {
+    void printerId;
+    const job = this.simulatedJobs.get(spoolJobId);
+    if (!job) {
+      return Promise.resolve({
+        state: "COMPLETED_OR_REMOVED",
+        spoolJobId,
+        message: "Spool job completed and handed off to printer.",
+      });
+    }
+    if (job.mockStatus) {
+      return Promise.resolve(job.mockStatus);
+    }
+    const elapsed = Date.now() - job.submittedAt;
+    if (elapsed < 200) {
+      return Promise.resolve({ state: "SPOOLING", spoolJobId });
+    }
+    if (elapsed < 500) {
+      return Promise.resolve({ state: "PRINTING", spoolJobId });
+    }
+    return Promise.resolve({
+      state: "COMPLETED_OR_REMOVED",
+      spoolJobId,
+      message: "Spool job completed and handed off to printer.",
+    });
   }
 
-  cancelJob(spoolJobId: string): Promise<void> {
-    void spoolJobId;
-    return Promise.reject(
-      new Error("Job cancellation is intentionally deferred until Phase 8."),
-    );
+  cancelJob(printerId: string, spoolJobId: string): Promise<void> {
+    void printerId;
+    this.simulatedJobs.delete(spoolJobId);
+    return Promise.resolve();
   }
 }
 
 export function createDefaultPrinterAdapter(): PrinterAdapter {
   if (process.platform === "win32") {
     return new WindowsPrinterAdapter();
+  }
+  if (
+    process.env.NODE_ENV === "production" ||
+    process.env.APP_ENV === "production"
+  ) {
+    throw new Error(
+      "Production PrintGo Agent requires a Windows host (win32). Development printer simulation is forbidden in production.",
+    );
   }
   return new DevelopmentPrinterAdapter();
 }

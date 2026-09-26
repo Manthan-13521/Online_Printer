@@ -2,12 +2,11 @@
 
 PrintGo V2 is a production-oriented online printing system installed separately for each print/xerox shop. Customers will upload a PDF, choose print settings, pay the shop through Razorpay, track the job, and collect the printed output. Each shop owns its Cloudflare infrastructure, Razorpay account, production data, Windows computer, and printer; the developer retains the private source repository.
 
-The project has completed **Phase 7 — Windows Agent Pairing, Heartbeat & Real Printer-Readiness Gate**.
-The Windows Agent establishes secure identity using one-time Crockford Base32 pair codes,
-stores encrypted credentials via DPAPI, discovers local printers via PowerShell, and
-reports periodic heartbeats. The production payment creation gate is now fully wired
-to real shop/agent/printer readiness and requested print option capabilities.
-Customer PDF printing and job execution remain scheduled for Phase 8.
+The project has completed **Phase 8 — Printer Adapter, Test Printing & Windows Spooler Foundation**.
+The Windows Agent now features a modular printer adapter interface, pure TypeScript diagnostic PDF generation,
+Windows print spooler job submission (`Win32_PrintJob`), bounded spool monitoring, strict `BLOCKED != FAILED`
+semantics (never auto-resubmitting recoverable conditions), and end-to-end test print execution triggered
+from the Admin PWA. Customer PDF printing and order leasing remain scheduled for Phase 9 and 10.
 
 ## Source of truth
 
@@ -20,8 +19,9 @@ Read these documents before each major phase:
 
 Phase documentation: [`docs/CUSTOMER_UPLOAD.md`](./docs/CUSTOMER_UPLOAD.md),
 [`docs/PAYMENTS.md`](./docs/PAYMENTS.md),
-[`docs/CUSTOMER_TRACKING.md`](./docs/CUSTOMER_TRACKING.md), and
-[`docs/WINDOWS_AGENT.md`](./docs/WINDOWS_AGENT.md).
+[`docs/CUSTOMER_TRACKING.md`](./docs/CUSTOMER_TRACKING.md),
+[`docs/WINDOWS_AGENT.md`](./docs/WINDOWS_AGENT.md), and
+[`docs/PRINTER_TESTING.md`](./docs/PRINTER_TESTING.md).
 
 ## Repository layout
 

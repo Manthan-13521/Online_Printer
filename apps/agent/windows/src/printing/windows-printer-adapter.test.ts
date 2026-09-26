@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   DevelopmentPrinterAdapter,
   WindowsPrinterAdapter,
+  createDefaultPrinterAdapter,
 } from "./windows-printer-adapter";
 
 describe("WindowsPrinterAdapter with mock executor", () => {
@@ -121,15 +122,70 @@ describe("WindowsPrinterAdapter with mock executor", () => {
     expect(caps.paperSizes).toContain("A4");
   });
 
-  it("safely defers printing jobs to Phase 8", async () => {
-    const adapter = new WindowsPrinterAdapter(vi.fn());
-    await expect(
-      adapter.submitPdfJob({
-        printerId: "p1",
-        localPdfPath: "/test.pdf",
-        copies: 1,
-      }),
-    ).rejects.toThrow(/Phase 8/);
+  it("submits a PDF job and returns captured spool job ID", async () => {
+    let capturedScript = "";
+    const mockExecutor = vi.fn((script: string) => {
+      capturedScript = script;
+      return Promise.resolve("42");
+    });
+    const adapter = new WindowsPrinterAdapter(mockExecutor);
+
+    const result = await adapter.submitPdfJob({
+      printerId: "Canon MF4700",
+      localPdfPath: "C:\\temp\\test.pdf",
+      copies: 1,
+    });
+
+    expect(result.spoolJobId).toBe("42");
+    expect(mockExecutor).toHaveBeenCalledTimes(1);
+    expect(capturedScript).toContain("Canon MF4700");
+    expect(capturedScript).toContain("C:\\temp\\test.pdf");
+    expect(capturedScript).toContain("PrintTo");
+  });
+
+  it("observes COMPLETED_OR_REMOVED when spooler removes job", async () => {
+    const mockExecutor = vi.fn(() => Promise.resolve("REMOVED"));
+    const adapter = new WindowsPrinterAdapter(mockExecutor);
+
+    const status = await adapter.getJobStatus("Canon MF4700", "42");
+    expect(status.state).toBe("COMPLETED_OR_REMOVED");
+    expect(status.spoolJobId).toBe("42");
+  });
+
+  it("CRITICAL RULE: distinguishes BLOCKED status (paper out) from FAILED", async () => {
+    const mockExecutor = vi.fn(() =>
+      Promise.resolve(
+        JSON.stringify({
+          JobId: "42",
+          JobStatus: "PaperOut",
+          Status: "Error",
+          StatusMask: 0x0040, // PaperOut bit
+        }),
+      ),
+    );
+    const adapter = new WindowsPrinterAdapter(mockExecutor);
+
+    const status = await adapter.getJobStatus("Canon MF4700", "42");
+    expect(status.state).toBe("BLOCKED");
+    expect(status.failureCode).toBe("PAPER_OUT");
+  });
+
+  it("distinguishes FAILED status for fatal spool errors", async () => {
+    const mockExecutor = vi.fn(() =>
+      Promise.resolve(
+        JSON.stringify({
+          JobId: "42",
+          JobStatus: "Error",
+          Status: "Error",
+          StatusMask: 0x0002, // Error bit
+        }),
+      ),
+    );
+    const adapter = new WindowsPrinterAdapter(mockExecutor);
+
+    const status = await adapter.getJobStatus("Canon MF4700", "42");
+    expect(status.state).toBe("FAILED");
+    expect(status.failureCode).toBe("PRINTER_ERROR");
   });
 });
 
@@ -145,5 +201,42 @@ describe("DevelopmentPrinterAdapter", () => {
 
     const caps = await adapter.getCapabilities(first.id);
     expect(caps.paperSizes).toContain("A4");
+  });
+
+  it("simulates job submission and status lifecycle", async () => {
+    const adapter = new DevelopmentPrinterAdapter();
+    const submission = await adapter.submitPdfJob({
+      printerId: "Shop LaserJet Pro M404dn",
+      localPdfPath: "/tmp/test.pdf",
+    });
+
+    expect(submission.spoolJobId).toContain("dev-spool-");
+
+    const status = await adapter.getJobStatus(
+      "Shop LaserJet Pro M404dn",
+      submission.spoolJobId,
+    );
+    expect(["SPOOLING", "PRINTING", "COMPLETED_OR_REMOVED"]).toContain(
+      status.state,
+    );
+  });
+});
+
+describe("createDefaultPrinterAdapter Production Guard", () => {
+  it("fails closed on non-Windows host when running in production", () => {
+    const originalEnv = process.env.NODE_ENV;
+
+    try {
+      // Simulate production environment
+      process.env.NODE_ENV = "production";
+
+      if (process.platform !== "win32") {
+        expect(() => createDefaultPrinterAdapter()).toThrow(
+          /Production PrintGo Agent requires a Windows host/i,
+        );
+      }
+    } finally {
+      process.env.NODE_ENV = originalEnv;
+    }
   });
 });

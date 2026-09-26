@@ -79,6 +79,23 @@ export async function handleAdminPrinterRequest(
       );
     }
 
+    const testPrintMatch =
+      /^\/api\/admin\/printers\/([^/]+)\/test-print$/u.exec(pathname);
+    if (request.method === "POST" && testPrintMatch) {
+      const printerId = decodeURIComponent(testPrintMatch[1] ?? "");
+      const testPrint = await agentService.requestTestPrint(
+        printerId,
+        session.admin.id,
+      );
+      return withAdminCors(ok({ testPrint }, 201), env.ADMIN_ALLOWED_ORIGIN);
+    }
+
+    if (request.method === "GET" && testPrintMatch) {
+      const printerId = decodeURIComponent(testPrintMatch[1] ?? "");
+      const testPrint = await agentService.getLatestTestPrint(printerId);
+      return withAdminCors(ok({ testPrint }, 200), env.ADMIN_ALLOWED_ORIGIN);
+    }
+
     const printerMatch = /^\/api\/admin\/printers\/([^/]+)$/u.exec(pathname);
     if (request.method === "PUT" && printerMatch) {
       const printerId = decodeURIComponent(printerMatch[1] ?? "");
@@ -117,6 +134,22 @@ export async function handleAdminPrinterRequest(
       ) {
         return withAdminCors(
           error(404, caught.code, "Requested resource not found."),
+          env.ADMIN_ALLOWED_ORIGIN,
+        );
+      }
+      if (caught.code === "PRINTER_DISABLED") {
+        return withAdminCors(
+          error(400, "PRINTER_DISABLED", "Printer is disabled."),
+          env.ADMIN_ALLOWED_ORIGIN,
+        );
+      }
+      if (caught.code === "AGENT_OFFLINE") {
+        return withAdminCors(
+          error(
+            400,
+            "AGENT_OFFLINE",
+            "Agent is offline. Cannot send test print.",
+          ),
           env.ADMIN_ALLOWED_ORIGIN,
         );
       }

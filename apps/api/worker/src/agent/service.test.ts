@@ -14,10 +14,16 @@ function createMockRepository(
     findPairCode: vi.fn(),
     consumePairCodeAndCreateAgent: vi.fn(() => Promise.resolve(true)),
     findAgentByCredentialHash: vi.fn(),
+    findAgentById: vi.fn(),
     updateHeartbeat: vi.fn(() => Promise.resolve()),
     listAgentsWithPrinters: vi.fn(() => Promise.resolve([])),
     revokeAgent: vi.fn(() => Promise.resolve(true)),
     togglePrinter: vi.fn(() => Promise.resolve(true)),
+    findPrinterById: vi.fn(),
+    createTestPrintCommand: vi.fn(),
+    claimPendingTestPrintCommand: vi.fn(() => Promise.resolve(null)),
+    reportTestPrintCommand: vi.fn(() => Promise.resolve(true)),
+    getLatestTestPrintCommand: vi.fn(() => Promise.resolve(null)),
     ...overrides,
   };
 }
@@ -149,12 +155,51 @@ describe("AgentService", () => {
 
     expect(result.acknowledged).toBe(true);
     expect(result.serverTimeMs).toBe(1_500_000);
+    expect(result.nextCommand).toBeUndefined();
     expect(repo.updateHeartbeat).toHaveBeenCalledWith(
       expect.objectContaining({
         agentId: "agent_123",
         nowMs: 1_500_000,
       }),
     );
+  });
+
+  it("heartbeat delivers pending test print command via nextCommand", async () => {
+    const repo = createMockRepository({
+      findAgentByCredentialHash: vi.fn(() =>
+        Promise.resolve({
+          id: "agent_123",
+          displayName: "Front Desk PC",
+          isActive: true,
+          lastHeartbeatAtMs: 1_000_000,
+        }),
+      ),
+      claimPendingTestPrintCommand: vi.fn(() =>
+        Promise.resolve({
+          commandId: "cmd-test-1",
+          type: "TEST_PRINT" as const,
+          printerId: "printer-1",
+          windowsPrinterName: "Canon_MF4700",
+          expiresAtMs: 1_800_000,
+        }),
+      ),
+    });
+
+    const service = new AgentService(repo, () => 1_500_000);
+    const result = await service.heartbeat("valid_secret", {
+      agentVersion: "2.0.0",
+      operationalState: "ONLINE",
+      printers: [],
+    });
+
+    expect(result.acknowledged).toBe(true);
+    expect(result.nextCommand).toEqual({
+      commandId: "cmd-test-1",
+      type: "TEST_PRINT",
+      printerId: "printer-1",
+      windowsPrinterName: "Canon_MF4700",
+      expiresAtMs: 1_800_000,
+    });
   });
 
   it("rejects heartbeat from an inactive / revoked agent", async () => {
@@ -206,5 +251,233 @@ describe("AgentService", () => {
       adminId: "admin_1",
       nowMs: 1_500_000,
     });
+  });
+
+  it("requests test print for an enabled printer on an active and online agent", async () => {
+    const repo = createMockRepository({
+      findPrinterById: vi.fn(() =>
+        Promise.resolve({
+          id: "printer_1",
+          agentId: "agent_123",
+          displayName: "Front Desk Canon",
+          windowsPrinterName: "Canon_MF4700",
+          enabled: true,
+          status: "ONLINE",
+        }),
+      ),
+      findAgentById: vi.fn(() =>
+        Promise.resolve({
+          id: "agent_123",
+          displayName: "Front Desk PC",
+          isActive: true,
+          lastHeartbeatAtMs: 1_500_000 - 5_000, // 5s ago, well within 30s
+        }),
+      ),
+      createTestPrintCommand: vi.fn(
+        (input: Parameters<AgentRepository["createTestPrintCommand"]>[0]) =>
+          Promise.resolve({
+            commandId: input.id,
+            printerId: input.printerId,
+            agentId: input.agentId,
+            status: "PENDING" as const,
+            spoolerJobId: null,
+            failureCode: null,
+            failureDetail: null,
+            createdAt: new Date(input.nowMs).toISOString(),
+            expiresAt: new Date(input.expiresAtMs).toISOString(),
+            claimedAt: null,
+            finishedAt: null,
+          }),
+      ),
+    });
+
+    const service = new AgentService(repo, () => 1_500_000);
+    const result = await service.requestTestPrint("printer_1", "admin_100");
+
+    expect(result.status).toBe("PENDING");
+    expect(result.printerId).toBe("printer_1");
+    expect(result.agentId).toBe("agent_123");
+    expect(repo.createTestPrintCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        printerId: "printer_1",
+        agentId: "agent_123",
+        adminId: "admin_100",
+        nowMs: 1_500_000,
+        expiresAtMs: 1_500_000 + 300_000, // 5 minutes
+      }),
+    );
+  });
+
+  it("rejects test print request when printer is not found", async () => {
+    const repo = createMockRepository({
+      findPrinterById: vi.fn(() => Promise.resolve(null)),
+    });
+    const service = new AgentService(repo, () => 1_500_000);
+
+    await expect(
+      service.requestTestPrint("printer_missing", "admin_1"),
+    ).rejects.toEqual(
+      expect.objectContaining({
+        code: "PRINTER_NOT_FOUND",
+      }),
+    );
+  });
+
+  it("rejects test print request when printer is disabled", async () => {
+    const repo = createMockRepository({
+      findPrinterById: vi.fn(() =>
+        Promise.resolve({
+          id: "printer_1",
+          agentId: "agent_123",
+          displayName: "Canon",
+          windowsPrinterName: "Canon",
+          enabled: false,
+          status: "ONLINE",
+        }),
+      ),
+    });
+    const service = new AgentService(repo, () => 1_500_000);
+
+    await expect(
+      service.requestTestPrint("printer_1", "admin_1"),
+    ).rejects.toEqual(
+      expect.objectContaining({
+        code: "PRINTER_DISABLED",
+      }),
+    );
+  });
+
+  it("rejects test print request when agent is offline", async () => {
+    const repo = createMockRepository({
+      findPrinterById: vi.fn(() =>
+        Promise.resolve({
+          id: "printer_1",
+          agentId: "agent_123",
+          displayName: "Canon",
+          windowsPrinterName: "Canon",
+          enabled: true,
+          status: "ONLINE",
+        }),
+      ),
+      findAgentById: vi.fn(() =>
+        Promise.resolve({
+          id: "agent_123",
+          displayName: "Front Desk PC",
+          isActive: true,
+          lastHeartbeatAtMs: 1_500_000 - 100_000, // 100s ago (> 90s timeout)
+        }),
+      ),
+    });
+    const service = new AgentService(repo, () => 1_500_000);
+
+    await expect(
+      service.requestTestPrint("printer_1", "admin_1"),
+    ).rejects.toEqual(
+      expect.objectContaining({
+        code: "AGENT_OFFLINE",
+      }),
+    );
+  });
+
+  it("reports command status from authenticated agent", async () => {
+    const repo = createMockRepository({
+      findAgentByCredentialHash: vi.fn(() =>
+        Promise.resolve({
+          id: "agent_123",
+          displayName: "Front Desk PC",
+          isActive: true,
+          lastHeartbeatAtMs: 1_000_000,
+        }),
+      ),
+      reportTestPrintCommand: vi.fn(() => Promise.resolve(true)),
+    });
+
+    const service = new AgentService(repo, () => 1_500_000);
+    const result = await service.reportCommand("valid_secret", "cmd-1", {
+      status: "SUBMITTED",
+      spoolerJobId: "spool-42",
+      failureCode: null,
+      failureDetail: null,
+    });
+
+    expect(result).toEqual({
+      acknowledged: true,
+      commandId: "cmd-1",
+      status: "SUBMITTED",
+    });
+    expect(repo.reportTestPrintCommand).toHaveBeenCalledWith({
+      commandId: "cmd-1",
+      agentId: "agent_123",
+      status: "SUBMITTED",
+      spoolerJobId: "spool-42",
+      failureCode: null,
+      failureDetail: null,
+      nowMs: 1_500_000,
+    });
+  });
+
+  it("reports command status with BLOCKED and preserves failure code", async () => {
+    const repo = createMockRepository({
+      findAgentByCredentialHash: vi.fn(() =>
+        Promise.resolve({
+          id: "agent_123",
+          displayName: "Front Desk PC",
+          isActive: true,
+          lastHeartbeatAtMs: 1_000_000,
+        }),
+      ),
+      reportTestPrintCommand: vi.fn(() => Promise.resolve(true)),
+    });
+
+    const service = new AgentService(repo, () => 1_500_000);
+    const result = await service.reportCommand("valid_secret", "cmd-1", {
+      status: "BLOCKED",
+      spoolerJobId: "spool-42",
+      failureCode: "PAPER_OUT",
+      failureDetail: "Printer tray 1 is out of paper",
+    });
+
+    expect(result).toEqual({
+      acknowledged: true,
+      commandId: "cmd-1",
+      status: "BLOCKED",
+    });
+    expect(repo.reportTestPrintCommand).toHaveBeenCalledWith({
+      commandId: "cmd-1",
+      agentId: "agent_123",
+      status: "BLOCKED",
+      spoolerJobId: "spool-42",
+      failureCode: "PAPER_OUT",
+      failureDetail: "Printer tray 1 is out of paper",
+      nowMs: 1_500_000,
+    });
+  });
+
+  it("rejects command report for unknown command id", async () => {
+    const repo = createMockRepository({
+      findAgentByCredentialHash: vi.fn(() =>
+        Promise.resolve({
+          id: "agent_123",
+          displayName: "Front Desk PC",
+          isActive: true,
+          lastHeartbeatAtMs: 1_000_000,
+        }),
+      ),
+      reportTestPrintCommand: vi.fn(() => Promise.resolve(false)),
+    });
+
+    const service = new AgentService(repo, () => 1_500_000);
+    await expect(
+      service.reportCommand("valid_secret", "cmd-missing", {
+        status: "SUCCEEDED",
+        spoolerJobId: null,
+        failureCode: null,
+        failureDetail: null,
+      }),
+    ).rejects.toEqual(
+      expect.objectContaining({
+        code: "COMMAND_NOT_FOUND",
+      }),
+    );
   });
 });

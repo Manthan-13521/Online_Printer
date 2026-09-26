@@ -25,6 +25,13 @@ function createMockService(): AgentService {
     listAgentsWithPrinters: vi.fn(),
     revokeAgent: vi.fn(),
     togglePrinter: vi.fn(),
+    reportCommand: vi.fn(() =>
+      Promise.resolve({
+        acknowledged: true as const,
+        commandId: "cmd-1",
+        status: "SUBMITTED" as const,
+      }),
+    ),
   } as unknown as AgentService;
 }
 
@@ -174,6 +181,119 @@ describe("Agent HTTP Routes", () => {
     expect(await response.json()).toMatchObject({
       ok: false,
       error: { code: "AGENT_UNAUTHORIZED" },
+    });
+  });
+
+  it("handles valid command report from agent", async () => {
+    const service = createMockService();
+    const request = new Request(
+      "https://api.example.com/api/agent/commands/cmd-123/report",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer secret_123456789012345678901234567890",
+        },
+        body: JSON.stringify({
+          status: "SUBMITTED",
+          spoolerJobId: "spool-42",
+        }),
+      },
+    );
+
+    const response = await handleAgentRequest(request, env, service);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      ok: true,
+      data: {
+        acknowledged: true,
+        commandId: "cmd-1",
+        status: "SUBMITTED",
+      },
+    });
+    expect(service.reportCommand).toHaveBeenCalledWith(
+      "secret_123456789012345678901234567890",
+      "cmd-123",
+      expect.objectContaining({
+        status: "SUBMITTED",
+        spoolerJobId: "spool-42",
+      }),
+    );
+  });
+
+  it("returns 401 when Authorization header is missing on command report", async () => {
+    const service = createMockService();
+    const request = new Request(
+      "https://api.example.com/api/agent/commands/cmd-123/report",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          status: "SUBMITTED",
+        }),
+      },
+    );
+
+    const response = await handleAgentRequest(request, env, service);
+    expect(response.status).toBe(401);
+    expect(await response.json()).toMatchObject({
+      ok: false,
+      error: { code: "AGENT_UNAUTHORIZED" },
+    });
+  });
+
+  it("returns 400 on validation error for command report", async () => {
+    const service = createMockService();
+    const request = new Request(
+      "https://api.example.com/api/agent/commands/cmd-123/report",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer secret_123456789012345678901234567890",
+        },
+        body: JSON.stringify({
+          status: "INVALID_STATUS",
+        }),
+      },
+    );
+
+    const response = await handleAgentRequest(request, env, service);
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      ok: false,
+      error: { code: "VALIDATION_ERROR" },
+    });
+  });
+
+  it("returns 404 when command is not found", async () => {
+    const service = createMockService();
+    vi.mocked(service.reportCommand).mockRejectedValueOnce(
+      new AgentError("COMMAND_NOT_FOUND"),
+    );
+
+    const request = new Request(
+      "https://api.example.com/api/agent/commands/cmd-missing/report",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer secret_123456789012345678901234567890",
+        },
+        body: JSON.stringify({
+          status: "FAILED",
+          failureCode: "PRINTER_ERROR",
+        }),
+      },
+    );
+
+    const response = await handleAgentRequest(request, env, service);
+    expect(response.status).toBe(404);
+    expect(await response.json()).toMatchObject({
+      ok: false,
+      error: { code: "COMMAND_NOT_FOUND" },
     });
   });
 });

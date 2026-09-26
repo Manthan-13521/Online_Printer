@@ -20,6 +20,8 @@ vi.mock("./api", async (importOriginal) => {
       createPairCode: vi.fn(),
       revokeAgent: vi.fn(),
       togglePrinter: vi.fn(),
+      requestTestPrint: vi.fn(),
+      getTestPrintStatus: vi.fn(),
     },
   };
 });
@@ -183,6 +185,129 @@ describe("PrinterPage", () => {
 
     await waitFor(() => {
       expect(mockedApi.revokeAgent).toHaveBeenCalledWith("agent_test_1");
+    });
+  });
+
+  it("triggers test print and displays progression states", async () => {
+    mockedApi.getPrinters.mockResolvedValueOnce({
+      ok: true,
+      data: { agents: mockAgents },
+    });
+    mockedApi.requestTestPrint.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        testPrint: {
+          commandId: "cmd-test-1",
+          printerId: "printer_test_1",
+          agentId: "agent_test_1",
+          status: "PENDING",
+          spoolerJobId: null,
+          failureCode: null,
+          failureDetail: null,
+          createdAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 300_000).toISOString(),
+          claimedAt: null,
+          finishedAt: null,
+        },
+      },
+    });
+
+    const user = userEvent.setup();
+    render(<PrinterPage onSessionExpired={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Test Print" })).toBeTruthy();
+    });
+
+    await user.click(screen.getByRole("button", { name: "Test Print" }));
+
+    await waitFor(() => {
+      expect(mockedApi.requestTestPrint).toHaveBeenCalledWith("printer_test_1");
+      expect(screen.getByText("Waiting for Agent…")).toBeTruthy();
+    });
+  });
+
+  it("displays blocked state with reason and never claims failure", async () => {
+    const agentsWithBlocked = [
+      {
+        ...mockAgents[0]!,
+        printers: [
+          {
+            ...mockAgents[0]!.printers[0]!,
+            latestTestPrint: {
+              commandId: "cmd-test-2",
+              printerId: "printer_test_1",
+              agentId: "agent_test_1",
+              status: "BLOCKED" as const,
+              spoolerJobId: "spool-1",
+              failureCode: "PAPER_OUT",
+              failureDetail: "Paper tray is empty",
+              createdAt: new Date().toISOString(),
+              expiresAt: new Date(Date.now() + 300_000).toISOString(),
+              claimedAt: new Date().toISOString(),
+              finishedAt: new Date().toISOString(),
+            },
+          },
+        ],
+      },
+    ];
+
+    mockedApi.getPrinters.mockResolvedValueOnce({
+      ok: true,
+      data: { agents: agentsWithBlocked },
+    });
+
+    render(<PrinterPage onSessionExpired={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Printer needs attention: Paper tray is empty/i),
+      ).toBeTruthy();
+      expect(
+        screen.getByRole("button", { name: "Try Test Print Again" }),
+      ).toBeTruthy();
+    });
+  });
+
+  it("displays succeeded state when test print completed", async () => {
+    const agentsWithSuccess = [
+      {
+        ...mockAgents[0]!,
+        printers: [
+          {
+            ...mockAgents[0]!.printers[0]!,
+            latestTestPrint: {
+              commandId: "cmd-test-3",
+              printerId: "printer_test_1",
+              agentId: "agent_test_1",
+              status: "SUCCEEDED" as const,
+              spoolerJobId: "spool-2",
+              failureCode: null,
+              failureDetail: null,
+              createdAt: new Date().toISOString(),
+              expiresAt: new Date(Date.now() + 300_000).toISOString(),
+              claimedAt: new Date().toISOString(),
+              finishedAt: new Date().toISOString(),
+            },
+          },
+        ],
+      },
+    ];
+
+    mockedApi.getPrinters.mockResolvedValueOnce({
+      ok: true,
+      data: { agents: agentsWithSuccess },
+    });
+
+    render(<PrinterPage onSessionExpired={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("Test page submitted successfully."),
+      ).toBeTruthy();
+      expect(
+        screen.getByRole("button", { name: "Try Test Print Again" }),
+      ).toBeTruthy();
     });
   });
 });

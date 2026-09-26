@@ -25,6 +25,13 @@ const trackingMigrationSql = readFileSync(
   new URL("../database/migrations/0004_customer_tracking.sql", import.meta.url),
   "utf8",
 );
+const printerTestMigrationSql = readFileSync(
+  new URL(
+    "../database/migrations/0005_printer_test_commands.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
 const seedSql = readFileSync(
   new URL("../database/seeds/0001_development.sql", import.meta.url),
   "utf8",
@@ -36,6 +43,7 @@ function createDatabase(withSeed = false): DatabaseSync {
   database.exec(customerUploadMigrationSql);
   database.exec(paymentMigrationSql);
   database.exec(trackingMigrationSql);
+  database.exec(printerTestMigrationSql);
   if (withSeed) {
     database.exec(seedSql);
   }
@@ -95,7 +103,7 @@ describe("D1 migrations", () => {
         .prepare("SELECT COUNT(*) AS count FROM print_rates")
         .get() as { count: number };
 
-      expect(tableCount.count).toBe(15);
+      expect(tableCount.count).toBe(16);
       expect(installation).toEqual({
         id: 1,
         shop_name: "PrintGo Development Shop",
@@ -397,6 +405,49 @@ describe("D1 migrations", () => {
           )
           .run("another-hash", 5_000, 5_000, secondOrderId),
       ).toThrow(/inconsistent/iu);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("enforces printer test command constraints and foreign keys", () => {
+    const database = createDatabase(true);
+    try {
+      // 30000000-0000-4000-8000-000000000001 is agent_1 in seed
+      // 40000000-0000-4000-8000-000000000001 is printer_1 in seed
+      const commandId = "90000000-0000-4000-8000-000000000001";
+      database
+        .prepare(
+          `INSERT INTO printer_test_commands (
+            id, printer_id, agent_id, status, created_at_ms, expires_at_ms
+          ) VALUES (?, '40000000-0000-4000-8000-000000000001', '30000000-0000-4000-8000-000000000001', 'PENDING', 1000, 2000)`,
+        )
+        .run(commandId);
+
+      const row = database
+        .prepare(
+          "SELECT id, status, printer_id FROM printer_test_commands WHERE id = ?",
+        )
+        .get(commandId) as { id: string; status: string; printer_id: string };
+      expect(row.status).toBe("PENDING");
+
+      // Reject invalid status
+      expect(() =>
+        database
+          .prepare(
+            "UPDATE printer_test_commands SET status = 'INVALID_STATUS' WHERE id = ?",
+          )
+          .run(commandId),
+      ).toThrow(/check constraint/i);
+
+      // Reject expires_at_ms < created_at_ms
+      expect(() =>
+        database
+          .prepare(
+            "UPDATE printer_test_commands SET expires_at_ms = 500 WHERE id = ?",
+          )
+          .run(commandId),
+      ).toThrow(/check constraint/i);
     } finally {
       database.close();
     }

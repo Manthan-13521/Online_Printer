@@ -9,9 +9,9 @@ import type {
 } from "./printer-adapter.js";
 
 const NOT_IMPLEMENTED =
-  "Windows printing is intentionally unavailable until Phase 8.";
+  "Windows printing is unavailable on this host or configuration.";
 
-/** Safe Phase 0 placeholder that cannot accidentally submit a print job. */
+/** Safe placeholder that cannot accidentally submit a print job. */
 export class UnavailablePrinterAdapter implements PrinterAdapter {
   listPrinters(): Promise<readonly PrinterSummary[]> {
     return Promise.resolve([]);
@@ -35,12 +35,14 @@ export class UnavailablePrinterAdapter implements PrinterAdapter {
     return Promise.reject(new Error(NOT_IMPLEMENTED));
   }
 
-  getJobStatus(spoolJobId: string): Promise<PrintJobStatus> {
+  getJobStatus(printerId: string, spoolJobId: string): Promise<PrintJobStatus> {
+    void printerId;
     void spoolJobId;
     return Promise.reject(new Error(NOT_IMPLEMENTED));
   }
 
-  cancelJob(spoolJobId: string): Promise<void> {
+  cancelJob(printerId: string, spoolJobId: string): Promise<void> {
+    void printerId;
     void spoolJobId;
     return Promise.reject(new Error(NOT_IMPLEMENTED));
   }

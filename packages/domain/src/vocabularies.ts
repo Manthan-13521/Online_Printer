@@ -116,3 +116,15 @@ export const PAYMENT_EVENT_PROCESSING_STATUSES = [
 ] as const;
 export type PaymentEventProcessingStatus =
   (typeof PAYMENT_EVENT_PROCESSING_STATUSES)[number];
+
+export const TEST_PRINT_COMMAND_STATUSES = [
+  "PENDING",
+  "CLAIMED",
+  "SUBMITTED",
+  "BLOCKED",
+  "SUCCEEDED",
+  "FAILED",
+  "EXPIRED",
+] as const;
+export type TestPrintCommandStatus =
+  (typeof TEST_PRINT_COMMAND_STATUSES)[number];
