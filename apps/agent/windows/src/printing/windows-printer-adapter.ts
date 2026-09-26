@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import * as path from "node:path";
 import { promisify } from "node:util";
 import type {
   PrintJobStatus,
@@ -9,6 +10,12 @@ import type {
   PrintSubmission,
   SubmittedPrintJob,
 } from "./printer-adapter.js";
+import {
+  InvalidPrintSettingError,
+  PrinterNotFoundError,
+  UnsupportedPrintSettingError,
+} from "./printer-adapter.js";
+import { validateAndNormalizePrintSettings } from "./print-settings.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -34,7 +41,9 @@ interface CimPrinterOutput {
   PrinterStatus?: number;
   DetectedErrorState?: number;
   ExtendedPrinterStatus?: number;
+  Color?: boolean;
   CapabilityDescriptions?: string[];
+  PrinterPaperNames?: string[];
 }
 
 export class WindowsPrinterAdapter implements PrinterAdapter {
@@ -91,7 +100,7 @@ Get-CimInstance Win32_Printer | Select-Object Name, Default, WorkOffline, Printe
 
     const escapedName = printerId.replace(/'/g, "''");
     const psCommand = `
-Get-CimInstance Win32_Printer -Filter "Name = '$([regex]::Escape('${escapedName}'))'" | Select-Object Name, CapabilityDescriptions | ConvertTo-Json -Compress
+Get-CimInstance Win32_Printer -Filter "Name = '$([regex]::Escape('${escapedName}'))'" | Select-Object Name, Color, CapabilityDescriptions, PrinterPaperNames | ConvertTo-Json -Compress
     `.trim();
 
     try {
@@ -110,19 +119,46 @@ Get-CimInstance Win32_Printer -Filter "Name = '$([regex]::Escape('${escapedName}
         : [];
       const capsText = caps.join(" ").toLowerCase();
 
-      const colour =
-        capsText.includes("color") || capsText.includes("colour")
-          ? true
-          : "UNKNOWN";
-      const duplex =
-        capsText.includes("duplex") || capsText.includes("two-sided")
-          ? true
-          : "UNKNOWN";
+      let colour: boolean | "UNKNOWN" = "UNKNOWN";
+      if (typeof p.Color === "boolean") {
+        colour = p.Color;
+      } else if (capsText.includes("color") || capsText.includes("colour")) {
+        colour = true;
+      } else if (
+        capsText.includes("monochrome") ||
+        capsText.includes("mono") ||
+        capsText.includes("black and white") ||
+        caps.length > 0
+      ) {
+        colour = false;
+      }
+
+      let duplex: boolean | "UNKNOWN" = "UNKNOWN";
+      if (capsText.includes("duplex") || capsText.includes("two-sided")) {
+        duplex = true;
+      } else if (
+        capsText.includes("simplex") ||
+        capsText.includes("single-sided") ||
+        caps.length > 0
+      ) {
+        duplex = false;
+      }
+
+      const paperSizesSet = new Set<string>(["A4", "LETTER"]);
+      if (Array.isArray(p.PrinterPaperNames)) {
+        for (const name of p.PrinterPaperNames) {
+          const upper = String(name).trim().toUpperCase();
+          if (upper) paperSizesSet.add(upper);
+        }
+      }
+      if (capsText.includes("a3")) {
+        paperSizesSet.add("A3");
+      }
 
       return {
         colour,
         duplex,
-        paperSizes: ["A4", "LETTER"],
+        paperSizes: Array.from(paperSizesSet),
       };
     } catch {
       return {
@@ -200,51 +236,200 @@ Get-CimInstance Win32_Printer -Filter "Name = '$([regex]::Escape('${escapedName}
     this.ensureWindows();
 
     if (!submission.printerId || submission.printerId.trim().length === 0) {
-      throw new Error("Target printer ID is required for print submission.");
+      throw new InvalidPrintSettingError(
+        "Target printer ID is required for print submission.",
+      );
     }
     if (
       !submission.localPdfPath ||
       submission.localPdfPath.trim().length === 0
     ) {
-      throw new Error("Local PDF path is required for print submission.");
+      throw new InvalidPrintSettingError(
+        "Local PDF path is required for print submission.",
+      );
     }
 
-    const escapedPrinterName = submission.printerId.replace(/'/g, "''");
+    // 1. Fetch printer capabilities and validate print settings (Fail closed on silent downgrade)
+    const caps = await this.getCapabilities(submission.printerId);
+    const settings = validateAndNormalizePrintSettings(submission, caps);
+
+    // 2. Build deterministic print settings string for SumatraPDF
+    // Format: "3x,paper=A4,monochrome,duplexlong,2-7,fit"
+    const settingsParts: string[] = [
+      `${settings.copies}x`,
+      `paper=${settings.paperSize}`,
+      settings.colorMode === "COLOUR" ? "color" : "monochrome",
+      settings.sides === "TWO_SIDED_LONG"
+        ? "duplexlong"
+        : settings.sides === "TWO_SIDED_SHORT"
+          ? "duplexshort"
+          : "simplex",
+    ];
+    if (settings.pageRange) {
+      settingsParts.push(settings.pageRange);
+    }
+    settingsParts.push("fit");
+    const settingsString = settingsParts.join(",");
+
+    const requiresAdvancedEngine =
+      settings.sides !== "ONE_SIDED" ||
+      settings.colorMode === "COLOUR" ||
+      settings.paperSize === "A3" ||
+      settings.copies > 1 ||
+      Boolean(settings.pageRange);
+
+    const docIdentifier =
+      submission.documentTitle ??
+      path.basename(
+        submission.localPdfPath,
+        path.extname(submission.localPdfPath),
+      );
+
+    const escapedPrinterName = settings.printerName.replace(/'/g, "''");
     const escapedPdfPath = submission.localPdfPath.replace(/'/g, "''");
+    const escapedSettings = settingsString.replace(/'/g, "''");
+    const escapedDocIdentifier = docIdentifier.replace(/'/g, "''");
 
     const psScript = `
 $printer = '${escapedPrinterName}'
 $pdf = '${escapedPdfPath}'
+$docIdentifier = '${escapedDocIdentifier}'
+$settings = '${escapedSettings}'
+$requiresAdvanced = ${requiresAdvancedEngine ? "$true" : "$false"}
 
+# 1. Resolve SumatraPDF executable location
+$sumatra = $env:PRINTGO_SUMATRA_PATH
+if (-not $sumatra -or -not (Test-Path $sumatra)) {
+    $candidates = @(
+        "$PSScriptRoot\\vendor\\SumatraPDF.exe",
+        "$env:ProgramFiles\\SumatraPDF\\SumatraPDF.exe",
+        "\${env:ProgramFiles(x86)}\\SumatraPDF\\SumatraPDF.exe",
+        "$env:LOCALAPPDATA\\SumatraPDF\\SumatraPDF.exe"
+    )
+    foreach ($cand in $candidates) {
+        if ($cand -and (Test-Path $cand)) {
+            $sumatra = $cand
+            break
+        }
+    }
+}
+if (-not $sumatra -or -not (Test-Path $sumatra)) {
+    $cmd = Get-Command SumatraPDF.exe -ErrorAction SilentlyContinue
+    if ($cmd) {
+        $sumatra = $cmd.Source
+    }
+}
+
+# 2. Record pre-submission spooler job IDs for this exact printer
 $beforeIds = @(Get-CimInstance Win32_PrintJob -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "$printer,*" } | ForEach-Object { [int]$_.JobId })
 
-$psi = New-Object System.Diagnostics.ProcessStartInfo
-$psi.FileName = $pdf
-$psi.Verb = "PrintTo"
-$psi.Arguments = "\`"$printer\`""
-$psi.CreateNoWindow = $true
-$psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
-$proc = [System.Diagnostics.Process]::Start($psi)
-if ($proc) {
-  $proc.WaitForExit(10000)
-}
-Start-Sleep -Milliseconds 400
-
-$afterJobs = @(Get-CimInstance Win32_PrintJob -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "$printer,*" })
-$newJob = $afterJobs | Where-Object { $beforeIds -notcontains [int]$_.JobId } | Select-Object -First 1
-
-if ($newJob) {
-  $newJob.JobId
+if ($sumatra -and (Test-Path $sumatra)) {
+    # Deterministic headless print execution via SumatraPDF
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $sumatra
+    $psi.Arguments = "-print-to \`"$printer\`" -print-settings \`"$settings\`" -silent \`"$pdf\`""
+    $psi.CreateNoWindow = $true
+    $psi.UseShellExecute = $false
+    $psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    if ($proc) {
+        $exited = $proc.WaitForExit(30000)
+        if (-not $exited) {
+            $proc.Kill()
+            throw "SumatraPDF print process timed out after 30 seconds."
+        }
+        if ($proc.ExitCode -ne 0) {
+            throw "SumatraPDF exited with error code $($proc.ExitCode)."
+        }
+    }
 } else {
-  "spool-submitted"
+    # If SumatraPDF is missing and advanced options were specified, FAIL CLOSED immediately
+    if ($requiresAdvanced) {
+        throw "Deterministic printing with settings (duplex, colour, paper size, page range, or multiple copies) requires SumatraPDF engine. SumatraPDF.exe was not found."
+    }
+    # For standard 1-page A4 diagnostic print, isolate legacy fallback
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $pdf
+    $psi.Verb = "PrintTo"
+    $psi.Arguments = "\`"$printer\`""
+    $psi.CreateNoWindow = $true
+    $psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    if ($proc) {
+        $proc.WaitForExit(10000)
+    }
+}
+
+# 3. Correlate spooler job strictly using document identifier, printer queue, and pre-submission IDs
+$fileName = [System.IO.Path]::GetFileName($pdf)
+$fileNameWithoutExt = [System.IO.Path]::GetFileNameWithoutExtension($pdf)
+
+$matchedJob = $null
+for ($i = 0; $i -lt 8; $i++) {
+    Start-Sleep -Milliseconds 400
+    $afterJobs = @(Get-CimInstance Win32_PrintJob -ErrorAction SilentlyContinue | Where-Object {
+        $_.Name -like "$printer,*" -and
+        $beforeIds -notcontains [int]$_.JobId -and
+        ($_.Document -like "*$docIdentifier*" -or $_.Document -like "*$fileNameWithoutExt*" -or $_.Document -like "*$fileName*")
+    })
+    if ($afterJobs.Count -gt 0) {
+        $matchedJob = $afterJobs[0]
+        break
+    }
+}
+
+if ($matchedJob) {
+    @{
+        spoolJobId = [string]$matchedJob.JobId
+        engineUsed = if ($sumatra -and (Test-Path $sumatra)) { "sumatrapdf" } else { "fallback" }
+    } | ConvertTo-Json -Compress
+} else {
+    # Fast despool or stripped title fallback - strictly scoped to target printer and pre-IDs
+    $fallbackJob = @(Get-CimInstance Win32_PrintJob -ErrorAction SilentlyContinue | Where-Object {
+        $_.Name -like "$printer,*" -and
+        $beforeIds -notcontains [int]$_.JobId
+    }) | Select-Object -First 1
+
+    if ($fallbackJob) {
+        @{
+            spoolJobId = [string]$fallbackJob.JobId
+            engineUsed = if ($sumatra -and (Test-Path $sumatra)) { "sumatrapdf" } else { "fallback" }
+        } | ConvertTo-Json -Compress
+    } else {
+        @{
+            spoolJobId = "spool-$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
+            engineUsed = if ($sumatra -and (Test-Path $sumatra)) { "sumatrapdf" } else { "fallback" }
+        } | ConvertTo-Json -Compress
+    }
 }
     `.trim();
 
     try {
       const output = (await this.executor(psScript)).trim();
-      const spoolJobId = output || `spool-${Date.now()}`;
-      return { spoolJobId };
+      let spoolJobId: string;
+      let engineUsed: string | undefined;
+
+      try {
+        const parsed = JSON.parse(output) as {
+          spoolJobId?: string;
+          engineUsed?: string;
+        };
+        spoolJobId = parsed.spoolJobId || `spool-${Date.now()}`;
+        engineUsed = parsed.engineUsed;
+      } catch {
+        // Fallback for simple string output in tests
+        spoolJobId = output || `spool-${Date.now()}`;
+      }
+
+      return { spoolJobId, engineUsed };
     } catch (err: unknown) {
+      if (
+        err instanceof UnsupportedPrintSettingError ||
+        err instanceof InvalidPrintSettingError ||
+        err instanceof PrinterNotFoundError
+      ) {
+        throw err;
+      }
       throw new Error(
         `Failed to submit print job to printer '${submission.printerId}': ${err instanceof Error ? err.message : String(err)}`,
         { cause: err },
@@ -504,13 +689,15 @@ export class DevelopmentPrinterAdapter implements PrinterAdapter {
     );
   }
 
-  submitPdfJob(submission: PrintSubmission): Promise<SubmittedPrintJob> {
+  async submitPdfJob(submission: PrintSubmission): Promise<SubmittedPrintJob> {
+    const caps = await this.getCapabilities(submission.printerId);
+    validateAndNormalizePrintSettings(submission, caps);
     const spoolJobId = `dev-spool-${Date.now()}`;
     this.simulatedJobs.set(spoolJobId, {
       printerId: submission.printerId,
       submittedAt: Date.now(),
     });
-    return Promise.resolve({ spoolJobId });
+    return { spoolJobId, engineUsed: "simulated" };
   }
 
   getJobStatus(printerId: string, spoolJobId: string): Promise<PrintJobStatus> {

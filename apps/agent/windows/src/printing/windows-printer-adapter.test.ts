@@ -4,7 +4,27 @@ import {
   DevelopmentPrinterAdapter,
   WindowsPrinterAdapter,
   createDefaultPrinterAdapter,
-} from "./windows-printer-adapter";
+} from "./windows-printer-adapter.js";
+
+function createScriptCapturingExecutor(spoolJobId = "42", capsJson?: string) {
+  const scripts: string[] = [];
+  const executor = vi.fn((script: string) => {
+    scripts.push(script);
+    if (script.includes("CapabilityDescriptions")) {
+      return Promise.resolve(
+        capsJson ??
+          JSON.stringify({
+            Name: "Test Printer",
+            CapabilityDescriptions: ["Color", "Duplex", "A4"],
+          }),
+      );
+    }
+    return Promise.resolve(
+      JSON.stringify({ spoolJobId, engineUsed: "sumatrapdf" }),
+    );
+  });
+  return { executor, scripts };
+}
 
 describe("WindowsPrinterAdapter with mock executor", () => {
   it("parses Win32_Printer output into PrinterSummary list", async () => {
@@ -123,12 +143,8 @@ describe("WindowsPrinterAdapter with mock executor", () => {
   });
 
   it("submits a PDF job and returns captured spool job ID", async () => {
-    let capturedScript = "";
-    const mockExecutor = vi.fn((script: string) => {
-      capturedScript = script;
-      return Promise.resolve("42");
-    });
-    const adapter = new WindowsPrinterAdapter(mockExecutor);
+    const { executor, scripts } = createScriptCapturingExecutor("42");
+    const adapter = new WindowsPrinterAdapter(executor);
 
     const result = await adapter.submitPdfJob({
       printerId: "Canon MF4700",
@@ -137,10 +153,249 @@ describe("WindowsPrinterAdapter with mock executor", () => {
     });
 
     expect(result.spoolJobId).toBe("42");
-    expect(mockExecutor).toHaveBeenCalledTimes(1);
-    expect(capturedScript).toContain("Canon MF4700");
-    expect(capturedScript).toContain("C:\\temp\\test.pdf");
-    expect(capturedScript).toContain("PrintTo");
+    const submitScript = scripts.find((s) => s.includes("$sumatra"))!;
+    expect(submitScript).toContain("Canon MF4700");
+    expect(submitScript).toContain("C:\\temp\\test.pdf");
+    expect(submitScript).toContain("-print-to");
+    expect(submitScript).toContain("-print-settings");
+    expect(submitScript).toContain("-silent");
+  });
+
+  it("propagates exact named printer to -print-to switch without default fallback", async () => {
+    const { executor, scripts } = createScriptCapturingExecutor("101");
+    const adapter = new WindowsPrinterAdapter(executor);
+
+    await adapter.submitPdfJob({
+      printerId: "HP LaserJet Pro MFP M428fdw",
+      localPdfPath: "C:\\jobs\\doc.pdf",
+    });
+
+    const submitScript = scripts.find((s) => s.includes("-print-to"))!;
+    expect(submitScript).toContain("$printer = 'HP LaserJet Pro MFP M428fdw'");
+    expect(submitScript).toContain('-print-to `"$printer`"');
+    expect(submitScript).not.toContain("-print-to-default");
+  });
+
+  it("propagates A4 and A3 paper size in -print-settings", async () => {
+    const capsWithA3 = JSON.stringify({
+      Name: "Plotter",
+      CapabilityDescriptions: ["A4", "A3"],
+    });
+    const { executor, scripts } = createScriptCapturingExecutor(
+      "102",
+      capsWithA3,
+    );
+    const adapter = new WindowsPrinterAdapter(executor);
+
+    await adapter.submitPdfJob({
+      printerId: "Plotter",
+      localPdfPath: "C:\\jobs\\drawing.pdf",
+      settings: {
+        paperSize: "A3",
+        copies: 1,
+        colorMode: "BLACK_AND_WHITE",
+        sides: "ONE_SIDED",
+      },
+    });
+
+    const submitScript = scripts.find((s) => s.includes("-print-settings"))!;
+    expect(submitScript).toContain("paper=A3");
+  });
+
+  it("propagates color vs monochrome setting in -print-settings", async () => {
+    const { executor, scripts } = createScriptCapturingExecutor("103");
+    const adapter = new WindowsPrinterAdapter(executor);
+
+    await adapter.submitPdfJob({
+      printerId: "Color Printer",
+      localPdfPath: "C:\\jobs\\flyer.pdf",
+      settings: {
+        colorMode: "COLOUR",
+        copies: 1,
+        paperSize: "A4",
+        sides: "ONE_SIDED",
+      },
+    });
+
+    const submitScript = scripts.find((s) => s.includes("-print-settings"))!;
+    expect(submitScript).toContain("color");
+    expect(submitScript).not.toContain("monochrome");
+  });
+
+  it("propagates duplexlong and simplex in -print-settings", async () => {
+    const { executor, scripts } = createScriptCapturingExecutor("104");
+    const adapter = new WindowsPrinterAdapter(executor);
+
+    await adapter.submitPdfJob({
+      printerId: "Office Duplex Printer",
+      localPdfPath: "C:\\jobs\\report.pdf",
+      settings: {
+        sides: "TWO_SIDED_LONG",
+        copies: 1,
+        paperSize: "A4",
+        colorMode: "BLACK_AND_WHITE",
+      },
+    });
+
+    const submitScript = scripts.find((s) => s.includes("-print-settings"))!;
+    expect(submitScript).toContain("duplexlong");
+  });
+
+  it("propagates copy count in -print-settings", async () => {
+    const { executor, scripts } = createScriptCapturingExecutor("105");
+    const adapter = new WindowsPrinterAdapter(executor);
+
+    await adapter.submitPdfJob({
+      printerId: "Fast Printer",
+      localPdfPath: "C:\\jobs\\handout.pdf",
+      settings: {
+        copies: 5,
+        paperSize: "A4",
+        colorMode: "BLACK_AND_WHITE",
+        sides: "ONE_SIDED",
+      },
+    });
+
+    const submitScript = scripts.find((s) => s.includes("-print-settings"))!;
+    expect(submitScript).toContain("5x");
+  });
+
+  it("propagates normalized page range in -print-settings", async () => {
+    const { executor, scripts } = createScriptCapturingExecutor("106");
+    const adapter = new WindowsPrinterAdapter(executor);
+
+    await adapter.submitPdfJob({
+      printerId: "Standard Printer",
+      localPdfPath: "C:\\jobs\\thesis.pdf",
+      settings: {
+        pageRange: "2-7, 10",
+        copies: 1,
+        paperSize: "A4",
+        colorMode: "BLACK_AND_WHITE",
+        sides: "ONE_SIDED",
+      },
+    });
+
+    const submitScript = scripts.find((s) => s.includes("-print-settings"))!;
+    expect(submitScript).toContain("2-7,10");
+  });
+
+  it("fails closed when A3 requested on printer without A3 (no silent downgrade)", async () => {
+    const capsA4Only = JSON.stringify({
+      Name: "Small Printer",
+      CapabilityDescriptions: ["A4"],
+    });
+    const { executor } = createScriptCapturingExecutor("107", capsA4Only);
+    const adapter = new WindowsPrinterAdapter(executor);
+
+    await expect(
+      adapter.submitPdfJob({
+        printerId: "Small Printer",
+        localPdfPath: "C:\\jobs\\big.pdf",
+        settings: {
+          paperSize: "A3",
+          copies: 1,
+          colorMode: "BLACK_AND_WHITE",
+          sides: "ONE_SIDED",
+        },
+      }),
+    ).rejects.toThrow(/does not support paper size 'A3'/i);
+  });
+
+  it("fails closed when COLOUR requested on monochrome printer (no silent downgrade)", async () => {
+    const capsMono = JSON.stringify({
+      Name: "Mono Laser",
+      CapabilityDescriptions: ["Monochrome"],
+    });
+    const { executor } = createScriptCapturingExecutor("108", capsMono);
+    const adapter = new WindowsPrinterAdapter(executor);
+
+    await expect(
+      adapter.submitPdfJob({
+        printerId: "Mono Laser",
+        localPdfPath: "C:\\jobs\\photo.pdf",
+        settings: {
+          colorMode: "COLOUR",
+          copies: 1,
+          paperSize: "A4",
+          sides: "ONE_SIDED",
+        },
+      }),
+    ).rejects.toThrow(/does not support colour printing/i);
+  });
+
+  it("fails closed when DUPLEX requested on simplex printer (no silent downgrade)", async () => {
+    const capsSimplex = JSON.stringify({
+      Name: "Simple Laser",
+      CapabilityDescriptions: ["Simplex"],
+    });
+    const { executor } = createScriptCapturingExecutor("109", capsSimplex);
+    const adapter = new WindowsPrinterAdapter(executor);
+
+    await expect(
+      adapter.submitPdfJob({
+        printerId: "Simple Laser",
+        localPdfPath: "C:\\jobs\\book.pdf",
+        settings: {
+          sides: "TWO_SIDED_LONG",
+          copies: 1,
+          paperSize: "A4",
+          colorMode: "BLACK_AND_WHITE",
+        },
+      }),
+    ).rejects.toThrow(/does not support double-sided/i);
+  });
+
+  it("fails closed on non-positive copies", async () => {
+    const { executor } = createScriptCapturingExecutor("110");
+    const adapter = new WindowsPrinterAdapter(executor);
+
+    await expect(
+      adapter.submitPdfJob({
+        printerId: "Test Printer",
+        localPdfPath: "C:\\jobs\\doc.pdf",
+        settings: {
+          copies: 0,
+          paperSize: "A4",
+          colorMode: "BLACK_AND_WHITE",
+          sides: "ONE_SIDED",
+        },
+      }),
+    ).rejects.toThrow(/Copies must be a positive integer/i);
+  });
+
+  it("fails closed on invalid page range", async () => {
+    const { executor } = createScriptCapturingExecutor("111");
+    const adapter = new WindowsPrinterAdapter(executor);
+
+    await expect(
+      adapter.submitPdfJob({
+        printerId: "Test Printer",
+        localPdfPath: "C:\\jobs\\doc.pdf",
+        settings: {
+          pageRange: "10-2",
+          copies: 1,
+          paperSize: "A4",
+          colorMode: "BLACK_AND_WHITE",
+          sides: "ONE_SIDED",
+        },
+      }),
+    ).rejects.toThrow(/Invalid page range/i);
+  });
+
+  it("correlates spooler job strictly using document identifier and pre-submission exclusion", async () => {
+    const { executor, scripts } = createScriptCapturingExecutor("112");
+    const adapter = new WindowsPrinterAdapter(executor);
+
+    await adapter.submitPdfJob({
+      printerId: "Shared Deskjet",
+      localPdfPath: "C:\\jobs\\printgo_test_unique123.pdf",
+      documentTitle: "printgo_test_unique123",
+    });
+
+    const submitScript = scripts.find((s) => s.includes("$beforeIds"))!;
+    expect(submitScript).toContain("$beforeIds -notcontains [int]$_.JobId");
+    expect(submitScript).toContain('$_.Document -like "*$docIdentifier*"');
   });
 
   it("observes COMPLETED_OR_REMOVED when spooler removes job", async () => {
@@ -201,6 +456,38 @@ describe("DevelopmentPrinterAdapter", () => {
 
     const caps = await adapter.getCapabilities(first.id);
     expect(caps.paperSizes).toContain("A4");
+  });
+
+  it("DevelopmentPrinterAdapter enforces the same fail-closed setting validations", async () => {
+    const adapter = new DevelopmentPrinterAdapter();
+
+    // Shop LaserJet Pro M404dn is monochrome only
+    await expect(
+      adapter.submitPdfJob({
+        printerId: "Shop LaserJet Pro M404dn",
+        localPdfPath: "/tmp/doc.pdf",
+        settings: {
+          colorMode: "COLOUR",
+          copies: 1,
+          paperSize: "A4",
+          sides: "ONE_SIDED",
+        },
+      }),
+    ).rejects.toThrow(/does not support colour printing/i);
+
+    // A3 on A4-only printer
+    await expect(
+      adapter.submitPdfJob({
+        printerId: "Shop LaserJet Pro M404dn",
+        localPdfPath: "/tmp/doc.pdf",
+        settings: {
+          paperSize: "A3",
+          copies: 1,
+          colorMode: "BLACK_AND_WHITE",
+          sides: "ONE_SIDED",
+        },
+      }),
+    ).rejects.toThrow(/does not support paper size 'A3'/i);
   });
 
   it("simulates job submission and status lifecycle", async () => {

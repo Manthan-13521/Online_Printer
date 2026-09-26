@@ -20,23 +20,51 @@ export interface PrinterStatus {
   message?: string;
 }
 
+export type PrintPaperSize = "A4" | "A3";
+export type PrintColorMode = "COLOUR" | "BLACK_AND_WHITE";
+export type PrintSides = "ONE_SIDED" | "TWO_SIDED_LONG" | "TWO_SIDED_SHORT";
+
 export interface PrintSettings {
+  printerName?: string | undefined;
+  paperSize: PrintPaperSize;
+  colorMode: PrintColorMode;
+  sides: PrintSides;
   copies: number;
-  paperSize?: string;
-  colorMode?: "COLOUR" | "BLACK_AND_WHITE";
-  sides?: "ONE_SIDED" | "TWO_SIDED_LONG" | "TWO_SIDED_SHORT";
-  pageRange?: string;
+  pageRange?: string | undefined;
 }
 
 export interface PrintSubmission {
   printerId: string;
   localPdfPath: string;
-  copies?: number;
-  settings?: PrintSettings;
+  copies?: number | undefined;
+  documentTitle?: string | undefined;
+  settings?: Partial<PrintSettings> | undefined;
 }
 
 export interface SubmittedPrintJob {
   spoolJobId: string;
+  engineUsed?: string | undefined;
+}
+
+export class UnsupportedPrintSettingError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "UnsupportedPrintSettingError";
+  }
+}
+
+export class InvalidPrintSettingError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidPrintSettingError";
+  }
+}
+
+export class PrinterNotFoundError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PrinterNotFoundError";
+  }
 }
 
 export type SpoolJobState =

@@ -197,7 +197,7 @@ The Admin PWA at `/admin/printers` provides operational controls:
 The Windows Agent integrates with the Windows Print Spooler subsystem via PowerShell and CIM/WMI:
 
 - **`PrinterAdapter` Interface**:
-  - `submitPdfJob(printerName, pdfPath, settings)`: Uses `Start-Process -FilePath $pdfPath -Verb PrintTo -ArgumentList "`"$printerName`"" -PassThru` to submit PDF jobs to the designated printer.
+  - `submitPdfJob(printerName, pdfPath, settings)`: Deterministic headless print engine via SumatraPDF CLI (`-print-to "<printer>" -print-settings "<copies>x,paper=<paperSize>,<color>,<duplex>,<pageRange>,fit" -silent "<pdf>"`), with fail-closed capability validation preventing silent downgrades, and strict document title spooler correlation.
   - `getJobStatus(printerName, spoolJobId)`: Queries `Win32_PrintJob` and maps status bits into `QUEUED`, `PRINTING`, `BLOCKED`, `COMPLETED_OR_REMOVED`, or `FAILED`.
   - `cancelJob(printerName, spoolJobId)`: Cancels a print job in the spooler queue.
 - **Diagnostic PDF Generation**:

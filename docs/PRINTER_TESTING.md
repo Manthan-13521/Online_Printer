@@ -1,6 +1,6 @@
 # Printer Adapter, Test Printing & Windows Spooler Foundation
 
-Phase 8 introduces the printer adapter interface, local diagnostic PDF generation, Windows print spooler integration, and end-to-end test printing from the Admin PWA.
+Phase 8 introduces the printer adapter interface, local diagnostic PDF generation, Windows print spooler integration, deterministic print settings enforcement, and end-to-end test printing from the Admin PWA.
 
 This phase establishes printer hardware communication **without touching customer PDFs, downloading from R2, or leasing customer jobs**.
 
@@ -24,6 +24,7 @@ flowchart TD
     Daemon["AgentDaemon"]
     GenPdf["diagnostic-pdf.ts"]
     Adapter["WindowsPrinterAdapter"]
+    Engine["SumatraPrintEngine (SumatraPDF.exe)"]
     SpoolMon["spool-monitor.ts"]
     Spooler["Windows Print Spooler (Win32_PrintJob)"]
   end
@@ -33,8 +34,9 @@ flowchart TD
   Daemon -->|"POST /api/agent/heartbeat"| WorkerRoutes
   WorkerRoutes -->|"nextCommand: TEST_PRINT"| Daemon
   Daemon -->|"Generate diagnostic page"| GenPdf
-  Daemon -->|"submitPdfJob (PrintTo)"| Adapter
-  Adapter -->|"Submit & Get Job ID"| Spooler
+  Daemon -->|"submitPdfJob (Settings & Caps)"| Adapter
+  Adapter -->|"Deterministic CLI invocation"| Engine
+  Engine -->|"Direct Spool Submission"| Spooler
   Daemon -->|"POST /api/agent/commands/:id/report (SUBMITTED)"| WorkerRoutes
   SpoolMon -->|"Poll Win32_PrintJob (bounded 15s)"| Spooler
   SpoolMon -->|"Completed / Blocked / Failed"| Daemon
@@ -45,65 +47,118 @@ flowchart TD
 
 ---
 
-## 2. End-to-End Test Print Flow
+## 2. Windows PDF Printing Mechanism Audit
 
-### Step 1: Admin Triggers Test Print
+### Legacy `Start-Process -Verb PrintTo` Assessment
 
-1. Admin navigates to `/admin/printers` and clicks **[Test Print]** on an enabled printer.
-2. Browser issues `POST /api/admin/printers/:printerId/test-print`.
-3. Worker validates:
-   - Printer exists and is `enabled === 1`.
-   - Agent is active and online (`nowMs - lastHeartbeatAtMs <= 90_000`).
-4. Worker inserts row into `printer_test_commands`:
-   - `status`: `PENDING`
-   - `expires_at_ms`: `nowMs + 300_000` (5 minutes)
-   - Writes `TEST_PRINT_REQUESTED` audit log.
-5. Returns `201 Created` with command details.
+Prior to this remediation, Windows print submission used the Windows ShellExecute verb:
 
-### Step 2: Agent Receives Command via Heartbeat
+```powershell
+Start-Process -FilePath $pdf -Verb PrintTo -ArgumentList "`"$printer`""
+```
 
-1. Windows Agent sends routine heartbeat `POST /api/agent/heartbeat`.
-2. Worker finds oldest valid `PENDING` command for this `agent_id` where `expires_at_ms > nowMs`.
-3. Worker atomically claims the command:
-   ```sql
-   UPDATE printer_test_commands
-   SET status = 'CLAIMED', claimed_at_ms = ?
-   WHERE id = ? AND status = 'PENDING'
-   ```
-4. Heartbeat response includes `nextCommand`:
-   ```json
-   {
-     "acknowledged": true,
-     "serverTimeMs": 1740000000000,
-     "nextCommand": {
-       "commandId": "b8a5b281-...",
-       "type": "TEST_PRINT",
-       "printerId": "printer_123",
-       "windowsPrinterName": "Canon MF4700 Series",
-       "expiresAtMs": 1740000300000
-     }
-   }
-   ```
+#### Fatal Flaws of `PrintTo` in Commercial / Unattended Environments:
 
-### Step 3: Diagnostic PDF Generation
+1. **File Association Dependency**: `PrintTo` queries Windows Registry (`HKCR\.pdf\shell\printto\command`). It depends entirely on whichever PDF reader owns `.pdf` on the shop PC. On default Windows installations, Microsoft Edge owns `.pdf` and does not reliably implement unattended `PrintTo`. If Adobe Acrobat Reader is installed, it may show splash screens, update dialogs, or stay hung in memory. If no reader is registered, `PrintTo` errors immediately.
+2. **Interactive / Session 0 Incompatibility**: `PrintTo` is a GUI ShellExecute verb. When PrintGo runs as a Windows background service or startup scheduled task (Session 0), ShellExecute calls fail or hang indefinitely.
+3. **No Direct Support for Print Settings**: `PrintTo` syntax across Windows provides no programmatic switches for:
+   - Paper Size (A4 vs. A3)
+   - Color Mode (Monochrome vs. Color)
+   - Duplex (Single-sided vs. Double-sided)
+   - Copies (e.g., 3 copies)
+   - Page Range (e.g., pages 2–7)
+     It prints using whatever default profile was left in the GUI viewer or Windows driver preferences.
+4. **No Page-Range Enforcement**: A 50-page PDF with an authorized page range of pages 2–7 prints all 50 pages under `PrintTo`, creating a severe cost and security hazard.
 
-1. The Agent generates a local single-page A4 PDF using `generateDiagnosticPdf`:
-   - Pure TypeScript raw PDF generation without third-party binaries or network calls.
-   - Distinct header: `PRINTGO TEST PAGE` and `NOT A CUSTOMER ORDER`.
-   - Diagnostic metadata: Timestamp, Target Printer, Agent Name, Command ID, and Printer Test Pattern.
-2. Written to a temporary file on the local filesystem (`temp-test-print-{commandId}.pdf`).
+---
 
-### Step 4: Submission to Windows Spooler
+## 3. Final Deterministic Windows Printing Mechanism
 
-1. Agent invokes `PrinterAdapter.submitPdfJob`:
-   ```powershell
-   Start-Process -FilePath $pdfPath -Verb PrintTo -ArgumentList "`"$printerName`"" -PassThru
-   ```
-2. Agent queries `Get-CimInstance Win32_PrintJob` scoped to this printer and detects the newly assigned Windows spooler job ID.
-3. Agent immediately reports `SUBMITTED` with `spoolerJobId` back to the Worker API (`POST /api/agent/commands/:commandId/report`).
-4. Temporary diagnostic PDF is securely deleted in a `finally` block.
+### SumatraPDF CLI Integration
 
-### Step 5: Bounded Spool Monitoring & `BLOCKED != FAILED`
+PrintGo isolates and replaces `PrintTo` with a deterministic, headless CLI print engine using **SumatraPDF**:
+
+```powershell
+SumatraPDF.exe -print-to "<exact_printer>" -print-settings "<copies>x,paper=<paperSize>,<colorMode>,<duplex>,<pageRange>,fit" -silent "<pdfPath>"
+```
+
+### Third-Party Component Specification
+
+| Property                 | Details                                                                                                                                                                                                                                                                 |
+| :----------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Name**                 | SumatraPDF (Portable Command-Line PDF Engine)                                                                                                                                                                                                                           |
+| **Version Strategy**     | Pinned 64-bit release (e.g., v3.5.2 portable single binary)                                                                                                                                                                                                             |
+| **License**              | GPLv3 (with Apache 2.0 / MuPDF components)                                                                                                                                                                                                                              |
+| **Redistribution Terms** | Redistributable alongside PrintGo as an independent external binary (CLI execution qualifies as mere aggregation under GPL FAQ, preserving proprietary boundaries of PrintGo). Source code is open on GitHub.                                                           |
+| **Binary Size**          | ~14.5 MB single portable executable (zero DLLs, zero registry writes, zero installation)                                                                                                                                                                                |
+| **Why Needed**           | Only zero-dependency Windows utility that supports comprehensive programmatic headless print setting overrides (paper size, duplex, color mode, copies, page range, scaling) without interactive UI, COM dependencies, or Adobe Acrobat.                                |
+| **How Bundled**          | Placed in `apps/agent/windows/vendor/SumatraPDF.exe` via the Windows installer. Resolved dynamically in order: (1) `PRINTGO_SUMATRA_PATH` environment variable, (2) bundled application vendor path, (3) standard Program Files / AppData locations, (4) system `PATH`. |
+
+---
+
+## 4. Print Settings Contract & Fail-Closed Protection
+
+The adapter contract strictly enforces print settings before submitting to the spooler:
+
+```ts
+export interface PrintSettings {
+  printerName?: string;
+  paperSize: "A4" | "A3";
+  colorMode: "COLOUR" | "BLACK_AND_WHITE";
+  sides: "ONE_SIDED" | "TWO_SIDED_LONG" | "TWO_SIDED_SHORT";
+  copies: number;
+  pageRange?: string;
+}
+```
+
+### Silent Downgrade Prevention (Fail Closed)
+
+PrintGo **never silently downgrades** customer settings:
+
+- **A3 on A4 Printer**: If a printer does not support A3, submission throws `UnsupportedPrintSettingError`. Downgrading to A4 is prohibited.
+- **COLOUR on Monochrome Printer**: If a printer does not support color (`colour === false`), submission throws `UnsupportedPrintSettingError`. Downgrading to black & white is prohibited.
+- **DUPLEX on Simplex Printer**: If a printer does not support duplex (`duplex === false`), submission throws `UnsupportedPrintSettingError`. Downgrading to single-sided is prohibited.
+- **Copies**: Must be an integer >= 1 and <= 100. Values <= 0 throw `InvalidPrintSettingError`.
+- **Page Range**: Parsed and validated via `parsePageRange()`. Malformed ranges throw `InvalidPrintSettingError`.
+- **Missing SumatraPDF Guard**: If SumatraPDF is missing from the host machine and any non-default option is requested (A3, color, duplex, page range, or copies > 1), submission immediately fails closed with an informative error rather than executing an unverified fallback.
+
+---
+
+## 5. Spooler Correlation & Job Isolation
+
+PrintGo implements multi-factor correlation to guarantee that the Agent tracks **only its own print jobs** and never claims an unrelated document printed by another application:
+
+1. **Pre-Submission Job ID Snapshot**:
+   Before launching the print engine, the Agent records all active job IDs for the specific printer:
+   `$beforeIds = @(Get-CimInstance Win32_PrintJob | Where-Object { $_.Name -like "$printer,*" } | ForEach-Object { [int]$_.JobId })`
+2. **Unique Document Identifier**:
+   The diagnostic or order PDF filename includes an unpredictable unique token (e.g., `printgo-test-<commandId>`).
+3. **Correlation Query**:
+   The Agent polls `Win32_PrintJob` requiring:
+   - Target printer queue match: `$_.Name -like "$printer,*"`
+   - Exclusion of pre-existing jobs: `$beforeIds -notcontains [int]$_.JobId`
+   - Document title match: `$_.Document -like "*$docIdentifier*"`
+4. **Isolation Guarantee**:
+   If another application (Chrome, Microsoft Word, Windows Update) submits a print job to the shop printer during the same second, its job ID will not match `$docIdentifier` and will **never be claimed or monitored by PrintGo**.
+
+### Documented Spooler Limitations
+
+- Certain specialized or legacy printer drivers replace the document title with a static string (e.g., `"RAW"` or `"Document"`). In such rare environments, the correlation engine uses printer-scoped temporal exclusion (`$beforeIds`) as a secondary safeguard.
+- On ultra-fast RAM-spooled local printers, small documents may despool and be removed within 200ms before `Get-CimInstance` polls. The monitor handles this gracefully via `COMPLETED_OR_REMOVED`.
+
+---
+
+## 6. Background / Windows Service Compatibility
+
+The deterministic printing architecture is designed for headless, unattended background execution:
+
+- **Process Flags**: `UseShellExecute = $false`, `CreateNoWindow = $true`, `WindowStyle = Hidden`.
+- **CLI Flags**: `-silent` flag prevents splash screens, print progress bars, and modal error dialogs.
+- **Session 0 Safe**: Does not depend on the interactive user desktop, desktop shells, or user file associations.
+
+---
+
+## 7. Spool Monitoring & `BLOCKED != FAILED`
 
 1. `monitorSpoolJob` polls `getJobStatus` up to a bounded deadline (default: 15 seconds, 1-second intervals).
 2. Spooler status bitmask mapping (`Win32_PrintJob.JobStatus` & `Win32_PrintJob.StatusMask`):
@@ -118,58 +173,10 @@ flowchart TD
    - **`FAILED`**: The spooler reported a fatal, unrecoverable error (`Status == "Error"`, bit `0x02`).
    - **`PRINTING` / Timeout**: If the spooler is still actively spooling or printing when the 15-second wait deadline expires, the job was accepted by the spooler and is reported as `SUCCEEDED` (or left in progress).
 
-### Step 6: Agent Reports Result
-
-Agent issues `POST /api/agent/commands/:commandId/report`:
-
-```json
-{
-  "status": "SUCCEEDED",
-  "spoolerJobId": "42"
-}
-```
-
-Worker updates `printer_test_commands`, sets `finished_at_ms = nowMs`, and logs the corresponding audit event.
-
-### Step 7: Admin UI Progression & Feedback
-
-The Admin PWA at `/admin/printers` reflects the real-time lifecycle:
-
-- `Sending test page…` (immediate UI feedback upon click)
-- `Waiting for Agent…` (`PENDING`)
-- `Agent claimed command…` (`CLAIMED`)
-- `Submitted to printer…` (`SUBMITTED`)
-- `✓ Test page submitted successfully.` (`SUCCEEDED`)
-- `⚠ Printer needs attention: [reason]` (`BLOCKED`)
-- `✕ Test print failed: [reason]` (`FAILED`)
-- `✕ Test print timed out waiting for Agent.` (`EXPIRED`)
-- `[Try Test Print Again]` button when finished.
-
-Polling runs every 2 seconds while any test print is active, and the latest status is preserved across page refreshes.
-
 ---
 
-## 3. Security & Negative Scope Enforcements
+## 8. Real Windows Testing Status (Rule 44 Disclosure)
 
-1. **No Customer PDFs**:
-   - Customer PDFs in R2 are not downloaded, accessed, or printed in Phase 8.
-   - Diagnostic PDF is strictly generated on the local agent host and marked "NOT A CUSTOMER ORDER".
-2. **No Customer Job Claiming**:
-   - Customer orders remain in database queues without agent leasing.
-   - Phase 9 identification sheets and Phase 10 order queues are not started.
-3. **No Credential Exposure**:
-   - Agent reports require `Bearer <agentSecret>` authentication.
-   - Admin test print endpoints require active session authentication with CSRF/origin checks.
-4. **Command Lifetime & Expiry**:
-   - Commands expire after 5 minutes (`TEST_PRINT_COMMAND_LIFETIME_MS = 300_000`).
-   - Stale commands are expired lazily or on heartbeat.
-
----
-
-## 4. Platform Testing Disclosure
-
-Development and automated testing for Phase 8 were conducted on macOS using mock adapters and architecture tests.
-
-- `WindowsPrinterAdapter` contains full production PowerShell and CIM queries for Windows, guarded by runtime OS checks that throw in production if executed on a non-Windows OS.
-- In development/test environments, `DevelopmentPrinterAdapter` simulates spooler behavior, including success, `BLOCKED` (paper out, offline), and `FAILED` states.
-- **Real Windows spooler integration on an actual Windows machine was not exercised on this development host.** Full physical validation will take place when the agent is deployed to the shop PC.
+> [!NOTE]
+> **Real Windows printer execution remains unverified.**
+> Development and automated test verification occurred on macOS using mock executors and architecture contract suites. Physical spooling of paper on real Windows hardware must be verified on an actual Windows PC.

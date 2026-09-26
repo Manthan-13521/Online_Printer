@@ -216,13 +216,15 @@ export class AgentDaemon {
       const submission = await this.printerAdapter.submitPdfJob({
         printerId: command.windowsPrinterName,
         localPdfPath: tempPdfPath,
+        documentTitle: `printgo-test-${command.commandId}`,
         copies: 1,
         settings: {
+          printerName: command.windowsPrinterName,
           copies: 1,
           paperSize: "A4",
           colorMode: "BLACK_AND_WHITE",
           sides: "ONE_SIDED",
-          pageRange: "all",
+          pageRange: "1",
         },
       });
 
