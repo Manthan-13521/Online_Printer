@@ -10,4 +10,6 @@ export interface WorkerEnv {
   R2_SECRET_ACCESS_KEY: string;
   RAZORPAY_KEY_ID?: string;
   RAZORPAY_KEY_SECRET?: string;
+  RAZORPAY_WEBHOOK_SECRET?: string;
+  PAYMENT_READINESS_DEV_BYPASS?: string;
 }

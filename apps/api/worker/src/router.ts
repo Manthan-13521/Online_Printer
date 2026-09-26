@@ -3,6 +3,7 @@ import { handleAdminAuthRequest } from "./auth/routes";
 import { handleAdminConfigurationRequest } from "./config/routes";
 import { handleCustomerRequest } from "./customer/routes";
 import type { WorkerEnv } from "./env";
+import { handleRazorpayWebhook } from "./payments/webhook";
 
 export async function routeRequest(
   request: Request,
@@ -27,6 +28,10 @@ export async function routeRequest(
 
   if (url.pathname.startsWith("/api/customer/")) {
     return handleCustomerRequest(request, env);
+  }
+
+  if (url.pathname === "/api/webhooks/razorpay") {
+    return handleRazorpayWebhook(request, env);
   }
 
   return error(404, "NOT_FOUND", "The requested resource was not found.");

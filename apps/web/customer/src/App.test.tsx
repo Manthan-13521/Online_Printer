@@ -21,6 +21,9 @@ vi.mock("./api", () => ({
     authorize: vi.fn(),
     complete: vi.fn(),
     quote: vi.fn(),
+    createPayment: vi.fn(),
+    verifyPayment: vi.fn(),
+    cancelPayment: vi.fn(),
   },
   uploadDirectly: vi.fn(),
 }));
@@ -43,6 +46,7 @@ const enabledConfig = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  delete window.Razorpay;
   sessionStorage.clear();
   vi.mocked(customerApi.config).mockResolvedValue(enabledConfig);
   vi.mocked(inspectPdf).mockResolvedValue(10);
@@ -85,6 +89,33 @@ beforeEach(() => {
     totalAmountPaise: 2100,
     currency: "INR",
     expiresAt: "later",
+  });
+  vi.mocked(customerApi.createPayment).mockResolvedValue({
+    status: "PRICE_CHANGED",
+    quote: {
+      normalizedSelectedPages: "1-10",
+      selectedPageCount: 10,
+      copies: 1,
+      paperSize: "A4",
+      colorMode: "BW",
+      sides: "SINGLE",
+      printingAmountPaise: 2100,
+      serviceChargePaise: 100,
+      totalAmountPaise: 2200,
+      currency: "INR",
+      expiresAt: "later",
+    },
+  });
+  vi.mocked(customerApi.verifyPayment).mockResolvedValue({
+    jobCode: "PG-ABC234",
+    amountPaidPaise: 2100,
+    currency: "INR",
+    status: "QUEUED",
+    message: "Payment verified. Your print job is queued.",
+  });
+  vi.mocked(customerApi.cancelPayment).mockResolvedValue({
+    status: "PAYMENT_CANCELLED",
+    retainedUntil: "later",
   });
 });
 
@@ -204,5 +235,226 @@ describe("customer upload app", () => {
       expect(customerApi.authorize).toHaveBeenCalledWith("A".repeat(43)),
     );
     await waitFor(() => expect(customerApi.quote).toHaveBeenCalled());
+  });
+
+  it("requires a second explicit click after a server-side price change", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText("ABC Xerox");
+    await user.type(screen.getByLabelText("Name"), "Rahul");
+    await user.type(screen.getByLabelText("Phone"), "9876543210");
+    await user.upload(
+      screen.getByLabelText("Choose PDF"),
+      new File(["%PDF"], "notes.pdf", { type: "application/pdf" }),
+    );
+    fireEvent.submit(
+      screen
+        .getByRole("button", { name: "Upload PDF and review" })
+        .closest("form")!,
+    );
+    const pay = await screen.findByRole("button", { name: "Pay ₹21.00" });
+    await user.click(pay);
+    expect(
+      await screen.findByText(/The price changed\. Review the updated total/),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Pay ₹22.00" })).toBeTruthy();
+    expect(customerApi.createPayment).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables duplicate Pay clicks while payment creation is pending", async () => {
+    const user = userEvent.setup();
+    vi.mocked(customerApi.createPayment).mockImplementationOnce(
+      () => new Promise(() => undefined),
+    );
+    render(<App />);
+    await screen.findByText("ABC Xerox");
+    await user.type(screen.getByLabelText("Name"), "Rahul");
+    await user.type(screen.getByLabelText("Phone"), "9876543210");
+    await user.upload(
+      screen.getByLabelText("Choose PDF"),
+      new File(["%PDF"], "notes.pdf", { type: "application/pdf" }),
+    );
+    fireEvent.submit(
+      screen
+        .getByRole("button", { name: "Upload PDF and review" })
+        .closest("form")!,
+    );
+    const pay = await screen.findByRole("button", { name: "Pay ₹21.00" });
+    await user.click(pay);
+    expect(
+      screen.getByRole("button", { name: "Confirming payment…" }),
+    ).toHaveProperty("disabled", true);
+    await user.click(
+      screen.getByRole("button", { name: "Confirming payment…" }),
+    );
+    expect(customerApi.createPayment).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows verified success and a job code only after Worker verification", async () => {
+    const user = userEvent.setup();
+    let checkoutHandler:
+      | ((value: {
+          razorpay_order_id: string;
+          razorpay_payment_id: string;
+          razorpay_signature: string;
+        }) => void)
+      | undefined;
+    class MockRazorpay {
+      constructor(options: Record<string, unknown>) {
+        checkoutHandler = options.handler as typeof checkoutHandler;
+      }
+      open() {}
+      on() {}
+    }
+    window.Razorpay = MockRazorpay;
+    vi.mocked(customerApi.createPayment).mockResolvedValueOnce({
+      status: "CHECKOUT_READY",
+      razorpayKeyId: "rzp_test_key",
+      razorpayOrderId: "order_server_a",
+      amountPaise: 2100,
+      currency: "INR",
+      shopName: "ABC Xerox",
+      customerName: "Rahul",
+      customerPhone: "9876543210",
+      description: "Printing: notes.pdf",
+    });
+    render(<App />);
+    await screen.findByText("ABC Xerox");
+    await user.type(screen.getByLabelText("Name"), "Rahul");
+    await user.type(screen.getByLabelText("Phone"), "9876543210");
+    await user.upload(
+      screen.getByLabelText("Choose PDF"),
+      new File(["%PDF"], "notes.pdf", { type: "application/pdf" }),
+    );
+    fireEvent.submit(
+      screen
+        .getByRole("button", { name: "Upload PDF and review" })
+        .closest("form")!,
+    );
+    await user.click(await screen.findByRole("button", { name: "Pay ₹21.00" }));
+    expect(screen.queryByText("PG-ABC234")).toBeNull();
+    checkoutHandler?.({
+      razorpay_order_id: "order_server_a",
+      razorpay_payment_id: "pay_server_a",
+      razorpay_signature: "a".repeat(64),
+    });
+    expect(await screen.findByText("PG-ABC234")).toBeTruthy();
+    expect(screen.getByText("Amount paid: ₹21.00")).toBeTruthy();
+    expect(customerApi.verifyPayment).toHaveBeenCalledOnce();
+  });
+
+  it("reports checkout cancellation and records it with the Worker", async () => {
+    const user = userEvent.setup();
+    let dismiss: (() => void) | undefined;
+    class MockRazorpay {
+      constructor(options: Record<string, unknown>) {
+        dismiss = (options.modal as { ondismiss: () => void }).ondismiss;
+      }
+      open() {}
+      on() {}
+    }
+    window.Razorpay = MockRazorpay;
+    vi.mocked(customerApi.createPayment).mockResolvedValueOnce({
+      status: "CHECKOUT_READY",
+      razorpayKeyId: "rzp_test_key",
+      razorpayOrderId: "order_server_a",
+      amountPaise: 2100,
+      currency: "INR",
+      shopName: "ABC Xerox",
+      customerName: "Rahul",
+      customerPhone: "9876543210",
+      description: "Printing: notes.pdf",
+    });
+    render(<App />);
+    await screen.findByText("ABC Xerox");
+    await user.type(screen.getByLabelText("Name"), "Rahul");
+    await user.type(screen.getByLabelText("Phone"), "9876543210");
+    await user.upload(
+      screen.getByLabelText("Choose PDF"),
+      new File(["%PDF"], "notes.pdf", { type: "application/pdf" }),
+    );
+    fireEvent.submit(
+      screen
+        .getByRole("button", { name: "Upload PDF and review" })
+        .closest("form")!,
+    );
+    await user.click(await screen.findByRole("button", { name: "Pay ₹21.00" }));
+    dismiss?.();
+    expect(
+      await screen.findByText(
+        /Payment was cancelled\. Your PDF is retained briefly/,
+      ),
+    ).toBeTruthy();
+    expect(customerApi.cancelPayment).toHaveBeenCalledWith("A".repeat(43), {
+      razorpayOrderId: "order_server_a",
+    });
+  });
+
+  it("shows checkout failure without fabricating success", async () => {
+    const user = userEvent.setup();
+    let failed: (() => void) | undefined;
+    class MockRazorpay {
+      open() {}
+      on(_event: "payment.failed", callback: () => void) {
+        failed = callback;
+      }
+    }
+    window.Razorpay = MockRazorpay;
+    vi.mocked(customerApi.createPayment).mockResolvedValueOnce({
+      status: "CHECKOUT_READY",
+      razorpayKeyId: "rzp_test_key",
+      razorpayOrderId: "order_server_a",
+      amountPaise: 2100,
+      currency: "INR",
+      shopName: "ABC Xerox",
+      customerName: "Rahul",
+      customerPhone: "9876543210",
+      description: "Printing: notes.pdf",
+    });
+    render(<App />);
+    await screen.findByText("ABC Xerox");
+    await user.type(screen.getByLabelText("Name"), "Rahul");
+    await user.type(screen.getByLabelText("Phone"), "9876543210");
+    await user.upload(
+      screen.getByLabelText("Choose PDF"),
+      new File(["%PDF"], "notes.pdf", { type: "application/pdf" }),
+    );
+    fireEvent.submit(
+      screen
+        .getByRole("button", { name: "Upload PDF and review" })
+        .closest("form")!,
+    );
+    await user.click(await screen.findByRole("button", { name: "Pay ₹21.00" }));
+    failed?.();
+    expect(
+      await screen.findByText(/Payment failed\. No print job was created/),
+    ).toBeTruthy();
+    expect(screen.queryByText("PG-ABC234")).toBeNull();
+    expect(customerApi.verifyPayment).not.toHaveBeenCalled();
+  });
+
+  it("shows a retryable network error without opening checkout", async () => {
+    const user = userEvent.setup();
+    vi.mocked(customerApi.createPayment).mockRejectedValueOnce(
+      new Error("Failed to fetch"),
+    );
+    render(<App />);
+    await screen.findByText("ABC Xerox");
+    await user.type(screen.getByLabelText("Name"), "Rahul");
+    await user.type(screen.getByLabelText("Phone"), "9876543210");
+    await user.upload(
+      screen.getByLabelText("Choose PDF"),
+      new File(["%PDF"], "notes.pdf", { type: "application/pdf" }),
+    );
+    fireEvent.submit(
+      screen
+        .getByRole("button", { name: "Upload PDF and review" })
+        .closest("form")!,
+    );
+    await user.click(await screen.findByRole("button", { name: "Pay ₹21.00" }));
+    expect(
+      await screen.findByText(/payment service could not be reached/i),
+    ).toBeTruthy();
+    expect(screen.queryByText("PG-ABC234")).toBeNull();
   });
 });

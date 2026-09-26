@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 
 import type {
   CustomerConfigData,
+  CustomerPaymentCheckoutData,
+  CustomerPaymentSuccessData,
   CustomerQuoteData,
 } from "@printgo/api-contract";
 import { parsePageRange } from "@printgo/domain";
@@ -14,6 +16,43 @@ const DRAFT_TOKEN_KEY = "printgo.customerDraftToken";
 const humanFileSize = (bytes: number) =>
   `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 
+interface RazorpaySuccessResponse {
+  razorpay_order_id: string;
+  razorpay_payment_id: string;
+  razorpay_signature: string;
+}
+
+interface RazorpayInstance {
+  open(): void;
+  on(event: "payment.failed", callback: () => void): void;
+}
+
+declare global {
+  interface Window {
+    Razorpay?: new (options: Record<string, unknown>) => RazorpayInstance;
+  }
+}
+
+let checkoutScriptPromise: Promise<void> | null = null;
+
+function loadRazorpayCheckout(): Promise<void> {
+  if (window.Razorpay) return Promise.resolve();
+  if (checkoutScriptPromise) return checkoutScriptPromise;
+  const loading = new Promise<void>((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("CHECKOUT_LOAD_FAILED"));
+    document.head.append(script);
+  }).catch((caught: unknown) => {
+    checkoutScriptPromise = null;
+    throw caught;
+  });
+  checkoutScriptPromise = loading;
+  return loading;
+}
+
 function customerErrorMessage(caught: unknown): string {
   const code = caught instanceof Error ? caught.message : "";
   if (code === "ONLINE_PRINTING_DISABLED")
@@ -25,6 +64,21 @@ function customerErrorMessage(caught: unknown): string {
   if (code === "UPLOAD_NETWORK_ERROR" || code === "Failed to fetch")
     return "Connection lost during upload. Check your connection and try again.";
   return "The upload could not be completed. Your selections are preserved; please try again.";
+}
+
+function paymentErrorMessage(caught: unknown): string {
+  const code = caught instanceof Error ? caught.message : "";
+  if (code === "PRINTER_NOT_READY")
+    return "Online payment is temporarily unavailable because the shop printer is not ready.";
+  if (code === "PAYMENT_NOT_CAPTURED")
+    return "Payment is still being confirmed. No print job has been created yet.";
+  if (code === "PAYMENT_SIGNATURE_INVALID")
+    return "Payment verification failed. Please contact the shop before trying again.";
+  if (code === "PAYMENT_PROVIDER_UNAVAILABLE" || code === "Failed to fetch")
+    return "The payment service could not be reached. Please check your connection and try again.";
+  if (code === "CHECKOUT_LOAD_FAILED")
+    return "The secure payment window could not be loaded. Please try again.";
+  return "Payment could not be completed. You have not been shown a successful print job.";
 }
 
 export function App() {
@@ -48,6 +102,9 @@ export function App() {
   const [quote, setQuote] = useState<CustomerQuoteData | null>(null);
   const [draftToken, setDraftToken] = useState<string | null>(null);
   const [uploadFinalized, setUploadFinalized] = useState(false);
+  const [paymentBusy, setPaymentBusy] = useState(false);
+  const [paymentSuccess, setPaymentSuccess] =
+    useState<CustomerPaymentSuccessData | null>(null);
 
   useEffect(() => {
     customerApi
@@ -82,6 +139,7 @@ export function App() {
     setQuote(null);
     setDraftToken(null);
     setUploadFinalized(false);
+    setPaymentSuccess(null);
     sessionStorage.removeItem(DRAFT_TOKEN_KEY);
     setFileError(null);
     setPageCount(null);
@@ -175,7 +233,10 @@ export function App() {
           sides,
         }),
       );
-      setStatus("Review ready. Payment is added in the next phase.");
+      setPaymentSuccess(null);
+      setStatus(
+        "Review ready. Confirm the total to continue to secure payment.",
+      );
     } catch (caught) {
       if (
         caught instanceof Error &&
@@ -188,6 +249,104 @@ export function App() {
       setStatus(customerErrorMessage(caught));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function verifyCheckoutPayment(
+    token: string,
+    response: RazorpaySuccessResponse,
+  ) {
+    setPaymentBusy(true);
+    setStatus("Verifying captured payment with the shop server…");
+    try {
+      const result = await customerApi.verifyPayment(token, {
+        razorpayOrderId: response.razorpay_order_id,
+        razorpayPaymentId: response.razorpay_payment_id,
+        razorpaySignature: response.razorpay_signature,
+      });
+      setPaymentSuccess(result);
+      setStatus(result.message);
+      sessionStorage.removeItem(DRAFT_TOKEN_KEY);
+    } catch (caught) {
+      setStatus(paymentErrorMessage(caught));
+    } finally {
+      setPaymentBusy(false);
+    }
+  }
+
+  async function openCheckout(
+    token: string,
+    checkout: CustomerPaymentCheckoutData,
+  ) {
+    await loadRazorpayCheckout();
+    if (!window.Razorpay) throw new Error("CHECKOUT_LOAD_FAILED");
+    const instance = new window.Razorpay({
+      key: checkout.razorpayKeyId,
+      order_id: checkout.razorpayOrderId,
+      amount: checkout.amountPaise,
+      currency: checkout.currency,
+      name: checkout.shopName,
+      description: checkout.description,
+      prefill: {
+        name: checkout.customerName,
+        contact: checkout.customerPhone,
+      },
+      handler: (response: RazorpaySuccessResponse) => {
+        void verifyCheckoutPayment(token, response);
+      },
+      modal: {
+        ondismiss: () => {
+          setPaymentBusy(true);
+          setStatus("Recording payment cancellation…");
+          void customerApi
+            .cancelPayment(token, {
+              razorpayOrderId: checkout.razorpayOrderId,
+            })
+            .then(() => {
+              setStatus(
+                "Payment was cancelled. Your PDF is retained briefly so you can retry.",
+              );
+            })
+            .catch(() => {
+              setStatus(
+                "Checkout closed, but cancellation could not be confirmed. Please retry or contact the shop.",
+              );
+            })
+            .finally(() => setPaymentBusy(false));
+        },
+      },
+      theme: { color: "#0e7490" },
+    });
+    instance.on("payment.failed", () => {
+      setPaymentBusy(false);
+      setStatus(
+        "Payment failed. No print job was created. You can retry payment.",
+      );
+    });
+    instance.open();
+  }
+
+  async function pay() {
+    if (!quote || !draftToken || paymentBusy || paymentSuccess) return;
+    setPaymentBusy(true);
+    setStatus("Rechecking the current price and printer readiness…");
+    try {
+      const result = await customerApi.createPayment(draftToken, {
+        acknowledgedTotalPaise: quote.totalAmountPaise,
+      });
+      if (result.status === "PRICE_CHANGED") {
+        setQuote(result.quote);
+        setStatus(
+          "The price changed. Review the updated total, then press Pay again to acknowledge it.",
+        );
+        setPaymentBusy(false);
+        return;
+      }
+      setStatus("Opening secure Razorpay checkout…");
+      await openCheckout(draftToken, result);
+    } catch (caught) {
+      setStatus(paymentErrorMessage(caught));
+      setPaymentBusy(false);
     }
   }
 
@@ -483,6 +642,18 @@ export function App() {
                 </div>
               </dl>
             )}
+            {paymentSuccess && (
+              <div className="payment-success" role="status">
+                <h3>Payment verified</h3>
+                <p>Your job code is</p>
+                <strong>{paymentSuccess.jobCode}</strong>
+                <p>Keep this code until you collect your print.</p>
+                <p>Amount paid: {formatInr(paymentSuccess.amountPaidPaise)}</p>
+                <p className="muted">
+                  This reference code is not an authentication token.
+                </p>
+              </div>
+            )}
             <button
               type="submit"
               disabled={
@@ -490,19 +661,35 @@ export function App() {
                 !file ||
                 !pageCount ||
                 Boolean(fileError) ||
-                !optionAvailable
+                !optionAvailable ||
+                Boolean(paymentSuccess)
               }
             >
               {busy
                 ? "Preparing review…"
-                : quote
-                  ? "Refresh review"
-                  : draftToken
-                    ? "Try upload again"
-                    : "Upload PDF and review"}
+                : paymentSuccess
+                  ? "Payment complete"
+                  : quote
+                    ? "Refresh review"
+                    : draftToken
+                      ? "Try upload again"
+                      : "Upload PDF and review"}
             </button>
+            {quote && !paymentSuccess && (
+              <button
+                className="pay-button"
+                type="button"
+                disabled={busy || paymentBusy}
+                onClick={() => void pay()}
+              >
+                {paymentBusy
+                  ? "Confirming payment…"
+                  : `Pay ${formatInr(quote.totalAmountPaise)}`}
+              </button>
+            )}
             <p className="muted">
-              No payment or print job is created in this step.
+              A job is queued only after the shop server verifies a captured
+              payment.
             </p>
           </section>
         </form>

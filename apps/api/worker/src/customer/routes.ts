@@ -1,6 +1,9 @@
 import type {
+  CancelCustomerPaymentRequest,
   CreateCustomerDraftRequest,
+  CreateCustomerPaymentRequest,
   CustomerPrintSettingsRequest,
+  VerifyCustomerPaymentRequest,
 } from "@printgo/api-contract";
 import {
   isColorMode,
@@ -16,6 +19,10 @@ import { R2UploadSigner } from "../storage/r2-upload-signer";
 import { R2PrivateObjectStore } from "../storage/r2-verification";
 import { D1CustomerRepository } from "./repository";
 import { CustomerError, CustomerService } from "./service";
+import { D1PaymentRepository } from "../payments/repository";
+import { EnvironmentPaymentReadiness } from "../payments/readiness";
+import { HttpRazorpayClient } from "../payments/razorpay";
+import { PaymentError, PaymentService } from "../payments/service";
 
 const NO_STORE = { "Cache-Control": "no-store" } as const;
 const MAX_JSON_BODY_BYTES = 8 * 1024;
@@ -33,6 +40,18 @@ export interface CustomerActions {
     token: string,
     input: CustomerPrintSettingsRequest,
   ): ReturnType<CustomerService["quote"]>;
+  createPayment(
+    token: string,
+    input: CreateCustomerPaymentRequest,
+  ): ReturnType<PaymentService["createCheckout"]>;
+  verifyPayment(
+    token: string,
+    input: VerifyCustomerPaymentRequest,
+  ): ReturnType<PaymentService["verify"]>;
+  cancelPayment(
+    token: string,
+    input: CancelCustomerPaymentRequest,
+  ): ReturnType<PaymentService["cancel"]>;
 }
 
 function actionsFromEnv(env: WorkerEnv): CustomerActions {
@@ -47,12 +66,27 @@ function actionsFromEnv(env: WorkerEnv): CustomerActions {
     }),
     new R2PrivateObjectStore(env.PDF_BUCKET),
   );
+  const keyId = env.RAZORPAY_KEY_ID ?? "";
+  const keySecret = env.RAZORPAY_KEY_SECRET ?? "";
+  const paymentService = new PaymentService(
+    new D1PaymentRepository(env.DB),
+    repository,
+    new R2PrivateObjectStore(env.PDF_BUCKET),
+    new EnvironmentPaymentReadiness(env),
+    new HttpRazorpayClient(keyId, keySecret),
+    { keyId, keySecret },
+  );
   return {
     getConfig: () => repository.getPublicConfig(),
     createDraft: (input) => service.createDraft(input),
     authorizeUpload: (token) => service.authorizeUpload(token),
     completeUpload: (token) => service.completeUpload(token),
     quote: (token, input) => service.quote(token, input),
+    createPayment: (token, input) =>
+      paymentService.createCheckout(token, input.acknowledgedTotalPaise),
+    verifyPayment: (token, input) => paymentService.verify(token, input),
+    cancelPayment: (token, input) =>
+      paymentService.cancel(token, input.razorpayOrderId),
   };
 }
 
@@ -176,7 +210,104 @@ function validateSettings(value: unknown): CustomerPrintSettingsRequest | null {
   };
 }
 
+function validateCreatePayment(
+  value: unknown,
+): CreateCustomerPaymentRequest | null {
+  if (
+    !isPlainRecord(value) ||
+    Object.keys(value).some((key) => key !== "acknowledgedTotalPaise") ||
+    !Number.isSafeInteger(value.acknowledgedTotalPaise) ||
+    (value.acknowledgedTotalPaise as number) < 0
+  ) {
+    return null;
+  }
+  return { acknowledgedTotalPaise: value.acknowledgedTotalPaise as number };
+}
+
+function validProviderId(
+  value: unknown,
+  prefix: "order_" | "pay_",
+): value is string {
+  return (
+    typeof value === "string" &&
+    value.startsWith(prefix) &&
+    /^[A-Za-z0-9_]{6,100}$/u.test(value)
+  );
+}
+
+function validateVerifyPayment(
+  value: unknown,
+): VerifyCustomerPaymentRequest | null {
+  if (
+    !isPlainRecord(value) ||
+    Object.keys(value).some(
+      (key) =>
+        !["razorpayOrderId", "razorpayPaymentId", "razorpaySignature"].includes(
+          key,
+        ),
+    ) ||
+    !validProviderId(value.razorpayOrderId, "order_") ||
+    !validProviderId(value.razorpayPaymentId, "pay_") ||
+    typeof value.razorpaySignature !== "string" ||
+    !/^[a-f0-9]{64}$/iu.test(value.razorpaySignature)
+  ) {
+    return null;
+  }
+  return {
+    razorpayOrderId: value.razorpayOrderId,
+    razorpayPaymentId: value.razorpayPaymentId,
+    razorpaySignature: value.razorpaySignature,
+  };
+}
+
+function validateCancelPayment(
+  value: unknown,
+): CancelCustomerPaymentRequest | null {
+  if (
+    !isPlainRecord(value) ||
+    Object.keys(value).some((key) => key !== "razorpayOrderId") ||
+    !validProviderId(value.razorpayOrderId, "order_")
+  ) {
+    return null;
+  }
+  return { razorpayOrderId: value.razorpayOrderId };
+}
+
 function mapCustomerError(caught: unknown, env: WorkerEnv): Response {
+  if (caught instanceof PaymentError) {
+    const statuses: Record<string, number> = {
+      DRAFT_INVALID: 401,
+      DRAFT_EXPIRED: 410,
+      PAYMENT_STATE_INVALID: 409,
+      UPLOAD_NOT_FOUND: 409,
+      UPLOAD_INVALID: 422,
+      ONLINE_PRINTING_DISABLED: 503,
+      PRINTER_NOT_READY: 503,
+      PAYMENT_CONFIGURATION_MISSING: 503,
+      PAYMENT_CREATION_IN_PROGRESS: 409,
+      PAYMENT_PROVIDER_UNAVAILABLE: 502,
+      PAYMENT_ORDER_MISMATCH: 409,
+      PAYMENT_SIGNATURE_INVALID: 400,
+      PAYMENT_NOT_CAPTURED: 409,
+      PAYMENT_DETAILS_MISMATCH: 409,
+      PAYMENT_AMOUNT_INVALID: 409,
+    };
+    const messages: Record<string, string> = {
+      PRINTER_NOT_READY:
+        "Online payment is unavailable until the shop printer is ready.",
+      PAYMENT_SIGNATURE_INVALID: "Payment verification failed.",
+      PAYMENT_NOT_CAPTURED: "The payment has not been captured.",
+      PAYMENT_CONFIGURATION_MISSING: "Online payment is not configured.",
+      PAYMENT_PROVIDER_UNAVAILABLE:
+        "The payment provider is temporarily unavailable.",
+    };
+    return error(
+      statuses[caught.code] ?? 400,
+      caught.code,
+      messages[caught.code] ?? "The payment request could not be completed.",
+      corsHeaders(env),
+    );
+  }
   if (!(caught instanceof CustomerError)) throw caught;
   const statuses: Record<string, number> = {
     ONLINE_PRINTING_DISABLED: 503,
@@ -293,6 +424,48 @@ export async function handleCustomerRequest(
             400,
             "INVALID_PRINT_SETTINGS",
             "Choose valid print settings.",
+            corsHeaders(env),
+          );
+    }
+    if (
+      request.method === "POST" &&
+      pathname === "/api/customer/payments/create"
+    ) {
+      const input = validateCreatePayment(await readJson(request));
+      return input
+        ? ok(await actions.createPayment(token, input), 200, corsHeaders(env))
+        : error(
+            400,
+            "INVALID_PAYMENT_REQUEST",
+            "Review the current total before paying.",
+            corsHeaders(env),
+          );
+    }
+    if (
+      request.method === "POST" &&
+      pathname === "/api/customer/payments/verify"
+    ) {
+      const input = validateVerifyPayment(await readJson(request));
+      return input
+        ? ok(await actions.verifyPayment(token, input), 200, corsHeaders(env))
+        : error(
+            400,
+            "INVALID_PAYMENT_VERIFICATION",
+            "Payment verification details are invalid.",
+            corsHeaders(env),
+          );
+    }
+    if (
+      request.method === "POST" &&
+      pathname === "/api/customer/payments/cancel"
+    ) {
+      const input = validateCancelPayment(await readJson(request));
+      return input
+        ? ok(await actions.cancelPayment(token, input), 200, corsHeaders(env))
+        : error(
+            400,
+            "INVALID_PAYMENT_CANCELLATION",
+            "Payment cancellation details are invalid.",
             corsHeaders(env),
           );
     }

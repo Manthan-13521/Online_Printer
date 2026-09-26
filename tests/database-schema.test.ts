@@ -14,6 +14,13 @@ const customerUploadMigrationSql = readFileSync(
   ),
   "utf8",
 );
+const paymentMigrationSql = readFileSync(
+  new URL(
+    "../database/migrations/0003_payment_idempotency.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
 const seedSql = readFileSync(
   new URL("../database/seeds/0001_development.sql", import.meta.url),
   "utf8",
@@ -23,6 +30,7 @@ function createDatabase(withSeed = false): DatabaseSync {
   const database = new DatabaseSync(":memory:");
   database.exec(migrationSql);
   database.exec(customerUploadMigrationSql);
+  database.exec(paymentMigrationSql);
   if (withSeed) {
     database.exec(seedSql);
   }
@@ -262,6 +270,61 @@ describe("D1 migrations", () => {
         database
           .prepare("UPDATE orders SET draft_token_hash = ? WHERE id = ?")
           .run("hashed-not-raw", "50000000-0000-4000-8000-000000000009"),
+      ).toThrow(/unique constraint/i);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("allows only one active payment attempt per order", () => {
+    const database = createDatabase();
+    try {
+      const orderId = "50000000-0000-4000-8000-000000000010";
+      insertOrder(database, { id: orderId, status: "PAYMENT_PENDING" });
+      database
+        .prepare(
+          `INSERT INTO payments
+            (id, order_id, provider_order_id, amount_paise, status,
+             created_at_ms, updated_at_ms)
+           VALUES (?, ?, ?, 100, 'PENDING', 1735689600000, 1735689600000)`,
+        )
+        .run("60000000-0000-4000-8000-000000000010", orderId, "order_first");
+      expect(() =>
+        database
+          .prepare(
+            `INSERT INTO payments
+              (id, order_id, provider_order_id, amount_paise, status,
+               created_at_ms, updated_at_ms)
+             VALUES (?, ?, ?, 100, 'CREATED', 1735689600000, 1735689600000)`,
+          )
+          .run("60000000-0000-4000-8000-000000000011", orderId, "order_second"),
+      ).toThrow(/unique constraint/i);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("deduplicates state-transition events by idempotency key", () => {
+    const database = createDatabase();
+    try {
+      const orderId = "50000000-0000-4000-8000-000000000012";
+      insertOrder(database, { id: orderId, status: "PAYMENT_PENDING" });
+      const insert = database.prepare(
+        `INSERT INTO order_events
+          (id, order_id, event_type, actor_type, created_at_ms, idempotency_key)
+         VALUES (?, ?, 'PAYMENT_CAPTURED', 'SYSTEM', 1735689600000, ?)`,
+      );
+      insert.run(
+        "80000000-0000-4000-8000-000000000001",
+        orderId,
+        "payment:a:paid",
+      );
+      expect(() =>
+        insert.run(
+          "80000000-0000-4000-8000-000000000002",
+          orderId,
+          "payment:a:paid",
+        ),
       ).toThrow(/unique constraint/i);
     } finally {
       database.close();

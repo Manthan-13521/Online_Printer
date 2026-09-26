@@ -1,7 +1,8 @@
 # Development
 
-For the Phase 4 local flow, private R2 binding, presigning secrets, exact-origin
-CORS rule, and mock-versus-live boundary, see `docs/CUSTOMER_UPLOAD.md`.
+For the private R2 boundary, see `docs/CUSTOMER_UPLOAD.md`. For Razorpay Test
+Mode configuration, payment verification, and the development-only readiness
+bypass, see `docs/PAYMENTS.md`.
 
 ## Workspace rules
 
@@ -38,12 +39,12 @@ After signing in, `/admin/shop-settings` and `/admin/pricing` load current confi
 
 Committed example files contain placeholders only. Create ignored local files beside them:
 
-| Component    | Template                            | Local file   | Intended contents               |
-| ------------ | ----------------------------------- | ------------ | ------------------------------- |
-| Customer web | `apps/web/customer/.env.example`    | `.env.local` | Public API URL only             |
-| Admin web    | `apps/web/admin/.env.example`       | `.env.local` | Public API URL only             |
-| Worker       | `apps/api/worker/.dev.vars.example` | `.dev.vars`  | Future provider secrets         |
-| Agent        | `apps/agent/windows/.env.example`   | `.env.local` | Local API/pairing configuration |
+| Component    | Template                            | Local file   | Intended contents                  |
+| ------------ | ----------------------------------- | ------------ | ---------------------------------- |
+| Customer web | `apps/web/customer/.env.example`    | `.env.local` | Public API URL only                |
+| Admin web    | `apps/web/admin/.env.example`       | `.env.local` | Public API URL only                |
+| Worker       | `apps/api/worker/.dev.vars.example` | `.dev.vars`  | R2/Razorpay secrets and local gate |
+| Agent        | `apps/agent/windows/.env.example`   | `.env.local` | Local API/pairing configuration    |
 
 Frontend variables prefixed with `VITE_` are public. Razorpay secrets, Agent credentials, and Cloudflare credentials must never be placed in frontend files. Admin sessions are opaque random tokens and do not require a signing secret. Production Worker secrets will be configured through Cloudflare secret management during deployment, not committed configuration.
 

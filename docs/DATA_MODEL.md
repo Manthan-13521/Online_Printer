@@ -1,12 +1,13 @@
 # PrintGo Data Model
 
-**Status:** Phase 1 schema finalized; Phase 2 authentication and Phase 3 configuration behavior documented
+**Status:** Phase 1 schema finalized; Phase 2-5 schema additions and runtime
+behavior documented
 
 **Database:** Cloudflare D1 / SQLite
 
 **Schema source of truth:** `database/migrations/*.sql`
 
-## Customer draft upload additions
+## Customer draft and payment additions
 
 Migration `0002_customer_draft_upload.sql` adds the hashed short-lived draft
 credential and expiry to `orders`, plus untrusted expected size and a validation
@@ -16,6 +17,10 @@ read from R2 and is the only file size used for pricing.
 `source_page_count` is browser-derived metadata. It is not a paid-page count;
 the Worker derives the chargeable unique count from the explicit normalized
 `selected_pages` range.
+
+Migration `0003_payment_idempotency.sql` limits each order to one active payment
+attempt and gives consequential order events a unique idempotency key. It adds
+no tenant, tracking, Agent, printer, or refund model.
 
 ## Deployment invariant
 
@@ -124,6 +129,12 @@ One source-PDF metadata row per order. It stores the private R2 key, trusted byt
 
 Provider-independent payment state tied to the exact order, integer amount, and INR currency. Razorpay order/payment identifiers are unique within the provider namespace. Multiple payment attempts can exist for an order.
 
+Migration `0003` permits historical attempts but allows only one `CREATED` or
+`PENDING` attempt for an order. Payment creation first reserves that active row,
+then replaces its local reservation marker with the provider order ID before
+returning checkout data. A pending provider order is reusable only for the same
+server-recalculated amount and currency.
+
 ### `payment_provider_events`
 
 Minimal webhook idempotency ledger. `(provider, provider_event_id)` is unique, so delivery retries cannot repeat payment actions. Raw webhook bodies are not retained.
@@ -135,6 +146,10 @@ Append-oriented history for each submission/retry. `(order_id, attempt_number)` 
 ### `order_events`
 
 Append-only operational timeline for status changes and order events. `orders.status` remains current truth; events support admin history and debugging. JSON details must exclude secrets.
+
+Phase 5 adds an optional unique `idempotency_key`. Payment capture and queue
+events use stable payment-derived keys, so a callback/webhook race cannot append
+the same logical transition twice.
 
 ### `audit_logs`
 
@@ -169,26 +184,28 @@ These durations are shared constants in `@printgo/domain`. Later APIs must deny 
 
 ## Index rationale
 
-| Index                                    | Query supported                                      |
-| ---------------------------------------- | ---------------------------------------------------- |
-| `orders_status_created_idx`              | Bounded live/failed/status-specific order lists      |
-| `orders_created_idx`                     | Recent history and keyset pagination                 |
-| `orders_customer_phone_created_idx`      | Admin phone lookup with recent-first results         |
-| `orders_claim_recovery_idx`              | Expired `CLAIMED` leases without scanning all orders |
-| `uploads_cleanup_idx`                    | Due, non-deleted R2 cleanup candidates               |
-| `payments_order_created_idx`             | Payment attempts for one order                       |
-| `payments_status_created_idx`            | Payment reconciliation by state/time                 |
-| `agents_heartbeat_idx`                   | Active-Agent availability and stale heartbeat checks |
-| `agent_pair_codes_expiry_idx`            | Valid unused pair-code cleanup/lookup                |
-| `printers_agent_enabled_idx`             | Enabled printers exposed by one Agent                |
-| `printers_status_idx`                    | Available/unavailable configured printers            |
-| `print_attempts_order_status_idx`        | Attempt history/current attempt for an order         |
-| `print_attempts_agent_windows_job_idx`   | Reconcile a spool identifier in its Agent scope      |
-| `print_attempts_status_observed_idx`     | Monitoring active/blocked attempts                   |
-| `order_events_order_created_idx`         | Stable order timeline pagination                     |
-| `payment_provider_events_processing_idx` | Unprocessed/failed webhook reconciliation            |
-| `audit_logs_created_idx`                 | Recent audit history                                 |
-| `audit_logs_entity_idx`                  | Audit history for one entity                         |
+| Index                                       | Query supported                                      |
+| ------------------------------------------- | ---------------------------------------------------- |
+| `orders_status_created_idx`                 | Bounded live/failed/status-specific order lists      |
+| `orders_created_idx`                        | Recent history and keyset pagination                 |
+| `orders_customer_phone_created_idx`         | Admin phone lookup with recent-first results         |
+| `orders_claim_recovery_idx`                 | Expired `CLAIMED` leases without scanning all orders |
+| `uploads_cleanup_idx`                       | Due, non-deleted R2 cleanup candidates               |
+| `payments_order_created_idx`                | Payment attempts for one order                       |
+| `payments_status_created_idx`               | Payment reconciliation by state/time                 |
+| `payments_one_active_attempt_per_order_idx` | One payable creation attempt per order               |
+| `agents_heartbeat_idx`                      | Active-Agent availability and stale heartbeat checks |
+| `agent_pair_codes_expiry_idx`               | Valid unused pair-code cleanup/lookup                |
+| `printers_agent_enabled_idx`                | Enabled printers exposed by one Agent                |
+| `printers_status_idx`                       | Available/unavailable configured printers            |
+| `print_attempts_order_status_idx`           | Attempt history/current attempt for an order         |
+| `print_attempts_agent_windows_job_idx`      | Reconcile a spool identifier in its Agent scope      |
+| `print_attempts_status_observed_idx`        | Monitoring active/blocked attempts                   |
+| `order_events_order_created_idx`            | Stable order timeline pagination                     |
+| `order_events_idempotency_key_idx`          | Retry-safe consequential order transitions           |
+| `payment_provider_events_processing_idx`    | Unprocessed/failed webhook reconciliation            |
+| `audit_logs_created_idx`                    | Recent audit history                                 |
+| `audit_logs_entity_idx`                     | Audit history for one entity                         |
 
 Unique constraints also create lookup indexes for job codes, tracking-token hashes, provider IDs, R2 object keys, session/pair-code hashes, and spool identifiers.
 

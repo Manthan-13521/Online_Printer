@@ -68,6 +68,34 @@ function actions(): CustomerActions {
         expiresAt: "later",
       }),
     ),
+    createPayment: vi.fn(() =>
+      Promise.resolve({
+        status: "CHECKOUT_READY" as const,
+        razorpayKeyId: "rzp_test_key",
+        razorpayOrderId: "order_server_a",
+        amountPaise: 400,
+        currency: "INR" as const,
+        shopName: "ABC Xerox",
+        customerName: "Rahul",
+        customerPhone: "9876543210",
+        description: "Printing: notes.pdf",
+      }),
+    ),
+    verifyPayment: vi.fn(() =>
+      Promise.resolve({
+        jobCode: "PG-ABC234",
+        amountPaidPaise: 400,
+        currency: "INR" as const,
+        status: "QUEUED" as const,
+        message: "Payment verified. Your print job is queued.",
+      }),
+    ),
+    cancelPayment: vi.fn(() =>
+      Promise.resolve({
+        status: "PAYMENT_CANCELLED" as const,
+        retainedUntil: "later",
+      }),
+    ),
   };
 }
 
@@ -151,5 +179,46 @@ describe("customer routes", () => {
     );
     expect(response.status).toBe(401);
     expect(api.completeUpload).not.toHaveBeenCalled();
+  });
+
+  it("accepts only a reviewed integer total for payment creation", async () => {
+    const api = actions();
+    const invalid = await handleCustomerRequest(
+      request("/api/customer/payments/create", "POST", {
+        acknowledgedTotalPaise: "400",
+        amountPaise: 1,
+      }),
+      env,
+      api,
+    );
+    expect(invalid.status).toBe(400);
+    expect(api.createPayment).not.toHaveBeenCalled();
+
+    const valid = await handleCustomerRequest(
+      request("/api/customer/payments/create", "POST", {
+        acknowledgedTotalPaise: 400,
+      }),
+      env,
+      api,
+    );
+    expect(valid.status).toBe(200);
+    expect(api.createPayment).toHaveBeenCalledWith(token, {
+      acknowledgedTotalPaise: 400,
+    });
+  });
+
+  it("rejects malformed provider verification identifiers", async () => {
+    const api = actions();
+    const response = await handleCustomerRequest(
+      request("/api/customer/payments/verify", "POST", {
+        razorpayOrderId: "attacker-order",
+        razorpayPaymentId: "pay_a",
+        razorpaySignature: "a".repeat(64),
+      }),
+      env,
+      api,
+    );
+    expect(response.status).toBe(400);
+    expect(api.verifyPayment).not.toHaveBeenCalled();
   });
 });

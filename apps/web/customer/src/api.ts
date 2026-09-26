@@ -1,12 +1,18 @@
 import type {
   ApiResponse,
   CompleteCustomerUploadData,
+  CancelCustomerPaymentData,
+  CancelCustomerPaymentRequest,
   CreateCustomerDraftData,
   CreateCustomerDraftRequest,
+  CreateCustomerPaymentData,
+  CreateCustomerPaymentRequest,
   CustomerConfigData,
+  CustomerPaymentSuccessData,
   CustomerPrintSettingsRequest,
   CustomerQuoteData,
   UploadAuthorization,
+  VerifyCustomerPaymentRequest,
 } from "@printgo/api-contract";
 
 async function jsonRequest<T>(path: string, init?: RequestInit): Promise<T> {
@@ -49,6 +55,21 @@ export const customerApi = {
     jsonRequest<CustomerQuoteData>(
       "/api/customer/draft/print-settings",
       authorized(token, { method: "PUT", body: JSON.stringify(input) }),
+    ),
+  createPayment: (token: string, input: CreateCustomerPaymentRequest) =>
+    jsonRequest<CreateCustomerPaymentData>(
+      "/api/customer/payments/create",
+      authorized(token, { method: "POST", body: JSON.stringify(input) }),
+    ),
+  verifyPayment: (token: string, input: VerifyCustomerPaymentRequest) =>
+    jsonRequest<CustomerPaymentSuccessData>(
+      "/api/customer/payments/verify",
+      authorized(token, { method: "POST", body: JSON.stringify(input) }),
+    ),
+  cancelPayment: (token: string, input: CancelCustomerPaymentRequest) =>
+    jsonRequest<CancelCustomerPaymentData>(
+      "/api/customer/payments/cancel",
+      authorized(token, { method: "POST", body: JSON.stringify(input) }),
     ),
 };
 

@@ -68,4 +68,19 @@ Settings responses expose only the normalized installation fields used by the Ad
 
 All state-changing Admin requests require the exactly configured trusted `Origin`. Credentialed CORS never uses a wildcard. Protected handlers derive the admin from the server-side session cookie; a browser-supplied admin ID never grants authority.
 
-The browser sends configuration and user selections, never an authoritative total. Future order/payment endpoints must load current D1 configuration and call `@printgo/pricing` in the Worker. The resulting integer-paise amounts are then snapshotted on the order.
+The browser sends configuration, selections, and an acknowledged review total,
+never an authoritative charge amount. Payment creation loads current D1
+configuration and calls `@printgo/pricing` in the Worker. The resulting
+integer-paise amounts are snapshotted on the order and sent to Razorpay.
+
+The Phase 5 customer payment surface is:
+
+- `POST /api/customer/payments/create`
+- `POST /api/customer/payments/verify`
+- `POST /api/customer/payments/cancel`
+- `POST /api/webhooks/razorpay`
+
+The three customer routes require the exact configured customer origin and the
+draft bearer token. The webhook is not browser CORS traffic: it authenticates
+the raw body with the dedicated webhook secret and deduplicates the provider
+event ID. See `docs/PAYMENTS.md` for the amount, capture, and readiness gates.

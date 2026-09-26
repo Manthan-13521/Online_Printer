@@ -191,3 +191,60 @@ export interface CustomerQuoteData {
 }
 
 export type CustomerQuoteResponse = ApiResponse<CustomerQuoteData>;
+
+export interface CreateCustomerPaymentRequest {
+  /** The last server quote explicitly reviewed by the customer. */
+  acknowledgedTotalPaise: number;
+}
+
+export interface CustomerPaymentCheckoutData {
+  status: "CHECKOUT_READY";
+  razorpayKeyId: string;
+  razorpayOrderId: string;
+  amountPaise: number;
+  currency: "INR";
+  shopName: string;
+  customerName: string;
+  customerPhone: string;
+  description: string;
+}
+
+export interface CustomerPaymentPriceChangedData {
+  status: "PRICE_CHANGED";
+  quote: CustomerQuoteData;
+}
+
+export type CreateCustomerPaymentData =
+  CustomerPaymentCheckoutData | CustomerPaymentPriceChangedData;
+
+export type CreateCustomerPaymentResponse =
+  ApiResponse<CreateCustomerPaymentData>;
+
+export interface VerifyCustomerPaymentRequest {
+  razorpayOrderId: string;
+  razorpayPaymentId: string;
+  razorpaySignature: string;
+}
+
+export interface CustomerPaymentSuccessData {
+  jobCode: string;
+  amountPaidPaise: number;
+  currency: "INR";
+  status: "QUEUED";
+  message: string;
+}
+
+export type VerifyCustomerPaymentResponse =
+  ApiResponse<CustomerPaymentSuccessData>;
+
+export interface CancelCustomerPaymentRequest {
+  razorpayOrderId: string;
+}
+
+export interface CancelCustomerPaymentData {
+  status: "PAYMENT_CANCELLED";
+  retainedUntil: string;
+}
+
+export type CancelCustomerPaymentResponse =
+  ApiResponse<CancelCustomerPaymentData>;

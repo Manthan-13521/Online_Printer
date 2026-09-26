@@ -1,7 +1,8 @@
 # Customer PDF upload pipeline
 
-Phase 4 ends at **Review ready**. It creates no payment, paid job, collection code,
-printer claim, or cleanup schedule.
+The Phase 4 upload pipeline ends at **Review ready**. Phase 5 continues from that
+review into payment, but upload itself still creates no paid job, collection
+code, printer claim, or physical cleanup execution.
 
 ## Workflow
 
@@ -65,9 +66,9 @@ The PWA precaches static assets only. `/api/*` navigation is excluded and runtim
 caching is empty. There is no offline PDF queue or background upload sync. Raw
 tokens, signed URLs, PDF bytes, and private responses must never be logged/cached.
 
-## Later phases
+## Payment continuation and later phases
 
 - Phase 5 recalculates current pricing before creating a Razorpay order. This
-  review is not a price lock.
+  review is not a price lock. See `docs/PAYMENTS.md`.
 - Phase 7 adds real Agent/printer readiness. Phase 4 claims no printer is online.
 - Phase 12 performs scheduled deletion.
