@@ -146,6 +146,15 @@ function makeService(options?: {
   customer?: ReturnType<typeof customerRepository>;
   readiness?: PaymentReadiness;
   provider?: RazorpayClient;
+  tracking?: {
+    attachToVerifiedOrder(
+      orderId: string,
+      rawToken: string,
+    ): Promise<{
+      rawToken: string;
+      expiresAt: string;
+    }>;
+  };
 }) {
   return new PaymentService(
     options?.payments ?? paymentRepository(),
@@ -161,6 +170,13 @@ function makeService(options?: {
     },
     options?.provider ?? provider(),
     { keyId: "rzp_test_key", keySecret: "secret" },
+    options?.tracking ?? {
+      attachToVerifiedOrder: (_orderId: string, rawToken: string) =>
+        Promise.resolve({
+          rawToken,
+          expiresAt: "2026-10-10T00:00:00.000Z",
+        }),
+    },
     () => now,
   );
 }
@@ -313,6 +329,7 @@ describe("PaymentService", () => {
         razorpayOrderId: "order_server_a",
         razorpayPaymentId: "pay_server_a",
         razorpaySignature: signature,
+        trackingToken: "T".repeat(43),
       }),
     ).rejects.toEqual(
       expect.objectContaining({ code: "PAYMENT_SIGNATURE_INVALID" }),
@@ -335,6 +352,7 @@ describe("PaymentService", () => {
         razorpayOrderId: "order_server_a",
         razorpayPaymentId: "pay_server_a",
         razorpaySignature: signature,
+        trackingToken: "T".repeat(43),
       }),
     ).rejects.toEqual(
       expect.objectContaining({ code: "PAYMENT_ORDER_MISMATCH" }),
@@ -361,6 +379,7 @@ describe("PaymentService", () => {
         razorpayOrderId: "order_server_a",
         razorpayPaymentId: "pay_server_a",
         razorpaySignature: signature,
+        trackingToken: "T".repeat(43),
       }),
     ).rejects.toEqual(
       expect.objectContaining({ code: "PAYMENT_NOT_CAPTURED" }),
@@ -378,6 +397,7 @@ describe("PaymentService", () => {
       razorpayOrderId: "order_server_a",
       razorpayPaymentId: "pay_server_a",
       razorpaySignature: signature,
+      trackingToken: "T".repeat(43),
     });
     expect(result.jobCode).toMatch(
       /^PG-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{6}$/u,
@@ -411,6 +431,7 @@ describe("PaymentService", () => {
       razorpayOrderId: "order_server_a",
       razorpayPaymentId: "pay_server_a",
       razorpaySignature: signature,
+      trackingToken: "T".repeat(43),
     });
     expect(result.jobCode).toMatch(/^PG-/u);
     expect(payments.finalizePaid).toHaveBeenCalledTimes(2);
@@ -438,6 +459,7 @@ describe("PaymentService", () => {
         razorpayOrderId: "order_server_a",
         razorpayPaymentId: "pay_server_a",
         razorpaySignature: signature,
+        trackingToken: "T".repeat(43),
       }),
     ).resolves.toEqual(expect.objectContaining({ jobCode: "PG-ABC234" }));
     expect(payments.finalizePaid).not.toHaveBeenCalled();

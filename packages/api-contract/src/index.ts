@@ -1,5 +1,6 @@
 import type {
   ColorMode,
+  CustomerOrderStatus,
   IdentificationSheetPlacement,
   PaperSize,
   SidesMode,
@@ -224,6 +225,8 @@ export interface VerifyCustomerPaymentRequest {
   razorpayOrderId: string;
   razorpayPaymentId: string;
   razorpaySignature: string;
+  /** A browser-generated 32-byte opaque credential, Base64URL encoded. */
+  trackingToken: string;
 }
 
 export interface CustomerPaymentSuccessData {
@@ -232,10 +235,51 @@ export interface CustomerPaymentSuccessData {
   currency: "INR";
   status: "QUEUED";
   message: string;
+  trackingToken: string;
+  trackingExpiresAt: string;
 }
 
 export type VerifyCustomerPaymentResponse =
   ApiResponse<CustomerPaymentSuccessData>;
+
+export type CustomerTrackingStatus = CustomerOrderStatus;
+
+export interface CustomerSafeTimelineEvent {
+  status: "PAYMENT_RECEIVED" | CustomerTrackingStatus;
+  label: string;
+  occurredAt: string;
+}
+
+export interface CustomerTrackingPrintSummary {
+  selectedPages: string;
+  copies: number;
+  paperSize: PaperSize;
+  colorMode: ColorMode;
+  sides: SidesMode;
+}
+
+export type CustomerFileRetentionStatus =
+  "TEMPORARILY_RETAINED" | "DELETION_PENDING" | "DELETED";
+
+export interface CustomerTrackingData {
+  jobCode: string;
+  customerName: string;
+  paymentStatus: "PAYMENT_RECEIVED";
+  orderStatus: CustomerTrackingStatus;
+  statusLabel: string;
+  statusMessage: string;
+  submittedAt: string;
+  paidAt: string;
+  printSummary: CustomerTrackingPrintSummary;
+  amountPaidPaise: number;
+  currency: "INR";
+  instructions: string | null;
+  fileRetentionStatus: CustomerFileRetentionStatus;
+  timeline: CustomerSafeTimelineEvent[];
+  trackingExpiresAt: string;
+}
+
+export type CustomerTrackingResponse = ApiResponse<CustomerTrackingData>;
 
 export interface CancelCustomerPaymentRequest {
   razorpayOrderId: string;

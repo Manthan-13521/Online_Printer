@@ -2,7 +2,9 @@
 
 For the private R2 boundary, see `docs/CUSTOMER_UPLOAD.md`. For Razorpay Test
 Mode configuration, payment verification, and the development-only readiness
-bypass, see `docs/PAYMENTS.md`.
+bypass, see `docs/PAYMENTS.md`. For the code-plus-private-token tracking model,
+browser fragment handling, and customer-safe response boundary, see
+`docs/CUSTOMER_TRACKING.md`.
 
 ## Workspace rules
 
@@ -54,6 +56,16 @@ The main Worker config contains no account IDs or resource IDs. `wrangler.dev.js
 
 ## Verification policy
 
-Run targeted tests while implementing a phase, then all five root quality commands before declaring that phase complete. Capacity/free-tier simulation is specifically reserved for Phase 16 and does not replace normal functional testing.
+Run targeted tests while implementing a phase, then all required root quality
+commands before declaring that phase complete. Capacity/free-tier simulation is
+specifically reserved for Phase 16 and does not replace normal functional
+testing.
+
+For customer tracking, test the private API with both the job code and bearer
+token. A job-code-only request is intentionally invalid. Browser tests should
+also cover fragment consumption, `sessionStorage` refresh restoration, generic
+invalid/expired handling, completed jobs after file deletion, and network
+failure. The PWA service worker has no `/api` runtime cache, and private tracking
+responses must remain `no-store`.
 
 For Phase 3 configuration changes, also verify an authenticated settings and pricing update against local D1, reload both resources, and run a calculation through `@printgo/pricing`. The V1 single-admin assumption means optimistic conflict detection is not currently implemented; related pricing rows are nevertheless committed atomically.

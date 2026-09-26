@@ -9,6 +9,7 @@ import type {
   CreateCustomerPaymentRequest,
   CustomerConfigData,
   CustomerPaymentSuccessData,
+  CustomerTrackingData,
   CustomerPrintSettingsRequest,
   CustomerQuoteData,
   UploadAuthorization,
@@ -70,6 +71,11 @@ export const customerApi = {
     jsonRequest<CancelCustomerPaymentData>(
       "/api/customer/payments/cancel",
       authorized(token, { method: "POST", body: JSON.stringify(input) }),
+    ),
+  tracking: (jobCode: string, token: string) =>
+    jsonRequest<CustomerTrackingData>(
+      `/api/customer/tracking/${encodeURIComponent(jobCode)}`,
+      authorized(token),
     ),
 };
 

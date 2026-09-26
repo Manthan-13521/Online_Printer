@@ -21,6 +21,10 @@ const paymentMigrationSql = readFileSync(
   ),
   "utf8",
 );
+const trackingMigrationSql = readFileSync(
+  new URL("../database/migrations/0004_customer_tracking.sql", import.meta.url),
+  "utf8",
+);
 const seedSql = readFileSync(
   new URL("../database/seeds/0001_development.sql", import.meta.url),
   "utf8",
@@ -31,6 +35,7 @@ function createDatabase(withSeed = false): DatabaseSync {
   database.exec(migrationSql);
   database.exec(customerUploadMigrationSql);
   database.exec(paymentMigrationSql);
+  database.exec(trackingMigrationSql);
   if (withSeed) {
     database.exec(seedSql);
   }
@@ -326,6 +331,72 @@ describe("D1 migrations", () => {
           "payment:a:paid",
         ),
       ).toThrow(/unique constraint/i);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("applies bounded hashed tracking authorization without storing the raw token", () => {
+    const database = createDatabase();
+    try {
+      const firstOrderId = "50000000-0000-4000-8000-000000000013";
+      const secondOrderId = "50000000-0000-4000-8000-000000000014";
+      insertOrder(database, {
+        id: firstOrderId,
+        publicJobCode: "PG-ABC234",
+        status: "QUEUED",
+      });
+      insertOrder(database, {
+        id: secondOrderId,
+        publicJobCode: "PG-ABC235",
+        status: "QUEUED",
+      });
+      database
+        .prepare(
+          `UPDATE orders SET tracking_token_hash = ?,
+            tracking_created_at_ms = ?, tracking_expires_at_ms = ?
+          WHERE id = ?`,
+        )
+        .run("sha256-base64url-hash", 1_000, 2_000, firstOrderId);
+      expect(
+        database
+          .prepare(
+            `SELECT tracking_token_hash, tracking_created_at_ms,
+              tracking_expires_at_ms FROM orders WHERE id = ?`,
+          )
+          .get(firstOrderId),
+      ).toEqual({
+        tracking_token_hash: "sha256-base64url-hash",
+        tracking_created_at_ms: 1_000,
+        tracking_expires_at_ms: 2_000,
+      });
+      expect(() =>
+        database
+          .prepare(
+            `UPDATE orders SET tracking_token_hash = ?,
+              tracking_created_at_ms = ?, tracking_expires_at_ms = ?
+            WHERE id = ?`,
+          )
+          .run("sha256-base64url-hash", 3_000, 4_000, secondOrderId),
+      ).toThrow(/unique constraint/iu);
+      expect(() =>
+        database
+          .prepare(
+            `UPDATE orders SET tracking_token_hash = ?,
+              tracking_created_at_ms = ?, tracking_expires_at_ms = ?
+            WHERE id = ?`,
+          )
+          .run("replacement-hash", 3_000, 4_000, firstOrderId),
+      ).toThrow(/cannot be replaced/iu);
+      expect(() =>
+        database
+          .prepare(
+            `UPDATE orders SET tracking_token_hash = ?,
+              tracking_created_at_ms = ?, tracking_expires_at_ms = ?
+            WHERE id = ?`,
+          )
+          .run("another-hash", 5_000, 5_000, secondOrderId),
+      ).toThrow(/inconsistent/iu);
     } finally {
       database.close();
     }

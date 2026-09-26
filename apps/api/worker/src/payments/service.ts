@@ -13,6 +13,7 @@ import { calculatePrintPrice, PricingError } from "@printgo/pricing";
 
 import type { CustomerRepository } from "../customer/repository";
 import type { PrivateObjectStore } from "../storage/r2-verification";
+import type { TrackingService } from "../tracking/service";
 import { generateJobCode } from "./job-code";
 import type {
   PayableDraftRecord,
@@ -63,6 +64,7 @@ export class PaymentService {
     private readonly readiness: PaymentReadiness,
     private readonly razorpay: RazorpayClient,
     private readonly configuration: PaymentServiceConfiguration,
+    private readonly tracking: Pick<TrackingService, "attachToVerifiedOrder">,
     private readonly now: () => number = Date.now,
   ) {}
 
@@ -309,7 +311,7 @@ export class PaymentService {
     );
     if (!valid) throw new PaymentError("PAYMENT_SIGNATURE_INVALID");
     if (payment.status === "PAID" && payment.publicJobCode) {
-      return this.successData(payment);
+      return this.successData(payment, input.trackingToken);
     }
     this.validateDraftState(draft);
     if (
@@ -333,6 +335,7 @@ export class PaymentService {
         input.razorpayPaymentId,
         "CUSTOMER",
       ),
+      input.trackingToken,
     );
   }
 
@@ -409,15 +412,24 @@ export class PaymentService {
     };
   }
 
-  private successData(payment: PaymentRecord): CustomerPaymentSuccessData {
+  private async successData(
+    payment: PaymentRecord,
+    rawTrackingToken: string,
+  ): Promise<CustomerPaymentSuccessData> {
     if (!payment.publicJobCode)
       throw new Error("Paid payment is missing a public job code.");
+    const tracking = await this.tracking.attachToVerifiedOrder(
+      payment.orderId,
+      rawTrackingToken,
+    );
     return {
       jobCode: payment.publicJobCode,
       amountPaidPaise: payment.amountPaise,
       currency: payment.currency,
       status: "QUEUED",
       message: "Payment verified. Your print job is queued.",
+      trackingToken: tracking.rawToken,
+      trackingExpiresAt: tracking.expiresAt,
     };
   }
 }

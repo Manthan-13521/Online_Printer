@@ -11,10 +11,22 @@ import { formatInr } from "@printgo/pricing";
 
 import { customerApi, uploadDirectly } from "./api";
 import { inspectPdf } from "./pdf";
+import { TrackingPage } from "./TrackingPage";
+import {
+  createTrackingToken,
+  privateTrackingUrl,
+  trackingStorageKey,
+} from "./tracking-token";
 
 const DRAFT_TOKEN_KEY = "printgo.customerDraftToken";
+const PENDING_TRACKING_TOKEN_PREFIX = "printgo.pendingTracking.";
 const humanFileSize = (bytes: number) =>
   `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+
+function trackingCodeFromPath(): string | null {
+  const match = /^\/track\/([^/]+)\/?$/u.exec(window.location.pathname);
+  return match ? decodeURIComponent(match[1] ?? "") : null;
+}
 
 interface RazorpaySuccessResponse {
   razorpay_order_id: string;
@@ -82,6 +94,7 @@ function paymentErrorMessage(caught: unknown): string {
 }
 
 export function App() {
+  const [trackingJobCode, setTrackingJobCode] = useState(trackingCodeFromPath);
   const [config, setConfig] = useState<CustomerConfigData | null>(null);
   const [loading, setLoading] = useState(true);
   const [customerName, setCustomerName] = useState("");
@@ -105,6 +118,13 @@ export function App() {
   const [paymentBusy, setPaymentBusy] = useState(false);
   const [paymentSuccess, setPaymentSuccess] =
     useState<CustomerPaymentSuccessData | null>(null);
+  const [copyMessage, setCopyMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handlePopState = () => setTrackingJobCode(trackingCodeFromPath());
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
 
   useEffect(() => {
     customerApi
@@ -258,14 +278,24 @@ export function App() {
   ) {
     setPaymentBusy(true);
     setStatus("Verifying captured payment with the shop server…");
+    const pendingKey = `${PENDING_TRACKING_TOKEN_PREFIX}${response.razorpay_order_id}`;
+    const trackingToken =
+      sessionStorage.getItem(pendingKey) ?? createTrackingToken();
+    sessionStorage.setItem(pendingKey, trackingToken);
     try {
       const result = await customerApi.verifyPayment(token, {
         razorpayOrderId: response.razorpay_order_id,
         razorpayPaymentId: response.razorpay_payment_id,
         razorpaySignature: response.razorpay_signature,
+        trackingToken,
       });
       setPaymentSuccess(result);
       setStatus(result.message);
+      sessionStorage.setItem(
+        trackingStorageKey(result.jobCode),
+        result.trackingToken,
+      );
+      sessionStorage.removeItem(pendingKey);
       sessionStorage.removeItem(DRAFT_TOKEN_KEY);
     } catch (caught) {
       setStatus(paymentErrorMessage(caught));
@@ -349,6 +379,37 @@ export function App() {
       setPaymentBusy(false);
     }
   }
+
+  function openTracking() {
+    if (!paymentSuccess) return;
+    sessionStorage.setItem(
+      trackingStorageKey(paymentSuccess.jobCode),
+      paymentSuccess.trackingToken,
+    );
+    window.history.pushState(
+      null,
+      "",
+      `/track/${encodeURIComponent(paymentSuccess.jobCode)}#${paymentSuccess.trackingToken}`,
+    );
+    setTrackingJobCode(paymentSuccess.jobCode);
+  }
+
+  async function copyTrackingLink() {
+    if (!paymentSuccess) return;
+    try {
+      await navigator.clipboard.writeText(
+        privateTrackingUrl(
+          paymentSuccess.jobCode,
+          paymentSuccess.trackingToken,
+        ),
+      );
+      setCopyMessage("Private tracking link copied.");
+    } catch {
+      setCopyMessage("The link could not be copied on this device.");
+    }
+  }
+
+  if (trackingJobCode) return <TrackingPage jobCode={trackingJobCode} />;
 
   if (loading)
     return (
@@ -644,14 +705,28 @@ export function App() {
             )}
             {paymentSuccess && (
               <div className="payment-success" role="status">
-                <h3>Payment verified</h3>
-                <p>Your job code is</p>
+                <h3>Payment successful</h3>
+                <p>Your Print Code</p>
                 <strong>{paymentSuccess.jobCode}</strong>
                 <p>Keep this code until you collect your print.</p>
                 <p>Amount paid: {formatInr(paymentSuccess.amountPaidPaise)}</p>
                 <p className="muted">
                   This reference code is not an authentication token.
                 </p>
+                <button type="button" onClick={openTracking}>
+                  Track My Print
+                </button>
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={() => void copyTrackingLink()}
+                >
+                  Copy private tracking link
+                </button>
+                <p className="private-link-warning">
+                  Anyone with this link can view this print-job status.
+                </p>
+                {copyMessage && <p role="status">{copyMessage}</p>}
               </div>
             )}
             <button

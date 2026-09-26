@@ -2,13 +2,14 @@
 
 PrintGo V2 is a production-oriented online printing system installed separately for each print/xerox shop. Customers will upload a PDF, choose print settings, pay the shop through Razorpay, track the job, and collect the printed output. Each shop owns its Cloudflare infrastructure, Razorpay account, production data, Windows computer, and printer; the developer retains the private source repository.
 
-The project has completed **Phase 5 — Razorpay Payment, Verified Job Creation &
-Customer Job Code**. The Customer PWA validates and uploads PDFs, receives a
-server-priced review, opens Razorpay Test/Live checkout only after a fresh
-server recalculation, and shows a human job code only after captured-payment
-verification. Tracking, Agent connectivity, and printing remain scheduled for
-later phases; production payment creation currently fails closed until Phase 7
-supplies real printer readiness.
+The project has completed **Phase 6 — Customer Job Tracking & Private Tracking
+Token**. After captured-payment verification, the Customer PWA shows the human
+job code and activates a separate private tracking credential. Customers can
+refresh a mobile-first status page, retain a fragment-based private link, and
+see customer-safe payment, print, timeline, and file-retention information.
+Agent connectivity and printing remain scheduled for later phases; production
+payment creation still fails closed until Phase 7 supplies real printer
+readiness.
 
 ## Source of truth
 
@@ -19,8 +20,9 @@ Read these documents before each major phase:
 - [`02_PRODUCT_REQUIREMENTS_AND_UX.md`](./02_PRODUCT_REQUIREMENTS_AND_UX.md)
 - [`03_BUILD_PHASES_AND_AI_HANDOFF.md`](./03_BUILD_PHASES_AND_AI_HANDOFF.md)
 
-Phase documentation: [`docs/CUSTOMER_UPLOAD.md`](./docs/CUSTOMER_UPLOAD.md) and
-[`docs/PAYMENTS.md`](./docs/PAYMENTS.md).
+Phase documentation: [`docs/CUSTOMER_UPLOAD.md`](./docs/CUSTOMER_UPLOAD.md),
+[`docs/PAYMENTS.md`](./docs/PAYMENTS.md), and
+[`docs/CUSTOMER_TRACKING.md`](./docs/CUSTOMER_TRACKING.md).
 
 ## Repository layout
 
@@ -75,6 +77,8 @@ See [`docs/DEVELOPMENT.md`](./docs/DEVELOPMENT.md) for workspace details,
 [`docs/ADMIN_AUTH.md`](./docs/ADMIN_AUTH.md) for authentication,
 [`docs/PRICING.md`](./docs/PRICING.md) for authoritative pricing,
 [`docs/PAYMENTS.md`](./docs/PAYMENTS.md) for Razorpay and readiness setup,
+[`docs/CUSTOMER_TRACKING.md`](./docs/CUSTOMER_TRACKING.md) for private
+account-free tracking,
 [`docs/CONVENTIONS.md`](./docs/CONVENTIONS.md) for foundational conventions,
 and [`docs/DATA_MODEL.md`](./docs/DATA_MODEL.md) for the finalized D1 model.
 

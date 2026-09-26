@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 /* eslint-disable @typescript-eslint/unbound-method -- Vitest inspects method mocks without invoking them. */
 
 import type { WorkerEnv } from "../env";
+import { TrackingError } from "../tracking/service";
 import { handleCustomerRequest, type CustomerActions } from "./routes";
 
 const env = {
@@ -88,12 +89,45 @@ function actions(): CustomerActions {
         currency: "INR" as const,
         status: "QUEUED" as const,
         message: "Payment verified. Your print job is queued.",
+        trackingToken: "T".repeat(43),
+        trackingExpiresAt: "2026-10-10T00:00:00.000Z",
       }),
     ),
     cancelPayment: vi.fn(() =>
       Promise.resolve({
         status: "PAYMENT_CANCELLED" as const,
         retainedUntil: "later",
+      }),
+    ),
+    tracking: vi.fn(() =>
+      Promise.resolve({
+        jobCode: "PG-ABC234",
+        customerName: "Rahul",
+        paymentStatus: "PAYMENT_RECEIVED" as const,
+        orderStatus: "WAITING_TO_PRINT" as const,
+        statusLabel: "Waiting to print",
+        statusMessage: "Your paid print job is waiting for the shop printer.",
+        submittedAt: "2026-09-26T00:00:00.000Z",
+        paidAt: "2026-09-26T00:01:00.000Z",
+        printSummary: {
+          selectedPages: "1-3",
+          copies: 1,
+          paperSize: "A4" as const,
+          colorMode: "BW" as const,
+          sides: "SINGLE" as const,
+        },
+        amountPaidPaise: 400,
+        currency: "INR" as const,
+        instructions: null,
+        fileRetentionStatus: "TEMPORARILY_RETAINED" as const,
+        timeline: [
+          {
+            status: "PAYMENT_RECEIVED" as const,
+            label: "Payment received",
+            occurredAt: "2026-09-26T00:01:00.000Z",
+          },
+        ],
+        trackingExpiresAt: "2026-10-10T00:01:00.000Z",
       }),
     ),
   };
@@ -220,5 +254,44 @@ describe("customer routes", () => {
     );
     expect(response.status).toBe(400);
     expect(api.verifyPayment).not.toHaveBeenCalled();
+  });
+
+  it("returns a no-store customer-safe tracking response", async () => {
+    const api = actions();
+    const response = await handleCustomerRequest(
+      request("/api/customer/tracking/pg-abc234", "GET"),
+      env,
+      api,
+    );
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(api.tracking).toHaveBeenCalledWith("pg-abc234", token);
+    const serialized = JSON.stringify(await response.json());
+    expect(serialized).toContain("PG-ABC234");
+    expect(serialized).not.toMatch(/orderId|r2|objectKey|provider|phone/iu);
+  });
+
+  it("does not reveal whether a job code exists when the token is wrong", async () => {
+    const existing = actions();
+    const missing = actions();
+    vi.mocked(existing.tracking).mockRejectedValueOnce(
+      new TrackingError("TRACKING_NOT_FOUND"),
+    );
+    vi.mocked(missing.tracking).mockRejectedValueOnce(
+      new TrackingError("TRACKING_NOT_FOUND"),
+    );
+    const existingResponse = await handleCustomerRequest(
+      request("/api/customer/tracking/PG-ABC234", "GET"),
+      env,
+      existing,
+    );
+    const missingResponse = await handleCustomerRequest(
+      request("/api/customer/tracking/PG-ZZZZZZ", "GET"),
+      env,
+      missing,
+    );
+    expect(existingResponse.status).toBe(404);
+    expect(missingResponse.status).toBe(404);
+    expect(await existingResponse.text()).toBe(await missingResponse.text());
   });
 });

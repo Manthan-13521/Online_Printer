@@ -65,6 +65,12 @@ An authorized, created, failed, mismatched, or otherwise unconfirmed payment
 does not create a job code. Provider secrets and raw provider responses are not
 returned to the browser or written to event JSON.
 
+For Phase 6, the browser also submits a freshly generated 32-byte tracking
+credential after saving it in `sessionStorage`. The Worker activates its hash
+only after the payment checks above pass. The successful response echoes that
+same raw credential so the UI can open/copy the private tracking link. See
+`docs/CUSTOMER_TRACKING.md` for idempotency and browser-link behavior.
+
 ## Webhook verification and idempotency
 
 `POST /api/webhooks/razorpay` reads a bounded raw request body. It validates
@@ -90,7 +96,7 @@ callback/webhook retries return the already assigned code without another state
 transition.
 
 The code is a human collection/reference code, not an authorization credential.
-Phase 6 will add tracking authorization separately.
+Private tracking requires the separate token added in Phase 6.
 
 ## Failure, cancellation, and retention
 

@@ -84,3 +84,14 @@ The three customer routes require the exact configured customer origin and the
 draft bearer token. The webhook is not browser CORS traffic: it authenticates
 the raw body with the dedicated webhook secret and deduplicates the provider
 event ID. See `docs/PAYMENTS.md` for the amount, capture, and readiness gates.
+
+The Phase 6 private tracking surface is:
+
+- `GET /api/customer/tracking/:jobCode`
+
+It requires the exact customer origin and a 43-character private tracking bearer
+token. The job code is normalized but is not authorization. The D1 query matches
+the code and SHA-256 token hash together, validates the bounded lifetime, and
+returns only `CustomerTrackingData`. Missing, malformed, expired, wrong-token,
+and nonexistent-code requests use the same `404 TRACKING_NOT_FOUND` envelope.
+Every tracking response, including errors, uses `Cache-Control: no-store`.

@@ -24,6 +24,7 @@ vi.mock("./api", () => ({
     createPayment: vi.fn(),
     verifyPayment: vi.fn(),
     cancelPayment: vi.fn(),
+    tracking: vi.fn(),
   },
   uploadDirectly: vi.fn(),
 }));
@@ -112,6 +113,8 @@ beforeEach(() => {
     currency: "INR",
     status: "QUEUED",
     message: "Payment verified. Your print job is queued.",
+    trackingToken: "T".repeat(43),
+    trackingExpiresAt: "2026-10-10T00:00:00.000Z",
   });
   vi.mocked(customerApi.cancelPayment).mockResolvedValue({
     status: "PAYMENT_CANCELLED",
@@ -340,7 +343,20 @@ describe("customer upload app", () => {
     });
     expect(await screen.findByText("PG-ABC234")).toBeTruthy();
     expect(screen.getByText("Amount paid: ₹21.00")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Track My Print" })).toBeTruthy();
+    expect(sessionStorage.getItem("printgo.tracking.PG-ABC234")).toBe(
+      "T".repeat(43),
+    );
     expect(customerApi.verifyPayment).toHaveBeenCalledOnce();
+    expect(customerApi.verifyPayment).toHaveBeenCalledWith(
+      "A".repeat(43),
+      expect.objectContaining({
+        razorpayOrderId: "order_server_a",
+      }),
+    );
+    const verification = vi.mocked(customerApi.verifyPayment).mock
+      .calls[0]?.[1];
+    expect(verification?.trackingToken).toMatch(/^[A-Za-z0-9_-]{43}$/u);
   });
 
   it("reports checkout cancellation and records it with the Worker", async () => {

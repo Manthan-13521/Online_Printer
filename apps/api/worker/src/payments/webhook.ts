@@ -4,6 +4,8 @@ import type { WorkerEnv } from "../env";
 import { error, ok } from "../http";
 import { D1CustomerRepository } from "../customer/repository";
 import { R2PrivateObjectStore } from "../storage/r2-verification";
+import { D1TrackingRepository } from "../tracking/repository";
+import { TrackingService } from "../tracking/service";
 import { D1PaymentRepository, type PaymentRepository } from "./repository";
 import { EnvironmentPaymentReadiness } from "./readiness";
 import {
@@ -39,6 +41,7 @@ function dependenciesFromEnv(env: WorkerEnv): WebhookDependencies {
     new EnvironmentPaymentReadiness(env),
     new HttpRazorpayClient(keyId, keySecret),
     { keyId, keySecret },
+    new TrackingService(new D1TrackingRepository(env.DB)),
   );
   return {
     payments,

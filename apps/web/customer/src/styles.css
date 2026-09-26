@@ -166,6 +166,11 @@ button:disabled {
 .pay-button {
   background: #157347;
 }
+.secondary-button {
+  border: 1px solid #0e7490;
+  color: #0e7490;
+  background: white;
+}
 .payment-success {
   margin-top: 1rem;
   padding: 1rem;
@@ -184,6 +189,113 @@ button:disabled {
   color: #0f5132;
   font-size: 1.75rem;
   letter-spacing: 0.08em;
+}
+.private-link-warning {
+  color: #7a4b00;
+  font-size: 0.9rem;
+}
+.tracking-shell {
+  width: min(100%, 42rem);
+}
+.tracking-header {
+  padding: 1.5rem 0 1rem;
+}
+.tracking-header p:last-child {
+  color: #526d7b;
+}
+.tracking-card {
+  margin-bottom: 1rem;
+  padding: 1.25rem;
+  border: 1px solid #c9dcdf;
+  border-radius: 1rem;
+  background: white;
+  box-shadow: 0 0.5rem 1.5rem rgb(23 50 77 / 7%);
+}
+.tracking-card h1,
+.tracking-card h2 {
+  display: block;
+  margin: 0;
+}
+.tracking-card h1 {
+  font-size: clamp(1.7rem, 8vw, 2.6rem);
+}
+.current-status {
+  display: flex;
+  gap: 0.9rem;
+  align-items: flex-start;
+  border-color: #86c7a3;
+  background: #effaf3;
+}
+.status-dot {
+  width: 0.9rem;
+  height: 0.9rem;
+  margin-top: 0.35rem;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #157347;
+  box-shadow: 0 0 0 0.3rem rgb(21 115 71 / 14%);
+}
+.status-kicker {
+  margin: 0 0 0.25rem;
+  color: #157347;
+  font-weight: 800;
+}
+.current-status p:last-child,
+.retention-card p,
+.private-link-card p {
+  margin-bottom: 0;
+}
+.summary-line {
+  color: #0e7490;
+  font-weight: 800;
+}
+.tracking-details {
+  margin-bottom: 0;
+}
+.tracking-details div {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.65rem 0;
+  border-bottom: 1px solid #e2eaec;
+}
+.tracking-details dd {
+  margin: 0;
+  text-align: right;
+  font-weight: 700;
+}
+.timeline {
+  margin: 1rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.timeline li {
+  position: relative;
+  display: grid;
+  gap: 0.15rem;
+  padding: 0 0 1rem 1.5rem;
+  border-left: 2px solid #b9d6d9;
+}
+.timeline li::before {
+  position: absolute;
+  top: 0.15rem;
+  left: -0.42rem;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  background: #0e7490;
+  content: "";
+}
+.timeline li:last-child {
+  padding-bottom: 0;
+  border-left-color: transparent;
+}
+.timeline time {
+  color: #526d7b;
+  font-size: 0.85rem;
+}
+.retention-card {
+  background: #f6fbfb;
 }
 a {
   color: #0e7490;

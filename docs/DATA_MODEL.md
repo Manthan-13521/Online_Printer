@@ -1,6 +1,6 @@
 # PrintGo Data Model
 
-**Status:** Phase 1 schema finalized; Phase 2-5 schema additions and runtime
+**Status:** Phase 1 schema finalized; Phase 2-6 schema additions and runtime
 behavior documented
 
 **Database:** Cloudflare D1 / SQLite
@@ -21,6 +21,11 @@ the Worker derives the chargeable unique count from the explicit normalized
 Migration `0003_payment_idempotency.sql` limits each order to one active payment
 attempt and gives consequential order events a unique idempotency key. It adds
 no tenant, tracking, Agent, printer, or refund model.
+
+Migration `0004_customer_tracking.sql` adds bounded tracking creation and expiry
+timestamps to `orders`. The initial schema already provides the unique
+`tracking_token_hash` column. No raw token, customer account, recovery secret,
+or tenant field is stored.
 
 ## Deployment invariant
 
@@ -121,6 +126,14 @@ The claim tuple (`claimed_by_agent_id`, `claim_id`, `claim_expires_at_ms`) is al
 
 `printing_amount_paise`, `service_charge_paise`, and `total_amount_paise` are immutable commercial snapshots once an order is priced. Updating `print_rates` or `file_size_service_charges` changes future calculations only; Phase 3 performs no order update or historical recalculation.
 
+Phase 6 uses `public_job_code` only as a human reference. Private tracking
+requires the unique SHA-256 `tracking_token_hash` plus
+`tracking_created_at_ms`/`tracking_expires_at_ms`. A conditional update creates
+the authorization only for a paid/post-payment order with an assigned code.
+Tracking expiry is 14 days and is independent of the upload deletion deadline.
+The same raw token is idempotent; a different credential cannot overwrite the
+stored hash.
+
 ### `uploads`
 
 One source-PDF metadata row per order. It stores the private R2 key, trusted byte size, storage lifecycle, retention reason/deadline, and deletion attempts. Logical authorization expiry occurs when `delete_after_ms` passes even if physical deletion has not completed.
@@ -190,6 +203,7 @@ These durations are shared constants in `@printgo/domain`. Later APIs must deny 
 | `orders_created_idx`                        | Recent history and keyset pagination                 |
 | `orders_customer_phone_created_idx`         | Admin phone lookup with recent-first results         |
 | `orders_claim_recovery_idx`                 | Expired `CLAIMED` leases without scanning all orders |
+| `orders_tracking_expiry_idx`                | Bounded private tracking-access expiry               |
 | `uploads_cleanup_idx`                       | Due, non-deleted R2 cleanup candidates               |
 | `payments_order_created_idx`                | Payment attempts for one order                       |
 | `payments_status_created_idx`               | Payment reconciliation by state/time                 |

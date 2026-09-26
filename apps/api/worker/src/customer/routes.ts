@@ -23,6 +23,8 @@ import { D1PaymentRepository } from "../payments/repository";
 import { EnvironmentPaymentReadiness } from "../payments/readiness";
 import { HttpRazorpayClient } from "../payments/razorpay";
 import { PaymentError, PaymentService } from "../payments/service";
+import { D1TrackingRepository } from "../tracking/repository";
+import { TrackingError, TrackingService } from "../tracking/service";
 
 const NO_STORE = { "Cache-Control": "no-store" } as const;
 const MAX_JSON_BODY_BYTES = 8 * 1024;
@@ -52,6 +54,7 @@ export interface CustomerActions {
     token: string,
     input: CancelCustomerPaymentRequest,
   ): ReturnType<PaymentService["cancel"]>;
+  tracking(jobCode: string, token: string): ReturnType<TrackingService["get"]>;
 }
 
 function actionsFromEnv(env: WorkerEnv): CustomerActions {
@@ -68,6 +71,7 @@ function actionsFromEnv(env: WorkerEnv): CustomerActions {
   );
   const keyId = env.RAZORPAY_KEY_ID ?? "";
   const keySecret = env.RAZORPAY_KEY_SECRET ?? "";
+  const trackingService = new TrackingService(new D1TrackingRepository(env.DB));
   const paymentService = new PaymentService(
     new D1PaymentRepository(env.DB),
     repository,
@@ -75,6 +79,7 @@ function actionsFromEnv(env: WorkerEnv): CustomerActions {
     new EnvironmentPaymentReadiness(env),
     new HttpRazorpayClient(keyId, keySecret),
     { keyId, keySecret },
+    trackingService,
   );
   return {
     getConfig: () => repository.getPublicConfig(),
@@ -87,6 +92,7 @@ function actionsFromEnv(env: WorkerEnv): CustomerActions {
     verifyPayment: (token, input) => paymentService.verify(token, input),
     cancelPayment: (token, input) =>
       paymentService.cancel(token, input.razorpayOrderId),
+    tracking: (jobCode, token) => trackingService.get(jobCode, token),
   };
 }
 
@@ -242,14 +248,19 @@ function validateVerifyPayment(
     !isPlainRecord(value) ||
     Object.keys(value).some(
       (key) =>
-        !["razorpayOrderId", "razorpayPaymentId", "razorpaySignature"].includes(
-          key,
-        ),
+        ![
+          "razorpayOrderId",
+          "razorpayPaymentId",
+          "razorpaySignature",
+          "trackingToken",
+        ].includes(key),
     ) ||
     !validProviderId(value.razorpayOrderId, "order_") ||
     !validProviderId(value.razorpayPaymentId, "pay_") ||
     typeof value.razorpaySignature !== "string" ||
-    !/^[a-f0-9]{64}$/iu.test(value.razorpaySignature)
+    !/^[a-f0-9]{64}$/iu.test(value.razorpaySignature) ||
+    typeof value.trackingToken !== "string" ||
+    !/^[A-Za-z0-9_-]{43}$/u.test(value.trackingToken)
   ) {
     return null;
   }
@@ -257,6 +268,7 @@ function validateVerifyPayment(
     razorpayOrderId: value.razorpayOrderId,
     razorpayPaymentId: value.razorpayPaymentId,
     razorpaySignature: value.razorpaySignature,
+    trackingToken: value.trackingToken,
   };
 }
 
@@ -274,6 +286,22 @@ function validateCancelPayment(
 }
 
 function mapCustomerError(caught: unknown, env: WorkerEnv): Response {
+  if (caught instanceof TrackingError) {
+    if (caught.code === "TRACKING_NOT_FOUND") {
+      return error(
+        404,
+        "TRACKING_NOT_FOUND",
+        "This private tracking link is invalid or has expired.",
+        corsHeaders(env),
+      );
+    }
+    return error(
+      409,
+      "TRACKING_ACCESS_UNAVAILABLE",
+      "Private tracking access could not be restored.",
+      corsHeaders(env),
+    );
+  }
   if (caught instanceof PaymentError) {
     const statuses: Record<string, number> = {
       DRAFT_INVALID: 401,
@@ -387,6 +415,20 @@ export async function handleCustomerRequest(
           );
     }
     const token = bearerToken(request);
+    const trackingMatch = /^\/api\/customer\/tracking\/([^/]+)$/u.exec(
+      pathname,
+    );
+    if (request.method === "GET" && trackingMatch) {
+      if (!token) throw new TrackingError("TRACKING_NOT_FOUND");
+      return ok(
+        await actions.tracking(
+          decodeURIComponent(trackingMatch[1] ?? ""),
+          token,
+        ),
+        200,
+        corsHeaders(env),
+      );
+    }
     if (!token) {
       return error(
         401,
