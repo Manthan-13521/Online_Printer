@@ -69,3 +69,5 @@ failure. The PWA service worker has no `/api` runtime cache, and private trackin
 responses must remain `no-store`.
 
 For Phase 3 configuration changes, also verify an authenticated settings and pricing update against local D1, reload both resources, and run a calculation through `@printgo/pricing`. The V1 single-admin assumption means optimistic conflict detection is not currently implemented; related pricing rows are nevertheless committed atomically.
+
+For Phase 7 Windows Agent development, use `pnpm dev:agent` or `pnpm --filter @printgo/agent-windows dev -- --pair <CODE> --server http://localhost:8787 --name "Local Dev PC"`. On non-Windows platforms (macOS/Linux), the development fallback adapter simulates printers and the credential store writes to `~/.printgo/agent-credentials.json`. Note that real Windows printer discovery and DPAPI encryption require a Windows host and are not exercised on macOS/Linux. Verify the Admin printer page at `/admin/printers` for code generation, live agent status, printer capabilities, and revocation.

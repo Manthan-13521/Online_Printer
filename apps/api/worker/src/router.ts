@@ -1,6 +1,8 @@
 import { error, ok } from "./http";
 import { handleAdminAuthRequest } from "./auth/routes";
 import { handleAdminConfigurationRequest } from "./config/routes";
+import { handleAdminPrinterRequest } from "./agent/admin-routes";
+import { handleAgentRequest } from "./agent/routes";
 import { handleCustomerRequest } from "./customer/routes";
 import type { WorkerEnv } from "./env";
 import { handleRazorpayWebhook } from "./payments/webhook";
@@ -24,6 +26,17 @@ export async function routeRequest(
     url.pathname === "/api/admin/pricing"
   ) {
     return handleAdminConfigurationRequest(request, env);
+  }
+
+  if (
+    url.pathname.startsWith("/api/admin/agents") ||
+    url.pathname.startsWith("/api/admin/printers")
+  ) {
+    return handleAdminPrinterRequest(request, env);
+  }
+
+  if (url.pathname.startsWith("/api/agent/")) {
+    return handleAgentRequest(request, env);
   }
 
   if (url.pathname.startsWith("/api/customer/")) {

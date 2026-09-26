@@ -20,7 +20,7 @@ import { R2PrivateObjectStore } from "../storage/r2-verification";
 import { D1CustomerRepository } from "./repository";
 import { CustomerError, CustomerService } from "./service";
 import { D1PaymentRepository } from "../payments/repository";
-import { EnvironmentPaymentReadiness } from "../payments/readiness";
+import { D1PaymentReadiness } from "../payments/readiness";
 import { HttpRazorpayClient } from "../payments/razorpay";
 import { PaymentError, PaymentService } from "../payments/service";
 import { D1TrackingRepository } from "../tracking/repository";
@@ -76,7 +76,7 @@ function actionsFromEnv(env: WorkerEnv): CustomerActions {
     new D1PaymentRepository(env.DB),
     repository,
     new R2PrivateObjectStore(env.PDF_BUCKET),
-    new EnvironmentPaymentReadiness(env),
+    new D1PaymentReadiness(env.DB, env),
     new HttpRazorpayClient(keyId, keySecret),
     { keyId, keySecret },
     trackingService,

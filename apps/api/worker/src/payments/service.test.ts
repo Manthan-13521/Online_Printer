@@ -258,6 +258,7 @@ describe("PaymentService", () => {
             Promise.resolve({
               ready: false as const,
               reason: "AGENT_READINESS_UNAVAILABLE" as const,
+              message: "Printer is not ready.",
             }),
           ),
         },

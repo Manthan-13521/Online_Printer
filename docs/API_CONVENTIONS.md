@@ -95,3 +95,12 @@ the code and SHA-256 token hash together, validates the bounded lifetime, and
 returns only `CustomerTrackingData`. Missing, malformed, expired, wrong-token,
 and nonexistent-code requests use the same `404 TRACKING_NOT_FOUND` envelope.
 Every tracking response, including errors, uses `Cache-Control: no-store`.
+
+The Phase 7 Agent and Admin Printer surface is:
+
+- `POST /api/agent/pair` — Exchange 8-character Crockford pair code for persistent agent credentials.
+- `POST /api/agent/heartbeat` — Periodic pulse (~30s) carrying discovered printers and capabilities, authenticated via `Authorization: Bearer <agentSecret>`.
+- `POST /api/admin/agents/pair-code` — Generate new 10-minute pair code (authenticated Admin session).
+- `GET /api/admin/printers` — List paired agents, online status, and printers with capabilities (authenticated Admin session).
+- `POST /api/admin/agents/:agentId/revoke` — Revoke agent credentials and mark inactive (authenticated Admin session).
+- `PUT /api/admin/printers/:printerId` — Toggle printer enabled state (authenticated Admin session).

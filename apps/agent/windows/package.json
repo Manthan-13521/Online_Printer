@@ -10,6 +10,11 @@
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit"
   },
+  "dependencies": {
+    "@printgo/api-contract": "workspace:*",
+    "@printgo/domain": "workspace:*",
+    "@printgo/validation": "workspace:*"
+  },
   "devDependencies": {
     "tsx": "^4.0.0"
   }

@@ -108,15 +108,15 @@ Phase 3 keeps these boundaries fixed and updates only non-negative integer-paise
 
 ### `agents`
 
-Allows multiple Windows Agents in one installation. Future credentials are stored only as hashes. An unpaired Agent has no credential hash or paired timestamp and may be disabled without deleting history.
+Allows multiple Windows Agents in one installation. Credentials are stored only as SHA-256 hashes (`credential_hash`). An unpaired Agent has no credential hash or paired timestamp. Revoking an Agent sets `is_active = 0`, causing the Agent daemon to terminate its heartbeat loop and the API to reject subsequent requests.
 
 ### `agent_pair_codes`
 
-Stores a one-time pairing-code hash, expiry, use time, and paired Agent reference. Raw pairing codes are never persisted.
+Stores a one-time Crockford Base32 pairing-code SHA-256 hash (`code_hash`), 10-minute expiry (`expires_at_ms`), consumption timestamp (`used_at_ms`), and paired Agent reference (`paired_agent_id`). Raw pairing codes are never persisted. Consumption occurs atomically upon pairing.
 
 ### `printers`
 
-Allows multiple printers per Agent. Operational status uses a controlled vocabulary. Device-specific capabilities are the one deliberate JSON field because driver capabilities vary; JSON validity is checked by SQLite.
+Allows multiple printers per Agent. Updated on every heartbeat pulse (~30s). Operational status uses the controlled vocabulary (`ONLINE`, `OFFLINE`, `BLOCKED`, `UNKNOWN`). Capabilities JSON stores `{ colour: boolean, duplex: boolean, paperSizes: string[] }`. An admin toggle (`enabled = 0 / 1`) allows disabling a printer without removing history, immediately impacting payment readiness calculation.
 
 ### `orders`
 

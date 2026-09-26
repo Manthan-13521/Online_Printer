@@ -1,14 +1,18 @@
 import type {
   AdminChangePasswordRequest,
   AdminChangePasswordResponse,
+  AdminCreatePairCodeResponse,
   AdminLoginRequest,
   AdminLoginResponse,
   AdminLogoutResponse,
   AdminMeResponse,
   AdminPricingResponse,
   AdminPricingUpdateRequest,
+  AdminPrintersResponse,
+  AdminRevokeAgentResponse,
   AdminSettingsResponse,
   AdminSettingsUpdateRequest,
+  AdminTogglePrinterResponse,
   ApiFailure,
 } from "@printgo/api-contract";
 
@@ -112,6 +116,30 @@ export const adminApi = {
     return request("/api/admin/pricing", {
       method: "PUT",
       body: JSON.stringify(input),
+    });
+  },
+  getPrinters(): Promise<AdminPrintersResponse> {
+    return request("/api/admin/printers");
+  },
+  createPairCode(): Promise<AdminCreatePairCodeResponse> {
+    return request("/api/admin/agents/pair-code", {
+      method: "POST",
+      body: "{}",
+    });
+  },
+  revokeAgent(agentId: string): Promise<AdminRevokeAgentResponse> {
+    return request(`/api/admin/agents/${encodeURIComponent(agentId)}/revoke`, {
+      method: "POST",
+      body: "{}",
+    });
+  },
+  togglePrinter(
+    printerId: string,
+    enabled: boolean,
+  ): Promise<AdminTogglePrinterResponse> {
+    return request(`/api/admin/printers/${encodeURIComponent(printerId)}`, {
+      method: "PUT",
+      body: JSON.stringify({ enabled }),
     });
   },
 };

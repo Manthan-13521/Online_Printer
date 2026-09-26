@@ -515,3 +515,214 @@ export function validatePricingUpdateInput(
     ? { ok: false, issues }
     : { ok: true, value: { printRates, fileSizeServiceCharges } };
 }
+
+export function validateAgentPairInput(
+  value: unknown,
+): ValidationResult<{ pairCode: string; displayName: string }> {
+  if (typeof value !== "object" || value === null) {
+    return {
+      ok: false,
+      issues: [
+        { path: [], code: "INVALID_BODY", message: "Invalid request body." },
+      ],
+    };
+  }
+  const record = value as Record<string, unknown>;
+  const issues: ValidationIssue[] = [];
+  const pairCode =
+    typeof record.pairCode === "string" ? record.pairCode.trim() : "";
+  if (!pairCode || pairCode.length > 50) {
+    issues.push({
+      path: ["pairCode"],
+      code: "INVALID_PAIR_CODE",
+      message: "Enter a valid pairing code.",
+    });
+  }
+  const displayName =
+    typeof record.displayName === "string" ? record.displayName.trim() : "";
+  if (!displayName || displayName.length > 100) {
+    issues.push({
+      path: ["displayName"],
+      code: "INVALID_DISPLAY_NAME",
+      message: "Enter an agent display name up to 100 characters.",
+    });
+  }
+  return issues.length > 0
+    ? { ok: false, issues }
+    : { ok: true, value: { pairCode, displayName } };
+}
+
+export function validateTogglePrinterInput(
+  value: unknown,
+): ValidationResult<{ enabled: boolean }> {
+  if (typeof value !== "object" || value === null) {
+    return {
+      ok: false,
+      issues: [
+        { path: [], code: "INVALID_BODY", message: "Invalid request body." },
+      ],
+    };
+  }
+  const record = value as Record<string, unknown>;
+  if (typeof record.enabled !== "boolean") {
+    return {
+      ok: false,
+      issues: [
+        {
+          path: ["enabled"],
+          code: "INVALID_ENABLED",
+          message: "Enabled must be a boolean.",
+        },
+      ],
+    };
+  }
+  return { ok: true, value: { enabled: record.enabled } };
+}
+
+export interface ValidatedPrinterReport {
+  windowsPrinterName: string;
+  displayName: string;
+  isDefault: boolean;
+  status: "ONLINE" | "OFFLINE" | "BLOCKED" | "ERROR" | "UNKNOWN";
+  statusReason: string | null;
+  capabilities: {
+    colour: boolean | "UNKNOWN";
+    duplex: boolean | "UNKNOWN";
+    paperSizes: readonly string[];
+  } | null;
+}
+
+export interface ValidatedAgentHeartbeatInput {
+  agentVersion: string;
+  operationalState: "ONLINE" | "PAUSED" | "ERROR";
+  printers: readonly ValidatedPrinterReport[];
+}
+
+export function validateAgentHeartbeatInput(
+  value: unknown,
+): ValidationResult<ValidatedAgentHeartbeatInput> {
+  if (typeof value !== "object" || value === null) {
+    return {
+      ok: false,
+      issues: [
+        { path: [], code: "INVALID_BODY", message: "Invalid request body." },
+      ],
+    };
+  }
+  const record = value as Record<string, unknown>;
+  const issues: ValidationIssue[] = [];
+  const agentVersion =
+    typeof record.agentVersion === "string" ? record.agentVersion.trim() : "";
+  if (!agentVersion || agentVersion.length > 50) {
+    issues.push({
+      path: ["agentVersion"],
+      code: "INVALID_AGENT_VERSION",
+      message: "Agent version is required.",
+    });
+  }
+  const operationalState = record.operationalState;
+  if (
+    operationalState !== "ONLINE" &&
+    operationalState !== "PAUSED" &&
+    operationalState !== "ERROR"
+  ) {
+    issues.push({
+      path: ["operationalState"],
+      code: "INVALID_OPERATIONAL_STATE",
+      message: "Operational state must be ONLINE, PAUSED, or ERROR.",
+    });
+  }
+  const rawPrinters = record.printers;
+  if (!Array.isArray(rawPrinters)) {
+    issues.push({
+      path: ["printers"],
+      code: "INVALID_PRINTERS",
+      message: "Printers must be an array.",
+    });
+  }
+  if (issues.length > 0) return { ok: false, issues };
+
+  const printers: ValidatedPrinterReport[] = [];
+  for (const [index, item] of (rawPrinters as unknown[]).entries()) {
+    if (typeof item !== "object" || item === null) {
+      issues.push({
+        path: ["printers", String(index)],
+        code: "INVALID_PRINTER",
+        message: "Invalid printer report.",
+      });
+      continue;
+    }
+    const p = item as Record<string, unknown>;
+    const windowsPrinterName =
+      typeof p.windowsPrinterName === "string"
+        ? p.windowsPrinterName.trim()
+        : "";
+    const displayName =
+      typeof p.displayName === "string"
+        ? p.displayName.trim()
+        : windowsPrinterName;
+    if (!windowsPrinterName) {
+      issues.push({
+        path: ["printers", String(index), "windowsPrinterName"],
+        code: "INVALID_PRINTER_NAME",
+        message: "Windows printer name is required.",
+      });
+      continue;
+    }
+    const status = p.status;
+    const validStatus =
+      status === "ONLINE" ||
+      status === "OFFLINE" ||
+      status === "BLOCKED" ||
+      status === "ERROR" ||
+      status === "UNKNOWN"
+        ? status
+        : "UNKNOWN";
+    const statusReason =
+      typeof p.statusReason === "string"
+        ? p.statusReason.trim().slice(0, 200)
+        : null;
+    let capabilities: ValidatedPrinterReport["capabilities"] = null;
+    if (typeof p.capabilities === "object" && p.capabilities !== null) {
+      const caps = p.capabilities as Record<string, unknown>;
+      capabilities = {
+        colour:
+          caps.colour === true
+            ? true
+            : caps.colour === false
+              ? false
+              : "UNKNOWN",
+        duplex:
+          caps.duplex === true
+            ? true
+            : caps.duplex === false
+              ? false
+              : "UNKNOWN",
+        paperSizes: Array.isArray(caps.paperSizes)
+          ? caps.paperSizes.filter(
+              (s): s is string => typeof s === "string" && s.trim().length > 0,
+            )
+          : [],
+      };
+    }
+    printers.push({
+      windowsPrinterName,
+      displayName: displayName || windowsPrinterName,
+      isDefault: Boolean(p.isDefault),
+      status: validStatus,
+      statusReason,
+      capabilities,
+    });
+  }
+
+  return issues.length > 0
+    ? { ok: false, issues }
+    : {
+        ok: true,
+        value: {
+          agentVersion,
+          operationalState: operationalState as "ONLINE" | "PAUSED" | "ERROR",
+          printers,
+        },
+      };
+}

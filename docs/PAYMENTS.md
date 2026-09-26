@@ -23,18 +23,27 @@ it is never passed through as the charge amount.
 
 ## Readiness gate
 
-`PaymentReadiness` is the boundary that Phase 7 will connect to real Agent and
-printer state. Phase 5 production always returns not-ready and does not create a
-provider order. Local development can opt into the checkout path only with both:
+In Phase 7, `PaymentReadiness` is connected to real Windows Agent and printer state via `D1PaymentReadiness`.
+Before creating a Razorpay order, the Worker verifies:
+
+1. **Shop Online Printing Enabled**: `shop_settings.online_printing_enabled === 1`.
+2. **Online Agent Heartbeat**: At least one active agent has pulsed within the last 90 seconds (`AGENT_HEARTBEAT_TIMEOUT_MS`).
+3. **Enabled Online Printer**: At least one printer linked to an online agent is enabled (`enabled === 1`) and available (`ONLINE` or `UNKNOWN`).
+4. **Print Capability Matching**: The online enabled printer must support the draft's requested options:
+   - `colorMode === "COLOUR"` requires colour capability.
+   - `sides !== "ONE_SIDED"` requires duplex capability.
+   - The requested `paperSize` must be present in the printer's supported paper sizes.
+
+If any check fails, payment creation fails closed with explicit error codes (`ONLINE_PRINTING_DISABLED`, `NO_ONLINE_AGENT`, `NO_ONLINE_PRINTER`, `NO_MATCHING_PRINTER`).
+
+Local development can optionally bypass the readiness gate only when both conditions are met:
 
 ```text
 APP_ENV=development
 PAYMENT_READINESS_DEV_BYPASS=true
 ```
 
-Production ignores `PAYMENT_READINESS_DEV_BYPASS`, including when it is set to
-`true`. This prevents accepting money while PrintGo cannot establish that the
-shop can receive print work.
+In production (`APP_ENV=production`), this bypass is completely ignored, ensuring money is never accepted when the shop cannot fulfill the job.
 
 ## Creation and checkout
 

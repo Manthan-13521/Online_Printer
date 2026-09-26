@@ -182,7 +182,11 @@ export class PaymentService {
     if (quote.totalAmountPaise !== acknowledgedTotalPaise) {
       return { status: "PRICE_CHANGED", quote };
     }
-    const readiness = await this.readiness.check();
+    const readiness = await this.readiness.check({
+      paperSize: draft.paperSize,
+      colorMode: draft.colorMode,
+      sides: draft.sides,
+    });
     if (!readiness.ready) throw new PaymentError("PRINTER_NOT_READY");
 
     if (active) {

@@ -292,3 +292,92 @@ export interface CancelCustomerPaymentData {
 
 export type CancelCustomerPaymentResponse =
   ApiResponse<CancelCustomerPaymentData>;
+
+export interface AdminCreatePairCodeData {
+  pairCode: string;
+  expiresAt: string;
+}
+
+export type AdminCreatePairCodeResponse = ApiResponse<AdminCreatePairCodeData>;
+
+export interface AgentPairRequest {
+  pairCode: string;
+  displayName: string;
+}
+
+export interface AgentPairData {
+  agentId: string;
+  agentSecret: string;
+  displayName: string;
+}
+
+export type AgentPairResponse = ApiResponse<AgentPairData>;
+
+export interface PrinterCapabilitySummary {
+  colour: boolean | "UNKNOWN";
+  duplex: boolean | "UNKNOWN";
+  paperSizes: readonly string[];
+}
+
+export interface AgentPrinterReport {
+  windowsPrinterName: string;
+  displayName: string;
+  isDefault?: boolean;
+  status: "ONLINE" | "OFFLINE" | "BLOCKED" | "ERROR" | "UNKNOWN";
+  statusReason?: string | null;
+  capabilities?: PrinterCapabilitySummary;
+}
+
+export interface AgentHeartbeatRequest {
+  agentVersion: string;
+  operationalState: "ONLINE" | "PAUSED" | "ERROR";
+  printers: readonly AgentPrinterReport[];
+}
+
+export interface AgentHeartbeatData {
+  acknowledged: true;
+  serverTimeMs: number;
+}
+
+export type AgentHeartbeatResponse = ApiResponse<AgentHeartbeatData>;
+
+export interface AdminPrinterDetails {
+  id: string;
+  agentId: string;
+  displayName: string;
+  windowsPrinterName: string;
+  enabled: boolean;
+  status: "ONLINE" | "OFFLINE" | "BLOCKED" | "ERROR" | "UNKNOWN";
+  statusReason: string | null;
+  capabilities: PrinterCapabilitySummary | null;
+  lastStatusAt: string | null;
+}
+
+export interface AdminAgentDetails {
+  id: string;
+  displayName: string;
+  isActive: boolean;
+  isOnline: boolean;
+  pairedAt: string | null;
+  lastHeartbeatAt: string | null;
+  printers: AdminPrinterDetails[];
+}
+
+export interface AdminPrintersData {
+  agents: AdminAgentDetails[];
+}
+
+export type AdminPrintersResponse = ApiResponse<AdminPrintersData>;
+
+export interface AdminTogglePrinterRequest {
+  enabled: boolean;
+}
+
+export type AdminTogglePrinterResponse = ApiResponse<{
+  id: string;
+  enabled: boolean;
+}>;
+
+export type AdminRevokeAgentResponse = ApiResponse<{
+  revoked: true;
+}>;

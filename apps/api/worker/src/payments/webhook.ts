@@ -7,7 +7,7 @@ import { R2PrivateObjectStore } from "../storage/r2-verification";
 import { D1TrackingRepository } from "../tracking/repository";
 import { TrackingService } from "../tracking/service";
 import { D1PaymentRepository, type PaymentRepository } from "./repository";
-import { EnvironmentPaymentReadiness } from "./readiness";
+import { D1PaymentReadiness } from "./readiness";
 import {
   HttpRazorpayClient,
   verifyHmacSha256Hex,
@@ -38,7 +38,7 @@ function dependenciesFromEnv(env: WorkerEnv): WebhookDependencies {
     payments,
     customer,
     new R2PrivateObjectStore(env.PDF_BUCKET),
-    new EnvironmentPaymentReadiness(env),
+    new D1PaymentReadiness(env.DB, env),
     new HttpRazorpayClient(keyId, keySecret),
     { keyId, keySecret },
     new TrackingService(new D1TrackingRepository(env.DB)),

@@ -1,5 +1,5 @@
 export type PrinterAvailability =
-  "AVAILABLE" | "OFFLINE" | "BLOCKED" | "ERROR" | "UNKNOWN";
+  "ONLINE" | "AVAILABLE" | "OFFLINE" | "BLOCKED" | "ERROR" | "UNKNOWN";
 
 export interface PrinterSummary {
   id: string;

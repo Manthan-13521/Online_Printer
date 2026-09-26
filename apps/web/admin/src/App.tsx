@@ -10,6 +10,7 @@ import {
 
 import { adminApi, AdminApiError, friendlyAdminError } from "./api";
 import { PricingPage } from "./PricingPage";
+import { PrinterPage } from "./PrinterPage";
 import { ShopSettingsPage } from "./ShopSettingsPage";
 
 const navigation = [
@@ -338,6 +339,8 @@ function PageContent({
     return <SecurityPage admin={admin} onSignedOut={onSignedOut} />;
   if (item.path === "/admin/pricing")
     return <PricingPage onSessionExpired={onSignedOut} />;
+  if (item.path === "/admin/printer")
+    return <PrinterPage onSessionExpired={onSignedOut} />;
   if (item.path === "/admin/shop-settings")
     return <ShopSettingsPage onSessionExpired={onSignedOut} />;
   if (item.path === "/admin")
