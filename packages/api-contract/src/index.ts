@@ -118,3 +118,76 @@ export interface AdminPricingData {
 }
 
 export type AdminPricingResponse = ApiResponse<AdminPricingData>;
+
+export interface CustomerPrintOption {
+  paperSize: PaperSize;
+  colorMode: ColorMode;
+  sides: SidesMode;
+}
+
+export interface CustomerConfigData {
+  shopName: string;
+  contactPhone: string | null;
+  customerNotice: string | null;
+  onlinePrintingEnabled: boolean;
+  maxPdfSizeBytes: number;
+  availablePrintOptions: CustomerPrintOption[];
+}
+
+export type CustomerConfigResponse = ApiResponse<CustomerConfigData>;
+
+export interface CreateCustomerDraftRequest {
+  customerName: string;
+  customerPhone: string;
+  instructions: string | null;
+  originalFilename: string;
+  expectedSizeBytes: number;
+  sourcePageCount: number;
+}
+
+export interface UploadAuthorization {
+  uploadUrl: string;
+  expiresAt: string;
+  requiredHeaders: Readonly<Record<string, string>>;
+}
+
+export interface CreateCustomerDraftData {
+  draftToken: string;
+  draftExpiresAt: string;
+  upload: UploadAuthorization;
+}
+
+export type CreateCustomerDraftResponse = ApiResponse<CreateCustomerDraftData>;
+
+export interface CompleteCustomerUploadData {
+  sizeBytes: number;
+  uploadedAt: string;
+  draftExpiresAt: string;
+}
+
+export type CompleteCustomerUploadResponse =
+  ApiResponse<CompleteCustomerUploadData>;
+
+export interface CustomerPrintSettingsRequest {
+  selectedPages: string;
+  copies: number;
+  paperSize: PaperSize;
+  colorMode: ColorMode;
+  sides: SidesMode;
+}
+
+export interface CustomerQuoteData {
+  normalizedSelectedPages: string;
+  selectedPageCount: number;
+  copies: number;
+  paperSize: PaperSize;
+  colorMode: ColorMode;
+  sides: SidesMode;
+  printingAmountPaise: number;
+  serviceChargePaise: number;
+  totalAmountPaise: number;
+  currency: "INR";
+  expiresAt: string;
+}
+
+export type CustomerQuoteResponse = ApiResponse<CustomerQuoteData>;

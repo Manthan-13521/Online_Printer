@@ -6,6 +6,17 @@
 
 **Schema source of truth:** `database/migrations/*.sql`
 
+## Customer draft upload additions
+
+Migration `0002_customer_draft_upload.sql` adds the hashed short-lived draft
+credential and expiry to `orders`, plus untrusted expected size and a validation
+failure code to `uploads`. `uploads.size_bytes` remains the authoritative size
+read from R2 and is the only file size used for pricing.
+
+`source_page_count` is browser-derived metadata. It is not a paid-page count;
+the Worker derives the chargeable unique count from the explicit normalized
+`selected_pages` range.
+
 ## Deployment invariant
 
 PrintGo V2 is not multi-tenant.

@@ -1,3 +1,5 @@
 # Copy to .dev.vars for local development. Never commit the real file.
 RAZORPAY_KEY_ID=replace-with-test-key-id
 RAZORPAY_KEY_SECRET=replace-with-test-key-secret
+R2_ACCESS_KEY_ID=replace-with-local-r2-access-key
+R2_SECRET_ACCESS_KEY=replace-with-local-r2-secret-key

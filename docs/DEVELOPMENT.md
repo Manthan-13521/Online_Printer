@@ -1,5 +1,8 @@
 # Development
 
+For the Phase 4 local flow, private R2 binding, presigning secrets, exact-origin
+CORS rule, and mock-versus-live boundary, see `docs/CUSTOMER_UPLOAD.md`.
+
 ## Workspace rules
 
 - The four root architecture documents are the project constitution and must be read before each major phase.

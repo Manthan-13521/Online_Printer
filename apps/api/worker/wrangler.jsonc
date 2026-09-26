@@ -4,8 +4,8 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-09-01",
   "workers_dev": true,
-  // Shop-owned D1 and R2 bindings are added when those resources are created.
-  // Reserved binding names: DB and PDF_BUCKET.
+  // Production must bind the shop-owned DB and private PDF_BUCKET and set the
+  // environment/secrets documented in docs/CUSTOMER_UPLOAD.md before deploy.
   "observability": {
     "enabled": true,
   },

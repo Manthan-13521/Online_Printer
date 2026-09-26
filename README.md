@@ -2,7 +2,7 @@
 
 PrintGo V2 is a production-oriented online printing system installed separately for each print/xerox shop. Customers will upload a PDF, choose print settings, pay the shop through Razorpay, track the job, and collect the printed output. Each shop owns its Cloudflare infrastructure, Razorpay account, production data, Windows computer, and printer; the developer retains the private source repository.
 
-The project has completed **Phase 3 — Shop Settings & Authoritative Pricing Engine**. The authenticated Admin PWA now manages the installation profile, operational settings, print rates, and fixed file-size charges. The Worker owns price calculation through the pure `@printgo/pricing` package; upload, payment, Agent, and printing workflows remain scheduled for later phases.
+The project has completed **Phase 4 — Customer PDF Upload Pipeline**. The Customer PWA validates PDFs locally, uploads directly to private R2, and obtains a Worker-verified, server-priced review. Payment, Agent, and printing workflows remain scheduled for later phases.
 
 ## Source of truth
 
@@ -12,6 +12,8 @@ Read these documents before each major phase:
 - [`01_TECHNICAL_ARCHITECTURE.md`](./01_TECHNICAL_ARCHITECTURE.md)
 - [`02_PRODUCT_REQUIREMENTS_AND_UX.md`](./02_PRODUCT_REQUIREMENTS_AND_UX.md)
 - [`03_BUILD_PHASES_AND_AI_HANDOFF.md`](./03_BUILD_PHASES_AND_AI_HANDOFF.md)
+
+Phase documentation: [`docs/CUSTOMER_UPLOAD.md`](./docs/CUSTOMER_UPLOAD.md).
 
 ## Repository layout
 

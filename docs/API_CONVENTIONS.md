@@ -1,5 +1,13 @@
 # API Conventions
 
+## Customer draft APIs
+
+Customer state changes require the exact configured customer `Origin` and
+`Authorization: Bearer <draft-token>`. Tokens, signed URLs, infrastructure IDs,
+and object keys must not be logged. Customer responses use `Cache-Control:
+no-store`; PDF bytes are never accepted by the Worker API. See
+`docs/CUSTOMER_UPLOAD.md` for the Phase 4 endpoints.
+
 ## Envelope
 
 Successful JSON responses use:

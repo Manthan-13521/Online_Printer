@@ -1,0 +1,79 @@
+import type {
+  ApiResponse,
+  CompleteCustomerUploadData,
+  CreateCustomerDraftData,
+  CreateCustomerDraftRequest,
+  CustomerConfigData,
+  CustomerPrintSettingsRequest,
+  CustomerQuoteData,
+  UploadAuthorization,
+} from "@printgo/api-contract";
+
+async function jsonRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(path, {
+    ...init,
+    headers: { "Content-Type": "application/json", ...init?.headers },
+    cache: "no-store",
+  });
+  const body = (await response.json()) as ApiResponse<T>;
+  if (!response.ok || !body.ok)
+    throw new Error(body.ok ? "REQUEST_FAILED" : body.error.code);
+  return body.data;
+}
+
+function authorized(token: string, init?: RequestInit): RequestInit {
+  return {
+    ...init,
+    headers: { ...init?.headers, Authorization: `Bearer ${token}` },
+  };
+}
+
+export const customerApi = {
+  config: () => jsonRequest<CustomerConfigData>("/api/customer/config"),
+  createDraft: (input: CreateCustomerDraftRequest) =>
+    jsonRequest<CreateCustomerDraftData>("/api/customer/drafts", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  complete: (token: string) =>
+    jsonRequest<CompleteCustomerUploadData>(
+      "/api/customer/uploads/complete",
+      authorized(token, { method: "POST", body: "{}" }),
+    ),
+  authorize: (token: string) =>
+    jsonRequest<{ upload: UploadAuthorization }>(
+      "/api/customer/uploads/authorize",
+      authorized(token, { method: "POST", body: "{}" }),
+    ),
+  quote: (token: string, input: CustomerPrintSettingsRequest) =>
+    jsonRequest<CustomerQuoteData>(
+      "/api/customer/draft/print-settings",
+      authorized(token, { method: "PUT", body: JSON.stringify(input) }),
+    ),
+};
+
+export function uploadDirectly(
+  file: File,
+  uploadUrl: string,
+  headers: Readonly<Record<string, string>>,
+  onProgress: (percent: number) => void,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open("PUT", uploadUrl);
+    for (const [name, value] of Object.entries(headers))
+      request.setRequestHeader(name, value);
+    request.upload.addEventListener("progress", (event) => {
+      if (event.lengthComputable)
+        onProgress(Math.round((event.loaded / event.total) * 100));
+    });
+    request.addEventListener("load", () => {
+      if (request.status >= 200 && request.status < 300) resolve();
+      else reject(new Error(`UPLOAD_HTTP_${request.status}`));
+    });
+    request.addEventListener("error", () =>
+      reject(new Error("UPLOAD_NETWORK_ERROR")),
+    );
+    request.send(file);
+  });
+}

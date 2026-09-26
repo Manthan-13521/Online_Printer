@@ -8,6 +8,10 @@ export default defineConfig({
     VitePWA({
       registerType: "autoUpdate",
       includeAssets: ["icon.svg"],
+      workbox: {
+        navigateFallbackDenylist: [/^\/api\//],
+        runtimeCaching: [],
+      },
       manifest: {
         name: "PrintGo",
         short_name: "PrintGo",
@@ -27,4 +31,8 @@ export default defineConfig({
       },
     }),
   ],
+  server: {
+    port: 5173,
+    proxy: { "/api": "http://localhost:8787" },
+  },
 });

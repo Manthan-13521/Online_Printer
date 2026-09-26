@@ -7,6 +7,13 @@ const migrationSql = readFileSync(
   new URL("../database/migrations/0001_initial_schema.sql", import.meta.url),
   "utf8",
 );
+const customerUploadMigrationSql = readFileSync(
+  new URL(
+    "../database/migrations/0002_customer_draft_upload.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
 const seedSql = readFileSync(
   new URL("../database/seeds/0001_development.sql", import.meta.url),
   "utf8",
@@ -15,6 +22,7 @@ const seedSql = readFileSync(
 function createDatabase(withSeed = false): DatabaseSync {
   const database = new DatabaseSync(":memory:");
   database.exec(migrationSql);
+  database.exec(customerUploadMigrationSql);
   if (withSeed) {
     database.exec(seedSql);
   }
@@ -57,7 +65,7 @@ function insertOrder(database: DatabaseSync, fixture: OrderFixture): void {
     );
 }
 
-describe("D1 initial migration", () => {
+describe("D1 migrations", () => {
   it("applies with the deterministic development seed", () => {
     const database = createDatabase(true);
 
@@ -230,6 +238,30 @@ describe("D1 initial migration", () => {
             1735689600000, 1735689600000
           )
         `),
+      ).toThrow(/unique constraint/i);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("applies the customer draft migration with hashed-token uniqueness", () => {
+    const database = createDatabase();
+    try {
+      insertOrder(database, { id: "50000000-0000-4000-8000-000000000008" });
+      insertOrder(database, { id: "50000000-0000-4000-8000-000000000009" });
+      database
+        .prepare(
+          "UPDATE orders SET draft_token_hash = ?, draft_expires_at_ms = ? WHERE id = ?",
+        )
+        .run(
+          "hashed-not-raw",
+          1735690200000,
+          "50000000-0000-4000-8000-000000000008",
+        );
+      expect(() =>
+        database
+          .prepare("UPDATE orders SET draft_token_hash = ? WHERE id = ?")
+          .run("hashed-not-raw", "50000000-0000-4000-8000-000000000009"),
       ).toThrow(/unique constraint/i);
     } finally {
       database.close();
