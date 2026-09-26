@@ -1,5 +1,6 @@
 import { error, ok } from "./http";
 import { handleAdminAuthRequest } from "./auth/routes";
+import { handleAdminConfigurationRequest } from "./config/routes";
 import type { WorkerEnv } from "./env";
 
 export async function routeRequest(
@@ -14,6 +15,13 @@ export async function routeRequest(
 
   if (url.pathname.startsWith("/api/admin/auth/")) {
     return handleAdminAuthRequest(request, env);
+  }
+
+  if (
+    url.pathname === "/api/admin/settings" ||
+    url.pathname === "/api/admin/pricing"
+  ) {
+    return handleAdminConfigurationRequest(request, env);
   }
 
   return error(404, "NOT_FOUND", "The requested resource was not found.");

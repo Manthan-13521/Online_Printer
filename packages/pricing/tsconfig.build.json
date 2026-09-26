@@ -4,6 +4,7 @@
     "declaration": true,
     "noEmit": false,
     "outDir": "dist",
+    "paths": {},
     "rootDir": "src"
   },
   "exclude": ["src/**/*.test.ts"]

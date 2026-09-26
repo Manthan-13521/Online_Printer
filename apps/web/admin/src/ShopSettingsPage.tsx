@@ -1,0 +1,315 @@
+import type { ShopSettings } from "@printgo/api-contract";
+import {
+  FILE_SIZE_5_MIB,
+  FILE_SIZE_10_MIB,
+  FILE_SIZE_25_MIB,
+  MIB,
+} from "@printgo/domain";
+import {
+  ADDRESS_MAX_LENGTH,
+  CONTACT_PHONE_MAX_LENGTH,
+  CUSTOMER_NOTICE_MAX_LENGTH,
+  SHOP_NAME_MAX_LENGTH,
+} from "@printgo/validation";
+import { useEffect, useState, type FormEvent } from "react";
+
+import { adminApi, AdminApiError, friendlyAdminError } from "./api";
+
+const PDF_LIMITS = [
+  FILE_SIZE_5_MIB,
+  FILE_SIZE_10_MIB,
+  15 * MIB,
+  20 * MIB,
+  FILE_SIZE_25_MIB,
+] as const;
+
+export function ShopSettingsPage({
+  onSessionExpired,
+}: {
+  onSessionExpired: (message: string) => void;
+}) {
+  const [settings, setSettings] = useState<ShopSettings | null>(null);
+  const [saved, setSaved] = useState<ShopSettings | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [confirmPause, setConfirmPause] = useState(false);
+
+  const dirty =
+    settings !== null && JSON.stringify(settings) !== JSON.stringify(saved);
+
+  async function load() {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await adminApi.getSettings();
+      if (response.ok) {
+        setSettings(response.data.settings);
+        setSaved(response.data.settings);
+      }
+    } catch (caught: unknown) {
+      if (caught instanceof AdminApiError && caught.status === 401) {
+        onSessionExpired("Your session has expired. Please sign in again.");
+        return;
+      }
+      setError(friendlyAdminError(caught));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  function patch(update: Partial<ShopSettings>) {
+    setSettings((current) => (current ? { ...current, ...update } : current));
+    setMessage(null);
+  }
+
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!settings || saving || !dirty) return;
+    setSaving(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const response = await adminApi.updateSettings(settings);
+      if (response.ok) {
+        setSettings(response.data.settings);
+        setSaved(response.data.settings);
+        setMessage(response.data.message ?? "Shop settings saved.");
+      }
+    } catch (caught: unknown) {
+      if (caught instanceof AdminApiError && caught.status === 401) {
+        onSessionExpired("Your session has expired. Please sign in again.");
+        return;
+      }
+      setError(friendlyAdminError(caught));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="panel page-loading" aria-busy="true">
+        Loading shop settings…
+      </div>
+    );
+  }
+  if (!settings) {
+    return (
+      <div className="panel">
+        <h1>Shop Settings</h1>
+        <p className="form-error" role="alert">
+          {error ?? "Shop settings are not available."}
+        </p>
+        <button
+          className="secondary-button"
+          onClick={() => void load()}
+          type="button"
+        >
+          Try again
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="page-stack settings-page">
+      <div>
+        <p className="eyebrow">Business configuration</p>
+        <h1>Shop Settings</h1>
+        <p className="page-intro">
+          Update the details and controls customers will rely on.
+        </p>
+      </div>
+      {message ? (
+        <p className="notice" role="status">
+          {message}
+        </p>
+      ) : null}
+      {error ? (
+        <p className="form-error" role="alert">
+          {error}
+        </p>
+      ) : null}
+      <form onSubmit={(event) => void save(event)}>
+        <section className="panel form-section">
+          <h2>Shop details</h2>
+          <label htmlFor="shop-name">Shop name</label>
+          <input
+            id="shop-name"
+            maxLength={SHOP_NAME_MAX_LENGTH}
+            required
+            value={settings.shopName}
+            onChange={(event) => patch({ shopName: event.target.value })}
+          />
+          <label htmlFor="contact-phone">Contact phone</label>
+          <input
+            id="contact-phone"
+            inputMode="tel"
+            maxLength={CONTACT_PHONE_MAX_LENGTH}
+            value={settings.contactPhone ?? ""}
+            onChange={(event) =>
+              patch({ contactPhone: event.target.value || null })
+            }
+          />
+          <label htmlFor="shop-address">Address</label>
+          <textarea
+            id="shop-address"
+            maxLength={ADDRESS_MAX_LENGTH}
+            rows={4}
+            value={settings.address ?? ""}
+            onChange={(event) => patch({ address: event.target.value || null })}
+          />
+          <label htmlFor="customer-notice">Customer notice</label>
+          <textarea
+            id="customer-notice"
+            maxLength={CUSTOMER_NOTICE_MAX_LENGTH}
+            rows={3}
+            value={settings.customerNotice ?? ""}
+            onChange={(event) =>
+              patch({ customerNotice: event.target.value || null })
+            }
+          />
+          <p className="field-help">
+            Plain text only. Shown to customers in a later phase.
+          </p>
+        </section>
+
+        <section className="panel setting-card important-setting">
+          <div>
+            <h2>Online Printing</h2>
+            <p className="muted">
+              Controls whether the shop accepts new online work.
+            </p>
+          </div>
+          <label className="switch-row">
+            <span>{settings.onlinePrintingEnabled ? "On" : "Off"}</span>
+            <input
+              aria-label="Accept online printing"
+              checked={settings.onlinePrintingEnabled}
+              onChange={(event) => {
+                if (!event.target.checked && settings.onlinePrintingEnabled)
+                  setConfirmPause(true);
+                else patch({ onlinePrintingEnabled: event.target.checked });
+              }}
+              role="switch"
+              type="checkbox"
+            />
+          </label>
+        </section>
+
+        <section className="panel form-section">
+          <h2>PDF upload limit</h2>
+          <label htmlFor="pdf-limit">Maximum PDF size</label>
+          <select
+            id="pdf-limit"
+            value={settings.maxPdfSizeBytes}
+            onChange={(event) =>
+              patch({ maxPdfSizeBytes: Number(event.target.value) })
+            }
+          >
+            {PDF_LIMITS.map((bytes) => (
+              <option key={bytes} value={bytes}>
+                {bytes / MIB} MB
+              </option>
+            ))}
+          </select>
+          <p className="field-help">
+            Stored and enforced as binary MiB. The maximum is 25 MB.
+          </p>
+        </section>
+
+        <section className="panel form-section">
+          <h2>Identification sheet</h2>
+          <label className="checkbox-row">
+            <input
+              checked={settings.identificationSheetEnabled}
+              onChange={(event) =>
+                patch({ identificationSheetEnabled: event.target.checked })
+              }
+              type="checkbox"
+            />
+            <span>Print one identification sheet for each order</span>
+          </label>
+          <fieldset disabled={!settings.identificationSheetEnabled}>
+            <legend>Placement</legend>
+            <label className="radio-row">
+              <input
+                checked={settings.identificationSheetPlacement === "FIRST"}
+                name="placement"
+                onChange={() =>
+                  patch({ identificationSheetPlacement: "FIRST" })
+                }
+                type="radio"
+              />
+              <span>Print before document</span>
+            </label>
+            <label className="radio-row">
+              <input
+                checked={settings.identificationSheetPlacement === "LAST"}
+                name="placement"
+                onChange={() => patch({ identificationSheetPlacement: "LAST" })}
+                type="radio"
+              />
+              <span>Print after document</span>
+            </label>
+          </fieldset>
+        </section>
+
+        <div className="save-bar">
+          <span className={dirty ? "unsaved" : "saved-state"}>
+            {dirty ? "Unsaved changes" : "All changes saved"}
+          </span>
+          <button
+            className="primary-button fit"
+            disabled={!dirty || saving}
+            type="submit"
+          >
+            {saving ? "Saving…" : "Save Changes"}
+          </button>
+        </div>
+      </form>
+
+      {confirmPause ? (
+        <div className="dialog-backdrop">
+          <section
+            aria-labelledby="pause-title"
+            aria-modal="true"
+            className="confirm-dialog"
+            role="dialog"
+          >
+            <h2 id="pause-title">Pause new online print orders?</h2>
+            <p>
+              New customers will not be able to upload or pay. Existing paid
+              jobs will continue.
+            </p>
+            <div className="dialog-actions">
+              <button
+                className="secondary-button"
+                onClick={() => setConfirmPause(false)}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                className="danger-button"
+                onClick={() => {
+                  patch({ onlinePrintingEnabled: false });
+                  setConfirmPause(false);
+                }}
+                type="button"
+              >
+                Pause Printing
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+    </div>
+  );
+}

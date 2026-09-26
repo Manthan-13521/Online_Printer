@@ -6,6 +6,12 @@ import {
 import type { WorkerEnv } from "../env";
 import { error, ok } from "../http";
 import {
+  adminRequestErrorResponse,
+  guardAdminOrigin,
+  readAdminJson,
+  withAdminCors,
+} from "../admin/http";
+import {
   clearAdminCookie,
   createAdminCookie,
   readAdminCookie,
@@ -32,42 +38,6 @@ export interface AdminAuthActions {
   ): Promise<IssuedSession>;
 }
 
-function corsHeaders(origin: string): Record<string, string> {
-  return {
-    "access-control-allow-credentials": "true",
-    "access-control-allow-origin": origin,
-    vary: "Origin",
-  };
-}
-
-function withCors(response: Response, origin: string): Response {
-  const headers = new Headers(response.headers);
-  for (const [name, value] of Object.entries(corsHeaders(origin))) {
-    headers.set(name, value);
-  }
-  return new Response(response.body, {
-    status: response.status,
-    statusText: response.statusText,
-    headers,
-  });
-}
-
-async function readJson(request: Request): Promise<unknown> {
-  if (
-    !request.headers
-      .get("content-type")
-      ?.toLowerCase()
-      .startsWith("application/json")
-  ) {
-    throw new Error("UNSUPPORTED_CONTENT_TYPE");
-  }
-  const declaredLength = Number(request.headers.get("content-length") ?? 0);
-  if (declaredLength > MAX_AUTH_BODY_BYTES) throw new Error("BODY_TOO_LARGE");
-  const text = await request.text();
-  if (text.length > MAX_AUTH_BODY_BYTES) throw new Error("BODY_TOO_LARGE");
-  return JSON.parse(text) as unknown;
-}
-
 function authErrorResponse(caught: unknown, clearCookie: string): Response {
   if (caught instanceof AuthError) {
     if (caught.code === "AUTH_INVALID_CREDENTIALS") {
@@ -83,18 +53,8 @@ function authErrorResponse(caught: unknown, clearCookie: string): Response {
       { "set-cookie": clearCookie },
     );
   }
-  if (caught instanceof SyntaxError) {
-    return error(400, "VALIDATION_ERROR", "The request could not be read.");
-  }
-  if (
-    caught instanceof Error &&
-    caught.message === "UNSUPPORTED_CONTENT_TYPE"
-  ) {
-    return error(415, "UNSUPPORTED_CONTENT_TYPE", "Send a JSON request.");
-  }
-  if (caught instanceof Error && caught.message === "BODY_TOO_LARGE") {
-    return error(413, "REQUEST_TOO_LARGE", "The request is too large.");
-  }
+  const requestError = adminRequestErrorResponse(caught);
+  if (requestError) return requestError;
   throw caught;
 }
 
@@ -105,32 +65,12 @@ export async function handleAdminAuthRequest(
     new D1AdminAuthRepository(env.DB),
   ),
 ): Promise<Response> {
-  const origin = request.headers.get("origin");
   const allowedOrigin = env.ADMIN_ALLOWED_ORIGIN;
   const isProduction = env.APP_ENV === "production";
   const clearCookie = clearAdminCookie(isProduction);
 
-  if (request.method === "OPTIONS") {
-    if (origin !== allowedOrigin) {
-      return error(403, "ORIGIN_NOT_ALLOWED", "This request is not allowed.");
-    }
-    return new Response(null, {
-      status: 204,
-      headers: {
-        ...corsHeaders(allowedOrigin),
-        "access-control-allow-headers": "Content-Type",
-        "access-control-allow-methods": "GET, POST, OPTIONS",
-        "access-control-max-age": "600",
-      },
-    });
-  }
-
-  if (origin && origin !== allowedOrigin) {
-    return error(403, "ORIGIN_NOT_ALLOWED", "This request is not allowed.");
-  }
-  if (request.method === "POST" && origin !== allowedOrigin) {
-    return error(403, "ORIGIN_REQUIRED", "This request is not allowed.");
-  }
+  const originGuard = guardAdminOrigin(request, allowedOrigin);
+  if (originGuard) return originGuard;
 
   const url = new URL(request.url);
   const rawToken = readAdminCookie(request, isProduction);
@@ -138,7 +78,9 @@ export async function handleAdminAuthRequest(
 
   try {
     if (request.method === "POST" && url.pathname === "/api/admin/auth/login") {
-      const input = validateAdminLoginInput(await readJson(request));
+      const input = validateAdminLoginInput(
+        await readAdminJson(request, MAX_AUTH_BODY_BYTES),
+      );
       if (!input.ok) {
         response = error(
           400,
@@ -187,7 +129,9 @@ export async function handleAdminAuthRequest(
       url.pathname === "/api/admin/auth/change-password"
     ) {
       const required = await service.requireSession(rawToken);
-      const input = validateAdminPasswordChangeInput(await readJson(request));
+      const input = validateAdminPasswordChangeInput(
+        await readAdminJson(request, MAX_AUTH_BODY_BYTES),
+      );
       if (!input.ok) {
         response = error(
           400,
@@ -227,5 +171,5 @@ export async function handleAdminAuthRequest(
     response = authErrorResponse(caught, clearCookie);
   }
 
-  return withCors(response, allowedOrigin);
+  return withAdminCors(response, allowedOrigin);
 }

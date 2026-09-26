@@ -1,3 +1,10 @@
+import type {
+  ColorMode,
+  IdentificationSheetPlacement,
+  PaperSize,
+  SidesMode,
+} from "@printgo/domain";
+
 export interface ApiSuccess<T> {
   ok: true;
   data: T;
@@ -59,3 +66,55 @@ export interface AdminLogoutData {
 }
 
 export type AdminLogoutResponse = ApiResponse<AdminLogoutData>;
+
+export interface ShopSettings {
+  shopName: string;
+  contactPhone: string | null;
+  address: string | null;
+  customerNotice: string | null;
+  onlinePrintingEnabled: boolean;
+  maxPdfSizeBytes: number;
+  identificationSheetEnabled: boolean;
+  identificationSheetPlacement: IdentificationSheetPlacement;
+}
+
+export interface AdminSettingsData {
+  settings: ShopSettings;
+  message?: string;
+}
+
+export type AdminSettingsResponse = ApiResponse<AdminSettingsData>;
+export type AdminSettingsUpdateRequest = ShopSettings;
+
+export interface AdminPrintRate {
+  paperSize: PaperSize;
+  colorMode: ColorMode;
+  sides: SidesMode;
+  pricePerPagePaise: number;
+  enabled: boolean;
+}
+
+export interface AdminFileSizeServiceCharge {
+  minBytesExclusive: number;
+  maxBytesInclusive: number;
+  chargePaise: number;
+}
+
+export interface AdminPricingConfiguration {
+  /** Read-only context from Shop Settings. Updated through the settings API. */
+  maxPdfSizeBytes: number;
+  printRates: AdminPrintRate[];
+  fileSizeServiceCharges: AdminFileSizeServiceCharge[];
+}
+
+export interface AdminPricingUpdateRequest {
+  printRates: AdminPrintRate[];
+  fileSizeServiceCharges: AdminFileSizeServiceCharge[];
+}
+
+export interface AdminPricingData {
+  pricing: AdminPricingConfiguration;
+  message?: string;
+}
+
+export type AdminPricingResponse = ApiResponse<AdminPricingData>;

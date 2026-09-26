@@ -27,6 +27,8 @@ pnpm db:validate
 
 Web and Worker development servers are intentionally separate so their production boundaries remain visible. For Admin development, run `pnpm dev:worker` and `pnpm dev:admin` in separate terminals, then open `http://localhost:5174/admin`. The Worker uses persistent local D1 state in `.wrangler/local` and trusts only the configured Admin development origin.
 
+After signing in, `/admin/shop-settings` and `/admin/pricing` load current configuration from the Worker. Both screens use deliberate saves: browser edits remain local until submitted, and the Worker validates the complete request. Pricing is stored in integer paise even though the Admin enters rupees. The pricing save updates all eight print rates, all four fixed file-size charges, and its audit event in one D1 batch.
+
 `pnpm db:setup:local` creates the local schema and deterministic non-credential seed. Run `pnpm admin:bootstrap` next. It reads a 12–128 character password without terminal echo, hashes it before calling Wrangler, and removes its mode-`0600` temporary SQL file. It defaults to login `admin`; use `pnpm admin:bootstrap -- dev-admin` for another synthetic identifier. Re-running it resets the single admin and revokes existing sessions.
 
 ## Environment strategy
@@ -49,3 +51,5 @@ The main Worker config contains no account IDs or resource IDs. `wrangler.dev.js
 ## Verification policy
 
 Run targeted tests while implementing a phase, then all five root quality commands before declaring that phase complete. Capacity/free-tier simulation is specifically reserved for Phase 16 and does not replace normal functional testing.
+
+For Phase 3 configuration changes, also verify an authenticated settings and pricing update against local D1, reload both resources, and run a calculation through `@printgo/pricing`. The V1 single-admin assumption means optimistic conflict detection is not currently implemented; related pricing rows are nevertheless committed atomically.

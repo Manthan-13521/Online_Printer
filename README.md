@@ -2,7 +2,7 @@
 
 PrintGo V2 is a production-oriented online printing system installed separately for each print/xerox shop. Customers will upload a PDF, choose print settings, pay the shop through Razorpay, track the job, and collect the printed output. Each shop owns its Cloudflare infrastructure, Razorpay account, production data, Windows computer, and printer; the developer retains the private source repository.
 
-The project has completed **Phase 2 — Admin Authentication & Admin Application Shell**. Secure single-admin authentication and the protected Admin PWA shell are implemented; upload, payment, pricing, Agent, and printing workflows remain scheduled for later phases.
+The project has completed **Phase 3 — Shop Settings & Authoritative Pricing Engine**. The authenticated Admin PWA now manages the installation profile, operational settings, print rates, and fixed file-size charges. The Worker owns price calculation through the pure `@printgo/pricing` package; upload, payment, Agent, and printing workflows remain scheduled for later phases.
 
 ## Source of truth
 
@@ -62,7 +62,7 @@ pnpm test
 pnpm build
 ```
 
-See [`docs/DEVELOPMENT.md`](./docs/DEVELOPMENT.md) for workspace details, [`docs/ADMIN_AUTH.md`](./docs/ADMIN_AUTH.md) for authentication, [`docs/CONVENTIONS.md`](./docs/CONVENTIONS.md) for foundational conventions, and [`docs/DATA_MODEL.md`](./docs/DATA_MODEL.md) for the finalized D1 model.
+See [`docs/DEVELOPMENT.md`](./docs/DEVELOPMENT.md) for workspace details, [`docs/ADMIN_AUTH.md`](./docs/ADMIN_AUTH.md) for authentication, [`docs/PRICING.md`](./docs/PRICING.md) for authoritative pricing, [`docs/CONVENTIONS.md`](./docs/CONVENTIONS.md) for foundational conventions, and [`docs/DATA_MODEL.md`](./docs/DATA_MODEL.md) for the finalized D1 model.
 
 Validate the migration and deterministic development seed against local Cloudflare D1 with:
 

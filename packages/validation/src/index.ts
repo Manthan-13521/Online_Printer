@@ -1,10 +1,13 @@
 import {
   COLOR_MODES,
   FILE_SIZE_25_MIB,
+  FILE_SIZE_SERVICE_CHARGE_BANDS,
+  IDENTIFICATION_SHEET_PLACEMENTS,
   ORDER_STATUSES,
   PAPER_SIZES,
   SIDES_MODES,
   type ColorMode,
+  type IdentificationSheetPlacement,
   type OrderStatus,
   type PaperSize,
   type SidesMode,
@@ -58,6 +61,15 @@ export function isColorMode(value: unknown): value is ColorMode {
 export function isSidesMode(value: unknown): value is SidesMode {
   return (
     typeof value === "string" && SIDES_MODES.some((item) => item === value)
+  );
+}
+
+export function isIdentificationSheetPlacement(
+  value: unknown,
+): value is IdentificationSheetPlacement {
+  return (
+    typeof value === "string" &&
+    IDENTIFICATION_SHEET_PLACEMENTS.some((item) => item === value)
   );
 }
 
@@ -220,4 +232,286 @@ export function validateAdminPasswordChangeInput(
           newPassword: next.ok ? next.value : "",
         },
       };
+}
+
+export const SHOP_NAME_MAX_LENGTH = 100;
+export const CONTACT_PHONE_MAX_LENGTH = 30;
+export const ADDRESS_MAX_LENGTH = 500;
+export const CUSTOMER_NOTICE_MAX_LENGTH = 300;
+
+export interface ValidatedShopSettings {
+  shopName: string;
+  contactPhone: string | null;
+  address: string | null;
+  customerNotice: string | null;
+  onlinePrintingEnabled: boolean;
+  maxPdfSizeBytes: number;
+  identificationSheetEnabled: boolean;
+  identificationSheetPlacement: IdentificationSheetPlacement;
+}
+
+function optionalPlainText(
+  value: unknown,
+  path: string,
+  maximumLength: number,
+  issues: ValidationIssue[],
+): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== "string") {
+    issues.push({
+      path: [path],
+      code: "INVALID_TYPE",
+      message: "Enter plain text.",
+    });
+    return null;
+  }
+  const normalized = value.trim();
+  if (normalized.length > maximumLength) {
+    issues.push({
+      path: [path],
+      code: "TOO_LONG",
+      message: `Use no more than ${maximumLength} characters.`,
+    });
+  }
+  return normalized || null;
+}
+
+export function validateShopSettingsInput(
+  value: unknown,
+): ValidationResult<ValidatedShopSettings> {
+  if (typeof value !== "object" || value === null) {
+    return {
+      ok: false,
+      issues: [
+        { path: [], code: "INVALID_BODY", message: "Check the shop settings." },
+      ],
+    };
+  }
+  const record = value as Record<string, unknown>;
+  const issues: ValidationIssue[] = [];
+  const shopName =
+    typeof record.shopName === "string" ? record.shopName.trim() : "";
+  if (!shopName || shopName.length > SHOP_NAME_MAX_LENGTH) {
+    issues.push({
+      path: ["shopName"],
+      code: "INVALID_SHOP_NAME",
+      message: `Shop name must contain 1 to ${SHOP_NAME_MAX_LENGTH} characters.`,
+    });
+  }
+  const contactPhone = optionalPlainText(
+    record.contactPhone,
+    "contactPhone",
+    CONTACT_PHONE_MAX_LENGTH,
+    issues,
+  );
+  if (contactPhone && !/^[0-9+()\-\s]{5,30}$/u.test(contactPhone)) {
+    issues.push({
+      path: ["contactPhone"],
+      code: "INVALID_PHONE",
+      message: "Enter a practical contact phone number.",
+    });
+  }
+  const address = optionalPlainText(
+    record.address,
+    "address",
+    ADDRESS_MAX_LENGTH,
+    issues,
+  );
+  const customerNotice = optionalPlainText(
+    record.customerNotice,
+    "customerNotice",
+    CUSTOMER_NOTICE_MAX_LENGTH,
+    issues,
+  );
+  if (typeof record.onlinePrintingEnabled !== "boolean") {
+    issues.push({
+      path: ["onlinePrintingEnabled"],
+      code: "INVALID_BOOLEAN",
+      message: "Choose whether online printing is on or off.",
+    });
+  }
+  if (!isValidPdfSizeBytes(record.maxPdfSizeBytes)) {
+    issues.push({
+      path: ["maxPdfSizeBytes"],
+      code: "INVALID_PDF_LIMIT",
+      message: "Choose a PDF limit up to 25 MB.",
+    });
+  }
+  if (typeof record.identificationSheetEnabled !== "boolean") {
+    issues.push({
+      path: ["identificationSheetEnabled"],
+      code: "INVALID_BOOLEAN",
+      message: "Choose whether identification sheets are on or off.",
+    });
+  }
+  if (!isIdentificationSheetPlacement(record.identificationSheetPlacement)) {
+    issues.push({
+      path: ["identificationSheetPlacement"],
+      code: "INVALID_PLACEMENT",
+      message: "Choose before or after the document.",
+    });
+  }
+  return issues.length > 0
+    ? { ok: false, issues }
+    : {
+        ok: true,
+        value: {
+          shopName,
+          contactPhone,
+          address,
+          customerNotice,
+          onlinePrintingEnabled: record.onlinePrintingEnabled as boolean,
+          maxPdfSizeBytes: record.maxPdfSizeBytes as number,
+          identificationSheetEnabled:
+            record.identificationSheetEnabled as boolean,
+          identificationSheetPlacement:
+            record.identificationSheetPlacement as IdentificationSheetPlacement,
+        },
+      };
+}
+
+export interface ValidatedPrintRate {
+  paperSize: PaperSize;
+  colorMode: ColorMode;
+  sides: SidesMode;
+  pricePerPagePaise: number;
+  enabled: boolean;
+}
+
+export interface ValidatedFileSizeServiceCharge {
+  minBytesExclusive: number;
+  maxBytesInclusive: number;
+  chargePaise: number;
+}
+
+export interface ValidatedPricingUpdate {
+  printRates: ValidatedPrintRate[];
+  fileSizeServiceCharges: ValidatedFileSizeServiceCharge[];
+}
+
+export function validatePricingUpdateInput(
+  value: unknown,
+): ValidationResult<ValidatedPricingUpdate> {
+  if (typeof value !== "object" || value === null) {
+    return {
+      ok: false,
+      issues: [
+        {
+          path: [],
+          code: "INVALID_BODY",
+          message: "Check the pricing configuration.",
+        },
+      ],
+    };
+  }
+  const record = value as Record<string, unknown>;
+  const issues: ValidationIssue[] = [];
+  const printRates: ValidatedPrintRate[] = [];
+  const seenRates = new Set<string>();
+  if (!Array.isArray(record.printRates) || record.printRates.length !== 8) {
+    issues.push({
+      path: ["printRates"],
+      code: "INCOMPLETE_RATES",
+      message: "All printing options must be included.",
+    });
+  } else {
+    for (const [index, entry] of record.printRates.entries()) {
+      if (typeof entry !== "object" || entry === null) {
+        issues.push({
+          path: ["printRates", String(index)],
+          code: "INVALID_RATE",
+          message: "Check this printing rate.",
+        });
+        continue;
+      }
+      const rate = entry as Record<string, unknown>;
+      if (
+        !isPaperSize(rate.paperSize) ||
+        !isColorMode(rate.colorMode) ||
+        !isSidesMode(rate.sides) ||
+        !isIntegerPaise(rate.pricePerPagePaise) ||
+        typeof rate.enabled !== "boolean"
+      ) {
+        issues.push({
+          path: ["printRates", String(index)],
+          code: "INVALID_RATE",
+          message: "Use a valid non-negative price and printing option.",
+        });
+        continue;
+      }
+      const key = `${rate.paperSize}:${rate.colorMode}:${rate.sides}`;
+      if (seenRates.has(key)) {
+        issues.push({
+          path: ["printRates", String(index)],
+          code: "DUPLICATE_RATE",
+          message: "Each printing option must appear once.",
+        });
+        continue;
+      }
+      seenRates.add(key);
+      printRates.push({
+        paperSize: rate.paperSize,
+        colorMode: rate.colorMode,
+        sides: rate.sides,
+        pricePerPagePaise: rate.pricePerPagePaise,
+        enabled: rate.enabled,
+      });
+    }
+    if (seenRates.size !== 8) {
+      issues.push({
+        path: ["printRates"],
+        code: "INCOMPLETE_RATES",
+        message: "Every A4 and A3 printing option must appear once.",
+      });
+    }
+  }
+
+  const fileSizeServiceCharges: ValidatedFileSizeServiceCharge[] = [];
+  const rawServiceCharges: unknown = record.fileSizeServiceCharges;
+  if (
+    !Array.isArray(rawServiceCharges) ||
+    rawServiceCharges.length !== FILE_SIZE_SERVICE_CHARGE_BANDS.length
+  ) {
+    issues.push({
+      path: ["fileSizeServiceCharges"],
+      code: "INCOMPLETE_BANDS",
+      message: "All four PDF size charges must be included.",
+    });
+  } else {
+    const serviceCharges = rawServiceCharges as unknown[];
+    for (const [index, expected] of FILE_SIZE_SERVICE_CHARGE_BANDS.entries()) {
+      const entry = serviceCharges[index];
+      if (typeof entry !== "object" || entry === null) {
+        issues.push({
+          path: ["fileSizeServiceCharges", String(index)],
+          code: "INVALID_BAND",
+          message: "Check this PDF size charge.",
+        });
+        continue;
+      }
+      const band = entry as Record<string, unknown>;
+      if (
+        band.minBytesExclusive !== expected.minBytesExclusive ||
+        band.maxBytesInclusive !== expected.maxBytesInclusive ||
+        !isIntegerPaise(band.chargePaise)
+      ) {
+        issues.push({
+          path: ["fileSizeServiceCharges", String(index)],
+          code: "INVALID_BAND",
+          message:
+            "PDF size ranges are fixed; enter a valid non-negative charge.",
+        });
+        continue;
+      }
+      fileSizeServiceCharges.push({
+        minBytesExclusive: expected.minBytesExclusive,
+        maxBytesInclusive: expected.maxBytesInclusive,
+        chargePaise: band.chargePaise,
+      });
+    }
+  }
+
+  return issues.length > 0
+    ? { ok: false, issues }
+    : { ok: true, value: { printRates, fileSizeServiceCharges } };
 }

@@ -21,7 +21,9 @@ body {
   min-height: 100vh;
 }
 button,
-input {
+input,
+select,
+textarea {
   font: inherit;
 }
 button,
@@ -31,6 +33,11 @@ a {
 button:focus-visible,
 a:focus-visible,
 input:focus-visible {
+  outline: 3px solid #93c5fd;
+  outline-offset: 2px;
+}
+select:focus-visible,
+textarea:focus-visible {
   outline: 3px solid #93c5fd;
   outline-offset: 2px;
 }
@@ -100,14 +107,22 @@ label {
   font-size: 0.9rem;
   font-weight: 700;
 }
-input {
+input,
+select,
+textarea {
   width: 100%;
-  min-height: 2.85rem;
   padding: 0.7rem 0.8rem;
   border: 1px solid #b8c4d6;
   border-radius: 0.55rem;
   color: #172554;
   background: #fff;
+}
+input,
+select {
+  min-height: 2.85rem;
+}
+textarea {
+  resize: vertical;
 }
 input:focus {
   border-color: #2563eb;
@@ -332,6 +347,174 @@ dd {
 .fit {
   width: fit-content;
 }
+.form-section {
+  display: grid;
+  gap: 0.35rem;
+}
+.form-section h2,
+.pricing-section h2,
+.setting-card h2 {
+  margin-bottom: 0.15rem;
+}
+.field-help {
+  margin: 0.1rem 0 0;
+  color: #64748b;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+.setting-card,
+.switch-row,
+.checkbox-row,
+.radio-row,
+.save-bar,
+.section-heading,
+.rate-row,
+.charge-row,
+.compact-toggle,
+.dialog-actions {
+  display: flex;
+  align-items: center;
+}
+.setting-card,
+.save-bar,
+.section-heading,
+.charge-row {
+  justify-content: space-between;
+  gap: 1rem;
+}
+.important-setting {
+  border-left: 0.35rem solid #2563eb;
+}
+.switch-row,
+.checkbox-row,
+.radio-row,
+.compact-toggle {
+  gap: 0.65rem;
+  margin-top: 0;
+  cursor: pointer;
+}
+.switch-row input,
+.checkbox-row input,
+.radio-row input,
+.compact-toggle input {
+  width: 1.15rem;
+  min-height: 1.15rem;
+  accent-color: #1d4ed8;
+}
+fieldset {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid #dce3ee;
+  border-radius: 0.65rem;
+}
+legend {
+  padding: 0 0.35rem;
+  font-weight: 750;
+}
+.save-bar {
+  position: sticky;
+  bottom: 0.75rem;
+  z-index: 10;
+  margin-top: 0.75rem;
+  padding: 0.8rem 1rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.8rem;
+  background: rgb(255 255 255 / 96%);
+  box-shadow: 0 0.8rem 2rem rgb(30 41 59 / 12%);
+}
+.unsaved {
+  color: #9a3412;
+  font-weight: 750;
+}
+.saved-state {
+  color: #166534;
+  font-weight: 750;
+}
+.dialog-backdrop {
+  position: fixed;
+  z-index: 80;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgb(15 23 42 / 56%);
+}
+.confirm-dialog {
+  width: min(100%, 30rem);
+  padding: 1.5rem;
+  border-radius: 0.85rem;
+  background: #fff;
+  box-shadow: 0 1.5rem 4rem rgb(15 23 42 / 30%);
+}
+.dialog-actions {
+  justify-content: flex-end;
+  gap: 0.7rem;
+}
+.danger-button {
+  min-height: 2.85rem;
+  padding: 0.7rem 1rem;
+  border: 1px solid #b91c1c;
+  border-radius: 0.55rem;
+  background: #b91c1c;
+  color: #fff;
+  font-weight: 750;
+  cursor: pointer;
+}
+.page-loading {
+  color: #475569;
+}
+.pricing-section {
+  display: grid;
+  gap: 1.1rem;
+}
+.rate-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+.rate-group {
+  padding: 1rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.7rem;
+  background: #f8fafc;
+}
+.rate-group h3 {
+  margin: 0 0 0.7rem;
+  font-size: 0.95rem;
+}
+.rate-row {
+  display: grid;
+  grid-template-columns: minmax(7rem, 1fr) minmax(11rem, 1.5fr) auto;
+  gap: 0.75rem;
+  padding: 0.75rem 0;
+  border-top: 1px solid #e2e8f0;
+}
+.rate-row > label {
+  margin-top: 0;
+}
+.money-input {
+  display: grid;
+  grid-template-columns: auto minmax(4rem, 1fr) auto;
+  align-items: center;
+  gap: 0.35rem;
+  color: #64748b;
+  font-size: 0.82rem;
+}
+.money-input input {
+  min-width: 0;
+}
+.charge-list {
+  display: grid;
+}
+.charge-row {
+  padding: 0.85rem 0;
+  border-top: 1px solid #e2e8f0;
+}
+.charge-row .money-input {
+  width: min(14rem, 45%);
+}
 .action-row {
   display: flex;
   align-items: center;
@@ -388,6 +571,24 @@ dd {
   }
   .secondary-button {
     width: 100%;
+  }
+  .rate-grid {
+    grid-template-columns: 1fr;
+  }
+  .rate-row {
+    grid-template-columns: 1fr;
+  }
+  .setting-card,
+  .save-bar,
+  .charge-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .charge-row .money-input {
+    width: 100%;
+  }
+  .dialog-actions .secondary-button {
+    width: auto;
   }
 }
 @media (prefers-reduced-motion: reduce) {

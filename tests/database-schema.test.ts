@@ -166,6 +166,37 @@ describe("D1 initial migration", () => {
     }
   });
 
+  it("keeps historical order money snapshots independent from current pricing", () => {
+    const database = createDatabase(true);
+
+    try {
+      insertOrder(database, {
+        id: "50000000-0000-4000-8000-000000000007",
+        printingAmountPaise: 2_000,
+        serviceChargePaise: 300,
+      });
+      database.exec(`
+        UPDATE print_rates SET price_per_page_paise = 9999;
+        UPDATE file_size_service_charges SET charge_paise = 8888;
+      `);
+
+      expect(
+        database
+          .prepare(
+            `SELECT printing_amount_paise, service_charge_paise, total_amount_paise
+             FROM orders WHERE id = ?`,
+          )
+          .get("50000000-0000-4000-8000-000000000007"),
+      ).toEqual({
+        printing_amount_paise: 2_000,
+        service_charge_paise: 300,
+        total_amount_paise: 2_300,
+      });
+    } finally {
+      database.close();
+    }
+  });
+
   it("rejects duplicate print attempt numbers for one order", () => {
     const database = createDatabase(true);
 

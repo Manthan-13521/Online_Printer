@@ -1,6 +1,6 @@
 # PrintGo Data Model
 
-**Status:** Phase 1 schema finalized; Phase 2 authentication behavior documented
+**Status:** Phase 1 schema finalized; Phase 2 authentication and Phase 3 configuration behavior documented
 
 **Database:** Cloudflare D1 / SQLite
 
@@ -77,9 +77,13 @@ Stores only SHA-256 hashes of high-entropy opaque session tokens, plus expiry an
 
 One explicit rate per `(paper_size, color_mode, sides)` combination. Supported vocabularies are A4/A3, BW/COLOR, and SINGLE/DOUBLE. Rates use integer paise and can be disabled without deleting them.
 
+Phase 3 replaces all eight current combinations in one validated D1 batch. These rows describe current offers only. They are never joined later to recalculate an existing order.
+
 ### `file_size_service_charges`
 
 Four unambiguous `(min_bytes_exclusive, max_bytes_inclusive]` bands. The first starts above zero because an uploaded PDF must have a positive byte size. `sort_order` and range pairs are unique.
+
+Phase 3 keeps these boundaries fixed and updates only non-negative integer-paise charges. A band above the installation's current maximum PDF size remains configured for a future limit increase but cannot be selected by the authoritative engine while unreachable.
 
 ### `agents`
 
@@ -98,6 +102,8 @@ Allows multiple printers per Agent. Operational status uses a controlled vocabul
 The current commercial and operational source of truth. It stores customer/request snapshots, print selections, immutable pricing amounts, current order status, printer assignment, and claim-lease fields.
 
 The claim tuple (`claimed_by_agent_id`, `claim_id`, `claim_expires_at_ms`) is all-null or all-present. Later claim logic must atomically move `QUEUED` to `CLAIMED`. If the lease expires before safe spool submission, recovery can requeue the order. Lease expiry never by itself proves that a submitted spool job is safe to duplicate.
+
+`printing_amount_paise`, `service_charge_paise`, and `total_amount_paise` are immutable commercial snapshots once an order is priced. Updating `print_rates` or `file_size_service_charges` changes future calculations only; Phase 3 performs no order update or historical recalculation.
 
 ### `uploads`
 
@@ -123,7 +129,7 @@ Append-only operational timeline for status changes and order events. `orders.st
 
 Separate security/administrative audit history with actor, action, entity, minimal JSON metadata, and time. It is not the customer-visible order timeline.
 
-Phase 2 records `ADMIN_LOGIN_SUCCESS`, `ADMIN_LOGOUT`, `ADMIN_PASSWORD_CHANGED`, and `ADMIN_SESSIONS_REVOKED` here. Passwords, password hashes, raw session tokens, and cookies are never audit metadata.
+Phase 2 records `ADMIN_LOGIN_SUCCESS`, `ADMIN_LOGOUT`, `ADMIN_PASSWORD_CHANGED`, and `ADMIN_SESSIONS_REVOKED` here. Phase 3 records `SHOP_SETTINGS_UPDATED`, `ONLINE_PRINTING_ENABLED`, `ONLINE_PRINTING_DISABLED`, and `PRICING_UPDATED`. Passwords, password hashes, raw session tokens, cookies, and full form payloads are never audit metadata.
 
 ## Order state model
 

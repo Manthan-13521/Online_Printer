@@ -11,6 +11,8 @@
   },
   "dependencies": {
     "@printgo/api-contract": "workspace:*",
+    "@printgo/domain": "workspace:*",
+    "@printgo/pricing": "workspace:*",
     "@printgo/validation": "workspace:*",
     "@vitejs/plugin-react": "^5.0.0",
     "react": "^19.0.0",

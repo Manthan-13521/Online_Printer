@@ -5,6 +5,10 @@ import type {
   AdminLoginResponse,
   AdminLogoutResponse,
   AdminMeResponse,
+  AdminPricingResponse,
+  AdminPricingUpdateRequest,
+  AdminSettingsResponse,
+  AdminSettingsUpdateRequest,
   ApiFailure,
 } from "@printgo/api-contract";
 
@@ -23,6 +27,12 @@ export class AdminApiError extends Error {
     super(message);
     this.name = "AdminApiError";
   }
+}
+
+export function friendlyAdminError(caught: unknown): string {
+  return caught instanceof AdminApiError
+    ? caught.message
+    : "PrintGo could not complete that action. Please try again.";
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -79,6 +89,28 @@ export const adminApi = {
   ): Promise<AdminChangePasswordResponse> {
     return request("/api/admin/auth/change-password", {
       method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+  getSettings(): Promise<AdminSettingsResponse> {
+    return request("/api/admin/settings");
+  },
+  updateSettings(
+    input: AdminSettingsUpdateRequest,
+  ): Promise<AdminSettingsResponse> {
+    return request("/api/admin/settings", {
+      method: "PUT",
+      body: JSON.stringify(input),
+    });
+  },
+  getPricing(): Promise<AdminPricingResponse> {
+    return request("/api/admin/pricing");
+  },
+  updatePricing(
+    input: AdminPricingUpdateRequest,
+  ): Promise<AdminPricingResponse> {
+    return request("/api/admin/pricing", {
+      method: "PUT",
       body: JSON.stringify(input),
     });
   },

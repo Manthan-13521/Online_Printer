@@ -230,6 +230,9 @@ importers:
       '@printgo/auth':
         specifier: workspace:*
         version: link:../../../packages/auth
+      '@printgo/pricing':
+        specifier: workspace:*
+        version: link:../../../packages/pricing
       '@printgo/validation':
         specifier: workspace:*
         version: link:../../../packages/validation
@@ -246,6 +249,12 @@ importers:
       '@printgo/api-contract':
         specifier: workspace:*
         version: link:../../../packages/api-contract
+      '@printgo/domain':
+        specifier: workspace:*
+        version: link:../../../packages/domain
+      '@printgo/pricing':
+        specifier: workspace:*
+        version: link:../../../packages/pricing
       '@printgo/validation':
         specifier: workspace:*
         version: link:../../../packages/validation
@@ -306,7 +315,11 @@ importers:
         specifier: ^19.0.0
         version: 19.3.0(@types/react@19.3.0)
 
-  packages/api-contract: {}
+  packages/api-contract:
+    dependencies:
+      '@printgo/domain':
+        specifier: workspace:*
+        version: link:../domain
 
   packages/auth: {}
 
@@ -316,7 +329,11 @@ importers:
         specifier: workspace:*
         version: link:../shared
 
-  packages/pricing: {}
+  packages/pricing:
+    dependencies:
+      '@printgo/domain':
+        specifier: workspace:*
+        version: link:../domain
 
   packages/shared: {}
 

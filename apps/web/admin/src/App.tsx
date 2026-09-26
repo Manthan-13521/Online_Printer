@@ -8,7 +8,9 @@ import {
   type MouseEvent,
 } from "react";
 
-import { adminApi, AdminApiError } from "./api";
+import { adminApi, AdminApiError, friendlyAdminError } from "./api";
+import { PricingPage } from "./PricingPage";
+import { ShopSettingsPage } from "./ShopSettingsPage";
 
 const navigation = [
   { label: "Dashboard", path: "/admin" },
@@ -36,12 +38,6 @@ function usePathname(): [string, (path: string) => void] {
       setPathname(path);
     },
   ];
-}
-
-function friendlyError(caught: unknown): string {
-  return caught instanceof AdminApiError
-    ? caught.message
-    : "PrintGo could not complete that action. Please try again.";
 }
 
 function LoadingScreen() {
@@ -76,7 +72,7 @@ function LoginScreen({
       const response = await adminApi.login({ loginIdentifier, password });
       if (response.ok) onAuthenticated(response.data.admin);
     } catch (caught: unknown) {
-      setError(friendlyError(caught));
+      setError(friendlyAdminError(caught));
     } finally {
       setSubmitting(false);
     }
@@ -190,7 +186,7 @@ function SecurityPage({
         onSignedOut("Your session has expired. Please sign in again.");
         return;
       }
-      setError(friendlyError(caught));
+      setError(friendlyAdminError(caught));
     } finally {
       setBusy(null);
     }
@@ -204,7 +200,7 @@ function SecurityPage({
       await adminApi.revokeAllSessions();
       onSignedOut("All sessions have been signed out.");
     } catch (caught: unknown) {
-      setError(friendlyError(caught));
+      setError(friendlyAdminError(caught));
       setBusy(null);
     }
   }
@@ -215,7 +211,7 @@ function SecurityPage({
       await adminApi.logout();
       onSignedOut("You have been signed out.");
     } catch (caught: unknown) {
-      setError(friendlyError(caught));
+      setError(friendlyAdminError(caught));
       setBusy(null);
     }
   }
@@ -340,6 +336,10 @@ function PageContent({
   const item = navigation.find((entry) => entry.path === path) ?? navigation[0];
   if (item.path === "/admin/security")
     return <SecurityPage admin={admin} onSignedOut={onSignedOut} />;
+  if (item.path === "/admin/pricing")
+    return <PricingPage onSessionExpired={onSignedOut} />;
+  if (item.path === "/admin/shop-settings")
+    return <ShopSettingsPage onSessionExpired={onSignedOut} />;
   if (item.path === "/admin")
     return (
       <div className="welcome">
@@ -390,7 +390,7 @@ function AdminShell({
       await adminApi.logout();
       onSignedOut("You have been signed out.");
     } catch (caught: unknown) {
-      setShellError(friendlyError(caught));
+      setShellError(friendlyAdminError(caught));
       setSigningOut(false);
     }
   }

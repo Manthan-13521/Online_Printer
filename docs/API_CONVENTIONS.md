@@ -49,4 +49,15 @@ The Phase 2 Admin authentication surface is:
 - `POST /api/admin/auth/sessions/revoke-all`
 - `POST /api/admin/auth/change-password`
 
+The Phase 3 Admin configuration surface is:
+
+- `GET /api/admin/settings`
+- `PUT /api/admin/settings`
+- `GET /api/admin/pricing`
+- `PUT /api/admin/pricing`
+
+Settings responses expose only the normalized installation fields used by the Admin form. Pricing responses contain the eight normalized print-rate combinations, four fixed service-charge bands, and the current maximum PDF size. They never expose raw D1 row IDs. Pricing mutations replace one complete validated configuration; tier boundaries are not user-editable.
+
 All state-changing Admin requests require the exactly configured trusted `Origin`. Credentialed CORS never uses a wildcard. Protected handlers derive the admin from the server-side session cookie; a browser-supplied admin ID never grants authority.
+
+The browser sends configuration and user selections, never an authoritative total. Future order/payment endpoints must load current D1 configuration and call `@printgo/pricing` in the Worker. The resulting integer-paise amounts are then snapshotted on the order.
