@@ -1,0 +1,68 @@
+name: Deploy to Cloudflare
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: cloudflare-deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build & Deploy PrintGo
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Enable Corepack & pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@12.6.0 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Quality Checks
+        run: |
+          pnpm lint
+          pnpm typecheck
+          pnpm test
+
+      - name: Build & Deploy Customer PWA (Pages)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          VITE_API_BASE_URL: https://printgo-api.printgo-worker.workers.dev
+        run: |
+          pnpm --filter @printgo/customer build
+          pnpm --filter @printgo/worker exec wrangler pages deploy apps/web/customer/dist \
+            --project-name=printgo-customer \
+            --branch=main \
+            --commit-dirty=true
+
+      - name: Build & Deploy Admin PWA (Pages)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          VITE_API_BASE_URL: https://printgo-api.printgo-worker.workers.dev
+        run: |
+          pnpm --filter @printgo/admin build
+          pnpm --filter @printgo/worker exec wrangler pages deploy apps/web/admin/dist \
+            --project-name=printgo-admin \
+            --branch=main \
+            --commit-dirty=true
+
+      - name: Deploy API Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          pnpm --filter @printgo/worker exec wrangler deploy
