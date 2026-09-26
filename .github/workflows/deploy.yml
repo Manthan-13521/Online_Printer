@@ -30,11 +30,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Quality Checks
+      - name: Quality Checks & Package Build
         run: |
           pnpm lint
           pnpm typecheck
           pnpm test
+          pnpm build
 
       - name: Build & Deploy Customer PWA (Pages)
         env:
