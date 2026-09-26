@@ -16,8 +16,27 @@ import type {
   VerifyCustomerPaymentRequest,
 } from "@printgo/api-contract";
 
+export const API_BASE_URL =
+  (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(
+    /\/$/u,
+    "",
+  ) ?? "";
+
+export function resolveCustomerApiUrl(
+  path: string,
+  baseUrl: string = API_BASE_URL,
+): string {
+  if (/^https?:\/\//i.test(path)) {
+    return path;
+  }
+  const cleanBase = baseUrl.replace(/\/$/u, "");
+  const cleanPath = path.startsWith("/") ? path : `/${path}`;
+  return cleanBase ? `${cleanBase}${cleanPath}` : cleanPath;
+}
+
 async function jsonRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, {
+  const url = resolveCustomerApiUrl(path);
+  const response = await fetch(url, {
     ...init,
     headers: { "Content-Type": "application/json", ...init?.headers },
     cache: "no-store",

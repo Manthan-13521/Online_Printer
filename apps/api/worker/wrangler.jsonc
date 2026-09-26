@@ -5,26 +5,26 @@
   "compatibility_date": "2026-09-01",
   "workers_dev": true,
   "observability": {
-    "enabled": true
+    "enabled": true,
   },
   "vars": {
     "APP_ENV": "production",
     "CUSTOMER_ALLOWED_ORIGIN": "https://printgo-customer.pages.dev",
     "ADMIN_ALLOWED_ORIGIN": "https://printgo-admin.pages.dev",
     "R2_ACCOUNT_ID": "ba188f82338d7a85fc6f79913fb6a653",
-    "R2_BUCKET_NAME": "printgo-pdfs"
+    "R2_BUCKET_NAME": "printgo-pdfs",
   },
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "printgo-production",
-      "database_id": "81bc9e6b-6e65-4a8a-85dd-4440484482ff"
-    }
+      "database_id": "81bc9e6b-6e65-4a8a-85dd-4440484482ff",
+    },
   ],
   "r2_buckets": [
     {
       "binding": "PDF_BUCKET",
-      "bucket_name": "printgo-pdfs"
-    }
-  ]
+      "bucket_name": "printgo-pdfs",
+    },
+  ],
 }
