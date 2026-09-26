@@ -44,7 +44,7 @@ jobs:
           VITE_API_BASE_URL: https://printgo-api.printgo-worker.workers.dev
         run: |
           pnpm --filter @printgo/customer build
-          pnpm --filter @printgo/worker exec wrangler pages deploy apps/web/customer/dist \
+          pnpm --dir apps/api/worker exec wrangler pages deploy "$GITHUB_WORKSPACE/apps/web/customer/dist" \
             --project-name=printgo-customer \
             --branch=main \
             --commit-dirty=true
@@ -56,7 +56,7 @@ jobs:
           VITE_API_BASE_URL: https://printgo-api.printgo-worker.workers.dev
         run: |
           pnpm --filter @printgo/admin build
-          pnpm --filter @printgo/worker exec wrangler pages deploy apps/web/admin/dist \
+          pnpm --dir apps/api/worker exec wrangler pages deploy "$GITHUB_WORKSPACE/apps/web/admin/dist" \
             --project-name=printgo-admin \
             --branch=main \
             --commit-dirty=true
