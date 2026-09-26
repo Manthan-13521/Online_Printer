@@ -46,6 +46,12 @@ pnpm --dir apps/api/worker exec wrangler d1 execute printgo-local \
   --config="$repository_root/database/wrangler.local.jsonc" \
   --local \
   --persist-to="$validation_dir" \
+  --file="$repository_root/database/migrations/0006_paid_print_execution.sql"
+
+pnpm --dir apps/api/worker exec wrangler d1 execute printgo-local \
+  --config="$repository_root/database/wrangler.local.jsonc" \
+  --local \
+  --persist-to="$validation_dir" \
   --file="$repository_root/database/seeds/0001_development.sql"
 
 pnpm --dir apps/api/worker exec wrangler d1 execute printgo-local \
