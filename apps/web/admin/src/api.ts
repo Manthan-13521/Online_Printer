@@ -4,6 +4,7 @@ import type {
   AdminCreatePairCodeResponse,
   AdminLoginRequest,
   AdminLoginResponse,
+  AdminLiveOrdersResponse,
   AdminLogoutResponse,
   AdminMeResponse,
   AdminPricingResponse,
@@ -121,6 +122,9 @@ export const adminApi = {
   },
   getPrinters(): Promise<AdminPrintersResponse> {
     return request("/api/admin/printers");
+  },
+  getLiveOrders(): Promise<AdminLiveOrdersResponse> {
+    return request("/api/admin/orders/live");
   },
   createPairCode(): Promise<AdminCreatePairCodeResponse> {
     return request("/api/admin/agents/pair-code", {

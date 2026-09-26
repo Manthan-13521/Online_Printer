@@ -52,6 +52,12 @@ export type {
   OrderPrintPlanStep,
 } from "./printing/order-print-plan.js";
 export { monitorSpoolJob } from "./printing/spool-monitor.js";
+export {
+  downloadAndValidateCustomerPdf,
+  CustomerPdfError,
+} from "./printing/customer-pdf.js";
+export { PaidPrintExecutor } from "./paid-print-executor.js";
+export { ExecutionJournalStore } from "./storage/execution-journal.js";
 export { UnavailablePrinterAdapter } from "./printing/unavailable-printer-adapter.js";
 export {
   AgentClient,

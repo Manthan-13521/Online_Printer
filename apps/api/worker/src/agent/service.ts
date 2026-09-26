@@ -22,6 +22,7 @@ import {
   normalizePairCode,
 } from "./pair-code";
 import type { AgentRepository } from "./repository";
+import type { PrintingService } from "../printing/service";
 
 export type AgentErrorCode =
   | "PAIR_CODE_INVALID"
@@ -50,6 +51,7 @@ export class AgentService {
   constructor(
     private readonly repository: AgentRepository,
     private readonly now: () => number = Date.now,
+    private readonly printing?: PrintingService,
   ) {}
 
   async createPairCode(): Promise<{ pairCode: string; expiresAt: string }> {
@@ -136,11 +138,13 @@ export class AgentService {
       agent.id,
       nowMs,
     );
+    const printJob = await this.printing?.claimOrRenew(agent.id);
 
     return {
       acknowledged: true,
       serverTimeMs: nowMs,
       ...(nextCommand ? { nextCommand } : {}),
+      ...(printJob ? { printJob } : {}),
     };
   }
 

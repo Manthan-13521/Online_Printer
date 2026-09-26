@@ -96,6 +96,19 @@ returns only `CustomerTrackingData`. Missing, malformed, expired, wrong-token,
 and nonexistent-code requests use the same `404 TRACKING_NOT_FOUND` envelope.
 Every tracking response, including errors, uses `Cache-Control: no-store`.
 
+The Phase 10 paid-print surface is:
+
+- `POST /api/agent/heartbeat` — renew/claim at most one eligible job and return its current persisted step.
+- `POST /api/agent/print-jobs/:orderId/steps/:stepId/start` — persist the pre-submission boundary.
+- `POST /api/agent/print-jobs/:orderId/steps/:stepId/submitted` — attach the exact correlated spool ID.
+- `POST /api/agent/print-jobs/:orderId/steps/:stepId/result` — report blocked, success, proven failure, or uncertainty.
+- `GET /api/admin/orders/live` — authenticated bounded operational observation only.
+
+All Agent mutations require both the Agent bearer credential and active claim
+nonce. Responses are `no-store`. Duplicate transitions are idempotent only when
+the persisted spool/result identity agrees; conflicting physical identities are
+rejected rather than overwritten.
+
 The Phase 7 Agent and Admin Printer surface is:
 
 - `POST /api/agent/pair` — Exchange 8-character Crockford pair code for persistent agent credentials.

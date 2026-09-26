@@ -2,7 +2,10 @@
 
 The PrintGo Windows Agent (`apps/agent/windows`) connects the physical print shop computer and connected printers to the Cloudflare Worker API. It establishes persistent agent identity, securely stores credentials, discovers local printers, periodically reports status and capabilities, executes test print commands via the Windows print spooler, and feeds the cloud payment readiness gate.
 
-Customer PDF download, printing, and order leasing are strictly deferred to **Phase 10**. Phase 9 adds only local identification-sheet generation and placement planning. See [PRINTER_TESTING.md](./PRINTER_TESTING.md) and [IDENTIFICATION_SHEET.md](./IDENTIFICATION_SHEET.md).
+Phase 10 adds paid-order leasing, short-lived private R2 download, local PDF
+validation, persisted print-plan execution, and restart reconciliation. See
+[END_TO_END_PRINTING.md](./END_TO_END_PRINTING.md), [PRINTER_TESTING.md](./PRINTER_TESTING.md),
+and [IDENTIFICATION_SHEET.md](./IDENTIFICATION_SHEET.md).
 
 ---
 
@@ -222,6 +225,11 @@ The Windows Agent integrates with the Windows Print Spooler subsystem via PowerS
   - Recoverable conditions (`PAPER_OUT`, `PAPER_JAM`, `OFFLINE`, `DOOR_OPEN`, `USER_INTERVENTION`) are reported as `BLOCKED`.
   - The job is **NEVER automatically resubmitted**, preventing duplicate printing once paper is loaded.
   - See [PRINTER_TESTING.md](./PRINTER_TESTING.md) for full details.
+- **Paid jobs (Phase 10)**:
+  - Heartbeat returns at most the live claim owned by that authenticated Agent.
+  - A restricted local journal prevents restart from blindly submitting again.
+  - Customer PDFs use unpredictable temporary paths and exact paid settings.
+  - Ambiguous submission/correlation becomes `ADMIN_ACTION_REQUIRED`; no Phase 10 retry occurs.
 
 ---
 

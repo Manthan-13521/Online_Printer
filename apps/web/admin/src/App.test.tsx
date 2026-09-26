@@ -32,6 +32,7 @@ vi.mock("./api", async (importOriginal) => {
       updateSettings: vi.fn(),
       getPricing: vi.fn(),
       updatePricing: vi.fn(),
+      getLiveOrders: vi.fn(),
     },
   };
 });
@@ -193,6 +194,46 @@ describe("Admin application", () => {
       }),
     );
     expect(await screen.findByText("Shop settings saved.")).toBeTruthy();
+  });
+
+  it("shows real live orders without a retry control", async () => {
+    window.history.replaceState({}, "", "/admin/live-orders");
+    mockedApi.me.mockResolvedValue({ ok: true, data: { admin } });
+    mockedApi.getLiveOrders.mockResolvedValue({
+      ok: true,
+      data: {
+        orders: [
+          {
+            orderId: "order-1",
+            jobCode: "PG-ABC234",
+            customerName: "Asha",
+            customerPhone: "+91 98765 43210",
+            printSummary: {
+              selectedPages: "1-2",
+              copies: 2,
+              paperSize: "A4",
+              colorMode: "BW",
+              sides: "SINGLE",
+            },
+            amountPaidPaise: 5000,
+            currency: "INR",
+            status: "PRINT_BLOCKED",
+            agentName: "Front PC",
+            printerName: "Canon",
+            issue: "Paper out",
+            paidAt: new Date(1_000).toISOString(),
+            updatedAt: new Date(2_000).toISOString(),
+          },
+        ],
+      },
+    });
+    render(<App />);
+    expect(
+      await screen.findByRole("heading", { name: "Live Orders" }),
+    ).toBeTruthy();
+    expect(await screen.findByText("PG-ABC234")).toBeTruthy();
+    expect(screen.getByText("Paper out", { exact: false })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /retry/iu })).toBeNull();
   });
 
   it("requires confirmation before pausing new online printing", async () => {

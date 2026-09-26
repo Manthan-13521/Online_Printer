@@ -12,6 +12,7 @@ import { adminApi, AdminApiError, friendlyAdminError } from "./api";
 import { PricingPage } from "./PricingPage";
 import { PrinterPage } from "./PrinterPage";
 import { ShopSettingsPage } from "./ShopSettingsPage";
+import { LiveOrdersPage } from "./LiveOrdersPage";
 
 const navigation = [
   { label: "Dashboard", path: "/admin" },
@@ -343,6 +344,8 @@ function PageContent({
     return <PrinterPage onSessionExpired={onSignedOut} />;
   if (item.path === "/admin/shop-settings")
     return <ShopSettingsPage onSessionExpired={onSignedOut} />;
+  if (item.path === "/admin/live-orders")
+    return <LiveOrdersPage onSessionExpired={onSignedOut} />;
   if (item.path === "/admin")
     return (
       <div className="welcome">

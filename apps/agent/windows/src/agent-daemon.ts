@@ -13,6 +13,8 @@ import type {
   AgentCredentials,
   CredentialStore,
 } from "./storage/credential-store.js";
+import { PaidPrintExecutor } from "./paid-print-executor.js";
+import { ExecutionJournalStore } from "./storage/execution-journal.js";
 
 export interface AgentDaemonOptions {
   client?: AgentClient;
@@ -38,6 +40,7 @@ export class AgentDaemon {
   private running = false;
   private isBeating = false;
   private readonly executedCommandIds = new Set<string>();
+  private readonly paidPrintExecutor: PaidPrintExecutor;
 
   constructor(options: AgentDaemonOptions) {
     this.client = options.client ?? new AgentClient();
@@ -48,6 +51,12 @@ export class AgentDaemon {
     this.agentVersion = options.agentVersion ?? "2.0.0";
     this.onStatusChange = options.onStatusChange;
     this.onError = options.onError;
+    this.paidPrintExecutor = new PaidPrintExecutor(
+      this.client,
+      this.printerAdapter,
+      new ExecutionJournalStore(),
+      (message) => this.log(message),
+    );
   }
 
   async pair(
@@ -160,6 +169,12 @@ export class AgentDaemon {
       // Check if server returned a diagnostic test command
       if (heartbeatData.nextCommand?.type === "TEST_PRINT") {
         await this.handleTestPrintCommand(heartbeatData.nextCommand);
+      }
+      if (heartbeatData.printJob?.type === "PAID_PRINT_JOB") {
+        await this.paidPrintExecutor.handle(
+          this.credentials,
+          heartbeatData.printJob,
+        );
       }
     } catch (err: unknown) {
       if (err instanceof AgentAuthError) {

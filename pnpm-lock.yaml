@@ -240,6 +240,9 @@ importers:
       '@printgo/auth':
         specifier: workspace:*
         version: link:../../../packages/auth
+      '@printgo/domain':
+        specifier: workspace:*
+        version: link:../../../packages/domain
       '@printgo/pricing':
         specifier: workspace:*
         version: link:../../../packages/pricing

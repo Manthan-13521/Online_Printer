@@ -346,6 +346,7 @@ export interface AgentHeartbeatData {
   acknowledged: true;
   serverTimeMs: number;
   nextCommand?: AgentTestPrintCommand | null;
+  printJob?: AgentPrintJob | null;
 }
 
 export type AgentHeartbeatResponse = ApiResponse<AgentHeartbeatData>;
@@ -364,6 +365,87 @@ export interface AgentReportCommandData {
 }
 
 export type AgentReportCommandResponse = ApiResponse<AgentReportCommandData>;
+
+export type PrintPlanStepType = "IDENTIFICATION_SHEET" | "CUSTOMER_DOCUMENT";
+export type PrintPlanStepStatus =
+  | "PENDING"
+  | "SUBMISSION_STARTED"
+  | "SUBMITTED"
+  | "BLOCKED"
+  | "SUCCEEDED"
+  | "FAILED"
+  | "UNCERTAIN";
+
+export interface AgentPrintJobStep {
+  stepId: string;
+  sequenceNumber: number;
+  type: PrintPlanStepType;
+  status: PrintPlanStepStatus;
+  spoolerJobId: string | null;
+}
+
+export interface AgentPrintJob {
+  type: "PAID_PRINT_JOB";
+  orderId: string;
+  attemptId: string;
+  claimId: string;
+  leaseExpiresAtMs: number;
+  jobCode: string;
+  printerId: string;
+  windowsPrinterName: string;
+  download: { url: string; expiresAtMs: number; expectedSizeBytes: number };
+  sourcePageCount: number;
+  settings: {
+    pageRange: string;
+    copies: number;
+    paperSize: PaperSize;
+    colorMode: ColorMode;
+    sides: SidesMode;
+  };
+  identificationSheet: IdentificationSheetData | null;
+  currentStep: AgentPrintJobStep;
+}
+
+export interface AgentStartPrintStepRequest {
+  claimId: string;
+}
+export interface AgentSubmitPrintStepRequest {
+  claimId: string;
+  spoolerJobId: string;
+}
+export interface AgentReportPrintStepRequest {
+  claimId: string;
+  status: "BLOCKED" | "SUCCEEDED" | "FAILED" | "UNCERTAIN";
+  spoolerJobId?: string | null;
+  failureCode?: string | null;
+  failureDetail?: string | null;
+}
+export interface AgentPrintStepData {
+  acknowledged: true;
+  orderId: string;
+  attemptId: string;
+  stepId: string;
+  status: PrintPlanStepStatus;
+  orderStatus: string;
+}
+export type AgentPrintStepResponse = ApiResponse<AgentPrintStepData>;
+
+export interface AdminLiveOrder {
+  orderId: string;
+  jobCode: string;
+  customerName: string;
+  customerPhone: string;
+  printSummary: CustomerTrackingPrintSummary;
+  amountPaidPaise: number;
+  currency: "INR";
+  status: string;
+  agentName: string | null;
+  printerName: string | null;
+  issue: string | null;
+  paidAt: string;
+  updatedAt: string;
+}
+export type AdminLiveOrdersResponse = ApiResponse<{ orders: AdminLiveOrder[] }>;
 
 export type TestPrintCommandStatus =
   | "PENDING"

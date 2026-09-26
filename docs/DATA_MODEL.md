@@ -1,6 +1,6 @@
 # PrintGo Data Model
 
-**Status:** Phase 1 schema finalized; Phase 2-6 schema additions and runtime
+**Status:** Phase 1 schema finalized; Phase 2-10 schema additions and runtime
 behavior documented
 
 **Database:** Cloudflare D1 / SQLite
@@ -31,6 +31,10 @@ Migration `0005_printer_test_commands.sql` creates the `printer_test_commands`
 table for tracking short-lived diagnostic test print requests initiated by shop
 administrators. Test print commands have bounded lifetimes (5 minutes) and
 track physical spooler status without accessing customer orders or customer PDFs.
+
+Migration `0006_paid_print_execution.sql` adds `print_attempt_steps` and a
+partial unique index permitting only one active print attempt per order. It is
+the persisted physical-side-effect boundary for multi-step restart safety.
 
 ## Deployment invariant
 
@@ -76,6 +80,7 @@ erDiagram
     ORDERS ||--|| UPLOADS : has_source_pdf
     ORDERS ||--o{ PAYMENTS : receives
     ORDERS ||--o{ PRINT_ATTEMPTS : records
+    PRINT_ATTEMPTS ||--o{ PRINT_ATTEMPT_STEPS : executes
     AGENTS ||--o{ PRINT_ATTEMPTS : submits
     PRINTERS ||--o{ PRINT_ATTEMPTS : executes
     ORDERS ||--o{ ORDER_EVENTS : records
@@ -169,6 +174,14 @@ Append-oriented history for each submission/retry. `(order_id, attempt_number)` 
 
 `identification_sheet_included` is the existing Phase 10 recording point for whether the one local identification sheet was included in that physical attempt. Phase 9 adds no schema and does not create print attempts. Identification sheets are temporary Agent-local PDFs and are never stored in D1 or R2.
 
+### `print_attempt_steps`
+
+One or two ordered rows persist the `IDENTIFICATION_SHEET` and
+`CUSTOMER_DOCUMENT` side effects. `SUBMISSION_STARTED` is written before calling
+Windows; `SUBMITTED` stores the Agent-scoped spool ID. `BLOCKED` keeps that same
+ID, while `FAILED` and `UNCERTAIN` are terminal for Phase 10. Unique attempt/type
+and attempt/sequence constraints guarantee exactly one identification step.
+
 ### `order_events`
 
 Append-only operational timeline for status changes and order events. `orders.status` remains current truth; events support admin history and debugging. JSON details must exclude secrets.
@@ -228,6 +241,9 @@ These durations are shared constants in `@printgo/domain`. Later APIs must deny 
 | `print_attempts_order_status_idx`           | Attempt history/current attempt for an order         |
 | `print_attempts_agent_windows_job_idx`      | Reconcile a spool identifier in its Agent scope      |
 | `print_attempts_status_observed_idx`        | Monitoring active/blocked attempts                   |
+| `print_attempts_one_active_per_order_uq`    | One active physical execution per order              |
+| `print_attempt_steps_attempt_status_idx`    | Next/reconcilable step for an active attempt         |
+| `print_attempt_steps_spooler_idx`           | Step-level Agent-scoped spool reconciliation         |
 | `order_events_order_created_idx`            | Stable order timeline pagination                     |
 | `order_events_idempotency_key_idx`          | Retry-safe consequential order transitions           |
 | `payment_provider_events_processing_idx`    | Unprocessed/failed webhook reconciliation            |

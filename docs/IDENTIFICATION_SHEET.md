@@ -1,9 +1,8 @@
 # Identification Sheet Generation and Placement
 
-Phase 9 adds a local Windows Agent subsystem for creating a one-page shop
-identification sheet. It does not claim customer orders, fetch objects from R2,
-open or modify customer PDFs, or execute customer-document printing. Those
-orchestration steps remain Phase 10 work.
+Phase 9 added the local one-page generator and planner. Phase 10 now persists
+and executes that plan alongside the customer document; generation remains
+local and the sheet is never uploaded.
 
 ## Invariants
 
@@ -19,8 +18,8 @@ orchestration steps remain Phase 10 work.
 - The planner is a pure sequencing function. A `CUSTOMER_DOCUMENT` plan step is
   not executed in Phase 9.
 
-The Agent evaluates the installation's current identification-sheet setting
-when Phase 10 eventually builds an execution plan. Changing the setting affects
+The Worker snapshots the installation's identification-sheet setting when it
+builds the claimed attempt plan. Changing the setting affects
 orders that have not yet been executed; it does not rewrite an already printed
 order or create a second sheet.
 

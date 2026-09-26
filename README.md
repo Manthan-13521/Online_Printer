@@ -2,11 +2,11 @@
 
 PrintGo V2 is a production-oriented online printing system installed separately for each print/xerox shop. Customers will upload a PDF, choose print settings, pay the shop through Razorpay, track the job, and collect the printed output. Each shop owns its Cloudflare infrastructure, Razorpay account, production data, Windows computer, and printer; the developer retains the private source repository.
 
-The project has completed **Phase 9 — Identification Sheet Generation & Placement**.
+The project has completed **Phase 10 — End-to-End Paid Customer Printing**.
 The Windows Agent now features a modular printer adapter interface, pure TypeScript diagnostic PDF generation,
 Windows print spooler job submission (`Win32_PrintJob`), bounded spool monitoring, strict `BLOCKED != FAILED`
 semantics (never auto-resubmitting recoverable conditions), and end-to-end test print execution triggered
-from the Admin PWA. The Agent can now generate and submit one local identification sheet with fixed safe settings and can plan `FIRST`/`LAST` placement. Customer PDF download, order leasing, and customer-document printing remain deferred to Phase 10.
+from the Admin PWA. Verified paid jobs are atomically leased to one eligible Agent, downloaded through a short-lived private R2 GET, validated locally, and executed through persisted step-level plans with conservative restart and uncertain-outcome handling. Admin Live Orders observes this flow without adding Phase 11 retry controls.
 
 ## Source of truth
 
@@ -22,7 +22,8 @@ Phase documentation: [`docs/CUSTOMER_UPLOAD.md`](./docs/CUSTOMER_UPLOAD.md),
 [`docs/CUSTOMER_TRACKING.md`](./docs/CUSTOMER_TRACKING.md),
 [`docs/WINDOWS_AGENT.md`](./docs/WINDOWS_AGENT.md),
 [`docs/PRINTER_TESTING.md`](./docs/PRINTER_TESTING.md), and
-[`docs/IDENTIFICATION_SHEET.md`](./docs/IDENTIFICATION_SHEET.md).
+[`docs/IDENTIFICATION_SHEET.md`](./docs/IDENTIFICATION_SHEET.md), and
+[`docs/END_TO_END_PRINTING.md`](./docs/END_TO_END_PRINTING.md).
 
 ## Repository layout
 
@@ -81,6 +82,7 @@ See [`docs/DEVELOPMENT.md`](./docs/DEVELOPMENT.md) for workspace details,
 account-free tracking,
 [`docs/WINDOWS_AGENT.md`](./docs/WINDOWS_AGENT.md) for Windows Agent pairing and printer discovery,
 [`docs/IDENTIFICATION_SHEET.md`](./docs/IDENTIFICATION_SHEET.md) for the local one-sheet planner and privacy boundary,
+[`docs/END_TO_END_PRINTING.md`](./docs/END_TO_END_PRINTING.md) for paid-job claims, private download, step idempotency, and completion,
 [`docs/CONVENTIONS.md`](./docs/CONVENTIONS.md) for foundational conventions,
 and [`docs/DATA_MODEL.md`](./docs/DATA_MODEL.md) for the finalized D1 model.
 

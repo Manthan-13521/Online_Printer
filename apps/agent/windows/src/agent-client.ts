@@ -5,6 +5,9 @@ import type {
   AgentPairData,
   AgentPairRequest,
   AgentPairResponse,
+  AgentPrintJob,
+  AgentPrintStepResponse,
+  AgentReportPrintStepRequest,
   AgentReportCommandRequest,
   AgentReportCommandResponse,
 } from "@printgo/api-contract";
@@ -67,6 +70,101 @@ export function normalizeAgentServerUrl(rawUrl: string): string {
 }
 
 export class AgentClient {
+  private async printStepRequest(
+    serverUrl: string,
+    agentId: string,
+    agentSecret: string,
+    job: AgentPrintJob,
+    action: "start" | "submitted" | "result",
+    payload: Record<string, unknown>,
+  ): Promise<AgentPrintStepResponse> {
+    const cleanUrl = normalizeAgentServerUrl(serverUrl);
+    let response: Response;
+    try {
+      response = await fetch(
+        `${cleanUrl}/api/agent/print-jobs/${encodeURIComponent(job.orderId)}/steps/${encodeURIComponent(job.currentStep.stepId)}/${action}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${agentSecret}`,
+            "X-PrintGo-Agent-Id": agentId,
+          },
+          body: JSON.stringify(payload),
+        },
+      );
+    } catch (error) {
+      throw new AgentApiError(
+        "NETWORK_ERROR",
+        0,
+        `Print-step network failure: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    if (response.status === 401)
+      throw new AgentAuthError(
+        "Agent authentication failed while updating a print step.",
+      );
+    const data = (await response.json()) as AgentPrintStepResponse;
+    if (!response.ok || !data.ok) {
+      throw new AgentApiError(
+        data.ok ? "PRINT_STEP_FAILED" : data.error.code,
+        response.status,
+        data.ok ? "Print step update failed." : data.error.message,
+      );
+    }
+    return data;
+  }
+
+  startPrintStep(
+    serverUrl: string,
+    agentId: string,
+    agentSecret: string,
+    job: AgentPrintJob,
+  ) {
+    return this.printStepRequest(
+      serverUrl,
+      agentId,
+      agentSecret,
+      job,
+      "start",
+      { claimId: job.claimId },
+    );
+  }
+
+  submitPrintStep(
+    serverUrl: string,
+    agentId: string,
+    agentSecret: string,
+    job: AgentPrintJob,
+    spoolerJobId: string,
+  ) {
+    return this.printStepRequest(
+      serverUrl,
+      agentId,
+      agentSecret,
+      job,
+      "submitted",
+      { claimId: job.claimId, spoolerJobId },
+    );
+  }
+
+  reportPrintStep(
+    serverUrl: string,
+    agentId: string,
+    agentSecret: string,
+    job: AgentPrintJob,
+    report: Omit<AgentReportPrintStepRequest, "claimId">,
+  ) {
+    return this.printStepRequest(
+      serverUrl,
+      agentId,
+      agentSecret,
+      job,
+      "result",
+      { claimId: job.claimId, ...report },
+    );
+  }
+
   async pair(
     serverUrl: string,
     pairCode: string,

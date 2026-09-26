@@ -8,6 +8,7 @@ import type { WorkerEnv } from "../env";
 import { error, ok } from "../http";
 import { D1AgentRepository } from "./repository";
 import { AgentError, AgentService } from "./service";
+import { createPrintingService } from "../printing/routes";
 
 const MAX_JSON_BYTES = 32 * 1024;
 const NO_STORE = { "Cache-Control": "no-store" } as const;
@@ -73,7 +74,11 @@ function mapAgentError(caught: unknown): Response {
 export async function handleAgentRequest(
   request: Request,
   env: WorkerEnv,
-  service: AgentService = new AgentService(new D1AgentRepository(env.DB)),
+  service: AgentService = new AgentService(
+    new D1AgentRepository(env.DB),
+    Date.now,
+    createPrintingService(env),
+  ),
 ): Promise<Response> {
   const { pathname } = new URL(request.url);
 
