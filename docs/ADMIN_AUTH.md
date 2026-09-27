@@ -9,10 +9,10 @@ Passwords accept passphrases from 12 through 128 characters and are never trimme
 `@printgo/auth` stores passwords as:
 
 ```text
-pbkdf2-sha256$v=1$i=600000$<16-byte-base64url-salt>$<32-byte-base64url-hash>
+pbkdf2-sha256$v=1$i=100000$<16-byte-base64url-salt>$<32-byte-base64url-hash>
 ```
 
-It uses Worker Web Crypto PBKDF2-HMAC-SHA-256, a fresh cryptographically random salt, 600,000 iterations, and constant-time byte comparison. The version and work factor are encoded so a later implementation can verify and upgrade old hashes without changing the table.
+It uses Worker Web Crypto PBKDF2-HMAC-SHA-256, a fresh cryptographically random salt, 100,000 iterations (Cloudflare Workers platform upper limit), and constant-time byte comparison. The version and work factor are encoded so a later implementation can verify and upgrade old hashes without changing the table.
 
 ## Bootstrap
 

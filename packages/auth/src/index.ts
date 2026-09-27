@@ -15,7 +15,7 @@ export interface AuthenticatedAdmin {
 }
 
 export const PASSWORD_HASH_VERSION = 1;
-export const PASSWORD_PBKDF2_ITERATIONS = 600_000;
+export const PASSWORD_PBKDF2_ITERATIONS = 100_000;
 export const PASSWORD_SALT_BYTES = 16;
 export const PASSWORD_HASH_BYTES = 32;
 export const ADMIN_SESSION_TOKEN_BYTES = 32;
@@ -118,8 +118,8 @@ export async function verifyPassword(
   const expected = parts[4] ? decodeBase64Url(parts[4]) : null;
   if (
     !Number.isSafeInteger(iterations) ||
-    iterations < 100_000 ||
-    iterations > 2_000_000 ||
+    iterations < 10_000 ||
+    iterations > 100_000 ||
     salt?.length !== PASSWORD_SALT_BYTES ||
     expected?.length !== PASSWORD_HASH_BYTES
   ) {
