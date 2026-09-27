@@ -32,6 +32,20 @@ const printerTestMigrationSql = readFileSync(
   ),
   "utf8",
 );
+const printExecutionMigrationSql = readFileSync(
+  new URL(
+    "../database/migrations/0006_paid_print_execution.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const optimizationIndexesMigrationSql = readFileSync(
+  new URL(
+    "../database/migrations/0007_performance_optimization_indexes.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
 const seedSql = readFileSync(
   new URL("../database/seeds/0001_development.sql", import.meta.url),
   "utf8",
@@ -44,6 +58,8 @@ function createDatabase(withSeed = false): DatabaseSync {
   database.exec(paymentMigrationSql);
   database.exec(trackingMigrationSql);
   database.exec(printerTestMigrationSql);
+  database.exec(printExecutionMigrationSql);
+  database.exec(optimizationIndexesMigrationSql);
   if (withSeed) {
     database.exec(seedSql);
   }
@@ -103,7 +119,7 @@ describe("D1 migrations", () => {
         .prepare("SELECT COUNT(*) AS count FROM print_rates")
         .get() as { count: number };
 
-      expect(tableCount.count).toBe(16);
+      expect(tableCount.count).toBe(17);
       expect(installation).toEqual({
         id: 1,
         shop_name: "PrintGo Development Shop",

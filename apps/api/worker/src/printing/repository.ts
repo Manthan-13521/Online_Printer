@@ -166,7 +166,7 @@ export interface PrintingRepository {
     failureDetail: string | null;
     nowMs: number;
   }): Promise<StepOwnershipRow | null>;
-  listLiveOrders(): Promise<AdminLiveOrder[]>;
+  listLiveOrders(nowMs?: number): Promise<AdminLiveOrder[]>;
 }
 
 export class D1PrintingRepository implements PrintingRepository {
@@ -813,7 +813,9 @@ export class D1PrintingRepository implements PrintingRepository {
       .bind(crypto.randomUUID(), orderId, type, from, to, agentId, nowMs);
   }
 
-  async listLiveOrders(): Promise<AdminLiveOrder[]> {
+  async listLiveOrders(nowMs: number = Date.now()): Promise<AdminLiveOrder[]> {
+    // Only return live unprinted orders, plus recently completed orders within the 1-hour retention window
+    const recentPrintedCutoffMs = nowMs - 60 * 60 * 1000;
     const result = await this.db
       .prepare(
         `SELECT o.id order_id, o.public_job_code, o.customer_name, o.customer_phone,
@@ -824,10 +826,14 @@ export class D1PrintingRepository implements PrintingRepository {
       LEFT JOIN printers p ON p.id = o.printer_id
       LEFT JOIN print_attempts pa ON pa.order_id = o.id AND pa.attempt_number =
         (SELECT MAX(pa2.attempt_number) FROM print_attempts pa2 WHERE pa2.order_id = o.id)
-      WHERE o.status IN ('QUEUED','CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED',
-        'PRINT_FAILED','ADMIN_ACTION_REQUIRED','PRINTED')
+      WHERE (
+        o.status IN ('QUEUED','CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED',
+          'PRINT_FAILED','ADMIN_ACTION_REQUIRED')
+        OR (o.status = 'PRINTED' AND o.updated_at_ms >= ?)
+      )
       ORDER BY o.updated_at_ms DESC LIMIT 100`,
       )
+      .bind(recentPrintedCutoffMs)
       .all<{
         order_id: string;
         public_job_code: string;

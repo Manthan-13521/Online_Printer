@@ -371,24 +371,32 @@ export class D1AgentRepository implements AgentRepository {
       const existing = existingMap.get(p.windowsPrinterName);
 
       if (existing) {
-        statements.push(
-          this.db
-            .prepare(
-              `UPDATE printers
-               SET display_name = ?, status = ?, status_reason = ?,
-                   capabilities_json = ?, last_status_at_ms = ?, updated_at_ms = ?
-               WHERE id = ?`,
-            )
-            .bind(
-              p.displayName,
-              p.status,
-              p.statusReason,
-              capsJson,
-              input.nowMs,
-              input.nowMs,
-              existing.id,
-            ),
-        );
+        const capsChanged = existing.capabilities_json !== capsJson;
+        const statusChanged = existing.status !== p.status;
+        const reasonChanged =
+          existing.status_reason !== (p.statusReason ?? null);
+        const nameChanged = existing.display_name !== p.displayName;
+
+        if (capsChanged || statusChanged || reasonChanged || nameChanged) {
+          statements.push(
+            this.db
+              .prepare(
+                `UPDATE printers
+                 SET display_name = ?, status = ?, status_reason = ?,
+                     capabilities_json = ?, last_status_at_ms = ?, updated_at_ms = ?
+                 WHERE id = ?`,
+              )
+              .bind(
+                p.displayName,
+                p.status,
+                p.statusReason,
+                capsJson,
+                input.nowMs,
+                input.nowMs,
+                existing.id,
+              ),
+          );
+        }
       } else {
         const autoEnable = isFirstRegistration && (p.isDefault || index === 0);
         statements.push(

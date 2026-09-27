@@ -142,6 +142,27 @@ describe("WindowsPrinterAdapter with mock executor", () => {
     expect(caps.paperSizes).toContain("A4");
   });
 
+  it("caches capabilities for 10 minutes to avoid redundant PowerShell invocations", async () => {
+    const mockExecutor = vi.fn(() =>
+      Promise.resolve(
+        JSON.stringify({
+          Name: "Color Duplex Printer",
+          CapabilityDescriptions: ["Color Printing", "Duplex", "Two-Sided"],
+        }),
+      ),
+    );
+
+    const adapter = new WindowsPrinterAdapter(mockExecutor);
+    const caps1 = await adapter.getCapabilities("Color Duplex Printer");
+    expect(mockExecutor).toHaveBeenCalledTimes(1);
+    expect(caps1.colour).toBe(true);
+
+    // Second call within 10 minutes should use cache without invoking PowerShell
+    const caps2 = await adapter.getCapabilities("Color Duplex Printer");
+    expect(mockExecutor).toHaveBeenCalledTimes(1);
+    expect(caps2).toEqual(caps1);
+  });
+
   it("submits a PDF job and returns captured spool job ID", async () => {
     const { executor, scripts } = createScriptCapturingExecutor("42");
     const adapter = new WindowsPrinterAdapter(executor);

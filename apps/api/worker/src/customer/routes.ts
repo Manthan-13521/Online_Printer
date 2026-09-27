@@ -389,7 +389,10 @@ export async function handleCustomerRequest(
   if (request.method === "GET" && pathname === "/api/customer/config") {
     const config = await actions.getConfig();
     return config
-      ? ok(config, 200, corsHeaders(env))
+      ? ok(config, 200, {
+          ...corsHeaders(env),
+          "Cache-Control": "public, max-age=30, stale-while-revalidate=60",
+        })
       : error(
           503,
           "CONFIG_UNAVAILABLE",

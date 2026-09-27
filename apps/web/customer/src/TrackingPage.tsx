@@ -25,6 +25,15 @@ function retentionMessage(data: CustomerTrackingData): string {
   return "Your document is temporarily retained for print recovery.";
 }
 
+function isTerminalStatus(status: string): boolean {
+  return (
+    status === "PRINTED" ||
+    status === "COMPLETED" ||
+    status === "CANCELLED" ||
+    status === "PAYMENT_NOT_RECEIVED"
+  );
+}
+
 export function TrackingPage({ jobCode }: { jobCode: string }) {
   const [token, setToken] = useState<string | null>(null);
   const [data, setData] = useState<CustomerTrackingData | null>(null);
@@ -34,6 +43,10 @@ export function TrackingPage({ jobCode }: { jobCode: string }) {
   const [copyMessage, setCopyMessage] = useState<string | null>(null);
 
   useEffect(() => {
+    let active = true;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const mountTime = Date.now();
+
     const fragment = window.location.hash.slice(1);
     const fragmentToken = TOKEN_PATTERN.test(fragment) ? fragment : null;
     if (fragmentToken) {
@@ -48,18 +61,68 @@ export function TrackingPage({ jobCode }: { jobCode: string }) {
     }
     setToken(stored);
     setState("loading");
-    customerApi
-      .tracking(jobCode, stored)
-      .then((tracking) => {
-        setData(tracking);
-      })
-      .catch((caught: unknown) => {
-        setState(
-          caught instanceof Error && caught.message === "TRACKING_NOT_FOUND"
-            ? "invalid"
-            : "network",
+
+    const fetchStatus = () => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      customerApi
+        .tracking(jobCode, stored)
+        .then((tracking) => {
+          if (!active) return;
+          setData(tracking);
+          if (isTerminalStatus(tracking.orderStatus)) {
+            // Stop polling permanently once terminal status is reached
+            if (timer) {
+              clearTimeout(timer);
+              timer = null;
+            }
+            return;
+          }
+          // Schedule next poll: 15s for first 2 minutes, 30s thereafter
+          scheduleNextPoll();
+        })
+        .catch((caught: unknown) => {
+          if (!active) return;
+          setState(
+            caught instanceof Error && caught.message === "TRACKING_NOT_FOUND"
+              ? "invalid"
+              : "network",
+          );
+          scheduleNextPoll();
+        });
+    };
+
+    const scheduleNextPoll = () => {
+      if (!active) return;
+      if (timer) clearTimeout(timer);
+      const delayMs = Date.now() - mountTime < 120_000 ? 15_000 : 30_000;
+      timer = setTimeout(fetchStatus, delayMs);
+    };
+
+    // Initial fetch
+    fetchStatus();
+
+    const handleVisibilityChange = () => {
+      if (typeof document !== "undefined" && !document.hidden && active) {
+        if (!data || !isTerminalStatus(data.orderStatus)) {
+          fetchStatus();
+        }
+      }
+    };
+
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", handleVisibilityChange);
+    }
+
+    return () => {
+      active = false;
+      if (timer) clearTimeout(timer);
+      if (typeof document !== "undefined") {
+        document.removeEventListener(
+          "visibilitychange",
+          handleVisibilityChange,
         );
-      });
+      }
+    };
   }, [jobCode]);
 
   async function copyLink() {

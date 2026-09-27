@@ -49,6 +49,10 @@ interface CimPrinterOutput {
 
 export class WindowsPrinterAdapter implements PrinterAdapter {
   private readonly executor: PowerShellExecutor;
+  private readonly capabilitiesCache = new Map<
+    string,
+    { caps: PrinterCapabilities; cachedAtMs: number }
+  >();
 
   constructor(executor: PowerShellExecutor = defaultPowerShellExecutor) {
     this.executor = executor;
@@ -98,6 +102,11 @@ Get-CimInstance Win32_Printer | Select-Object Name, Default, WorkOffline, Printe
 
   async getCapabilities(printerId: string): Promise<PrinterCapabilities> {
     this.ensureWindows();
+
+    const cached = this.capabilitiesCache.get(printerId);
+    if (cached && Date.now() - cached.cachedAtMs < 600_000) {
+      return cached.caps;
+    }
 
     const escapedName = printerId.replace(/'/g, "''");
     const psCommand = `
@@ -157,11 +166,16 @@ Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $printer } | Select-O
         paperSizesSet.add("A3");
       }
 
-      return {
+      const result: PrinterCapabilities = {
         colour,
         duplex,
         paperSizes: Array.from(paperSizesSet),
       };
+      this.capabilitiesCache.set(printerId, {
+        caps: result,
+        cachedAtMs: Date.now(),
+      });
+      return result;
     } catch {
       return {
         colour: "UNKNOWN",

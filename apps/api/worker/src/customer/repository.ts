@@ -120,21 +120,27 @@ export class D1CustomerRepository implements CustomerRepository {
   }
 
   async getPricingConfiguration(): Promise<PricingConfiguration> {
-    const config = await this.getPublicConfig();
-    if (!config) throw new Error("Installation configuration missing.");
-    const [rateResult, bandResult] = await this.db.batch([
-      this.db
-        .prepare(`SELECT paper_size, color_mode, sides, price_per_page_paise, enabled
-                       FROM print_rates`),
-      this.db
-        .prepare(`SELECT min_bytes_exclusive, max_bytes_inclusive, charge_paise, enabled
-                       FROM file_size_service_charges ORDER BY sort_order`),
+    const [installationResult, rateResult, bandResult] = await this.db.batch([
+      this.db.prepare(
+        `SELECT max_pdf_size_bytes FROM installation WHERE id = 1`,
+      ),
+      this.db.prepare(
+        `SELECT paper_size, color_mode, sides, price_per_page_paise, enabled FROM print_rates`,
+      ),
+      this.db.prepare(
+        `SELECT min_bytes_exclusive, max_bytes_inclusive, charge_paise, enabled
+         FROM file_size_service_charges ORDER BY sort_order`,
+      ),
     ]);
-    if (!rateResult || !bandResult) {
+    const maxPdfSizeBytes = (
+      installationResult?.results[0] as
+        { max_pdf_size_bytes?: number } | undefined
+    )?.max_pdf_size_bytes;
+    if (!maxPdfSizeBytes || !rateResult || !bandResult) {
       throw new Error("Pricing configuration could not be loaded.");
     }
     return {
-      maxPdfSizeBytes: config.maxPdfSizeBytes,
+      maxPdfSizeBytes,
       printRates: (rateResult.results as Array<Record<string, unknown>>).map(
         (row) => ({
           paperSize: row.paper_size as "A4" | "A3",

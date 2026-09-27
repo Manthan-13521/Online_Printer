@@ -151,14 +151,16 @@ function request(
 }
 
 describe("customer routes", () => {
-  it("returns safe public configuration with no-store", async () => {
+  it("returns safe public configuration with edge cache header", async () => {
     const response = await handleCustomerRequest(
       request("/api/customer/config", "GET"),
       env,
       actions(),
     );
     expect(response.status).toBe(200);
-    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(response.headers.get("Cache-Control")).toBe(
+      "public, max-age=30, stale-while-revalidate=60",
+    );
     expect(JSON.stringify(await response.json())).not.toContain("secret");
   });
 

@@ -96,6 +96,7 @@ export function PrinterPage({
   useEffect(() => {
     if (!hasActiveTestPrints) return;
     const interval = setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
       const activePrinters = Object.entries(testPrints).filter(
         ([, tp]) =>
           tp &&
