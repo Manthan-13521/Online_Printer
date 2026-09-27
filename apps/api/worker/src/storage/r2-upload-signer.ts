@@ -89,3 +89,34 @@ export class R2UploadSigner implements UploadSigner, DownloadSigner {
     };
   }
 }
+
+export class LocalDevUploadSigner implements UploadSigner, DownloadSigner {
+  constructor(
+    private readonly baseUrl: string = "http://localhost:5173",
+    private readonly now: () => number = Date.now,
+  ) {}
+
+  createUploadAuthorization(objectKey: string): Promise<UploadAuthorization> {
+    const requiredHeaders = {
+      "Content-Type": "application/pdf",
+      "If-None-Match": "*",
+    } as const;
+    const uploadUrl = `${this.baseUrl}/api/customer/uploads/local?key=${encodeURIComponent(objectKey)}`;
+    return Promise.resolve({
+      uploadUrl,
+      expiresAt: new Date(
+        this.now() + UPLOAD_URL_EXPIRY_SECONDS * 1000,
+      ).toISOString(),
+      requiredHeaders,
+    });
+  }
+
+  createDownloadAuthorization(
+    objectKey: string,
+  ): Promise<DownloadAuthorization> {
+    return Promise.resolve({
+      url: `${this.baseUrl}/api/customer/uploads/local?key=${encodeURIComponent(objectKey)}`,
+      expiresAtMs: this.now() + PRINT_DOWNLOAD_AUTHORIZATION_MS,
+    });
+  }
+}

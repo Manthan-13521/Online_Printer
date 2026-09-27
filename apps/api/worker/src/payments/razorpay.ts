@@ -47,13 +47,12 @@ function requiredAmount(value: unknown): number {
 
 export class HttpRazorpayClient implements RazorpayClient {
   private readonly authorization: string;
+  private readonly fetcher: typeof fetch;
 
-  constructor(
-    keyId: string,
-    keySecret: string,
-    private readonly fetcher: typeof fetch = fetch,
-  ) {
+  constructor(keyId: string, keySecret: string, fetcher: typeof fetch = fetch) {
     this.authorization = `Basic ${btoa(`${keyId}:${keySecret}`)}`;
+    this.fetcher = (...args: Parameters<typeof fetch>) =>
+      fetcher === fetch ? globalThis.fetch(...args) : fetcher(...args);
   }
 
   async createOrder(input: {

@@ -396,7 +396,7 @@ Implement scheduled cleanup for:
 
 - unpaid: 10 minutes
 - payment failed/cancelled: 30 minutes
-- completed: 12 hours
+- completed: 1 hour (customer PDF deletion from R2); 5 hours (customer PII purge)
 - paid unresolved failure: max 24 hours
 
 Implement:

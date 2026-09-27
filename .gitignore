@@ -1,9 +1,11 @@
 # Dependencies and generated output
 node_modules/
 dist/
+dist-package/
 coverage/
 .wrangler/
 *.tsbuildinfo
+*.blob
 
 # Local environment and secrets (templates remain committed)
 .env

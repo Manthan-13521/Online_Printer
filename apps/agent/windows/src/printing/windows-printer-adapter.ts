@@ -285,8 +285,12 @@ Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $printer } | Select-O
     const escapedPdfPath = submission.localPdfPath.replace(/'/g, "''");
     const escapedSettings = settingsString.replace(/'/g, "''");
     const escapedDocIdentifier = docIdentifier.replace(/'/g, "''");
+    const currentDir =
+      typeof __dirname !== "undefined"
+        ? __dirname
+        : path.dirname(fileURLToPath(import.meta.url));
     const bundledSumatraPath = path.resolve(
-      path.dirname(fileURLToPath(import.meta.url)),
+      currentDir,
       "../../vendor/SumatraPDF.exe",
     );
     const escapedBundledSumatraPath = bundledSumatraPath.replace(/'/g, "''");

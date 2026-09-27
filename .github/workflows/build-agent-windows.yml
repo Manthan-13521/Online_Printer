@@ -1,0 +1,52 @@
+name: Build Windows Agent
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/agent/windows/**"
+      - "packages/**"
+      - "scripts/build-agent-windows.mjs"
+      - "scripts/windows-agent-test/**"
+      - ".github/workflows/build-agent-windows.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: build-agent-windows-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-agent:
+    name: Package PrintGo-Agent.exe
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Enable Corepack & pnpm
+        shell: bash
+        run: |
+          corepack enable
+          corepack prepare pnpm@12.6.0 --activate
+
+      - name: Install dependencies
+        shell: bash
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Agent & compile native PrintGo-Agent.exe
+        shell: bash
+        run: |
+          node scripts/build-agent-windows.mjs
+
+      - name: Upload Windows Agent Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PrintGo-Windows-Test
+          path: dist-package/PrintGo-Windows-Test
+          retention-days: 14

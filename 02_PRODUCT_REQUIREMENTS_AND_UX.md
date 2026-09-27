@@ -708,7 +708,7 @@ Payment failed/cancelled:
 30 minutes
 
 Completed:
-12 hours after completion
+1 hour for customer PDF deletion; 5 hours for customer PII purge
 
 Paid unresolved failure:
 maximum 24 hours

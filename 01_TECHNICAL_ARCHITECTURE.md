@@ -587,9 +587,10 @@ Payment failed/cancelled
 
 ```text
 COMPLETED
--> keep PDF for 12 hours
--> delete from R2
--> keep metadata/history
+-> keep PDF for 1 hour
+-> delete PDF from R2
+-> purge customer PII after 5 hours
+-> keep non-personal metadata/history
 ```
 
 ## Paid but unresolved failure

@@ -71,9 +71,10 @@ or Admin retry action; recovery belongs to Phase 11.
 
 The order remains active until every required step is `SUCCEEDED`. The Worker
 then records `PRINTED` and `COMPLETED`, marks the attempt successful, and sets
-`uploads.retention_reason = COMPLETED` with `delete_after_ms` exactly 12 hours
+`uploads.retention_reason = COMPLETED` with `delete_after_ms` exactly 1 hour
 after the server completion timestamp. Phase 10 does not physically delete the
-R2 object; the scheduled sweeper remains Phase 12.
+R2 object; the scheduled sweeper remains Phase 12. Customer PII is purged permanently
+after 5 hours.
 
 Customer tracking maps operational states to safe wording and never exposes
 claims, spool IDs, Agents, Windows errors, or R2 details. The authenticated
@@ -87,7 +88,7 @@ Automated tests cover payment/upload/capability eligibility, competing Agents,
 lease recovery, uncertain expiry, `FIRST`/`LAST`/off planning, one ID sheet with
 many customer copies, private signing, bounded PDF validation and cleanup,
 exact settings, restart reconciliation, same-spool blocked behavior, duplicate
-messages, completion, and exact +12-hour retention. Real Cloudflare R2,
+messages, completion, exact +1-hour PDF retention, and +5-hour PII purge. Real Cloudflare R2,
 Razorpay capture, Windows, SumatraPDF, a target driver, the physical printer,
 paper-out/jam recovery, and actual page output remain hardware/environment
 acceptance work and are not claimed by local tests.

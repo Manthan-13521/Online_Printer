@@ -15,7 +15,10 @@ import {
 
 import type { WorkerEnv } from "../env";
 import { error, ok } from "../http";
-import { R2UploadSigner } from "../storage/r2-upload-signer";
+import {
+  LocalDevUploadSigner,
+  R2UploadSigner,
+} from "../storage/r2-upload-signer";
 import { R2PrivateObjectStore } from "../storage/r2-verification";
 import { D1CustomerRepository } from "./repository";
 import { CustomerError, CustomerService } from "./service";
@@ -59,14 +62,19 @@ export interface CustomerActions {
 
 function actionsFromEnv(env: WorkerEnv): CustomerActions {
   const repository = new D1CustomerRepository(env.DB);
+  const signer =
+    env.APP_ENV === "development" &&
+    env.R2_ACCOUNT_ID === "local-r2-not-configured"
+      ? new LocalDevUploadSigner(env.CUSTOMER_ALLOWED_ORIGIN)
+      : new R2UploadSigner({
+          accountId: env.R2_ACCOUNT_ID,
+          bucketName: env.R2_BUCKET_NAME,
+          accessKeyId: env.R2_ACCESS_KEY_ID,
+          secretAccessKey: env.R2_SECRET_ACCESS_KEY,
+        });
   const service = new CustomerService(
     repository,
-    new R2UploadSigner({
-      accountId: env.R2_ACCOUNT_ID,
-      bucketName: env.R2_BUCKET_NAME,
-      accessKeyId: env.R2_ACCESS_KEY_ID,
-      secretAccessKey: env.R2_SECRET_ACCESS_KEY,
-    }),
+    signer,
     new R2PrivateObjectStore(env.PDF_BUCKET),
   );
   const keyId = env.RAZORPAY_KEY_ID ?? "";
@@ -392,6 +400,20 @@ export async function handleCustomerRequest(
 
   const rejected = rejectUntrustedOrigin(request, env);
   if (rejected) return rejected;
+
+  if (
+    env.APP_ENV === "development" &&
+    request.method === "PUT" &&
+    pathname === "/api/customer/uploads/local"
+  ) {
+    const key = new URL(request.url).searchParams.get("key");
+    if (!key) {
+      return error(400, "INVALID_KEY", "Key is required", corsHeaders(env));
+    }
+    await env.PDF_BUCKET.put(key, request.body);
+    return new Response(null, { status: 200, headers: corsHeaders(env) });
+  }
+
   if (
     Number(request.headers.get("Content-Length") ?? 0) > MAX_JSON_BODY_BYTES
   ) {

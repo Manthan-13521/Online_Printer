@@ -216,10 +216,11 @@ Payment failure/cancellation, cancellation before printing, blocked printing, co
 | ----------------------------- | ---------------: |
 | `UNPAID`                      |       10 minutes |
 | `PAYMENT_FAILED_OR_CANCELLED` |       30 minutes |
-| `COMPLETED`                   |         12 hours |
+| `COMPLETED` (customer PDF)    |           1 hour |
+| `COMPLETED` (customer PII)    |          5 hours |
 | `UNRESOLVED_PAID_FAILURE`     | maximum 24 hours |
 
-These durations are shared constants in `@printgo/domain`. Later APIs must deny access at the logical deadline even if an R2 deletion retry remains pending.
+These durations are shared constants in `@printgo/domain`. Later APIs must deny access at the logical deadline even if an R2 deletion retry remains pending. For completed orders, customer PII (name, phone, instructions, tracking token hash) is purged permanently after 5 hours while preserving non-personal operational accounting rows.
 
 ## Index rationale
 

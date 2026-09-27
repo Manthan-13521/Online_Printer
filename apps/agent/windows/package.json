@@ -16,6 +16,7 @@
     "@printgo/validation": "workspace:*"
   },
   "devDependencies": {
+    "esbuild": "^0.28.2",
     "tsx": "^4.0.0"
   }
 }
