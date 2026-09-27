@@ -41,7 +41,6 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          VITE_API_BASE_URL: https://printgo-api.printgo-worker.workers.dev
         run: |
           pnpm --filter @printgo/customer build
           pnpm --dir apps/api/worker exec wrangler pages deploy "$GITHUB_WORKSPACE/apps/web/customer/dist" \
@@ -53,7 +52,6 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          VITE_API_BASE_URL: https://printgo-api.printgo-worker.workers.dev
         run: |
           pnpm --filter @printgo/admin build
           pnpm --dir apps/api/worker exec wrangler pages deploy "$GITHUB_WORKSPACE/apps/web/admin/dist" \

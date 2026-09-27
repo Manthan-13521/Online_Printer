@@ -9,6 +9,7 @@ export default tseslint.config(
       "**/coverage/**",
       "**/node_modules/**",
       "**/.wrangler/**",
+      "**/public/**",
       "pnpm-lock.yaml",
     ],
   },
