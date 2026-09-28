@@ -13,6 +13,7 @@ export type UploadVerificationResult =
 export interface PrivateObjectStore {
   head(key: string): Promise<{ size: number } | null>;
   readPrefix(key: string, length: number): Promise<ArrayBuffer | null>;
+  readSuffix?(key: string, length: number): Promise<ArrayBuffer | null>;
   delete(key: string): Promise<void>;
 }
 
@@ -26,6 +27,11 @@ export class R2PrivateObjectStore implements PrivateObjectStore {
 
   async readPrefix(key: string, length: number): Promise<ArrayBuffer | null> {
     const object = await this.bucket.get(key, { range: { offset: 0, length } });
+    return object ? object.arrayBuffer() : null;
+  }
+
+  async readSuffix(key: string, length: number): Promise<ArrayBuffer | null> {
+    const object = await this.bucket.get(key, { range: { suffix: length } });
     return object ? object.arrayBuffer() : null;
   }
 
@@ -47,12 +53,27 @@ export async function verifyPdfObject(
   if (metadata.size > input.maximumSizeBytes) {
     return { ok: false, code: "PDF_TOO_LARGE" };
   }
-  const prefix = await store.readPrefix(
-    input.key,
-    Math.min(metadata.size, 1024),
-  );
+  const prefixLength = Math.min(metadata.size, 1024);
+  const prefix = await store.readPrefix(input.key, prefixLength);
   if (!prefix || !new TextDecoder("latin1").decode(prefix).includes("%PDF-")) {
     return { ok: false, code: "INVALID_PDF" };
   }
+
+  let tailText: string;
+  if (metadata.size <= prefixLength) {
+    tailText = new TextDecoder("latin1").decode(prefix);
+  } else if (store.readSuffix) {
+    const suffixLength = Math.min(metadata.size, 2048);
+    const suffix = await store.readSuffix(input.key, suffixLength);
+    if (!suffix) return { ok: false, code: "INVALID_PDF" };
+    tailText = new TextDecoder("latin1").decode(suffix);
+  } else {
+    tailText = new TextDecoder("latin1").decode(prefix);
+  }
+
+  if (!tailText.includes("%%EOF")) {
+    return { ok: false, code: "INVALID_PDF" };
+  }
+
   return { ok: true, sizeBytes: metadata.size };
 }

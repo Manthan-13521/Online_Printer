@@ -1,4 +1,7 @@
-import { FAILED_OR_CANCELLED_PAYMENT_RETENTION_MS } from "@printgo/domain";
+import {
+  FAILED_OR_CANCELLED_PAYMENT_RETENTION_MS,
+  WEBHOOK_PROCESSING_STALE_TIMEOUT_MS,
+} from "@printgo/domain";
 
 import type { WorkerEnv } from "../env";
 import { error, ok } from "../http";
@@ -149,6 +152,7 @@ export async function handleRazorpayWebhook(
     providerEventId,
     eventType: parsed.event,
     nowMs,
+    staleTimeoutMs: WEBHOOK_PROCESSING_STALE_TIMEOUT_MS,
   });
   if (!claimed) return ok({ received: true, duplicate: true }, 200, NO_STORE);
 

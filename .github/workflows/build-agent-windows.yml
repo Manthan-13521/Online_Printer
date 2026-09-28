@@ -20,6 +20,8 @@ jobs:
   build-agent:
     name: Package PrintGo-Agent.exe
     runs-on: windows-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -44,9 +46,48 @@ jobs:
         run: |
           node scripts/build-agent-windows.mjs
 
+      - name: Smoke-test PrintGo-Agent.exe
+        shell: pwsh
+        run: |
+          $exe = "dist-package/PrintGo-Windows-Test/PrintGo-Agent.exe"
+          Write-Host "Verifying binary exists at $exe..."
+          if (-not (Test-Path $exe)) { throw "Binary not found at $exe" }
+          Write-Host "Testing --version flag..."
+          & $exe --version
+          Write-Host "Testing --help flag..."
+          & $exe --help
+          Write-Host "Smoke test passed successfully!"
+
+      - name: Calculate SHA-256 and package distribution ZIP
+        shell: pwsh
+        run: |
+          $dir = "dist-package/PrintGo-Windows-Test"
+          $exe = "$dir/PrintGo-Agent.exe"
+          $hash = (Get-FileHash -Algorithm SHA256 $exe).Hash.ToLower()
+          Write-Host "PrintGo-Agent.exe SHA-256: $hash"
+          Set-Content -Path "$dir/SHA256SUMS.txt" -Value "$hash  PrintGo-Agent.exe"
+          Compress-Archive -Path "$dir/*" -DestinationPath "dist-package/PrintGo-Windows-Test.zip" -Force
+          Write-Host "Created dist-package/PrintGo-Windows-Test.zip"
+
       - name: Upload Windows Agent Artifact
         uses: actions/upload-artifact@v4
         with:
           name: PrintGo-Windows-Test
           path: dist-package/PrintGo-Windows-Test
           retention-days: 14
+
+      - name: Upload Windows Agent ZIP Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PrintGo-Windows-Test-ZIP
+          path: dist-package/PrintGo-Windows-Test.zip
+          retention-days: 14
+
+      - name: Publish or Update GitHub Release v2.0.0
+        if: github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view v2.0.0 || gh release create v2.0.0 --title "PrintGo Windows Agent v2.0.0" --notes "Official release package for PrintGo Windows Print Agent."
+          gh release upload v2.0.0 dist-package/PrintGo-Windows-Test/PrintGo-Agent.exe dist-package/PrintGo-Windows-Test.zip --clobber

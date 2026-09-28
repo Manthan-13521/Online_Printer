@@ -199,6 +199,36 @@ describe("customer routes", () => {
     });
   });
 
+  it("rejects manipulated copies exceeding 100 or below 1", async () => {
+    const api = actions();
+    const overLimit = await handleCustomerRequest(
+      request("/api/customer/draft/print-settings", "PUT", {
+        selectedPages: "1",
+        copies: 101,
+        paperSize: "A4",
+        colorMode: "BW",
+        sides: "SINGLE",
+      }),
+      env,
+      api,
+    );
+    expect(overLimit.status).toBe(400);
+
+    const zeroCopies = await handleCustomerRequest(
+      request("/api/customer/draft/print-settings", "PUT", {
+        selectedPages: "1",
+        copies: 0,
+        paperSize: "A4",
+        colorMode: "BW",
+        sides: "SINGLE",
+      }),
+      env,
+      api,
+    );
+    expect(zeroCopies.status).toBe(400);
+    expect(api.quote).not.toHaveBeenCalled();
+  });
+
   it("does not accept a token in the body", async () => {
     const api = actions();
     const response = await handleCustomerRequest(

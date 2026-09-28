@@ -6,7 +6,11 @@ import type {
   CustomerPaymentSuccessData,
   CustomerQuoteData,
 } from "@printgo/api-contract";
-import { parsePageRange } from "@printgo/domain";
+import {
+  MAX_PRINT_COPIES,
+  MIN_PRINT_COPIES,
+  parsePageRange,
+} from "@printgo/domain";
 import { formatInr } from "@printgo/pricing";
 
 import { customerApi, uploadDirectly } from "./api";
@@ -549,8 +553,8 @@ export function App() {
                 Copies
                 <input
                   type="number"
-                  min={1}
-                  max={999}
+                  min={MIN_PRINT_COPIES}
+                  max={MAX_PRINT_COPIES}
                   value={copies}
                   onChange={(event) => setCopies(Number(event.target.value))}
                 />

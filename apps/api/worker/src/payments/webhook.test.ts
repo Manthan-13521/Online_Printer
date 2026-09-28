@@ -143,4 +143,55 @@ describe("Razorpay webhook", () => {
     );
     expect(deps.acceptCaptured).not.toHaveBeenCalled();
   });
+
+  it("reclaims a stale PROCESSING event and successfully processes on retry", async () => {
+    const payments = repository();
+    // Simulate initial crash (claim succeeded, but finish was not reached)
+    // Retry arrives: claim succeeds via stale timeout
+    vi.mocked(payments.claimProviderEvent).mockResolvedValueOnce(true);
+    const deps = dependencies(payments);
+    const response = await handleRazorpayWebhook(
+      await request(webhookBody()),
+      env,
+      deps,
+    );
+    expect(response.status).toBe(200);
+    expect(payments.claimProviderEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerEventId: "event_a",
+        staleTimeoutMs: 5 * 60_000,
+      }),
+    );
+    expect(deps.acceptCaptured).toHaveBeenCalledOnce();
+    expect(payments.finishProviderEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "PROCESSED" }),
+    );
+  });
+
+  it("handles callback + webhook race without duplicate print job or state error", async () => {
+    const payments = repository();
+    const deps = dependencies(payments);
+    // Simulate customer callback already finalized the payment
+    const alreadyPaidPayment = {
+      ...payment,
+      status: "PAID" as const,
+      publicJobCode: "PG-ABC234",
+    };
+    vi.mocked(payments.findPaymentByProviderOrderId).mockResolvedValueOnce(
+      alreadyPaidPayment,
+    );
+    const response = await handleRazorpayWebhook(
+      await request(webhookBody()),
+      env,
+      deps,
+    );
+    expect(response.status).toBe(200);
+    expect(deps.acceptCaptured).toHaveBeenCalledWith(
+      alreadyPaidPayment,
+      expect.objectContaining({ status: "captured" }),
+    );
+    expect(payments.finishProviderEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "PROCESSED" }),
+    );
+  });
 });

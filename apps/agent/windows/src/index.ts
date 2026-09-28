@@ -71,9 +71,10 @@ export function checkSumatraPdfInstalled(): boolean {
   }
 
   const candidatePaths = [
+    path.resolve(process.cwd(), "SumatraPDF.exe"),
     path.resolve(process.cwd(), "vendor/SumatraPDF.exe"),
-    path.resolve(path.dirname(process.execPath), "vendor/SumatraPDF.exe"),
     path.resolve(path.dirname(process.execPath), "SumatraPDF.exe"),
+    path.resolve(path.dirname(process.execPath), "vendor/SumatraPDF.exe"),
     process.env.ProgramFiles
       ? path.join(process.env.ProgramFiles, "SumatraPDF", "SumatraPDF.exe")
       : "",
@@ -116,6 +117,66 @@ export type { AgentCredentials, CredentialStore };
 async function runCli(): Promise<void> {
   const args = process.argv.slice(2);
 
+  if (args.includes("--help") || args.includes("-h")) {
+    console.log(`PrintGo Windows Agent (v2.0.0)
+Deterministic local print agent for PrintGo shops.
+
+Usage:
+  PrintGo-Agent.exe [options]
+
+Options:
+  --pair <CODE>       Pair this agent with a one-time pairing code (XXXX-XXXX)
+  --server <URL>      PrintGo API server URL (default: https://printgo-api.printgo-worker.workers.dev)
+  --api-url <URL>     Alias for --server
+  --name <NAME>       Friendly display name for this computer/agent
+  --clear             Clear stored local DPAPI authentication credentials and exit
+  --version, -v       Print agent version and exit
+  --help, -h          Show this help message and exit
+
+Configuration File:
+  Settings can also be specified via 'printgo-config.json' in the current or executable directory:
+  {
+    "serverUrl": "https://printgo-api.printgo-worker.workers.dev",
+    "displayName": "Shop Counter PC"
+  }
+
+SumatraPDF:
+  Deterministic PDF printing requires SumatraPDF.exe.
+  Download portable version from:
+  https://www.sumatrapdfreader.org/download-free-pdf-viewer
+  Place SumatraPDF.exe in the same folder as PrintGo-Agent.exe.`);
+    return;
+  }
+
+  if (args.includes("--version") || args.includes("-v")) {
+    console.log("PrintGo Windows Agent v2.0.0");
+    return;
+  }
+
+  // Load optional printgo-config.json
+  let fileConfig: Record<string, unknown> = {};
+  const configCandidatePaths = [
+    path.resolve(process.cwd(), "printgo-config.json"),
+    path.resolve(path.dirname(process.execPath), "printgo-config.json"),
+  ];
+  for (const configPath of configCandidatePaths) {
+    if (fs.existsSync(configPath)) {
+      try {
+        const raw = fs.readFileSync(configPath, "utf8");
+        const parsed: unknown = JSON.parse(raw);
+        if (parsed && typeof parsed === "object") {
+          fileConfig = parsed as Record<string, unknown>;
+        }
+        break;
+      } catch (err) {
+        console.warn(
+          `[PrintGo Agent] Warning: Failed to parse ${configPath}:`,
+          err instanceof Error ? err.message : String(err),
+        );
+      }
+    }
+  }
+
   const pairIndex = args.indexOf("--pair");
   const candidatePairCode = pairIndex !== -1 ? args[pairIndex + 1] : undefined;
   let pairCodeArg =
@@ -129,19 +190,33 @@ async function runCli(): Promise<void> {
       : args.indexOf("--api-url");
   const candidateServerUrl =
     serverIndex !== -1 ? args[serverIndex + 1] : undefined;
+  const configServerUrl =
+    typeof fileConfig.serverUrl === "string"
+      ? fileConfig.serverUrl
+      : typeof fileConfig.apiUrl === "string"
+        ? fileConfig.apiUrl
+        : undefined;
   const serverUrl =
     candidateServerUrl ||
     process.env.PRINTGO_SERVER_URL ||
     process.env.PRINTGO_API_URL ||
+    configServerUrl ||
     (process.env.NODE_ENV === "development"
       ? "http://127.0.0.1:8787"
       : "https://printgo-api.printgo-worker.workers.dev");
 
   const nameIndex = args.indexOf("--name");
   const candidateName = nameIndex !== -1 ? args[nameIndex + 1] : undefined;
+  const configDisplayName =
+    typeof fileConfig.displayName === "string"
+      ? fileConfig.displayName
+      : typeof fileConfig.agentName === "string"
+        ? fileConfig.agentName
+        : undefined;
   const displayName =
     candidateName ||
     process.env.PRINTGO_AGENT_NAME ||
+    configDisplayName ||
     `${os.hostname()} (PrintGo Agent)`;
 
   const shouldClear = args.includes("--clear");
@@ -162,7 +237,8 @@ async function runCli(): Promise<void> {
       console.warn(
         "\n[PrintGo Agent] ⚠️  WARNING: SumatraPDF.exe was not detected in standard locations or PATH.\n" +
           "  Deterministic PDF printing requires SumatraPDF.exe.\n" +
-          "  Please download SumatraPDF and place it in the agent folder, or install it to Program Files.\n",
+          "  Please download SumatraPDF from: https://www.sumatrapdfreader.org/download-free-pdf-viewer\n" +
+          "  and place SumatraPDF.exe in the same folder as PrintGo-Agent.exe.\n",
       );
     }
   }
@@ -177,7 +253,7 @@ async function runCli(): Promise<void> {
         output: process.stdout,
       });
       const input = await rl.question(
-        "[PrintGo Agent] No existing pairing credentials found.\nEnter 6-digit pairing code from PrintGo Admin (or press Enter to skip): ",
+        "[PrintGo Agent] No existing pairing credentials found.\nEnter pairing code from PrintGo Admin (format: XXXX-XXXX, or press Enter to skip): ",
       );
       rl.close();
       if (input.trim()) {

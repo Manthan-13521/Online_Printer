@@ -256,6 +256,10 @@ describe("authoritative print pricing", () => {
   it.each([
     [{ pageCount: 0 }, "INVALID_PAGE_COUNT"],
     [{ copies: 0 }, "INVALID_COPY_COUNT"],
+    [{ copies: -1 }, "INVALID_COPY_COUNT"],
+    [{ copies: 101 }, "INVALID_COPY_COUNT"],
+    [{ copies: 1_000_000 }, "INVALID_COPY_COUNT"],
+    [{ copies: 1.5 }, "INVALID_COPY_COUNT"],
     [{ fileSizeBytes: 0 }, "INVALID_FILE_SIZE"],
     [{ paperSize: "LETTER" }, "INVALID_PAPER_SIZE"],
     [{ colorMode: "COLOUR" }, "INVALID_COLOR_MODE"],

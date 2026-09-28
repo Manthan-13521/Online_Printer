@@ -1,6 +1,45 @@
+import { readFileSync } from "node:fs";
+import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { describe, expect, it, vi } from "vitest";
 
 import { D1PaymentRepository } from "./repository";
+
+class SqliteD1Statement {
+  private bindings: SQLInputValue[] = [];
+
+  constructor(
+    private readonly database: DatabaseSync,
+    private readonly sql: string,
+  ) {}
+
+  bind(...values: unknown[]): SqliteD1Statement {
+    this.bindings = values as SQLInputValue[];
+    return this;
+  }
+
+  run(): Promise<D1Result> {
+    const result = this.database.prepare(this.sql).run(...this.bindings);
+    return Promise.resolve({
+      success: true,
+      meta: { changes: Number(result.changes) },
+      results: [],
+    } as unknown as D1Result);
+  }
+
+  first<T>(): Promise<T | null> {
+    const row = this.database.prepare(this.sql).get(...this.bindings);
+    return Promise.resolve((row as T | undefined) ?? null);
+  }
+
+  all<T>(): Promise<D1Result<T>> {
+    const rows = this.database.prepare(this.sql).all(...this.bindings) as T[];
+    return Promise.resolve({
+      success: true,
+      meta: { changes: 0 },
+      results: rows,
+    } as unknown as D1Result<T>);
+  }
+}
 
 interface FakeStatement {
   sql: string;
@@ -113,5 +152,172 @@ describe("D1PaymentRepository payment lifecycle", () => {
       1_000,
       pendingRow.order_id,
     ]);
+  });
+});
+
+describe("D1PaymentRepository webhook claim & stale event recovery", () => {
+  function createRealDb(): D1Database {
+    const database = new DatabaseSync(":memory:");
+    const initialSchema = readFileSync(
+      new URL(
+        "../../../../../database/migrations/0001_initial_schema.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    database.exec(initialSchema);
+    return {
+      prepare(sql: string) {
+        return new SqliteD1Statement(database, sql);
+      },
+      batch: vi.fn(),
+    } as unknown as D1Database;
+  }
+
+  it("claims a fresh event and refuses concurrent fresh re-claims", async () => {
+    const db = createRealDb();
+    const repo = new D1PaymentRepository(db);
+    const nowMs = 1_000_000;
+
+    // First claim on fresh event must succeed
+    const firstClaim = await repo.claimProviderEvent({
+      id: crypto.randomUUID(),
+      providerEventId: "evt_fresh_1",
+      eventType: "payment.captured",
+      nowMs,
+      staleTimeoutMs: 300_000,
+    });
+    expect(firstClaim).toBe(true);
+
+    // Concurrent claim while still fresh (< 5 min) must be refused
+    const secondClaim = await repo.claimProviderEvent({
+      id: crypto.randomUUID(),
+      providerEventId: "evt_fresh_1",
+      eventType: "payment.captured",
+      nowMs: nowMs + 10_000, // 10s later, fresh
+      staleTimeoutMs: 300_000,
+    });
+    expect(secondClaim).toBe(false);
+  });
+
+  it("reclaims a stale PROCESSING event after timeout expires", async () => {
+    const db = createRealDb();
+    const repo = new D1PaymentRepository(db);
+    const initialNowMs = 1_000_000;
+    const staleTimeoutMs = 300_000; // 5 minutes
+
+    // 1. Initial claim
+    expect(
+      await repo.claimProviderEvent({
+        id: crypto.randomUUID(),
+        providerEventId: "evt_stale_1",
+        eventType: "payment.captured",
+        nowMs: initialNowMs,
+        staleTimeoutMs,
+      }),
+    ).toBe(true);
+
+    // 2. Interruption occurs (worker crash, never finished).
+    // Retry arrives 6 minutes later (stale).
+    const retryNowMs = initialNowMs + 360_000;
+    const reclaimed = await repo.claimProviderEvent({
+      id: crypto.randomUUID(),
+      providerEventId: "evt_stale_1",
+      eventType: "payment.captured",
+      nowMs: retryNowMs,
+      staleTimeoutMs,
+    });
+    expect(reclaimed).toBe(true);
+  });
+
+  it("ensures exactly one winner between two simultaneous stale reclaim attempts", async () => {
+    const db = createRealDb();
+    const repo = new D1PaymentRepository(db);
+    const initialNowMs = 1_000_000;
+    const staleTimeoutMs = 300_000;
+
+    await repo.claimProviderEvent({
+      id: crypto.randomUUID(),
+      providerEventId: "evt_race_1",
+      eventType: "payment.captured",
+      nowMs: initialNowMs,
+      staleTimeoutMs,
+    });
+
+    const retryNowMs = initialNowMs + 360_000;
+    // Two simultaneous stale reclaim attempts
+    const result1 = await repo.claimProviderEvent({
+      id: crypto.randomUUID(),
+      providerEventId: "evt_race_1",
+      eventType: "payment.captured",
+      nowMs: retryNowMs,
+      staleTimeoutMs,
+    });
+    const result2 = await repo.claimProviderEvent({
+      id: crypto.randomUUID(),
+      providerEventId: "evt_race_1",
+      eventType: "payment.captured",
+      nowMs: retryNowMs,
+      staleTimeoutMs,
+    });
+
+    expect(result1).toBe(true);
+    expect(result2).toBe(false);
+  });
+
+  it("never reclaims a completed PROCESSED event", async () => {
+    const db = createRealDb();
+    const repo = new D1PaymentRepository(db);
+    const nowMs = 1_000_000;
+
+    await repo.claimProviderEvent({
+      id: crypto.randomUUID(),
+      providerEventId: "evt_completed_1",
+      eventType: "payment.captured",
+      nowMs,
+    });
+
+    await repo.finishProviderEvent({
+      providerEventId: "evt_completed_1",
+      status: "PROCESSED",
+      nowMs: nowMs + 1_000,
+    });
+
+    // Retry 1 hour later must be rejected as duplicate
+    const retry = await repo.claimProviderEvent({
+      id: crypto.randomUUID(),
+      providerEventId: "evt_completed_1",
+      eventType: "payment.captured",
+      nowMs: nowMs + 3_600_000,
+    });
+    expect(retry).toBe(false);
+  });
+
+  it("allows retrying a FAILED event", async () => {
+    const db = createRealDb();
+    const repo = new D1PaymentRepository(db);
+    const nowMs = 1_000_000;
+
+    await repo.claimProviderEvent({
+      id: crypto.randomUUID(),
+      providerEventId: "evt_failed_1",
+      eventType: "payment.captured",
+      nowMs,
+    });
+
+    await repo.finishProviderEvent({
+      providerEventId: "evt_failed_1",
+      status: "FAILED",
+      nowMs: nowMs + 500,
+    });
+
+    // Failed event can be retried immediately
+    const retry = await repo.claimProviderEvent({
+      id: crypto.randomUUID(),
+      providerEventId: "evt_failed_1",
+      eventType: "payment.captured",
+      nowMs: nowMs + 1_000,
+    });
+    expect(retry).toBe(true);
   });
 });

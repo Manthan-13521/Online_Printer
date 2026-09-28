@@ -4,6 +4,8 @@ import {
   FILE_SIZE_SERVICE_CHARGE_BANDS,
   PAPER_SIZES,
   SIDES_MODES,
+  MIN_PRINT_COPIES,
+  MAX_PRINT_COPIES,
   type ColorMode,
   type PaperSize,
   type SidesMode,
@@ -165,7 +167,11 @@ export function calculatePrintPrice(
   if (!Number.isSafeInteger(input.pageCount) || input.pageCount <= 0) {
     throw new PricingError("INVALID_PAGE_COUNT");
   }
-  if (!Number.isSafeInteger(input.copies) || input.copies <= 0) {
+  if (
+    !Number.isSafeInteger(input.copies) ||
+    input.copies < MIN_PRINT_COPIES ||
+    input.copies > MAX_PRINT_COPIES
+  ) {
     throw new PricingError("INVALID_COPY_COUNT");
   }
   if (!Number.isSafeInteger(input.fileSizeBytes) || input.fileSizeBytes <= 0) {

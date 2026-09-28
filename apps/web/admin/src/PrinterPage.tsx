@@ -299,16 +299,46 @@ export function PrinterPage({
               Connect this computer to your shop printer.
             </p>
           </div>
-          <div>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "0.35rem",
+              alignItems: "flex-end",
+            }}
+          >
             {release.isLive ? (
-              <a
-                href={release.downloadUrl!}
-                download={release.fileName}
-                className="primary-button fit"
-                role="button"
-              >
-                Download for Windows
-              </a>
+              <>
+                <a
+                  href={release.downloadUrl!}
+                  download={release.fileName}
+                  className="primary-button fit"
+                  role="button"
+                >
+                  Download for Windows
+                </a>
+                <span
+                  style={{
+                    fontSize: "0.75rem",
+                    color: "var(--text-muted, #64748b)",
+                  }}
+                >
+                  Version: {release.version}
+                </span>
+                {release.zipDownloadUrl ? (
+                  <a
+                    href={release.zipDownloadUrl}
+                    download="PrintGo-Windows-Test.zip"
+                    style={{
+                      fontSize: "0.8rem",
+                      color: "var(--accent, #0066cc)",
+                      textDecoration: "underline",
+                    }}
+                  >
+                    Download complete ZIP package
+                  </a>
+                ) : null}
+              </>
             ) : (
               <button
                 type="button"
@@ -344,6 +374,18 @@ export function PrinterPage({
             <li>
               <strong>Download PrintGo Agent:</strong> Save{" "}
               <code>{release.fileName}</code> onto your shop PC.
+              {release.sha256 ? (
+                <div
+                  style={{
+                    fontSize: "0.75rem",
+                    marginTop: "0.25rem",
+                    color: "var(--text-muted, #64748b)",
+                    wordBreak: "break-all",
+                  }}
+                >
+                  SHA-256: <code>{release.sha256}</code>
+                </div>
+              ) : null}
             </li>
             <li>
               <strong>Install on Windows:</strong> Run the executable on the

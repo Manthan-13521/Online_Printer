@@ -209,7 +209,6 @@ function validateSettings(value: unknown): CustomerPrintSettingsRequest | null {
   if (
     !validString(value.selectedPages, 200) ||
     !isValidCopies(value.copies) ||
-    value.copies > 1_000_000 ||
     !isPaperSize(value.paperSize) ||
     !isColorMode(value.colorMode) ||
     !isSidesMode(value.sides)

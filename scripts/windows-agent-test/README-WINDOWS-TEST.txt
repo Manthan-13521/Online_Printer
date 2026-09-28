@@ -40,15 +40,15 @@ STEP 1: Open the PrintGo Admin Dashboard
    - URL: https://printgo-admin.pages.dev (or your local admin instance).
    - Log in with shop admin credentials.
    - Go to "Printers" tab / section.
-   - Click "Pair New Agent" or "Generate Pairing Code".
-   - Note the 6-digit numeric pairing code (valid for 10 minutes).
+   - Click "Add PrintGo Agent" or "Generate Pairing Code".
+   - Note the pairing code (format: XXXX-XXXX, valid for 10 minutes).
 
 STEP 2: Launch the Agent
    - Launch "run-agent.bat" or "PrintGo-Agent.exe".
    - If not previously paired, the agent prompts:
-     "Enter 6-digit pairing code from PrintGo Admin: "
-   - Type the 6-digit code and press Enter.
-   - (Alternatively, run: .\PrintGo-Agent.exe --pair 123456)
+     "Enter pairing code from PrintGo Admin (format: XXXX-XXXX, or press Enter to skip): "
+   - Type the code and press Enter.
+   - (Alternatively, run: .\PrintGo-Agent.exe --pair XXXX-XXXX)
 
 STEP 3: Verify Successful Pairing in Terminal
    - The terminal will report:
@@ -77,11 +77,20 @@ STEP 5: Print Diagnostic / Identification Test Page
 4. COMMAND-LINE OPTIONS & ENVIRONMENT VARIABLES
 --------------------------------------------------------------------------------
 Flags:
-  --pair <CODE>       Pair immediately using the specified 6-digit code.
+  --pair <CODE>       Pair immediately using the specified pairing code (XXXX-XXXX).
   --server <URL>      Override PrintGo backend API URL.
                       (Default: https://printgo-api.printgo-worker.workers.dev)
   --name <NAME>       Override local agent display name.
   --clear             Erase stored DPAPI credentials and unpair this agent.
+  --version, -v       Print agent version and exit.
+  --help, -h          Show help message and exit.
+
+Configuration File (printgo-config.json):
+  Can be placed next to PrintGo-Agent.exe:
+  {
+    "serverUrl": "https://printgo-api.printgo-worker.workers.dev",
+    "displayName": "Shop Counter PC"
+  }
 
 Environment Variables:
   PRINTGO_PAIR_CODE   Pairing code (alternative to --pair flag).

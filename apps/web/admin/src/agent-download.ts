@@ -8,6 +8,13 @@
  * "BUILD_PENDING", allowing the shop owner to see the setup steps without a broken or fabricated link.
  */
 
+export const DEFAULT_WINDOWS_AGENT_DOWNLOAD_URL =
+  "https://github.com/Manthan-13521/Online_Printer/releases/download/v2.0.0/PrintGo-Agent.exe";
+export const DEFAULT_WINDOWS_AGENT_ZIP_DOWNLOAD_URL =
+  "https://github.com/Manthan-13521/Online_Printer/releases/download/v2.0.0/PrintGo-Windows-Test.zip";
+export const DEFAULT_WINDOWS_AGENT_SHA256 =
+  "8fccbf9a7b7a86e655ae06260a3e874e94bf49d21d518af19ee87797095d6175";
+
 export interface WindowsAgentReleaseConfig {
   /** Download URL for the precompiled Windows executable or installer */
   downloadUrl: string | null;
@@ -19,6 +26,10 @@ export interface WindowsAgentReleaseConfig {
   isLive: boolean;
   /** Human-readable status note */
   statusNote: string;
+  /** SHA-256 Checksum */
+  sha256?: string;
+  /** Optional zip bundle download URL */
+  zipDownloadUrl?: string;
 }
 
 export function getWindowsAgentReleaseConfig(): WindowsAgentReleaseConfig {
@@ -26,7 +37,7 @@ export function getWindowsAgentReleaseConfig(): WindowsAgentReleaseConfig {
     import.meta.env.VITE_WINDOWS_AGENT_DOWNLOAD_URL as string | undefined
   )?.trim();
 
-  // If a valid production URL is configured, mark as live
+  // If a production URL is explicitly configured in env, mark as live
   if (
     envUrl &&
     (envUrl.startsWith("https://") || envUrl.startsWith("http://"))
@@ -37,6 +48,21 @@ export function getWindowsAgentReleaseConfig(): WindowsAgentReleaseConfig {
       version: "v2.0.0",
       isLive: true,
       statusNote: "Ready to download",
+      sha256: DEFAULT_WINDOWS_AGENT_SHA256,
+      zipDownloadUrl: DEFAULT_WINDOWS_AGENT_ZIP_DOWNLOAD_URL,
+    };
+  }
+
+  // In production builds, default to the verified live GitHub Releases v2.0.0 URL
+  if (import.meta.env.PROD) {
+    return {
+      downloadUrl: DEFAULT_WINDOWS_AGENT_DOWNLOAD_URL,
+      fileName: "PrintGo-Agent.exe",
+      version: "v2.0.0",
+      isLive: true,
+      statusNote: "Ready to download (Verified v2.0.0 Release)",
+      sha256: DEFAULT_WINDOWS_AGENT_SHA256,
+      zipDownloadUrl: DEFAULT_WINDOWS_AGENT_ZIP_DOWNLOAD_URL,
     };
   }
 
@@ -47,5 +73,6 @@ export function getWindowsAgentReleaseConfig(): WindowsAgentReleaseConfig {
     isLive: false,
     statusNote:
       "Precompiled Windows binary hosting not configured. Packaged via GitHub Actions or locally with 'pnpm build:agent:windows'.",
+    sha256: DEFAULT_WINDOWS_AGENT_SHA256,
   };
 }

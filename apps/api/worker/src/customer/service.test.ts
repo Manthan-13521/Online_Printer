@@ -262,7 +262,7 @@ describe("CustomerService", () => {
       head: vi.fn(() => Promise.resolve({ size: 100 })),
       readPrefix: vi.fn(() =>
         Promise.resolve(
-          new TextEncoder().encode("%PDF-1.7").buffer as ArrayBuffer,
+          new TextEncoder().encode("%PDF-1.7\n%%EOF").buffer as ArrayBuffer,
         ),
       ),
       delete: vi.fn(() => Promise.resolve()),

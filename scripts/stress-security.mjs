@@ -249,22 +249,29 @@ for (const [field, values] of Object.entries({
         400,
       );
     });
-await check("backend accepts 101 copies but Windows rejects", async () => {
-  const quote = await request("/api/customer/draft/print-settings", {
-    method: "PUT",
-    token: d.token,
-    body: { ...settings, copies: 101 },
-  });
-  assert.equal(quote.status, 200);
-  assert.equal(quote.body.data.totalAmountPaise, 10100);
-  assert.throws(() =>
-    validateAndNormalizePrintSettings({
-      printerId: "Synthetic 0",
-      localPdfPath: "C:\\safe.pdf",
-      settings: { copies: 101 },
-    }),
-  );
-  return { finding: "API_AGENT_COPY_LIMIT_MISMATCH", quotedPaise: 10100 };
+await check(
+  "backend rejects 101 copies and aligns with Windows agent",
+  async () => {
+    const quote = await request("/api/customer/draft/print-settings", {
+      method: "PUT",
+      token: d.token,
+      body: { ...settings, copies: 101 },
+    });
+    assert.equal(quote.status, 400);
+    assert.throws(() =>
+      validateAndNormalizePrintSettings({
+        printerId: "Synthetic 0",
+        localPdfPath: "C:\\safe.pdf",
+        settings: { copies: 101 },
+      }),
+    );
+    return { status: "ALIGNED_COPY_LIMITS", limit: 100 };
+  },
+);
+await request("/api/customer/draft/print-settings", {
+  method: "PUT",
+  token: d.token,
+  body: settings,
 });
 for (const value of [-1, 0.5, Number.MAX_SAFE_INTEGER])
   await check(`price mutation cannot create checkout ${value}`, async () => {
@@ -540,7 +547,7 @@ await check(
   },
 );
 await check(
-  "stale PROCESSING webhook reproduces lost event acknowledgement",
+  "stale PROCESSING webhook is reclaimed and transitions to PAID",
   async () => {
     const c = await checkout(),
       now = Date.now(),
@@ -579,13 +586,11 @@ await check(
       .prepare("SELECT status FROM payments WHERE provider_order_id=?")
       .get(c.orderId);
     assert.equal(result.status, 200);
-    assert.equal(result.body.data.duplicate, true);
-    assert.equal(payment.status, "PENDING");
+    assert.equal(payment.status, "PAID");
     return {
-      finding: "HIGH_STALE_WEBHOOK_PROCESSING",
+      status: "STALE_WEBHOOK_RECLAIMED_SUCCESS",
       httpStatus: 200,
       paymentStatus: payment.status,
-      eventAgeHours: 3,
     };
   },
 );
@@ -688,6 +693,10 @@ for (const [name, bytes] of pdfFixtures) {
     async readPrefix(k, n) {
       return Uint8Array.from(bytes.subarray(0, n)).buffer;
     },
+    async readSuffix(k, n) {
+      return Uint8Array.from(bytes.subarray(Math.max(0, bytes.length - n)))
+        .buffer;
+    },
     async delete() {},
   };
   const workerAccepted = (
@@ -735,6 +744,10 @@ for (const size of [26214400, 26214401])
       },
       async readPrefix(k, n) {
         return Uint8Array.from(bytes.subarray(0, n)).buffer;
+      },
+      async readSuffix(k, n) {
+        return Uint8Array.from(bytes.subarray(Math.max(0, bytes.length - n)))
+          .buffer;
       },
       async delete() {},
     };

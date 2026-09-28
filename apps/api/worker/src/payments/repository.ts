@@ -1,3 +1,5 @@
+import { WEBHOOK_PROCESSING_STALE_TIMEOUT_MS } from "@printgo/domain";
+
 export interface PayableDraftRecord {
   orderId: string;
   uploadId: string;
@@ -143,6 +145,7 @@ export interface PaymentRepository {
     providerEventId: string;
     eventType: string;
     nowMs: number;
+    staleTimeoutMs?: number;
   }): Promise<boolean>;
   finishProviderEvent(input: {
     providerEventId: string;
@@ -519,6 +522,8 @@ export class D1PaymentRepository implements PaymentRepository {
   async claimProviderEvent(
     input: Parameters<PaymentRepository["claimProviderEvent"]>[0],
   ): Promise<boolean> {
+    const staleThresholdMs =
+      input.staleTimeoutMs ?? WEBHOOK_PROCESSING_STALE_TIMEOUT_MS;
     try {
       await this.db
         .prepare(
@@ -530,24 +535,23 @@ export class D1PaymentRepository implements PaymentRepository {
         .run();
       return true;
     } catch {
-      const existing = await this.db
+      const staleBeforeMs = input.nowMs - staleThresholdMs;
+      const result = await this.db
         .prepare(
-          `SELECT processing_status FROM payment_provider_events
-          WHERE provider = 'RAZORPAY' AND provider_event_id = ?`,
+          `UPDATE payment_provider_events
+            SET processing_status = 'PROCESSING',
+                received_at_ms = ?,
+                processed_at_ms = NULL
+          WHERE provider = 'RAZORPAY'
+            AND provider_event_id = ?
+            AND (
+              processing_status = 'FAILED'
+              OR (processing_status = 'PROCESSING' AND received_at_ms <= ?)
+            )`,
         )
-        .bind(input.providerEventId)
-        .first<{ processing_status: string }>();
-      if (!existing) throw new Error("Provider event reservation failed.");
-      if (existing.processing_status !== "FAILED") return false;
-      await this.db
-        .prepare(
-          `UPDATE payment_provider_events SET processing_status = 'PROCESSING',
-            processed_at_ms = NULL WHERE provider = 'RAZORPAY'
-            AND provider_event_id = ? AND processing_status = 'FAILED'`,
-        )
-        .bind(input.providerEventId)
+        .bind(input.nowMs, input.providerEventId, staleBeforeMs)
         .run();
-      return true;
+      return result.meta.changes === 1;
     }
   }
 

@@ -307,7 +307,14 @@ Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $printer } | Select-O
       currentDir,
       "../../vendor/SumatraPDF.exe",
     );
+    const cwdSumatraPath = path.resolve(process.cwd(), "SumatraPDF.exe");
+    const execDirSumatraPath = path.resolve(
+      path.dirname(process.execPath),
+      "SumatraPDF.exe",
+    );
     const escapedBundledSumatraPath = bundledSumatraPath.replace(/'/g, "''");
+    const escapedCwdSumatraPath = cwdSumatraPath.replace(/'/g, "''");
+    const escapedExecDirSumatraPath = execDirSumatraPath.replace(/'/g, "''");
 
     const psScript = `
 $printer = '${escapedPrinterName}'
@@ -319,6 +326,8 @@ $settings = '${escapedSettings}'
 $sumatra = $env:PRINTGO_SUMATRA_PATH
 if (-not $sumatra -or -not (Test-Path $sumatra)) {
     $candidates = @(
+        '${escapedExecDirSumatraPath}',
+        '${escapedCwdSumatraPath}',
         '${escapedBundledSumatraPath}',
         "$env:ProgramFiles\\SumatraPDF\\SumatraPDF.exe",
         "\${env:ProgramFiles(x86)}\\SumatraPDF\\SumatraPDF.exe",

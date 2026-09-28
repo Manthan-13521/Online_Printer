@@ -818,20 +818,36 @@ export class D1PrintingRepository implements PrintingRepository {
     const recentPrintedCutoffMs = nowMs - 60 * 60 * 1000;
     const result = await this.db
       .prepare(
-        `SELECT o.id order_id, o.public_job_code, o.customer_name, o.customer_phone,
-        o.selected_pages, o.copies, o.paper_size, o.color_mode, o.sides,
-        o.total_amount_paise, o.currency, o.status, a.display_name agent_name,
-        p.display_name printer_name, pa.failure_detail, o.paid_at_ms, o.updated_at_ms
-      FROM orders o LEFT JOIN agents a ON a.id = o.claimed_by_agent_id
-      LEFT JOIN printers p ON p.id = o.printer_id
-      LEFT JOIN print_attempts pa ON pa.order_id = o.id AND pa.attempt_number =
-        (SELECT MAX(pa2.attempt_number) FROM print_attempts pa2 WHERE pa2.order_id = o.id)
-      WHERE (
-        o.status IN ('QUEUED','CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED',
-          'PRINT_FAILED','ADMIN_ACTION_REQUIRED')
-        OR (o.status = 'PRINTED' AND o.updated_at_ms >= ?)
-      )
-      ORDER BY o.updated_at_ms DESC LIMIT 100`,
+        `WITH live_candidates AS (
+          SELECT * FROM (
+            SELECT id, public_job_code, customer_name, customer_phone,
+              selected_pages, copies, paper_size, color_mode, sides,
+              total_amount_paise, currency, status, claimed_by_agent_id, printer_id,
+              paid_at_ms, updated_at_ms
+            FROM orders
+            WHERE status IN ('QUEUED','CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED',
+              'PRINT_FAILED','ADMIN_ACTION_REQUIRED')
+            UNION ALL
+            SELECT id, public_job_code, customer_name, customer_phone,
+              selected_pages, copies, paper_size, color_mode, sides,
+              total_amount_paise, currency, status, claimed_by_agent_id, printer_id,
+              paid_at_ms, updated_at_ms
+            FROM orders
+            WHERE status = 'PRINTED' AND updated_at_ms >= ?
+          )
+          ORDER BY updated_at_ms DESC
+          LIMIT 100
+        )
+        SELECT o.id order_id, o.public_job_code, o.customer_name, o.customer_phone,
+          o.selected_pages, o.copies, o.paper_size, o.color_mode, o.sides,
+          o.total_amount_paise, o.currency, o.status, a.display_name agent_name,
+          p.display_name printer_name, pa.failure_detail, o.paid_at_ms, o.updated_at_ms
+        FROM live_candidates o
+        LEFT JOIN agents a ON a.id = o.claimed_by_agent_id
+        LEFT JOIN printers p ON p.id = o.printer_id
+        LEFT JOIN print_attempts pa ON pa.order_id = o.id AND pa.attempt_number =
+          (SELECT MAX(pa2.attempt_number) FROM print_attempts pa2 WHERE pa2.order_id = o.id)
+        ORDER BY o.updated_at_ms DESC`,
       )
       .bind(recentPrintedCutoffMs)
       .all<{

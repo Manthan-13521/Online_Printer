@@ -54,7 +54,13 @@ describe("foundational domain validation", () => {
     expect(isIntegerPaise(0)).toBe(true);
     expect(isIntegerPaise(1.5)).toBe(false);
     expect(isValidCopies(1)).toBe(true);
+    expect(isValidCopies(100)).toBe(true);
     expect(isValidCopies(0)).toBe(false);
+    expect(isValidCopies(-1)).toBe(false);
+    expect(isValidCopies(101)).toBe(false);
+    expect(isValidCopies(1_000_000)).toBe(false);
+    expect(isValidCopies(1.5)).toBe(false);
+    expect(isValidCopies("1")).toBe(false);
     expect(isValidPdfSizeBytes(FILE_SIZE_25_MIB)).toBe(true);
     expect(isValidPdfSizeBytes(FILE_SIZE_25_MIB + 1)).toBe(false);
   });

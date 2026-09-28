@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { checkSumatraPdfInstalled } from "./index.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { checkSumatraPdfInstalled, runCli } from "./index.js";
 
 describe("checkSumatraPdfInstalled", () => {
   const originalPlatform = process.platform;
@@ -36,5 +36,51 @@ describe("checkSumatraPdfInstalled", () => {
     delete process.env["ProgramFiles(x86)"];
     delete process.env.LOCALAPPDATA;
     expect(checkSumatraPdfInstalled()).toBe(false);
+  });
+});
+
+describe("runCli CLI flags", () => {
+  const originalArgv = [...process.argv];
+
+  afterEach(() => {
+    process.argv = [...originalArgv];
+    vi.restoreAllMocks();
+  });
+
+  it("prints version and exits without error on --version or -v", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    process.argv = ["node", "index.js", "--version"];
+    await runCli();
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining("PrintGo Windows Agent v2.0.0"),
+    );
+
+    logSpy.mockClear();
+    process.argv = ["node", "index.js", "-v"];
+    await runCli();
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining("PrintGo Windows Agent v2.0.0"),
+    );
+  });
+
+  it("prints help text and exits without error on --help or -h", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    process.argv = ["node", "index.js", "--help"];
+    await runCli();
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining("PrintGo Windows Agent (v2.0.0)"),
+    );
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Usage:\n  PrintGo-Agent.exe [options]"),
+    );
+
+    logSpy.mockClear();
+    process.argv = ["node", "index.js", "-h"];
+    await runCli();
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining("PrintGo Windows Agent (v2.0.0)"),
+    );
   });
 });

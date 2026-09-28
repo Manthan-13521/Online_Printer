@@ -1,4 +1,8 @@
-import { parsePageRange } from "@printgo/domain";
+import {
+  MAX_PRINT_COPIES,
+  MIN_PRINT_COPIES,
+  parsePageRange,
+} from "@printgo/domain";
 import type {
   PrinterCapabilities,
   PrintSettings,
@@ -51,15 +55,15 @@ export function validateAndNormalizePrintSettings(
   const raw = submission.settings ?? {};
 
   // 1. Copies validation
-  const copies = raw.copies ?? submission.copies ?? 1;
-  if (!Number.isInteger(copies) || copies < 1) {
+  const copies = raw.copies ?? submission.copies ?? MIN_PRINT_COPIES;
+  if (!Number.isInteger(copies) || copies < MIN_PRINT_COPIES) {
     throw new InvalidPrintSettingError(
       `Copies must be a positive integer, received: ${String(copies)}`,
     );
   }
-  if (copies > 100) {
+  if (copies > MAX_PRINT_COPIES) {
     throw new InvalidPrintSettingError(
-      `Copies exceeds maximum allowed limit (100), received: ${copies}`,
+      `Copies exceeds maximum allowed limit (${MAX_PRINT_COPIES}), received: ${copies}`,
     );
   }
 

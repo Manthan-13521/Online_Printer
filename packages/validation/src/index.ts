@@ -6,6 +6,8 @@ import {
   ORDER_STATUSES,
   PAPER_SIZES,
   SIDES_MODES,
+  MIN_PRINT_COPIES,
+  MAX_PRINT_COPIES,
   type ColorMode,
   type IdentificationSheetPlacement,
   type OrderStatus,
@@ -43,7 +45,11 @@ export function isValidPdfSizeBytes(
 }
 
 export function isValidCopies(value: unknown): value is number {
-  return Number.isSafeInteger(value) && (value as number) >= 1;
+  return (
+    Number.isSafeInteger(value) &&
+    (value as number) >= MIN_PRINT_COPIES &&
+    (value as number) <= MAX_PRINT_COPIES
+  );
 }
 
 export function isPaperSize(value: unknown): value is PaperSize {
