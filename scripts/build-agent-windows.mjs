@@ -14,8 +14,17 @@ console.log("[Build Agent] Ensuring dist directory...");
 fs.mkdirSync(distDir, { recursive: true });
 
 console.log("[Build Agent] Bundling Windows Agent with esbuild...");
-const esbuildPath = path.resolve(agentDir, "node_modules/esbuild/lib/main.js");
-const esbuild = await import(esbuildPath);
+let esbuild;
+try {
+  esbuild = await import("esbuild");
+} catch {
+  const esbuildPath = path.resolve(
+    agentDir,
+    "node_modules/esbuild/lib/main.js",
+  );
+  const { pathToFileURL } = await import("node:url");
+  esbuild = await import(pathToFileURL(esbuildPath).href);
+}
 
 const bundlePath = path.resolve(distDir, "bundle.cjs");
 

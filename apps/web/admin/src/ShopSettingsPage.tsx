@@ -14,6 +14,7 @@ import {
 import { useEffect, useState, type FormEvent } from "react";
 
 import { adminApi, AdminApiError, friendlyAdminError } from "./api";
+import { AdminPwaInstall } from "./AdminPwaInstall";
 
 const PDF_LIMITS = [
   FILE_SIZE_5_MIB,
@@ -274,6 +275,8 @@ export function ShopSettingsPage({
           </button>
         </div>
       </form>
+
+      <AdminPwaInstall />
 
       {confirmPause ? (
         <div className="dialog-backdrop">

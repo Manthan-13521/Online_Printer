@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { CustomerTrackingData } from "@printgo/api-contract";
 import { formatInr } from "@printgo/pricing";
@@ -41,6 +41,7 @@ export function TrackingPage({ jobCode }: { jobCode: string }) {
     "loading",
   );
   const [copyMessage, setCopyMessage] = useState<string | null>(null);
+  const terminalReachedRef = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -64,12 +65,14 @@ export function TrackingPage({ jobCode }: { jobCode: string }) {
 
     const fetchStatus = () => {
       if (typeof document !== "undefined" && document.hidden) return;
+      if (terminalReachedRef.current) return;
       customerApi
         .tracking(jobCode, stored)
         .then((tracking) => {
           if (!active) return;
           setData(tracking);
           if (isTerminalStatus(tracking.orderStatus)) {
+            terminalReachedRef.current = true;
             // Stop polling permanently once terminal status is reached
             if (timer) {
               clearTimeout(timer);
@@ -92,7 +95,7 @@ export function TrackingPage({ jobCode }: { jobCode: string }) {
     };
 
     const scheduleNextPoll = () => {
-      if (!active) return;
+      if (!active || terminalReachedRef.current) return;
       if (timer) clearTimeout(timer);
       const delayMs = Date.now() - mountTime < 120_000 ? 15_000 : 30_000;
       timer = setTimeout(fetchStatus, delayMs);
@@ -103,7 +106,7 @@ export function TrackingPage({ jobCode }: { jobCode: string }) {
 
     const handleVisibilityChange = () => {
       if (typeof document !== "undefined" && !document.hidden && active) {
-        if (!data || !isTerminalStatus(data.orderStatus)) {
+        if (!terminalReachedRef.current) {
           fetchStatus();
         }
       }

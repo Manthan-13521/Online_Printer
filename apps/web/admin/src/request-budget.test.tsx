@@ -101,4 +101,25 @@ describe("Admin Live Orders Request Budget & Polling Optimization", () => {
     await vi.advanceTimersByTimeAsync(5000);
     expect(getLiveOrdersMock).toHaveBeenCalledTimes(1);
   });
+  it("keeps a default 12-hour visible budget and idles for 12 hidden hours", async () => {
+    getLiveOrdersMock.mockResolvedValue({ ok: true, data: { orders: [] } });
+    const { unmount } = render(<LiveOrdersPage onSessionExpired={vi.fn()} />);
+    await vi.advanceTimersByTimeAsync(12 * 60 * 60 * 1000);
+    expect(getLiveOrdersMock).toHaveBeenCalledTimes(2161);
+    Object.defineProperty(document, "hidden", {
+      configurable: true,
+      value: true,
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+    await vi.advanceTimersByTimeAsync(12 * 60 * 60 * 1000);
+    expect(getLiveOrdersMock).toHaveBeenCalledTimes(2161);
+    Object.defineProperty(document, "hidden", {
+      configurable: true,
+      value: false,
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+    expect(getLiveOrdersMock).toHaveBeenCalledTimes(2162);
+    unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  });
 });

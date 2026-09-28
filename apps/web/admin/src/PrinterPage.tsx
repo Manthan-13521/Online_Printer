@@ -6,6 +6,7 @@ import type {
 import { useEffect, useState } from "react";
 
 import { adminApi, AdminApiError, friendlyAdminError } from "./api";
+import { getWindowsAgentReleaseConfig } from "./agent-download";
 
 function formatRelativeTime(dateString: string | null): string {
   if (!dateString) return "Never";
@@ -238,6 +239,8 @@ export function PrinterPage({
     setTimeout(() => setCopiedCode(false), 3000);
   }
 
+  const release = getWindowsAgentReleaseConfig();
+
   if (loading) {
     return (
       <div className="panel page-loading" aria-busy="true">
@@ -288,66 +291,147 @@ export function PrinterPage({
         </p>
       ) : null}
 
-      {pairCode ? (
-        <section
-          className="panel"
-          aria-labelledby="pair-code-title"
-          style={{ border: "2px solid var(--accent, #0066cc)" }}
-        >
-          <div className="action-row">
-            <div>
-              <h2 id="pair-code-title">Agent Pairing Code</h2>
-              <p className="muted">
-                Run the PrintGo Windows Agent on your shop computer and enter
-                this code when prompted.
-              </p>
-            </div>
-            <button
-              className="text-button"
-              onClick={() => setPairCode(null)}
-              type="button"
-            >
-              Dismiss
-            </button>
+      <section className="panel" aria-labelledby="windows-agent-heading">
+        <div className="action-row" style={{ alignItems: "flex-start" }}>
+          <div>
+            <h2 id="windows-agent-heading">PrintGo Agent for Windows</h2>
+            <p className="muted" style={{ margin: "0.25rem 0 0 0" }}>
+              Connect this computer to your shop printer.
+            </p>
           </div>
-          <div
+          <div>
+            {release.isLive ? (
+              <a
+                href={release.downloadUrl!}
+                download={release.fileName}
+                className="primary-button fit"
+                role="button"
+              >
+                Download for Windows
+              </a>
+            ) : (
+              <button
+                type="button"
+                className="secondary-button fit"
+                disabled
+                aria-disabled="true"
+                title={release.statusNote}
+              >
+                Download for Windows (Build Pending)
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div
+          style={{
+            marginTop: "1.25rem",
+            borderTop: "1px solid var(--border-color, #e0e0e0)",
+            paddingTop: "1rem",
+          }}
+        >
+          <h3 style={{ fontSize: "1rem", margin: "0 0 0.5rem 0" }}>
+            Setup Steps:
+          </h3>
+          <ol
             style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "1rem",
-              margin: "1rem 0",
-              padding: "1rem",
-              backgroundColor: "var(--bg-subtle, #f5f5f5)",
-              borderRadius: "8px",
+              margin: "0",
+              paddingLeft: "1.25rem",
+              color: "var(--text-muted, #475569)",
+              lineHeight: "1.6",
             }}
           >
-            <span
+            <li>
+              <strong>Download PrintGo Agent:</strong> Save{" "}
+              <code>{release.fileName}</code> onto your shop PC.
+            </li>
+            <li>
+              <strong>Install on Windows:</strong> Run the executable on the
+              computer connected to your printer.
+            </li>
+            <li>
+              <strong>Generate & copy pairing code:</strong> Click "Generate
+              Pairing Code" below.
+            </li>
+            <li>
+              <strong>Enter pairing code in Agent:</strong> Paste the code when
+              prompted in the agent console.
+            </li>
+            <li>
+              <strong>Select & enable detected printer:</strong> Verify your
+              printer is listed and toggle it ON.
+            </li>
+            <li>
+              <strong>Run test print:</strong> Send a test page to verify
+              hardware readiness.
+            </li>
+          </ol>
+        </div>
+
+        {pairCode ? (
+          <div
+            style={{
+              marginTop: "1.25rem",
+              padding: "1rem",
+              border: "2px solid var(--accent, #0066cc)",
+              borderRadius: "8px",
+              backgroundColor: "var(--bg-subtle, #f5f5f5)",
+            }}
+          >
+            <div className="action-row">
+              <div>
+                <h3 style={{ margin: 0, fontSize: "1.1rem" }}>
+                  Agent Pairing Code
+                </h3>
+                <p className="muted" style={{ margin: "0.25rem 0 0 0" }}>
+                  Run the PrintGo Windows Agent on your shop computer and enter
+                  this code when prompted.
+                </p>
+              </div>
+              <button
+                className="text-button"
+                onClick={() => setPairCode(null)}
+                type="button"
+              >
+                Dismiss
+              </button>
+            </div>
+            <div
               style={{
-                fontFamily: "monospace",
-                fontSize: "2rem",
-                fontWeight: "bold",
-                letterSpacing: "0.2em",
+                display: "flex",
+                alignItems: "center",
+                gap: "1rem",
+                margin: "1rem 0",
               }}
             >
-              {pairCode}
-            </span>
-            <button
-              className="secondary-button"
-              onClick={copyPairCode}
-              type="button"
-            >
-              {copiedCode ? "Copied!" : "Copy Code"}
-            </button>
+              <span
+                style={{
+                  fontFamily: "monospace",
+                  fontSize: "2rem",
+                  fontWeight: "bold",
+                  letterSpacing: "0.2em",
+                }}
+              >
+                {pairCode}
+              </span>
+              <button
+                className="secondary-button"
+                onClick={copyPairCode}
+                type="button"
+              >
+                {copiedCode ? "Copied!" : "Copy Code"}
+              </button>
+            </div>
+            <p className="field-help" style={{ margin: 0 }}>
+              This code expires in 10 minutes (
+              {pairExpiresAt
+                ? new Date(pairExpiresAt).toLocaleTimeString()
+                : "soon"}
+              ) and can only be used once.
+            </p>
           </div>
-          <p className="field-help">
-            This code expires in 10 minutes (
-            {pairExpiresAt
-              ? new Date(pairExpiresAt).toLocaleTimeString()
-              : "soon"}
-            ) and can only be used once.
-          </p>
-        </section>
-      ) : null}
+        ) : null}
+      </section>
 
       {agents.length === 0 ? (
         <section

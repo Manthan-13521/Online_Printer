@@ -11,6 +11,7 @@ import { formatInr } from "@printgo/pricing";
 
 import { customerApi, uploadDirectly } from "./api";
 import { inspectPdf } from "./pdf";
+import { PwaInstallBanner } from "./PwaInstallBanner";
 import { TrackingPage } from "./TrackingPage";
 import {
   createTrackingToken,
@@ -428,6 +429,9 @@ export function App() {
             "Upload a PDF and review your print settings."}
         </p>
       </header>
+      {!busy && !paymentBusy && !quote && !paymentSuccess ? (
+        <PwaInstallBanner />
+      ) : null}
       {!config?.onlinePrintingEnabled ? (
         <section className="notice" role="status">
           <h2>Online printing is currently unavailable</h2>

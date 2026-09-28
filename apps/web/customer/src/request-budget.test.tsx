@@ -128,4 +128,47 @@ describe("Customer App Request Budget & Polling Optimization", () => {
     await vi.advanceTimersByTimeAsync(60_000);
     expect(customerApi.tracking).toHaveBeenCalledTimes(2);
   });
+  it("terminal tracking stays idle after visibility resumes", async () => {
+    vi.useFakeTimers();
+    sessionStorage.setItem("printgo.tracking.PG-JOB123", "a".repeat(43));
+    vi.mocked(customerApi.tracking).mockResolvedValue({
+      jobCode: "PG-JOB123",
+      customerName: "Synthetic",
+      paymentStatus: "PAYMENT_RECEIVED",
+      orderStatus: "PRINTED",
+      statusLabel: "Printed",
+      statusMessage: "Printed",
+      submittedAt: "2026-09-26T00:00:00.000Z",
+      paidAt: "2026-09-26T00:01:00.000Z",
+      amountPaidPaise: 100,
+      currency: "INR",
+      instructions: null,
+      fileRetentionStatus: "DELETION_PENDING",
+      printSummary: {
+        selectedPages: "1",
+        copies: 1,
+        paperSize: "A4",
+        colorMode: "BW",
+        sides: "SINGLE",
+      },
+      timeline: [],
+      trackingExpiresAt: "2026-10-10T00:00:00.000Z",
+    });
+    render(<TrackingPage jobCode="PG-JOB123" />);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(customerApi.tracking).toHaveBeenCalledTimes(1);
+    Object.defineProperty(document, "hidden", {
+      configurable: true,
+      value: true,
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+    Object.defineProperty(document, "hidden", {
+      configurable: true,
+      value: false,
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+    await vi.advanceTimersByTimeAsync(0);
+    // Currently receives a second call: effect closure still sees data=null.
+    expect(customerApi.tracking).toHaveBeenCalledTimes(1);
+  });
 });
