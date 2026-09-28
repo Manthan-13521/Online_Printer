@@ -13,7 +13,7 @@ export const DEFAULT_WINDOWS_AGENT_DOWNLOAD_URL =
 export const DEFAULT_WINDOWS_AGENT_ZIP_DOWNLOAD_URL =
   "https://github.com/Manthan-13521/Online_Printer/releases/download/v2.0.0/PrintGo-Windows-Test.zip";
 export const DEFAULT_WINDOWS_AGENT_SHA256 =
-  "500cb44eccc1449b5a162310ea6f3b065d1c44a765bd77f938d5b9490b07110e";
+  "3037747e9fc985aa7d71e4a0bb10bb8610a8af48eb806236b72d5de533eb1995";
 
 export interface WindowsAgentReleaseConfig {
   /** Download URL for the precompiled Windows executable or installer */
