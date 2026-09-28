@@ -56,6 +56,10 @@ export class WindowsPrinterAdapter implements PrinterAdapter {
     string,
     { caps: PrinterCapabilities; cachedAtMs: number }
   >();
+  private readonly statusCache = new Map<
+    string,
+    { status: PrinterStatus; cachedAtMs: number }
+  >();
 
   constructor(executor: PowerShellExecutor = defaultPowerShellExecutor) {
     this.executor = executor;
@@ -98,6 +102,13 @@ Get-CimInstance Win32_Printer | Select-Object Name, Default, WorkOffline, Printe
             portName: p.PortName ?? null,
             driverName: p.DriverName ?? null,
           });
+
+          const status = this.parsePrinterStatus(p);
+          this.statusCache.set(p.Name, {
+            status,
+            cachedAtMs: Date.now(),
+          });
+
           return {
             id: p.Name,
             displayName: p.Name,
@@ -200,8 +211,55 @@ Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $printer } | Select-O
     }
   }
 
+  private parsePrinterStatus(p: CimPrinterOutput): PrinterStatus {
+    if (p.WorkOffline) {
+      return {
+        availability: "OFFLINE",
+        message: "Printer is set to work offline",
+      };
+    }
+
+    switch (p.DetectedErrorState) {
+      case 8:
+        return { availability: "BLOCKED", message: "Paper Jam" };
+      case 7:
+        return { availability: "BLOCKED", message: "Door or Cover Open" };
+      case 4:
+        return { availability: "BLOCKED", message: "Out of Paper" };
+      case 6:
+        return { availability: "BLOCKED", message: "Out of Toner" };
+      case 11:
+        return { availability: "BLOCKED", message: "Output Bin Full" };
+      default:
+        break;
+    }
+
+    // PrinterStatus: 3 = Idle, 4 = Printing, 5 = Warmup, 7 = Offline
+    if (p.PrinterStatus === 7) {
+      return { availability: "OFFLINE", message: "Printer is offline" };
+    }
+    if (
+      p.PrinterStatus === 3 ||
+      p.PrinterStatus === 4 ||
+      p.PrinterStatus === 5
+    ) {
+      return { availability: "ONLINE" };
+    }
+    if (p.DetectedErrorState === 2) {
+      // No Error
+      return { availability: "ONLINE" };
+    }
+
+    return { availability: "ONLINE" };
+  }
+
   async getStatus(printerId: string): Promise<PrinterStatus> {
     this.ensureWindows();
+
+    const cached = this.statusCache.get(printerId);
+    if (cached && Date.now() - cached.cachedAtMs < 5_000) {
+      return cached.status;
+    }
 
     const escapedName = printerId.replace(/'/g, "''");
     const psCommand = `
@@ -216,46 +274,12 @@ Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $printer } | Select-O
       }
 
       const p = JSON.parse(output) as CimPrinterOutput;
-
-      if (p.WorkOffline) {
-        return {
-          availability: "OFFLINE",
-          message: "Printer is set to work offline",
-        };
-      }
-
-      switch (p.DetectedErrorState) {
-        case 8:
-          return { availability: "BLOCKED", message: "Paper Jam" };
-        case 7:
-          return { availability: "BLOCKED", message: "Door or Cover Open" };
-        case 4:
-          return { availability: "BLOCKED", message: "Out of Paper" };
-        case 6:
-          return { availability: "BLOCKED", message: "Out of Toner" };
-        case 11:
-          return { availability: "BLOCKED", message: "Output Bin Full" };
-        default:
-          break;
-      }
-
-      // PrinterStatus: 3 = Idle, 4 = Printing, 5 = Warmup, 7 = Offline
-      if (p.PrinterStatus === 7) {
-        return { availability: "OFFLINE", message: "Printer is offline" };
-      }
-      if (
-        p.PrinterStatus === 3 ||
-        p.PrinterStatus === 4 ||
-        p.PrinterStatus === 5
-      ) {
-        return { availability: "ONLINE" };
-      }
-      if (p.DetectedErrorState === 2) {
-        // No Error
-        return { availability: "ONLINE" };
-      }
-
-      return { availability: "ONLINE" };
+      const status = this.parsePrinterStatus(p);
+      this.statusCache.set(printerId, {
+        status,
+        cachedAtMs: Date.now(),
+      });
+      return status;
     } catch (err: unknown) {
       return {
         availability: "UNKNOWN",

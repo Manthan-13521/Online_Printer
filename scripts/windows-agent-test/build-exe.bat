@@ -28,4 +28,7 @@ echo ===================================================
 echo PrintGo-Agent.exe build completed successfully!
 echo You can now run PrintGo-Agent.exe or run-agent.bat
 echo ===================================================
+if "%1"=="/silent" goto :done
+if "%1"=="--silent" goto :done
 pause
+:done
