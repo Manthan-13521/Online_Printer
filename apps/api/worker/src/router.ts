@@ -8,6 +8,7 @@ import type { WorkerEnv } from "./env";
 import { handleRazorpayWebhook } from "./payments/webhook";
 import { handleAgentPrintingRequest } from "./printing/routes";
 import { handleAdminLiveOrdersRequest } from "./printing/admin-routes";
+import { handleAdminRetentionRequest } from "./retention/admin-routes";
 
 export async function routeRequest(
   request: Request,
@@ -39,6 +40,10 @@ export async function routeRequest(
 
   if (url.pathname.startsWith("/api/admin/orders")) {
     return handleAdminLiveOrdersRequest(request, env);
+  }
+
+  if (url.pathname.startsWith("/api/admin/retention")) {
+    return handleAdminRetentionRequest(request, env);
   }
 
   if (url.pathname.startsWith("/api/agent/")) {

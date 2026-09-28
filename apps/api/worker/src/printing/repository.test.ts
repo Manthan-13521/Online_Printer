@@ -14,6 +14,7 @@ const migrations = [
   "0006_paid_print_execution.sql",
   "0007_performance_optimization_indexes.sql",
   "0008_production_printer_reliability.sql",
+  "0009_retention_and_pii_purge.sql",
 ].map((name) =>
   readFileSync(
     new URL(`../../../../../database/migrations/${name}`, import.meta.url),

@@ -1,4 +1,7 @@
-import { WEBHOOK_PROCESSING_STALE_TIMEOUT_MS } from "@printgo/domain";
+import {
+  UNRESOLVED_PAID_FAILURE_RETENTION_MS,
+  WEBHOOK_PROCESSING_STALE_TIMEOUT_MS,
+} from "@printgo/domain";
 
 export interface PayableDraftRecord {
   orderId: string;
@@ -372,10 +375,14 @@ export class D1PaymentRepository implements PaymentRepository {
         ),
       this.db
         .prepare(
-          `UPDATE uploads SET retention_reason = NULL, delete_after_ms = NULL,
+          `UPDATE uploads SET retention_reason = 'UNRESOLVED_PAID_FAILURE', delete_after_ms = ?,
             updated_at_ms = ? WHERE order_id = ?`,
         )
-        .bind(input.nowMs, before.orderId),
+        .bind(
+          input.nowMs + UNRESOLVED_PAID_FAILURE_RETENTION_MS,
+          input.nowMs,
+          before.orderId,
+        ),
       this.db
         .prepare(
           `INSERT OR IGNORE INTO order_events

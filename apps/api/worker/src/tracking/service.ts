@@ -30,8 +30,13 @@ const JOB_CODE_PATTERN = /^PG-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{6}$/u;
 
 function fileRetentionStatus(
   storageStatus: CustomerTrackingRecord["storageStatus"],
+  deleteAfterMs: number | null,
+  nowMs: number,
 ): CustomerFileRetentionStatus {
   if (storageStatus === "DELETED") return "DELETED";
+  if (deleteAfterMs !== null && deleteAfterMs <= nowMs) {
+    return "DELETED";
+  }
   if (["EXPIRED", "DELETE_PENDING", "DELETE_FAILED"].includes(storageStatus)) {
     return "DELETION_PENDING";
   }
@@ -117,13 +122,21 @@ export class TrackingService {
     }
     const tokenHash = await hashSessionToken(rawToken);
     const order = await this.tracking.findByCredential(jobCode, tokenHash);
-    if (!order || order.trackingExpiresAtMs <= this.now()) {
+    const nowMs = this.now();
+    if (!order || order.trackingExpiresAtMs <= nowMs) {
       throw new TrackingError("TRACKING_NOT_FOUND");
     }
+    const isPiiPurged =
+      order.piiPurgedAtMs !== null ||
+      order.customerName === "Customer details expired for privacy" ||
+      order.customerName.includes("expired for privacy");
+    const customerName = isPiiPurged ? "Customer" : order.customerName;
+    const instructions = isPiiPurged ? null : order.instructions;
+
     const status = toCustomerOrderStatus(order.orderStatus);
     return {
       jobCode: order.jobCode,
-      customerName: order.customerName,
+      customerName,
       paymentStatus: "PAYMENT_RECEIVED",
       orderStatus: status.code,
       statusLabel: status.label,
@@ -139,8 +152,12 @@ export class TrackingService {
       },
       amountPaidPaise: order.amountPaidPaise,
       currency: order.currency,
-      instructions: order.instructions,
-      fileRetentionStatus: fileRetentionStatus(order.storageStatus),
+      instructions,
+      fileRetentionStatus: fileRetentionStatus(
+        order.storageStatus,
+        order.deleteAfterMs,
+        nowMs,
+      ),
       timeline: safeTimeline(
         await this.tracking.listSafeTimeline(order.orderId),
       ),

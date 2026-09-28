@@ -7,6 +7,9 @@
   "observability": {
     "enabled": true,
   },
+  "triggers": {
+    "crons": ["*/5 * * * *"],
+  },
   "vars": {
     "APP_ENV": "production",
     "CUSTOMER_ALLOWED_ORIGIN": "https://printgo-customer.pages.dev",

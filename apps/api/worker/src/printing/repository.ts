@@ -183,6 +183,7 @@ export interface PrintingRepository {
     r2_object_key: string;
     storage_status: string;
     deleted_at_ms: number | null;
+    delete_after_ms: number | null;
   } | null>;
 }
 
@@ -983,16 +984,18 @@ export class D1PrintingRepository implements PrintingRepository {
     r2_object_key: string;
     storage_status: string;
     deleted_at_ms: number | null;
+    delete_after_ms: number | null;
   } | null> {
     return this.db
       .prepare(
-        `SELECT r2_object_key, storage_status, deleted_at_ms FROM uploads WHERE order_id = ?`,
+        `SELECT r2_object_key, storage_status, deleted_at_ms, delete_after_ms FROM uploads WHERE order_id = ?`,
       )
       .bind(orderId)
       .first<{
         r2_object_key: string;
         storage_status: string;
         deleted_at_ms: number | null;
+        delete_after_ms: number | null;
       }>();
   }
 

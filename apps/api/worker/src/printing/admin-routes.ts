@@ -116,6 +116,16 @@ export async function handleAdminOrdersRequest(
     );
   } catch (caught) {
     if (caught instanceof PrintingError) {
+      if (caught.code === "ORDER_PDF_EXPIRED") {
+        return withAdminCors(
+          error(
+            410,
+            "ORDER_PDF_EXPIRED",
+            "The document for this order has expired according to the shop privacy policy and is no longer available.",
+          ),
+          env.ADMIN_ALLOWED_ORIGIN,
+        );
+      }
       if (
         caught.code === "ORDER_NOT_FOUND" ||
         caught.code === "ORDER_PDF_NOT_FOUND"

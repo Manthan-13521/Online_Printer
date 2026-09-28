@@ -120,7 +120,7 @@ describe("D1PaymentRepository payment lifecycle", () => {
     expect(fake.batch).toHaveBeenCalledOnce();
     expect(
       fake.statements.some((item) =>
-        item.sql.includes("retention_reason = NULL, delete_after_ms = NULL"),
+        item.sql.includes("retention_reason = 'UNRESOLVED_PAID_FAILURE'"),
       ),
     ).toBe(true);
     expect(

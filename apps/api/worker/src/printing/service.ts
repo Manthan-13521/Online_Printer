@@ -15,7 +15,8 @@ export type PrintingErrorCode =
   | "ORDER_NOT_FOUND"
   | "ORDER_CANNOT_BE_RETRIED"
   | "UNCERTAIN_RETRY_CONFIRMATION_REQUIRED"
-  | "ORDER_PDF_NOT_FOUND";
+  | "ORDER_PDF_NOT_FOUND"
+  | "ORDER_PDF_EXPIRED";
 
 export class PrintingError extends Error {
   constructor(readonly code: PrintingErrorCode) {
@@ -198,17 +199,25 @@ export class PrintingService {
     const upload = await this.repository.findUploadByOrderId(orderId);
     if (
       !upload ||
-      upload.storage_status !== "UPLOADED" ||
+      upload.storage_status === "DELETED" ||
       upload.deleted_at_ms !== null
     ) {
       throw new PrintingError("ORDER_PDF_NOT_FOUND");
     }
+    const nowMs = this.now();
+    if (upload.delete_after_ms !== null && upload.delete_after_ms <= nowMs) {
+      throw new PrintingError("ORDER_PDF_EXPIRED");
+    }
     const authorization = await this.downloadSigner.createDownloadAuthorization(
       upload.r2_object_key,
     );
+    const expiresAtMs =
+      upload.delete_after_ms !== null
+        ? Math.min(authorization.expiresAtMs, upload.delete_after_ms)
+        : authorization.expiresAtMs;
     return {
       downloadUrl: authorization.url,
-      expiresAtMs: authorization.expiresAtMs,
+      expiresAtMs,
     };
   }
 }

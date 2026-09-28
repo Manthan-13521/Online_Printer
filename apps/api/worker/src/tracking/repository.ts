@@ -32,6 +32,8 @@ export interface CustomerTrackingRecord {
   currency: "INR";
   instructions: string | null;
   storageStatus: UploadStorageStatus;
+  deleteAfterMs: number | null;
+  piiPurgedAtMs: number | null;
   trackingExpiresAtMs: number;
 }
 
@@ -67,6 +69,8 @@ interface TrackingRow {
   currency: "INR";
   instructions: string | null;
   storage_status: UploadStorageStatus;
+  delete_after_ms: number | null;
+  pii_purged_at_ms: number | null;
   tracking_expires_at_ms: number;
 }
 
@@ -158,8 +162,8 @@ export class D1TrackingRepository implements TrackingRepository {
         `SELECT o.id, o.public_job_code, o.customer_name, o.status,
           o.created_at_ms, o.updated_at_ms, o.paid_at_ms, o.selected_pages,
           o.copies, o.paper_size, o.color_mode, o.sides, o.instructions,
-          o.tracking_expires_at_ms, p.amount_paise, p.currency,
-          u.storage_status
+          o.pii_purged_at_ms, o.tracking_expires_at_ms, p.amount_paise, p.currency,
+          u.storage_status, u.delete_after_ms
         FROM orders o
         JOIN uploads u ON u.order_id = o.id
         JOIN payments p ON p.order_id = o.id AND p.status = 'PAID'
@@ -189,6 +193,8 @@ export class D1TrackingRepository implements TrackingRepository {
           currency: row.currency,
           instructions: row.instructions,
           storageStatus: row.storage_status,
+          deleteAfterMs: row.delete_after_ms,
+          piiPurgedAtMs: row.pii_purged_at_ms,
           trackingExpiresAtMs: row.tracking_expires_at_ms,
         }
       : null;

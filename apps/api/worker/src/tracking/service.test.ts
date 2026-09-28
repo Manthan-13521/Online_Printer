@@ -33,6 +33,8 @@ const trackingOrder: CustomerTrackingRecord = {
   currency: "INR",
   instructions: "Staple after printing",
   storageStatus: "UPLOADED",
+  deleteAfterMs: null,
+  piiPurgedAtMs: null,
   trackingExpiresAtMs: now + CUSTOMER_TRACKING_LIFETIME_MS,
 };
 
