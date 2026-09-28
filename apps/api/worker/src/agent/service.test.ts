@@ -240,6 +240,28 @@ describe("AgentService", () => {
     });
   });
 
+  it("returns true (idempotent) when revoking an already-revoked agent", async () => {
+    const repo = createMockRepository({
+      revokeAgent: vi.fn(() => Promise.resolve(true)),
+    });
+    const service = new AgentService(repo, () => 1_500_000);
+
+    // Should not throw — idempotent revoke returns true
+    const result = await service.revokeAgent("agent_123", "admin_1");
+    expect(result).toBe(true);
+  });
+
+  it("throws AGENT_NOT_FOUND when revoking a non-existent agent", async () => {
+    const repo = createMockRepository({
+      revokeAgent: vi.fn(() => Promise.resolve(false)),
+    });
+    const service = new AgentService(repo, () => 1_500_000);
+
+    await expect(service.revokeAgent("nonexistent", "admin_1")).rejects.toEqual(
+      expect.objectContaining({ code: "AGENT_NOT_FOUND" }),
+    );
+  });
+
   it("toggles printer status and logs audit event", async () => {
     const repo = createMockRepository();
     const service = new AgentService(repo, () => 1_500_000);

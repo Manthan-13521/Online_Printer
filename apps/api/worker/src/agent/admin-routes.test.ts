@@ -24,7 +24,9 @@ function createMockAuth(): AdminAuthService {
   } as unknown as AdminAuthService;
 }
 
-function createMockAgentService(): AgentService {
+function createMockAgentService(
+  overrides: Partial<AgentService> = {},
+): AgentService {
   return {
     createPairCode: vi.fn(() =>
       Promise.resolve({
@@ -61,7 +63,7 @@ function createMockAgentService(): AgentService {
         },
       ]),
     ),
-    revokeAgent: vi.fn(() => Promise.resolve()),
+    revokeAgent: vi.fn(() => Promise.resolve(true)),
     togglePrinter: vi.fn(() => Promise.resolve()),
     requestTestPrint: vi.fn(() =>
       Promise.resolve({
@@ -93,6 +95,7 @@ function createMockAgentService(): AgentService {
         finishedAt: "2026-09-26T12:00:15.000Z",
       }),
     ),
+    ...overrides,
   } as unknown as AgentService;
 }
 
@@ -202,6 +205,37 @@ describe("Admin Printer & Agent HTTP Routes", () => {
       "agent_1",
       "admin_100",
     );
+  });
+
+  it("returns 200 when revoking an already-revoked agent (idempotent)", async () => {
+    const authService = createMockAuth();
+    const agentService = createMockAgentService({
+      revokeAgent: vi.fn(() => Promise.resolve(true)),
+    });
+
+    const request = new Request(
+      "https://api.example.com/api/admin/agents/agent_1/revoke",
+      {
+        method: "POST",
+        headers: {
+          Origin: env.ADMIN_ALLOWED_ORIGIN,
+          Cookie: "__Host-printgo_admin=valid_token",
+        },
+      },
+    );
+
+    const response = await handleAdminPrinterRequest(
+      request,
+      env,
+      agentService,
+      authService,
+    );
+    // Idempotent: revoke on already-revoked agent must also return 200
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      ok: true,
+      data: { revoked: true },
+    });
   });
 
   it("toggles printer enabled status", async () => {

@@ -75,12 +75,35 @@ describe("runCli CLI flags", () => {
     expect(logSpy).toHaveBeenCalledWith(
       expect.stringContaining("Usage:\n  PrintGo-Agent.exe [options]"),
     );
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining("--reset-pairing"),
+    );
 
     logSpy.mockClear();
     process.argv = ["node", "index.js", "-h"];
     await runCli();
     expect(logSpy).toHaveBeenCalledWith(
       expect.stringContaining("PrintGo Windows Agent (v2.0.0)"),
+    );
+  });
+
+  it("clears credentials and exits on --clear", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    process.argv = ["node", "index.js", "--clear"];
+    await runCli();
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining("reset successfully"),
+    );
+  });
+
+  it("clears credentials and exits on --reset-pairing (alias for --clear)", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    process.argv = ["node", "index.js", "--reset-pairing"];
+    await runCli();
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining("reset successfully"),
     );
   });
 });

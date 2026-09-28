@@ -130,6 +130,7 @@ Options:
   --api-url <URL>     Alias for --server
   --name <NAME>       Friendly display name for this computer/agent
   --clear             Clear stored local DPAPI authentication credentials and exit
+  --reset-pairing     Reset local pairing credentials and exit (alias for --clear)
   --version, -v       Print agent version and exit
   --help, -h          Show this help message and exit
 
@@ -219,7 +220,8 @@ SumatraPDF:
     configDisplayName ||
     `${os.hostname()} (PrintGo Agent)`;
 
-  const shouldClear = args.includes("--clear");
+  const shouldClear =
+    args.includes("--clear") || args.includes("--reset-pairing");
 
   const credentialStore = createDefaultCredentialStore();
   const printerAdapter = createDefaultPrinterAdapter();
@@ -227,7 +229,12 @@ SumatraPDF:
 
   if (shouldClear) {
     await credentialStore.clear();
-    console.log("[PrintGo Agent] Local credentials cleared.");
+    console.log(
+      "[PrintGo Agent] Local pairing credentials have been reset successfully.",
+    );
+    console.log(
+      "[PrintGo Agent] Run PrintGo-Agent.exe again and enter a new pairing code from the Admin panel.",
+    );
     return;
   }
 
@@ -264,10 +271,29 @@ SumatraPDF:
     }
   }
 
+  let authErrorCleared = false;
+
   const daemon = new AgentDaemon({
     client,
     credentialStore,
     printerAdapter,
+    onError: (err: Error) => {
+      if (err instanceof AgentAuthError && !authErrorCleared) {
+        authErrorCleared = true;
+        console.error(
+          "\n[PrintGo Agent] ❌ Current pairing credentials have been revoked by the administrator or are no longer valid.",
+        );
+        console.error(
+          "[PrintGo Agent] Clearing stale local credentials automatically...",
+        );
+        void credentialStore.clear().then(() => {
+          console.error(
+            "[PrintGo Agent] ✅ Credentials cleared. Please restart PrintGo-Agent.exe and enter a new pairing code from the Admin panel.",
+          );
+          process.exit(1);
+        });
+      }
+    },
   });
 
   if (pairCodeArg) {

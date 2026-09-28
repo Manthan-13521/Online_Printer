@@ -452,7 +452,7 @@ export class D1AgentRepository implements AgentRepository {
       await this.db.batch([
         this.db.prepare(
           `SELECT id, display_name, is_active, paired_at_ms, last_heartbeat_at_ms
-         FROM agents ORDER BY created_at_ms ASC`,
+         FROM agents WHERE is_active = 1 ORDER BY created_at_ms ASC`,
         ),
         this.db.prepare(
           `SELECT id, agent_id, display_name, windows_printer_name, enabled,
@@ -543,27 +543,47 @@ export class D1AgentRepository implements AgentRepository {
     adminId: string;
     nowMs: number;
   }): Promise<boolean> {
-    const result = await this.db
-      .prepare(
-        `UPDATE agents
-         SET is_active = 0, updated_at_ms = ?
-         WHERE id = ? AND is_active = 1`,
-      )
-      .bind(input.nowMs, input.agentId)
-      .run();
+    // Check if agent exists at all (regardless of active status)
+    const existing = await this.db
+      .prepare(`SELECT id, is_active FROM agents WHERE id = ?`)
+      .bind(input.agentId)
+      .first<{ id: string; is_active: number }>();
 
-    if (result.meta.changes === 1) {
-      await this.db
+    if (!existing) {
+      // Agent does not exist — not found
+      return false;
+    }
+
+    if (existing.is_active === 0) {
+      // Already revoked — idempotent success
+      return true;
+    }
+
+    // Newly revoking — update agent, mark printers OFFLINE, write audit log
+    await this.db.batch([
+      this.db
+        .prepare(
+          `UPDATE agents SET is_active = 0, updated_at_ms = ? WHERE id = ?`,
+        )
+        .bind(input.nowMs, input.agentId),
+      this.db
+        .prepare(
+          `UPDATE printers
+           SET status = 'OFFLINE', status_reason = 'Agent revoked by administrator',
+               last_status_at_ms = ?, updated_at_ms = ?
+           WHERE agent_id = ?`,
+        )
+        .bind(input.nowMs, input.nowMs, input.agentId),
+      this.db
         .prepare(
           `INSERT INTO audit_logs (
              id, actor_type, actor_id, action, entity_type, entity_id, created_at_ms
            ) VALUES (?, 'ADMIN', ?, 'AGENT_REVOKED', 'AGENT', ?, ?)`,
         )
-        .bind(crypto.randomUUID(), input.adminId, input.agentId, input.nowMs)
-        .run();
-      return true;
-    }
-    return false;
+        .bind(crypto.randomUUID(), input.adminId, input.agentId, input.nowMs),
+    ]);
+
+    return true;
   }
 
   async togglePrinter(input: {
