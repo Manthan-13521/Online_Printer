@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import * as fsSync from "node:fs";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -14,6 +15,7 @@ export interface CredentialStore {
   load(): Promise<AgentCredentials | null>;
   save(credentials: AgentCredentials): Promise<void>;
   clear(): Promise<void>;
+  verifyReadiness?(): Promise<void>;
 }
 
 function parseCredentials(json: string): AgentCredentials {
@@ -49,20 +51,46 @@ function parseCredentials(json: string): AgentCredentials {
   };
 }
 
-function execPowerShellWithInput(
-  command: string,
+export type PowerShellExecutor = (
+  script: string,
+  inputData: string,
+) => Promise<string>;
+
+function getPowerShellExecutable(): string {
+  if (process.platform === "win32") {
+    const systemRoot =
+      process.env.SystemRoot || process.env.WINDIR || "C:\\Windows";
+    const canonical = path.join(
+      systemRoot,
+      "System32",
+      "WindowsPowerShell",
+      "v1.0",
+      "powershell.exe",
+    );
+    if (fsSync.existsSync(canonical)) {
+      return canonical;
+    }
+  }
+  return "powershell.exe";
+}
+
+export function defaultExecPowerShell(
+  script: string,
   inputData: string,
 ): Promise<string> {
+  const executable = getPowerShellExecutable();
+  const encodedCommand = Buffer.from(script, "utf16le").toString("base64");
   return new Promise((resolve, reject) => {
     const child = execFile(
-      "powershell.exe",
-      ["-NoProfile", "-NonInteractive", "-Command", command],
-      { maxBuffer: 2 * 1024 * 1024 },
+      executable,
+      ["-NoProfile", "-NonInteractive", "-EncodedCommand", encodedCommand],
+      { maxBuffer: 2 * 1024 * 1024, windowsHide: true },
       (error, stdout, stderr) => {
         if (error) {
+          const stderrText = stderr.trim();
           reject(
             new Error(
-              `PowerShell error: ${error.message} (stderr: ${stderr.trim()})`,
+              `Windows DPAPI PowerShell error: ${error.message}${stderrText ? ` (diagnostic: ${stderrText})` : ""}`,
             ),
           );
         } else {
@@ -74,14 +102,33 @@ function execPowerShellWithInput(
   });
 }
 
+const DPAPI_SCRIPT_PREAMBLE = `
+$ErrorActionPreference = 'Stop'
+try {
+  Add-Type -AssemblyName 'System.Security' -ErrorAction Stop
+} catch {
+  try {
+    Add-Type -AssemblyName 'System.Security.Cryptography.ProtectedData' -ErrorAction Stop
+  } catch {
+    $null = [System.Reflection.Assembly]::LoadWithPartialName('System.Security')
+  }
+}
+
+if (-not ([System.Management.Automation.PSTypeName]'System.Security.Cryptography.ProtectedData').Type) {
+  [Console]::Error.WriteLine("DPAPI_UNAVAILABLE: System.Security.Cryptography.ProtectedData could not be loaded into PowerShell AppDomain.")
+  exit 2
+}
+`.trim();
+
 /**
  * Windows DPAPI credential store using CurrentUser scope.
  * Only the logged-in Windows user running the service/process can decrypt the stored secret.
  */
 export class WindowsDpapiCredentialStore implements CredentialStore {
   private readonly filePath: string;
+  private readonly execPowerShell: PowerShellExecutor;
 
-  constructor(customFilePath?: string) {
+  constructor(customFilePath?: string, execPowerShell?: PowerShellExecutor) {
     if (customFilePath) {
       this.filePath = customFilePath;
     } else {
@@ -95,6 +142,93 @@ export class WindowsDpapiCredentialStore implements CredentialStore {
         "agent-credentials.dat",
       );
     }
+    this.execPowerShell = execPowerShell ?? defaultExecPowerShell;
+  }
+
+  async protect(plainText: string): Promise<string> {
+    const plainBase64 = Buffer.from(plainText, "utf8").toString("base64");
+    const psScript = `
+${DPAPI_SCRIPT_PREAMBLE}
+
+$inputBase64 = [Console]::In.ReadToEnd()
+if ([string]::IsNullOrWhiteSpace($inputBase64)) {
+  [Console]::Error.WriteLine("DPAPI_EMPTY_INPUT: Input data was empty.")
+  exit 1
+}
+
+try {
+  $plainBytes = [Convert]::FromBase64String($inputBase64.Trim())
+  $cipherBytes = [System.Security.Cryptography.ProtectedData]::Protect(
+    $plainBytes,
+    $null,
+    [System.Security.Cryptography.DataProtectionScope]::CurrentUser
+  )
+  [Console]::Out.Write([Convert]::ToBase64String($cipherBytes))
+} catch {
+  [Console]::Error.WriteLine("DPAPI_PROTECT_FAILED: $($_.Exception.Message)")
+  exit 3
+}
+`.trim();
+
+    const stdout = await this.execPowerShell(psScript, plainBase64);
+    const protectedBase64 = stdout.trim();
+    if (!protectedBase64) {
+      throw new Error("Windows DPAPI returned empty ciphertext.");
+    }
+    return protectedBase64;
+  }
+
+  async unprotect(protectedBase64: string): Promise<string> {
+    if (!protectedBase64.trim()) {
+      throw new Error("Cannot unprotect empty ciphertext.");
+    }
+    const psScript = `
+${DPAPI_SCRIPT_PREAMBLE}
+
+$inputBase64 = [Console]::In.ReadToEnd()
+if ([string]::IsNullOrWhiteSpace($inputBase64)) {
+  [Console]::Error.WriteLine("DPAPI_EMPTY_INPUT: Input data was empty.")
+  exit 1
+}
+
+try {
+  $cipherBytes = [Convert]::FromBase64String($inputBase64.Trim())
+  $plainBytes = [System.Security.Cryptography.ProtectedData]::Unprotect(
+    $cipherBytes,
+    $null,
+    [System.Security.Cryptography.DataProtectionScope]::CurrentUser
+  )
+  [Console]::Out.Write([Convert]::ToBase64String($plainBytes))
+} catch {
+  [Console]::Error.WriteLine("DPAPI_UNPROTECT_FAILED: $($_.Exception.Message)")
+  exit 3
+}
+`.trim();
+
+    const stdout = await this.execPowerShell(psScript, protectedBase64);
+    const trimmed = stdout.trim();
+    if (!trimmed) {
+      throw new Error("Windows DPAPI returned empty plaintext.");
+    }
+    return Buffer.from(trimmed, "base64").toString("utf8");
+  }
+
+  async verifyReadiness(): Promise<void> {
+    try {
+      const probe = "printgo-dpapi-readiness-probe-" + Date.now();
+      const encrypted = await this.protect(probe);
+      const decrypted = await this.unprotect(encrypted);
+      if (decrypted !== probe) {
+        throw new Error(
+          "Windows DPAPI self-test probe mismatch during verification.",
+        );
+      }
+    } catch (err: unknown) {
+      throw new Error(
+        `Windows DPAPI credential encryption is unavailable on this machine: ${err instanceof Error ? err.message : String(err)}`,
+        { cause: err },
+      );
+    }
   }
 
   async load(): Promise<AgentCredentials | null> {
@@ -102,18 +236,7 @@ export class WindowsDpapiCredentialStore implements CredentialStore {
       const protectedBase64 = await fs.readFile(this.filePath, "utf8");
       if (!protectedBase64.trim()) return null;
 
-      const psScript = `
-$inputBase64 = [Console]::In.ReadToEnd()
-if (-not $inputBase64) { exit 1 }
-$cipherBytes = [Convert]::FromBase64String($inputBase64.Trim())
-$plainBytes = [System.Security.Cryptography.ProtectedData]::Unprotect($cipherBytes, $null, [System.Security.Cryptography.DataProtectionScope]::CurrentUser)
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-[System.Text.Encoding]::UTF8.GetString($plainBytes)
-      `.trim();
-
-      const stdout = await execPowerShellWithInput(psScript, protectedBase64);
-
-      const json = stdout.trim();
+      const json = await this.unprotect(protectedBase64);
       if (!json) return null;
       return parseCredentials(json);
     } catch (err: unknown) {
@@ -129,19 +252,8 @@ $plainBytes = [System.Security.Cryptography.ProtectedData]::Unprotect($cipherByt
 
   async save(credentials: AgentCredentials): Promise<void> {
     const rawJson = JSON.stringify(credentials);
-    const plainBase64 = Buffer.from(rawJson, "utf8").toString("base64");
+    const protectedBase64 = await this.protect(rawJson);
 
-    const psScript = `
-$inputBase64 = [Console]::In.ReadToEnd()
-if (-not $inputBase64) { exit 1 }
-$plainBytes = [Convert]::FromBase64String($inputBase64.Trim())
-$cipherBytes = [System.Security.Cryptography.ProtectedData]::Protect($plainBytes, $null, [System.Security.Cryptography.DataProtectionScope]::CurrentUser)
-[Convert]::ToBase64String($cipherBytes)
-    `.trim();
-
-    const stdout = await execPowerShellWithInput(psScript, plainBase64);
-
-    const protectedBase64 = stdout.trim();
     await fs.mkdir(path.dirname(this.filePath), {
       recursive: true,
       mode: 0o700,
@@ -196,6 +308,10 @@ export class DevelopmentCredentialStore implements CredentialStore {
       encoding: "utf8",
       mode: 0o600,
     });
+  }
+
+  async verifyReadiness(): Promise<void> {
+    return Promise.resolve();
   }
 
   async clear(): Promise<void> {

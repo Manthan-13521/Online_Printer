@@ -64,6 +64,11 @@ export class AgentDaemon {
     pairCode: string,
     displayName: string,
   ): Promise<AgentCredentials> {
+    if (typeof this.credentialStore.verifyReadiness === "function") {
+      this.log("Verifying local credential protection system...");
+      await this.credentialStore.verifyReadiness();
+    }
+
     this.log(`Pairing with server ${serverUrl} using a one-time code...`);
     const pairResult = await this.client.pair(serverUrl, pairCode, displayName);
 
@@ -74,7 +79,15 @@ export class AgentDaemon {
       displayName: pairResult.displayName,
     };
 
-    await this.credentialStore.save(creds);
+    try {
+      await this.credentialStore.save(creds);
+    } catch (saveError: unknown) {
+      this.log(
+        `WARNING: Agent was paired on server, but saving credentials locally failed: ${saveError instanceof Error ? saveError.message : String(saveError)}. You can revoke the unpaired agent in PrintGo Admin and generate a new pairing code.`,
+      );
+      throw saveError;
+    }
+
     this.credentials = creds;
     this.log(
       `Successfully paired as "${pairResult.displayName}" (${pairResult.agentId})`,

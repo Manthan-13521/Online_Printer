@@ -24,6 +24,7 @@ function createMockStore(
       creds = null;
       return Promise.resolve();
     }),
+    verifyReadiness: vi.fn(() => Promise.resolve()),
   };
 }
 
@@ -197,5 +198,72 @@ describe("AgentDaemon", () => {
     await daemon.start();
     // After immediate pulse fails with auth error, daemon should stop
     expect(daemon.isRunning()).toBe(false);
+  });
+
+  it("does not pair with server if credential store preflight verification fails", async () => {
+    const store = createMockStore(null);
+    store.verifyReadiness = vi.fn(() =>
+      Promise.reject(
+        new Error(
+          "Windows DPAPI credential encryption is unavailable on this machine: DPAPI_UNAVAILABLE",
+        ),
+      ),
+    );
+    const mockClient = {
+      pair: vi.fn(),
+    } as unknown as AgentClient;
+
+    const daemon = new AgentDaemon({
+      client: mockClient,
+      credentialStore: store,
+      printerAdapter: createMockAdapter(),
+    });
+
+    await expect(
+      daemon.pair("https://api.printgo.shop", "PREF-LIGHT", "Shop PC"),
+    ).rejects.toThrow(/DPAPI credential encryption is unavailable/i);
+
+    // CRITICAL: client.pair must NEVER be called, preserving the server's one-time pair code!
+    expect(mockClient.pair).not.toHaveBeenCalled();
+  });
+
+  it("warns and re-throws if credential store save fails after server pairing", async () => {
+    const messages: string[] = [];
+    const store = createMockStore(null);
+    store.save = vi.fn(() => Promise.reject(new Error("Disk quota exceeded")));
+    const mockClient = {
+      pair: vi.fn(() =>
+        Promise.resolve({
+          agentId: "agent_paired_ghost",
+          agentSecret: "secret_paired_ghost",
+          displayName: "Front Desk PC",
+        }),
+      ),
+    } as unknown as AgentClient;
+
+    const daemon = new AgentDaemon({
+      client: mockClient,
+      credentialStore: store,
+      printerAdapter: createMockAdapter(),
+      onStatusChange: (m) => messages.push(m),
+    });
+
+    await expect(
+      daemon.pair("https://api.printgo.shop", "VALID-CODE", "Shop PC"),
+    ).rejects.toThrow("Disk quota exceeded");
+
+    // Warning log with recovery advice must be present
+    expect(
+      messages.some((m) =>
+        m.includes(
+          "WARNING: Agent was paired on server, but saving credentials locally failed",
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      messages.some((m) =>
+        m.includes("revoke the unpaired agent in PrintGo Admin"),
+      ),
+    ).toBe(true);
   });
 });
