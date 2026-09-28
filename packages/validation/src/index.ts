@@ -8,6 +8,7 @@ import {
   SIDES_MODES,
   MIN_PRINT_COPIES,
   MAX_PRINT_COPIES,
+  classifyPrinter,
   type ColorMode,
   type IdentificationSheetPlacement,
   type OrderStatus,
@@ -596,6 +597,10 @@ export interface ValidatedPrinterReport {
     duplex: boolean | "UNKNOWN";
     paperSizes: readonly string[];
   } | null;
+  isProductionEligible: boolean;
+  isVirtual: boolean;
+  portName: string | null;
+  driverName: string | null;
 }
 
 export interface ValidatedAgentHeartbeatInput {
@@ -711,6 +716,23 @@ export function validateAgentHeartbeatInput(
           : [],
       };
     }
+    const portName =
+      typeof p.portName === "string" ? p.portName.trim().slice(0, 100) : null;
+    const driverName =
+      typeof p.driverName === "string"
+        ? p.driverName.trim().slice(0, 200)
+        : null;
+
+    // Server-authoritative classification
+    const classification = classifyPrinter({
+      name: windowsPrinterName,
+      portName,
+      driverName,
+    });
+    const isVirtual = classification.isVirtual || Boolean(p.isVirtual);
+    const isProductionEligible =
+      !isVirtual && classification.isEligibleForProductionPrint;
+
     printers.push({
       windowsPrinterName,
       displayName: displayName || windowsPrinterName,
@@ -718,6 +740,10 @@ export function validateAgentHeartbeatInput(
       status: validStatus,
       statusReason,
       capabilities,
+      isProductionEligible,
+      isVirtual,
+      portName,
+      driverName,
     });
   }
 

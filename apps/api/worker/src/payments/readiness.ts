@@ -60,8 +60,13 @@ export class D1PaymentReadiness implements PaymentReadiness {
     }
 
     const installation = await this.db
-      .prepare(`SELECT online_printing_enabled FROM installation WHERE id = 1`)
-      .first<{ online_printing_enabled: number }>();
+      .prepare(
+        `SELECT online_printing_enabled, default_production_printer_id FROM installation WHERE id = 1`,
+      )
+      .first<{
+        online_printing_enabled: number;
+        default_production_printer_id?: string | null;
+      }>();
 
     if (!installation || installation.online_printing_enabled !== 1) {
       return {
@@ -105,7 +110,7 @@ export class D1PaymentReadiness implements PaymentReadiness {
       .prepare(
         `SELECT id, agent_id, display_name, windows_printer_name, status, status_reason, capabilities_json
          FROM printers
-         WHERE enabled = 1 AND agent_id IN (${placeholders})`,
+         WHERE enabled = 1 AND is_production_eligible = 1 AND is_virtual = 0 AND agent_id IN (${placeholders})`,
       )
       .bind(...onlineAgentIds)
       .all<{
@@ -139,8 +144,26 @@ export class D1PaymentReadiness implements PaymentReadiness {
       };
     }
 
+    const defaultPrinterId = installation.default_production_printer_id;
+    let targetPrinters = availablePrinters;
+    if (defaultPrinterId) {
+      const defaultMatch = availablePrinters.filter(
+        (p) => p.id === defaultPrinterId,
+      );
+      if (defaultMatch.length > 0) {
+        targetPrinters = defaultMatch;
+      } else {
+        return {
+          ready: false,
+          reason: "PRINTER_UNAVAILABLE",
+          message:
+            "The configured default printer is offline, blocked, or in an error state.",
+        };
+      }
+    }
+
     if (!requirements) {
-      const first = availablePrinters[0];
+      const first = targetPrinters[0];
       return {
         ready: true,
         source: "LIVE_AGENT",
@@ -158,7 +181,7 @@ export class D1PaymentReadiness implements PaymentReadiness {
     let colorModeMatch = false;
     let sidesMatch = false;
 
-    for (const printer of availablePrinters) {
+    for (const printer of targetPrinters) {
       let caps: PrinterCapsParsed | null = null;
 
       if (printer.capabilities_json) {

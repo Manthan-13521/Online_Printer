@@ -12,6 +12,8 @@ const migrations = [
   "0004_customer_tracking.sql",
   "0005_printer_test_commands.sql",
   "0006_paid_print_execution.sql",
+  "0007_performance_optimization_indexes.sql",
+  "0008_production_printer_reliability.sql",
 ].map((name) =>
   readFileSync(
     new URL(`../../../../../database/migrations/${name}`, import.meta.url),
@@ -238,10 +240,10 @@ describe("paid-print D1 safety", () => {
     const first = await repository.claimOrRenew(ids.agent1, 2_000);
     expect(first).not.toBeNull();
     db.prepare("UPDATE agents SET last_heartbeat_at_ms = ? WHERE id = ?").run(
-      122_001,
+      302_001,
       ids.agent2,
     );
-    const recovered = await repository.claimOrRenew(ids.agent2, 122_001);
+    const recovered = await repository.claimOrRenew(ids.agent2, 302_001);
     expect(recovered?.orderId).toBe(ids.order);
     expect(recovered?.attemptId).not.toBe(first?.attemptId);
     expect(
@@ -261,7 +263,7 @@ describe("paid-print D1 safety", () => {
       claimId: job.claimId,
       nowMs: 2_100,
     });
-    expect(await repository.claimOrRenew(ids.agent2, 122_101)).toBeNull();
+    expect(await repository.claimOrRenew(ids.agent2, 302_101)).toBeNull();
     expect(
       db.prepare("SELECT status FROM orders WHERE id = ?").get(ids.order),
     ).toEqual({ status: "ADMIN_ACTION_REQUIRED" });

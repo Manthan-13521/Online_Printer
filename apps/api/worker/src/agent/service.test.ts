@@ -24,6 +24,8 @@ function createMockRepository(
     claimPendingTestPrintCommand: vi.fn(() => Promise.resolve(null)),
     reportTestPrintCommand: vi.fn(() => Promise.resolve(true)),
     getLatestTestPrintCommand: vi.fn(() => Promise.resolve(null)),
+    setDefaultProductionPrinter: vi.fn(),
+    getDefaultProductionPrinterId: vi.fn(() => Promise.resolve(null)),
     ...overrides,
   };
 }
@@ -149,6 +151,10 @@ describe("AgentService", () => {
             duplex: true,
             paperSizes: ["A4"],
           },
+          isProductionEligible: true,
+          isVirtual: false,
+          portName: null,
+          driverName: null,
         },
       ],
     });
@@ -285,6 +291,8 @@ describe("AgentService", () => {
           windowsPrinterName: "Canon_MF4700",
           enabled: true,
           status: "ONLINE",
+          isProductionEligible: true,
+          isVirtual: false,
         }),
       ),
       findAgentById: vi.fn(() =>
@@ -353,6 +361,8 @@ describe("AgentService", () => {
           windowsPrinterName: "Canon",
           enabled: true,
           status: "ONLINE",
+          isProductionEligible: true,
+          isVirtual: false,
         }),
       ),
       findAgentById: vi.fn(() =>
@@ -398,6 +408,8 @@ describe("AgentService", () => {
           windowsPrinterName: "Canon",
           enabled: false,
           status: "ONLINE",
+          isProductionEligible: true,
+          isVirtual: false,
         }),
       ),
     });
@@ -422,6 +434,8 @@ describe("AgentService", () => {
           windowsPrinterName: "Canon",
           enabled: true,
           status: "ONLINE",
+          isProductionEligible: true,
+          isVirtual: false,
         }),
       ),
       findAgentById: vi.fn(() =>

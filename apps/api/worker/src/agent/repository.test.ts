@@ -18,6 +18,13 @@ const testPrintSql = readFileSync(
   ),
   "utf8",
 );
+const printerReliabilitySql = readFileSync(
+  new URL(
+    "../../../../../database/migrations/0008_production_printer_reliability.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
 
 class SqliteD1Statement {
   private bindings: SQLInputValue[] = [];
@@ -84,6 +91,7 @@ describe("D1AgentRepository safety invariants", () => {
     database = new DatabaseSync(":memory:");
     database.exec(schemaSql);
     database.exec(testPrintSql);
+    database.exec(printerReliabilitySql);
     repository = new D1AgentRepository(asD1(database));
   });
 

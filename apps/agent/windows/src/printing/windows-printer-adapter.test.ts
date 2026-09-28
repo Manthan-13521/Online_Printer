@@ -55,11 +55,19 @@ describe("WindowsPrinterAdapter with mock executor", () => {
       id: "Canon LBP2900",
       displayName: "Canon LBP2900",
       isDefault: true,
+      portName: null,
+      driverName: null,
+      isVirtual: false,
+      isEligibleForProductionPrint: true,
     });
     expect(printers[1]).toEqual({
       id: "HP LaserJet 1020",
       displayName: "HP LaserJet 1020",
       isDefault: false,
+      portName: null,
+      driverName: null,
+      isVirtual: false,
+      isEligibleForProductionPrint: true,
     });
   });
 

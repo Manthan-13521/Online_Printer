@@ -167,6 +167,23 @@ export interface PrintingRepository {
     nowMs: number;
   }): Promise<StepOwnershipRow | null>;
   listLiveOrders(nowMs?: number): Promise<AdminLiveOrder[]>;
+  manualComplete(input: {
+    orderId: string;
+    adminId: string;
+    reason?: string;
+    nowMs: number;
+  }): Promise<{ orderId: string; status: "COMPLETED" }>;
+  retryOrder(input: {
+    orderId: string;
+    adminId: string;
+    forceUncertain?: boolean;
+    nowMs: number;
+  }): Promise<{ orderId: string; status: "QUEUED" }>;
+  findUploadByOrderId(orderId: string): Promise<{
+    r2_object_key: string;
+    storage_status: string;
+    deleted_at_ms: number | null;
+  } | null>;
 }
 
 export class D1PrintingRepository implements PrintingRepository {
@@ -306,8 +323,10 @@ export class D1PrintingRepository implements PrintingRepository {
         AND pay.provider_payment_id IS NOT NULL AND pay.verified_at_ms IS NOT NULL
       JOIN agents a ON a.id = ? AND a.is_active = 1 AND a.last_heartbeat_at_ms >= ?
       JOIN printers p ON p.agent_id = a.id AND p.enabled = 1 AND p.status = 'ONLINE'
+        AND p.is_production_eligible = 1 AND p.is_virtual = 0
         AND p.capabilities_json IS NOT NULL
       JOIN installation i ON i.id = 1
+        AND (i.default_production_printer_id IS NULL OR p.id = i.default_production_printer_id)
       WHERE o.status = 'QUEUED' AND o.public_job_code IS NOT NULL
         AND o.source_page_count IS NOT NULL AND u.storage_status = 'UPLOADED'
         AND u.size_bytes IS NOT NULL AND u.deleted_at_ms IS NULL
@@ -323,6 +342,26 @@ export class D1PrintingRepository implements PrintingRepository {
       .bind(agentId, nowMs - 90_000, nowMs)
       .first<CandidateRow>();
     if (!candidate) return null;
+
+    const succeededSteps = await this.db
+      .prepare(
+        `SELECT step_type FROM print_attempt_steps WHERE order_id = ? AND status = 'SUCCEEDED'`,
+      )
+      .bind(candidate.order_id)
+      .all<{ step_type: string }>();
+
+    const succeededSet = new Set(
+      succeededSteps.results.map((r) => r.step_type),
+    );
+    const needIdStep =
+      candidate.identification_sheet_enabled === 1 &&
+      !succeededSet.has("IDENTIFICATION_SHEET");
+    const needDocStep = !succeededSet.has("CUSTOMER_DOCUMENT");
+
+    if (!needIdStep && !needDocStep) {
+      await this.finishOrphanedSuccess(agentId, nowMs);
+      return null;
+    }
 
     const claimId = crypto.randomUUID();
     const attemptId = crypto.randomUUID();
@@ -345,6 +384,7 @@ export class D1PrintingRepository implements PrintingRepository {
         ) AND EXISTS (
           SELECT 1 FROM printers p JOIN agents a ON a.id = p.agent_id
           WHERE p.id = ? AND p.agent_id = ? AND p.enabled = 1 AND p.status = 'ONLINE'
+            AND p.is_production_eligible = 1 AND p.is_virtual = 0
             AND a.is_active = 1 AND a.last_heartbeat_at_ms >= ?
             AND p.capabilities_json IS NOT NULL
             AND (orders.color_mode = 'BW' OR json_extract(p.capabilities_json, '$.colour') = 1)
@@ -386,41 +426,88 @@ export class D1PrintingRepository implements PrintingRepository {
           agentId,
         ),
     ];
-    if (candidate.identification_sheet_enabled === 1) {
-      statements.push(
-        this.db
-          .prepare(
-            `INSERT INTO print_attempt_steps (id, print_attempt_id, order_id, sequence_number,
-            step_type, created_at_ms, updated_at_ms)
-          SELECT ?, ?, ?, ?, 'IDENTIFICATION_SHEET', ?, ? FROM print_attempts WHERE id = ?`,
-          )
-          .bind(
-            idStep,
-            attemptId,
-            candidate.order_id,
-            firstIsId ? 1 : 2,
-            nowMs,
-            nowMs,
-            attemptId,
-          ),
-      );
+
+    if (firstIsId) {
+      if (needIdStep) {
+        statements.push(
+          this.db
+            .prepare(
+              `INSERT INTO print_attempt_steps (id, print_attempt_id, order_id, sequence_number,
+              step_type, created_at_ms, updated_at_ms)
+            SELECT ?, ?, ?, ?, 'IDENTIFICATION_SHEET', ?, ? FROM print_attempts WHERE id = ?`,
+            )
+            .bind(
+              idStep,
+              attemptId,
+              candidate.order_id,
+              1,
+              nowMs,
+              nowMs,
+              attemptId,
+            ),
+        );
+      }
+      if (needDocStep) {
+        statements.push(
+          this.db
+            .prepare(
+              `INSERT INTO print_attempt_steps (id, print_attempt_id, order_id, sequence_number,
+              step_type, created_at_ms, updated_at_ms)
+            SELECT ?, ?, ?, ?, 'CUSTOMER_DOCUMENT', ?, ? FROM print_attempts WHERE id = ?`,
+            )
+            .bind(
+              documentStep,
+              attemptId,
+              candidate.order_id,
+              needIdStep ? 2 : 1,
+              nowMs,
+              nowMs,
+              attemptId,
+            ),
+        );
+      }
+    } else {
+      if (needDocStep) {
+        statements.push(
+          this.db
+            .prepare(
+              `INSERT INTO print_attempt_steps (id, print_attempt_id, order_id, sequence_number,
+              step_type, created_at_ms, updated_at_ms)
+            SELECT ?, ?, ?, ?, 'CUSTOMER_DOCUMENT', ?, ? FROM print_attempts WHERE id = ?`,
+            )
+            .bind(
+              documentStep,
+              attemptId,
+              candidate.order_id,
+              1,
+              nowMs,
+              nowMs,
+              attemptId,
+            ),
+        );
+      }
+      if (needIdStep) {
+        statements.push(
+          this.db
+            .prepare(
+              `INSERT INTO print_attempt_steps (id, print_attempt_id, order_id, sequence_number,
+              step_type, created_at_ms, updated_at_ms)
+            SELECT ?, ?, ?, ?, 'IDENTIFICATION_SHEET', ?, ? FROM print_attempts WHERE id = ?`,
+            )
+            .bind(
+              idStep,
+              attemptId,
+              candidate.order_id,
+              needDocStep ? 2 : 1,
+              nowMs,
+              nowMs,
+              attemptId,
+            ),
+        );
+      }
     }
+
     statements.push(
-      this.db
-        .prepare(
-          `INSERT INTO print_attempt_steps (id, print_attempt_id, order_id, sequence_number,
-          step_type, created_at_ms, updated_at_ms)
-        SELECT ?, ?, ?, ?, 'CUSTOMER_DOCUMENT', ?, ? FROM print_attempts WHERE id = ?`,
-        )
-        .bind(
-          documentStep,
-          attemptId,
-          candidate.order_id,
-          candidate.identification_sheet_enabled === 1 && firstIsId ? 2 : 1,
-          nowMs,
-          nowMs,
-          attemptId,
-        ),
       this.db
         .prepare(
           `INSERT INTO order_events (id, order_id, event_type, from_status, to_status,
@@ -890,5 +977,172 @@ export class D1PrintingRepository implements PrintingRepository {
       paidAt: new Date(row.paid_at_ms).toISOString(),
       updatedAt: new Date(row.updated_at_ms).toISOString(),
     }));
+  }
+
+  async findUploadByOrderId(orderId: string): Promise<{
+    r2_object_key: string;
+    storage_status: string;
+    deleted_at_ms: number | null;
+  } | null> {
+    return this.db
+      .prepare(
+        `SELECT r2_object_key, storage_status, deleted_at_ms FROM uploads WHERE order_id = ?`,
+      )
+      .bind(orderId)
+      .first<{
+        r2_object_key: string;
+        storage_status: string;
+        deleted_at_ms: number | null;
+      }>();
+  }
+
+  async manualComplete(input: {
+    orderId: string;
+    adminId: string;
+    reason?: string;
+    nowMs: number;
+  }): Promise<{ orderId: string; status: "COMPLETED" }> {
+    const order = await this.db
+      .prepare(`SELECT id, status FROM orders WHERE id = ?`)
+      .bind(input.orderId)
+      .first<{ id: string; status: string }>();
+
+    if (!order) {
+      throw new Error("ORDER_NOT_FOUND");
+    }
+
+    if (order.status === "COMPLETED") {
+      return { orderId: order.id, status: "COMPLETED" };
+    }
+
+    const statements: D1PreparedStatement[] = [
+      this.db
+        .prepare(
+          `UPDATE orders
+           SET status = 'COMPLETED', printed_at_ms = COALESCE(printed_at_ms, ?),
+               completed_at_ms = ?, updated_at_ms = ?
+           WHERE id = ?`,
+        )
+        .bind(input.nowMs, input.nowMs, input.nowMs, input.orderId),
+      this.db
+        .prepare(
+          `UPDATE print_attempts
+           SET status = 'SUCCEEDED', finished_at_ms = COALESCE(finished_at_ms, ?),
+               updated_at_ms = ?
+           WHERE order_id = ? AND status NOT IN ('SUCCEEDED', 'CANCELLED')`,
+        )
+        .bind(input.nowMs, input.nowMs, input.orderId),
+      this.db
+        .prepare(
+          `UPDATE print_attempt_steps
+           SET status = 'SUCCEEDED', finished_at_ms = COALESCE(finished_at_ms, ?),
+               updated_at_ms = ?
+           WHERE order_id = ? AND status <> 'SUCCEEDED'`,
+        )
+        .bind(input.nowMs, input.nowMs, input.orderId),
+      this.db
+        .prepare(
+          `UPDATE uploads
+           SET retention_reason = 'COMPLETED', delete_after_ms = ?, updated_at_ms = ?
+           WHERE order_id = ? AND storage_status = 'UPLOADED' AND retention_reason IS NULL`,
+        )
+        .bind(input.nowMs + COMPLETED_RETENTION_MS, input.nowMs, input.orderId),
+      this.db
+        .prepare(
+          `INSERT INTO order_events (
+             id, order_id, event_type, from_status, to_status,
+             actor_type, actor_id, created_at_ms
+           ) VALUES (?, ?, 'ORDER_MANUALLY_COMPLETED', ?, 'COMPLETED', 'ADMIN', ?, ?)`,
+        )
+        .bind(
+          crypto.randomUUID(),
+          input.orderId,
+          order.status,
+          input.adminId,
+          input.nowMs,
+        ),
+      this.db
+        .prepare(
+          `INSERT INTO audit_logs (
+             id, actor_type, actor_id, action, entity_type, entity_id, created_at_ms
+           ) VALUES (?, 'ADMIN', ?, 'ORDER_MANUAL_COMPLETED', 'ORDER', ?, ?)`,
+        )
+        .bind(crypto.randomUUID(), input.adminId, input.orderId, input.nowMs),
+    ];
+
+    await this.db.batch(statements);
+    return { orderId: input.orderId, status: "COMPLETED" };
+  }
+
+  async retryOrder(input: {
+    orderId: string;
+    adminId: string;
+    forceUncertain?: boolean;
+    nowMs: number;
+  }): Promise<{ orderId: string; status: "QUEUED" }> {
+    const order = await this.db
+      .prepare(`SELECT id, status FROM orders WHERE id = ?`)
+      .bind(input.orderId)
+      .first<{ id: string; status: string }>();
+
+    if (!order) {
+      throw new Error("ORDER_NOT_FOUND");
+    }
+
+    if (
+      !["ADMIN_ACTION_REQUIRED", "PRINT_FAILED", "PRINT_BLOCKED"].includes(
+        order.status,
+      )
+    ) {
+      throw new Error("ORDER_CANNOT_BE_RETRIED");
+    }
+
+    if (order.status === "ADMIN_ACTION_REQUIRED" && !input.forceUncertain) {
+      throw new Error("UNCERTAIN_RETRY_CONFIRMATION_REQUIRED");
+    }
+
+    const statements: D1PreparedStatement[] = [
+      this.db
+        .prepare(
+          `UPDATE orders
+           SET status = 'QUEUED', claimed_by_agent_id = NULL, claim_id = NULL,
+               claim_expires_at_ms = NULL, printer_id = NULL, claimed_at_ms = NULL,
+               queued_at_ms = ?, updated_at_ms = ?
+           WHERE id = ?`,
+        )
+        .bind(input.nowMs, input.nowMs, input.orderId),
+      this.db
+        .prepare(
+          `UPDATE print_attempts
+           SET status = 'CANCELLED', finished_at_ms = COALESCE(finished_at_ms, ?),
+               updated_at_ms = ?
+           WHERE order_id = ? AND status NOT IN ('SUCCEEDED', 'CANCELLED')`,
+        )
+        .bind(input.nowMs, input.nowMs, input.orderId),
+      this.db
+        .prepare(
+          `INSERT INTO order_events (
+             id, order_id, event_type, from_status, to_status,
+             actor_type, actor_id, created_at_ms
+           ) VALUES (?, ?, 'ORDER_PRINT_RETRY_REQUESTED', ?, 'QUEUED', 'ADMIN', ?, ?)`,
+        )
+        .bind(
+          crypto.randomUUID(),
+          input.orderId,
+          order.status,
+          input.adminId,
+          input.nowMs,
+        ),
+      this.db
+        .prepare(
+          `INSERT INTO audit_logs (
+             id, actor_type, actor_id, action, entity_type, entity_id, created_at_ms
+           ) VALUES (?, 'ADMIN', ?, 'ORDER_PRINT_RETRY', 'ORDER', ?, ?)`,
+        )
+        .bind(crypto.randomUUID(), input.adminId, input.orderId, input.nowMs),
+    ];
+
+    await this.db.batch(statements);
+    return { orderId: input.orderId, status: "QUEUED" };
   }
 }

@@ -54,6 +54,7 @@ export function PrinterPage({
   const [requestingTestPrintId, setRequestingTestPrintId] = useState<
     string | null
   >(null);
+  const [settingDefaultId, setSettingDefaultId] = useState<string | null>(null);
 
   async function loadPrinters(isManual = false) {
     if (isManual) setRefreshing(true);
@@ -229,6 +230,29 @@ export function PrinterPage({
       setError(friendlyAdminError(caught));
     } finally {
       setRequestingTestPrintId(null);
+    }
+  }
+
+  async function handleSetDefaultPrinter(printer: AdminPrinterDetails) {
+    setSettingDefaultId(printer.id);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await adminApi.setDefaultPrinter(printer.id);
+      if (res.ok) {
+        setNotice(
+          `Printer "${printer.displayName}" is now the default production printer.`,
+        );
+        await loadPrinters();
+      }
+    } catch (caught: unknown) {
+      if (caught instanceof AdminApiError && caught.status === 401) {
+        onSessionExpired("Your session has expired. Please sign in again.");
+        return;
+      }
+      setError(friendlyAdminError(caught));
+    } finally {
+      setSettingDefaultId(null);
     }
   }
 
@@ -663,6 +687,36 @@ export function PrinterPage({
                             <strong style={{ fontSize: "1.05rem" }}>
                               {printer.displayName}
                             </strong>
+                            {printer.isProductionDefault ? (
+                              <span
+                                style={{
+                                  display: "inline-block",
+                                  padding: "0.15rem 0.5rem",
+                                  borderRadius: "10px",
+                                  fontSize: "0.75rem",
+                                  fontWeight: 600,
+                                  backgroundColor: "#e8f0fe",
+                                  color: "#1a73e8",
+                                }}
+                              >
+                                ★ DEFAULT PRODUCTION PRINTER
+                              </span>
+                            ) : null}
+                            {printer.isVirtual ? (
+                              <span
+                                style={{
+                                  display: "inline-block",
+                                  padding: "0.15rem 0.5rem",
+                                  borderRadius: "10px",
+                                  fontSize: "0.75rem",
+                                  fontWeight: 600,
+                                  backgroundColor: "#f1f3f4",
+                                  color: "#5f6368",
+                                }}
+                              >
+                                VIRTUAL QUEUE
+                              </span>
+                            ) : null}
                             <span
                               style={{
                                 display: "inline-block",
@@ -693,6 +747,9 @@ export function PrinterPage({
                           >
                             Windows Queue:{" "}
                             <code>{printer.windowsPrinterName}</code>
+                            {printer.portName
+                              ? ` • Port: ${printer.portName}`
+                              : ""}
                             {printer.statusReason
                               ? ` • Notice: ${printer.statusReason}`
                               : ""}
@@ -714,6 +771,23 @@ export function PrinterPage({
                             alignItems: "center",
                           }}
                         >
+                          {!printer.isVirtual &&
+                          !printer.isProductionDefault &&
+                          printer.enabled ? (
+                            <button
+                              className="secondary-button"
+                              disabled={settingDefaultId === printer.id}
+                              onClick={() =>
+                                void handleSetDefaultPrinter(printer)
+                              }
+                              type="button"
+                              title="Set as the default physical printer for all incoming customer orders"
+                            >
+                              {settingDefaultId === printer.id
+                                ? "Setting…"
+                                : "Set as Default"}
+                            </button>
+                          ) : null}
                           {printer.enabled ? (
                             <button
                               className="secondary-button"
@@ -745,15 +819,22 @@ export function PrinterPage({
                                 ? "secondary-button"
                                 : "primary-button"
                             }
-                            disabled={isBusy}
+                            disabled={isBusy || printer.isVirtual}
                             onClick={() => void handleTogglePrinter(printer)}
                             type="button"
+                            title={
+                              printer.isVirtual
+                                ? "Virtual queues cannot be enabled for physical print jobs."
+                                : undefined
+                            }
                           >
                             {isBusy
                               ? "Updating…"
                               : printer.enabled
                                 ? "Disable"
-                                : "Enable"}
+                                : printer.isVirtual
+                                  ? "Virtual Queue"
+                                  : "Enable"}
                           </button>
                         </div>
                       </div>

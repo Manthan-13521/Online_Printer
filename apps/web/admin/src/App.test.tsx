@@ -233,7 +233,7 @@ describe("Admin application", () => {
     ).toBeTruthy();
     expect(await screen.findByText("PG-ABC234")).toBeTruthy();
     expect(screen.getByText("Paper out", { exact: false })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: /retry/iu })).toBeNull();
+    expect(screen.getByRole("button", { name: /retry/iu })).toBeTruthy();
   });
 
   it("requires confirmation before pausing new online printing", async () => {

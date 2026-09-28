@@ -9,7 +9,13 @@ import type { DownloadSigner } from "../storage/r2-upload-signer";
 import type { PrintingRepository } from "./repository";
 
 export type PrintingErrorCode =
-  "AGENT_UNAUTHORIZED" | "PRINT_STEP_NOT_FOUND" | "PRINT_STEP_CONFLICT";
+  | "AGENT_UNAUTHORIZED"
+  | "PRINT_STEP_NOT_FOUND"
+  | "PRINT_STEP_CONFLICT"
+  | "ORDER_NOT_FOUND"
+  | "ORDER_CANNOT_BE_RETRIED"
+  | "UNCERTAIN_RETRY_CONFIRMATION_REQUIRED"
+  | "ORDER_PDF_NOT_FOUND";
 
 export class PrintingError extends Error {
   constructor(readonly code: PrintingErrorCode) {
@@ -145,6 +151,64 @@ export class PrintingService {
       stepId: row.step_id,
       status: row.step_status,
       orderStatus: row.order_status,
+    };
+  }
+
+  async manualComplete(orderId: string, adminId: string, reason?: string) {
+    try {
+      return await this.repository.manualComplete({
+        orderId,
+        adminId,
+        ...(reason !== undefined ? { reason } : {}),
+        nowMs: this.now(),
+      });
+    } catch (err) {
+      if (err instanceof Error && err.message === "ORDER_NOT_FOUND") {
+        throw new PrintingError("ORDER_NOT_FOUND");
+      }
+      throw err;
+    }
+  }
+
+  async retryOrder(orderId: string, adminId: string, forceUncertain?: boolean) {
+    try {
+      return await this.repository.retryOrder({
+        orderId,
+        adminId,
+        ...(forceUncertain !== undefined ? { forceUncertain } : {}),
+        nowMs: this.now(),
+      });
+    } catch (err) {
+      if (err instanceof Error) {
+        if (err.message === "ORDER_NOT_FOUND") {
+          throw new PrintingError("ORDER_NOT_FOUND");
+        }
+        if (err.message === "ORDER_CANNOT_BE_RETRIED") {
+          throw new PrintingError("ORDER_CANNOT_BE_RETRIED");
+        }
+        if (err.message === "UNCERTAIN_RETRY_CONFIRMATION_REQUIRED") {
+          throw new PrintingError("UNCERTAIN_RETRY_CONFIRMATION_REQUIRED");
+        }
+      }
+      throw err;
+    }
+  }
+
+  async getOrderPdfUrl(orderId: string) {
+    const upload = await this.repository.findUploadByOrderId(orderId);
+    if (
+      !upload ||
+      upload.storage_status !== "UPLOADED" ||
+      upload.deleted_at_ms !== null
+    ) {
+      throw new PrintingError("ORDER_PDF_NOT_FOUND");
+    }
+    const authorization = await this.downloadSigner.createDownloadAuthorization(
+      upload.r2_object_key,
+    );
+    return {
+      downloadUrl: authorization.url,
+      expiresAtMs: authorization.expiresAtMs,
     };
   }
 }

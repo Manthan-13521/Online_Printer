@@ -32,6 +32,8 @@ export type AgentErrorCode =
   | "AGENT_NOT_FOUND"
   | "PRINTER_NOT_FOUND"
   | "PRINTER_DISABLED"
+  | "PRINTER_NOT_ELIGIBLE"
+  | "CANNOT_ENABLE_VIRTUAL_PRINTER"
   | "AGENT_OFFLINE"
   | "COMMAND_NOT_FOUND";
 
@@ -169,16 +171,53 @@ export class AgentService {
     enabled: boolean,
     adminId: string,
   ): Promise<boolean> {
-    const toggled = await this.repository.togglePrinter({
-      printerId,
-      enabled,
-      adminId,
-      nowMs: this.now(),
-    });
-    if (!toggled) {
-      throw new AgentError("PRINTER_NOT_FOUND");
+    try {
+      const toggled = await this.repository.togglePrinter({
+        printerId,
+        enabled,
+        adminId,
+        nowMs: this.now(),
+      });
+      if (!toggled) {
+        throw new AgentError("PRINTER_NOT_FOUND");
+      }
+      return true;
+    } catch (err) {
+      if (
+        err instanceof Error &&
+        err.message === "CANNOT_ENABLE_VIRTUAL_PRINTER"
+      ) {
+        throw new AgentError("CANNOT_ENABLE_VIRTUAL_PRINTER");
+      }
+      throw err;
     }
-    return true;
+  }
+
+  async getDefaultProductionPrinterId(): Promise<string | null> {
+    return this.repository.getDefaultProductionPrinterId();
+  }
+
+  async setDefaultProductionPrinter(
+    printerId: string,
+    adminId: string,
+  ): Promise<{ printerId: string; windowsPrinterName: string }> {
+    try {
+      return await this.repository.setDefaultProductionPrinter({
+        printerId,
+        adminId,
+        nowMs: this.now(),
+      });
+    } catch (err) {
+      if (err instanceof Error) {
+        if (err.message === "PRINTER_NOT_FOUND") {
+          throw new AgentError("PRINTER_NOT_FOUND");
+        }
+        if (err.message === "PRINTER_NOT_ELIGIBLE") {
+          throw new AgentError("PRINTER_NOT_ELIGIBLE");
+        }
+      }
+      throw err;
+    }
   }
 
   async requestTestPrint(

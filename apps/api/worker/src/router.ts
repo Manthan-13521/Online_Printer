@@ -37,7 +37,7 @@ export async function routeRequest(
     return handleAdminPrinterRequest(request, env);
   }
 
-  if (url.pathname === "/api/admin/orders/live") {
+  if (url.pathname.startsWith("/api/admin/orders")) {
     return handleAdminLiveOrdersRequest(request, env);
   }
 

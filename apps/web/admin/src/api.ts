@@ -15,6 +15,10 @@ import type {
   AdminSettingsUpdateRequest,
   AdminTestPrintResponse,
   AdminTogglePrinterResponse,
+  AdminManualCompleteOrderResponse,
+  AdminRetryOrderResponse,
+  AdminOrderPdfUrlResponse,
+  AdminSetDefaultPrinterResponse,
   ApiFailure,
 } from "@printgo/api-contract";
 
@@ -160,5 +164,43 @@ export const adminApi = {
     return request(
       `/api/admin/printers/${encodeURIComponent(printerId)}/test-print`,
     );
+  },
+  setDefaultPrinter(
+    printerId: string,
+  ): Promise<AdminSetDefaultPrinterResponse> {
+    return request(
+      `/api/admin/printers/${encodeURIComponent(printerId)}/default`,
+      {
+        method: "POST",
+        body: "{}",
+      },
+    );
+  },
+  manualCompleteOrder(
+    orderId: string,
+    reason?: string,
+  ): Promise<AdminManualCompleteOrderResponse> {
+    return request(
+      `/api/admin/orders/${encodeURIComponent(orderId)}/manual-complete`,
+      {
+        method: "POST",
+        body: JSON.stringify({ reason }),
+      },
+    );
+  },
+  retryOrder(
+    orderId: string,
+    forceUncertain?: boolean,
+  ): Promise<AdminRetryOrderResponse> {
+    return request(
+      `/api/admin/orders/${encodeURIComponent(orderId)}/retry-print`,
+      {
+        method: "POST",
+        body: JSON.stringify({ forceUncertain }),
+      },
+    );
+  },
+  getOrderPdfUrl(orderId: string): Promise<AdminOrderPdfUrlResponse> {
+    return request(`/api/admin/orders/${encodeURIComponent(orderId)}/pdf-url`);
   },
 };

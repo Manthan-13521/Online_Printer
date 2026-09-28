@@ -64,7 +64,32 @@ export async function handleAdminPrinterRequest(
 
     if (request.method === "GET" && pathname === "/api/admin/printers") {
       const agents = await agentService.listAgentsWithPrinters();
-      return withAdminCors(ok({ agents }, 200), env.ADMIN_ALLOWED_ORIGIN);
+      const defaultProductionPrinterId =
+        await agentService.getDefaultProductionPrinterId();
+      return withAdminCors(
+        ok({ agents, defaultProductionPrinterId }, 200),
+        env.ADMIN_ALLOWED_ORIGIN,
+      );
+    }
+
+    const defaultPrinterMatch =
+      /^\/api\/admin\/printers\/([^/]+)\/default$/u.exec(pathname);
+    if (request.method === "POST" && defaultPrinterMatch) {
+      const printerId = decodeURIComponent(defaultPrinterMatch[1] ?? "");
+      const result = await agentService.setDefaultProductionPrinter(
+        printerId,
+        session.admin.id,
+      );
+      return withAdminCors(
+        ok(
+          {
+            defaultPrinterId: result.printerId,
+            windowsPrinterName: result.windowsPrinterName,
+          },
+          200,
+        ),
+        env.ADMIN_ALLOWED_ORIGIN,
+      );
     }
 
     const revokeMatch = /^\/api\/admin\/agents\/([^/]+)\/revoke$/u.exec(
@@ -149,6 +174,19 @@ export async function handleAdminPrinterRequest(
             400,
             "AGENT_OFFLINE",
             "Agent is offline. Cannot send test print.",
+          ),
+          env.ADMIN_ALLOWED_ORIGIN,
+        );
+      }
+      if (
+        caught.code === "PRINTER_NOT_ELIGIBLE" ||
+        caught.code === "CANNOT_ENABLE_VIRTUAL_PRINTER"
+      ) {
+        return withAdminCors(
+          error(
+            400,
+            caught.code,
+            "Virtual or ineligible printers cannot be used for production printing.",
           ),
           env.ADMIN_ALLOWED_ORIGIN,
         );

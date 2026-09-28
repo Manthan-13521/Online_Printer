@@ -159,6 +159,11 @@ export class AgentDaemon {
             duplex: caps.duplex,
             paperSizes: caps.paperSizes,
           },
+          isEligibleForProductionPrint:
+            summary.isEligibleForProductionPrint ?? true,
+          isVirtual: summary.isVirtual ?? false,
+          portName: summary.portName ?? null,
+          driverName: summary.driverName ?? null,
         });
       }
 

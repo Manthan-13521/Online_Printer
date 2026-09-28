@@ -326,6 +326,10 @@ export interface AgentPrinterReport {
   status: "ONLINE" | "OFFLINE" | "BLOCKED" | "ERROR" | "UNKNOWN";
   statusReason?: string | null;
   capabilities?: PrinterCapabilitySummary;
+  isEligibleForProductionPrint?: boolean;
+  isVirtual?: boolean;
+  portName?: string | null;
+  driverName?: string | null;
 }
 
 export interface AgentHeartbeatRequest {
@@ -487,6 +491,11 @@ export interface AdminPrinterDetails {
   capabilities: PrinterCapabilitySummary | null;
   lastStatusAt: string | null;
   latestTestPrint?: AdminTestPrintDetails | null;
+  isProductionEligible: boolean;
+  isVirtual: boolean;
+  isProductionDefault: boolean;
+  portName?: string | null;
+  driverName?: string | null;
 }
 
 export interface AdminAgentDetails {
@@ -501,6 +510,7 @@ export interface AdminAgentDetails {
 
 export interface AdminPrintersData {
   agents: AdminAgentDetails[];
+  defaultProductionPrinterId?: string | null;
 }
 
 export type AdminPrintersResponse = ApiResponse<AdminPrintersData>;
@@ -513,6 +523,45 @@ export type AdminTogglePrinterResponse = ApiResponse<{
   id: string;
   enabled: boolean;
 }>;
+
+export interface AdminSetDefaultPrinterResponseData {
+  defaultPrinterId: string;
+  windowsPrinterName: string;
+}
+
+export type AdminSetDefaultPrinterResponse =
+  ApiResponse<AdminSetDefaultPrinterResponseData>;
+
+export interface AdminManualCompleteOrderRequest {
+  reason?: string;
+}
+
+export interface AdminManualCompleteOrderResponseData {
+  orderId: string;
+  status: "COMPLETED";
+}
+
+export type AdminManualCompleteOrderResponse =
+  ApiResponse<AdminManualCompleteOrderResponseData>;
+
+export interface AdminRetryOrderRequest {
+  forceUncertain?: boolean;
+}
+
+export interface AdminRetryOrderResponseData {
+  orderId: string;
+  status: "QUEUED";
+}
+
+export type AdminRetryOrderResponse = ApiResponse<AdminRetryOrderResponseData>;
+
+export interface AdminOrderPdfUrlResponseData {
+  downloadUrl: string;
+  expiresAtMs: number;
+}
+
+export type AdminOrderPdfUrlResponse =
+  ApiResponse<AdminOrderPdfUrlResponseData>;
 
 export type AdminRevokeAgentResponse = ApiResponse<{
   revoked: true;

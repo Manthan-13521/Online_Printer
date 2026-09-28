@@ -95,6 +95,8 @@ function createMockAgentService(
         finishedAt: "2026-09-26T12:00:15.000Z",
       }),
     ),
+    getDefaultProductionPrinterId: vi.fn(() => Promise.resolve(null)),
+    setDefaultProductionPrinter: vi.fn(() => Promise.resolve()),
     ...overrides,
   } as unknown as AgentService;
 }

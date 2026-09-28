@@ -112,7 +112,15 @@ export interface AgentRepository {
     windowsPrinterName: string;
     enabled: boolean;
     status: string;
+    isProductionEligible: boolean;
+    isVirtual: boolean;
   } | null>;
+  setDefaultProductionPrinter(input: {
+    printerId: string;
+    adminId: string;
+    nowMs: number;
+  }): Promise<{ printerId: string; windowsPrinterName: string }>;
+  getDefaultProductionPrinterId(): Promise<string | null>;
   createTestPrintCommand(input: {
     id: string;
     printerId: string;
@@ -158,6 +166,10 @@ interface PrinterRow {
   status_reason: string | null;
   capabilities_json: string | null;
   last_status_at_ms: number | null;
+  is_production_eligible: number;
+  is_virtual: number;
+  port_name: string | null;
+  driver_name: string | null;
 }
 
 export class D1AgentRepository implements AgentRepository {
@@ -336,7 +348,8 @@ export class D1AgentRepository implements AgentRepository {
     const existingPrinters = await this.db
       .prepare(
         `SELECT id, windows_printer_name, display_name, enabled, status,
-                status_reason, capabilities_json
+                status_reason, capabilities_json, is_production_eligible,
+                is_virtual, port_name, driver_name
          FROM printers WHERE agent_id = ?`,
       )
       .bind(input.agentId)
@@ -348,6 +361,10 @@ export class D1AgentRepository implements AgentRepository {
         status: string;
         status_reason: string | null;
         capabilities_json: string | null;
+        is_production_eligible: number;
+        is_virtual: number;
+        port_name: string | null;
+        driver_name: string | null;
       }>();
 
     const existingMap = new Map(
@@ -376,14 +393,33 @@ export class D1AgentRepository implements AgentRepository {
         const reasonChanged =
           existing.status_reason !== (p.statusReason ?? null);
         const nameChanged = existing.display_name !== p.displayName;
+        const eligibleChanged =
+          existing.is_production_eligible !== (p.isProductionEligible ? 1 : 0);
+        const virtualChanged = existing.is_virtual !== (p.isVirtual ? 1 : 0);
+        const portChanged = existing.port_name !== (p.portName ?? null);
+        const driverChanged = existing.driver_name !== (p.driverName ?? null);
+        const forceDisable = p.isVirtual && existing.enabled === 1;
 
-        if (capsChanged || statusChanged || reasonChanged || nameChanged) {
+        if (
+          capsChanged ||
+          statusChanged ||
+          reasonChanged ||
+          nameChanged ||
+          eligibleChanged ||
+          virtualChanged ||
+          portChanged ||
+          driverChanged ||
+          forceDisable
+        ) {
           statements.push(
             this.db
               .prepare(
                 `UPDATE printers
                  SET display_name = ?, status = ?, status_reason = ?,
-                     capabilities_json = ?, last_status_at_ms = ?, updated_at_ms = ?
+                     capabilities_json = ?, is_production_eligible = ?,
+                     is_virtual = ?, port_name = ?, driver_name = ?,
+                     enabled = CASE WHEN ? = 1 THEN 0 ELSE enabled END,
+                     last_status_at_ms = ?, updated_at_ms = ?
                  WHERE id = ?`,
               )
               .bind(
@@ -391,6 +427,11 @@ export class D1AgentRepository implements AgentRepository {
                 p.status,
                 p.statusReason,
                 capsJson,
+                p.isProductionEligible ? 1 : 0,
+                p.isVirtual ? 1 : 0,
+                p.portName ?? null,
+                p.driverName ?? null,
+                p.isVirtual ? 1 : 0,
                 input.nowMs,
                 input.nowMs,
                 existing.id,
@@ -398,15 +439,17 @@ export class D1AgentRepository implements AgentRepository {
           );
         }
       } else {
-        const autoEnable = isFirstRegistration && (p.isDefault || index === 0);
+        const autoEnable =
+          !p.isVirtual && isFirstRegistration && (p.isDefault || index === 0);
         statements.push(
           this.db
             .prepare(
               `INSERT INTO printers (
                  id, agent_id, display_name, windows_printer_name, enabled,
-                 status, status_reason, capabilities_json, last_status_at_ms,
+                 status, status_reason, capabilities_json, is_production_eligible,
+                 is_virtual, port_name, driver_name, last_status_at_ms,
                  created_at_ms, updated_at_ms
-               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             )
             .bind(
               crypto.randomUUID(),
@@ -417,6 +460,10 @@ export class D1AgentRepository implements AgentRepository {
               p.status,
               p.statusReason,
               capsJson,
+              p.isProductionEligible ? 1 : 0,
+              p.isVirtual ? 1 : 0,
+              p.portName ?? null,
+              p.driverName ?? null,
               input.nowMs,
               input.nowMs,
               input.nowMs,
@@ -444,11 +491,37 @@ export class D1AgentRepository implements AgentRepository {
       }
     }
 
+    // Auto-select default production printer if currently unset or invalid
+    statements.push(
+      this.db
+        .prepare(
+          `UPDATE installation
+           SET default_production_printer_id = (
+             SELECT id FROM printers
+             WHERE enabled = 1 AND is_production_eligible = 1 AND is_virtual = 0
+             ORDER BY id ASC LIMIT 1
+           ), updated_at_ms = ?
+           WHERE id = 1 AND (
+             default_production_printer_id IS NULL
+             OR NOT EXISTS (
+               SELECT 1 FROM printers p
+               WHERE p.id = installation.default_production_printer_id
+                 AND p.is_production_eligible = 1 AND p.is_virtual = 0
+             )
+           )
+           AND EXISTS (
+             SELECT 1 FROM printers
+             WHERE enabled = 1 AND is_production_eligible = 1 AND is_virtual = 0
+           )`,
+        )
+        .bind(input.nowMs),
+    );
+
     await this.db.batch(statements);
   }
 
   async listAgentsWithPrinters(nowMs: number): Promise<AdminAgentDetails[]> {
-    const [agentResults, printerResults, testCommandResults] =
+    const [agentResults, printerResults, testCommandResults, installResult] =
       await this.db.batch([
         this.db.prepare(
           `SELECT id, display_name, is_active, paired_at_ms, last_heartbeat_at_ms
@@ -456,7 +529,8 @@ export class D1AgentRepository implements AgentRepository {
         ),
         this.db.prepare(
           `SELECT id, agent_id, display_name, windows_printer_name, enabled,
-                status, status_reason, capabilities_json, last_status_at_ms
+                status, status_reason, capabilities_json, last_status_at_ms,
+                is_production_eligible, is_virtual, port_name, driver_name
          FROM printers ORDER BY windows_printer_name ASC`,
         ),
         this.db.prepare(
@@ -470,6 +544,9 @@ export class D1AgentRepository implements AgentRepository {
            GROUP BY printer_id
          ) latest ON ptc.printer_id = latest.printer_id AND ptc.created_at_ms = latest.max_created`,
         ),
+        this.db.prepare(
+          `SELECT default_production_printer_id FROM installation WHERE id = 1`,
+        ),
       ]);
 
     const agentRows = (agentResults?.results ?? []) as unknown as AgentRow[];
@@ -477,6 +554,11 @@ export class D1AgentRepository implements AgentRepository {
       []) as unknown as PrinterRow[];
     const testCommandRows = (testCommandResults?.results ??
       []) as unknown as PrinterTestCommandRow[];
+    const defaultProductionPrinterId =
+      (
+        installResult?.results[0] as
+          { default_production_printer_id: string | null } | undefined
+      )?.default_production_printer_id ?? null;
 
     const latestTestPrintByPrinter = new Map<string, AdminTestPrintDetails>();
     for (const tcr of testCommandRows) {
@@ -512,6 +594,11 @@ export class D1AgentRepository implements AgentRepository {
           ? new Date(pr.last_status_at_ms).toISOString()
           : null,
         latestTestPrint: latestTestPrintByPrinter.get(pr.id) ?? null,
+        isProductionEligible: pr.is_production_eligible === 1,
+        isVirtual: pr.is_virtual === 1,
+        isProductionDefault: pr.id === defaultProductionPrinterId,
+        portName: pr.port_name ?? null,
+        driverName: pr.driver_name ?? null,
       });
       printersByAgent.set(pr.agent_id, list);
     }
@@ -592,6 +679,21 @@ export class D1AgentRepository implements AgentRepository {
     adminId: string;
     nowMs: number;
   }): Promise<boolean> {
+    if (input.enabled) {
+      const printer = await this.db
+        .prepare(
+          `SELECT is_virtual, is_production_eligible FROM printers WHERE id = ?`,
+        )
+        .bind(input.printerId)
+        .first<{ is_virtual: number; is_production_eligible: number }>();
+      if (!printer) {
+        return false;
+      }
+      if (printer.is_virtual === 1 || printer.is_production_eligible === 0) {
+        throw new Error("CANNOT_ENABLE_VIRTUAL_PRINTER");
+      }
+    }
+
     const result = await this.db
       .prepare(
         `UPDATE printers
@@ -628,10 +730,13 @@ export class D1AgentRepository implements AgentRepository {
     windowsPrinterName: string;
     enabled: boolean;
     status: string;
+    isProductionEligible: boolean;
+    isVirtual: boolean;
   } | null> {
     const row = await this.db
       .prepare(
-        `SELECT id, agent_id, display_name, windows_printer_name, enabled, status
+        `SELECT id, agent_id, display_name, windows_printer_name, enabled, status,
+                is_production_eligible, is_virtual
          FROM printers WHERE id = ?`,
       )
       .bind(printerId)
@@ -642,6 +747,8 @@ export class D1AgentRepository implements AgentRepository {
         windows_printer_name: string;
         enabled: number;
         status: string;
+        is_production_eligible: number;
+        is_virtual: number;
       }>();
     return row
       ? {
@@ -651,8 +758,73 @@ export class D1AgentRepository implements AgentRepository {
           windowsPrinterName: row.windows_printer_name,
           enabled: row.enabled === 1,
           status: row.status,
+          isProductionEligible: row.is_production_eligible === 1,
+          isVirtual: row.is_virtual === 1,
         }
       : null;
+  }
+
+  async getDefaultProductionPrinterId(): Promise<string | null> {
+    const row = await this.db
+      .prepare(
+        `SELECT default_production_printer_id FROM installation WHERE id = 1`,
+      )
+      .first<{ default_production_printer_id: string | null }>();
+    return row?.default_production_printer_id ?? null;
+  }
+
+  async setDefaultProductionPrinter(input: {
+    printerId: string;
+    adminId: string;
+    nowMs: number;
+  }): Promise<{ printerId: string; windowsPrinterName: string }> {
+    const printer = await this.db
+      .prepare(
+        `SELECT id, windows_printer_name, enabled, is_production_eligible, is_virtual
+         FROM printers WHERE id = ?`,
+      )
+      .bind(input.printerId)
+      .first<{
+        id: string;
+        windows_printer_name: string;
+        enabled: number;
+        is_production_eligible: number;
+        is_virtual: number;
+      }>();
+
+    if (!printer) {
+      throw new Error("PRINTER_NOT_FOUND");
+    }
+    if (printer.is_virtual === 1 || printer.is_production_eligible !== 1) {
+      throw new Error("PRINTER_NOT_ELIGIBLE");
+    }
+
+    await this.db.batch([
+      this.db
+        .prepare(
+          `UPDATE installation
+           SET default_production_printer_id = ?, updated_at_ms = ?
+           WHERE id = 1`,
+        )
+        .bind(printer.id, input.nowMs),
+      this.db
+        .prepare(
+          `UPDATE printers SET enabled = 1, updated_at_ms = ? WHERE id = ?`,
+        )
+        .bind(input.nowMs, printer.id),
+      this.db
+        .prepare(
+          `INSERT INTO audit_logs (
+             id, actor_type, actor_id, action, entity_type, entity_id, created_at_ms
+           ) VALUES (?, 'ADMIN', ?, 'DEFAULT_PRODUCTION_PRINTER_SET', 'PRINTER', ?, ?)`,
+        )
+        .bind(crypto.randomUUID(), input.adminId, printer.id, input.nowMs),
+    ]);
+
+    return {
+      printerId: printer.id,
+      windowsPrinterName: printer.windows_printer_name,
+    };
   }
 
   async createTestPrintCommand(input: {

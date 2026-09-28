@@ -11,6 +11,7 @@ import type {
   PrintSubmission,
   SubmittedPrintJob,
 } from "./printer-adapter.js";
+import { classifyPrinter } from "@printgo/domain";
 import {
   InvalidPrintSettingError,
   PrinterNotFoundError,
@@ -45,6 +46,8 @@ interface CimPrinterOutput {
   Color?: boolean;
   CapabilityDescriptions?: string[];
   PrinterPaperNames?: string[];
+  PortName?: string;
+  DriverName?: string;
 }
 
 export class WindowsPrinterAdapter implements PrinterAdapter {
@@ -73,7 +76,7 @@ export class WindowsPrinterAdapter implements PrinterAdapter {
     this.ensureWindows();
 
     const psCommand = `
-Get-CimInstance Win32_Printer | Select-Object Name, Default, WorkOffline, PrinterStatus, DetectedErrorState, ExtendedPrinterStatus, CapabilityDescriptions | ConvertTo-Json -Compress
+Get-CimInstance Win32_Printer | Select-Object Name, Default, WorkOffline, PrinterStatus, DetectedErrorState, ExtendedPrinterStatus, CapabilityDescriptions, PortName, DriverName | ConvertTo-Json -Compress
     `.trim();
 
     try {
@@ -89,11 +92,23 @@ Get-CimInstance Win32_Printer | Select-Object Name, Default, WorkOffline, Printe
         .filter(
           (p) => p && typeof p.Name === "string" && p.Name.trim().length > 0,
         )
-        .map((p) => ({
-          id: p.Name,
-          displayName: p.Name,
-          isDefault: Boolean(p.Default),
-        }));
+        .map((p) => {
+          const classification = classifyPrinter({
+            name: p.Name,
+            portName: p.PortName ?? null,
+            driverName: p.DriverName ?? null,
+          });
+          return {
+            id: p.Name,
+            displayName: p.Name,
+            isDefault: Boolean(p.Default),
+            portName: p.PortName ?? null,
+            driverName: p.DriverName ?? null,
+            isVirtual: classification.isVirtual,
+            isEligibleForProductionPrint:
+              classification.isEligibleForProductionPrint,
+          };
+        });
     } catch (err: unknown) {
       console.error("Failed to query Win32_Printer:", err);
       return [];
@@ -364,7 +379,29 @@ $proc = [System.Diagnostics.Process]::Start($psi)
 if (-not $proc) {
     throw "SumatraPDF print process could not be started."
 }
-$exited = $proc.WaitForExit(30000)
+
+# 3. Correlate spooler job strictly using document identifier, printer queue, and pre-submission IDs
+$fileName = [System.IO.Path]::GetFileName($pdf)
+$fileNameWithoutExt = [System.IO.Path]::GetFileNameWithoutExtension($pdf)
+
+$matchedJob = $null
+$stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+
+# Poll while process is running to catch jobs before fast despool
+while (-not $proc.HasExited -and $stopwatch.ElapsedMilliseconds -lt 25000) {
+    Start-Sleep -Milliseconds 80
+    $runningJobs = @(Get-CimInstance Win32_PrintJob -ErrorAction SilentlyContinue | Where-Object {
+        $_.Name.StartsWith("$printer,") -and
+        $beforeIds -notcontains [int]$_.JobId -and
+        ($_.Document.Contains($docIdentifier) -or $_.Document.Contains($fileNameWithoutExt) -or $_.Document.Contains($fileName))
+    })
+    if ($runningJobs.Count -gt 0) {
+        $matchedJob = $runningJobs[0]
+        break
+    }
+}
+
+$exited = $proc.WaitForExit(5000)
 if (-not $exited) {
     $proc.Kill()
     throw "SumatraPDF print process timed out after 30 seconds."
@@ -373,21 +410,19 @@ if ($proc.ExitCode -ne 0) {
     throw "SumatraPDF exited with error code $($proc.ExitCode)."
 }
 
-# 3. Correlate spooler job strictly using document identifier, printer queue, and pre-submission IDs
-$fileName = [System.IO.Path]::GetFileName($pdf)
-$fileNameWithoutExt = [System.IO.Path]::GetFileNameWithoutExtension($pdf)
-
-$matchedJob = $null
-for ($i = 0; $i -lt 8; $i++) {
-    Start-Sleep -Milliseconds 400
-    $afterJobs = @(Get-CimInstance Win32_PrintJob -ErrorAction SilentlyContinue | Where-Object {
-        $_.Name.StartsWith("$printer,") -and
-        $beforeIds -notcontains [int]$_.JobId -and
-        ($_.Document.Contains($docIdentifier) -or $_.Document.Contains($fileNameWithoutExt) -or $_.Document.Contains($fileName))
-    })
-    if ($afterJobs.Count -gt 0) {
-        $matchedJob = $afterJobs[0]
-        break
+# If not caught while running, poll briefly post-exit
+if (-not $matchedJob) {
+    for ($i = 0; $i -lt 10; $i++) {
+        $afterJobs = @(Get-CimInstance Win32_PrintJob -ErrorAction SilentlyContinue | Where-Object {
+            $_.Name.StartsWith("$printer,") -and
+            $beforeIds -notcontains [int]$_.JobId -and
+            ($_.Document.Contains($docIdentifier) -or $_.Document.Contains($fileNameWithoutExt) -or $_.Document.Contains($fileName))
+        })
+        if ($afterJobs.Count -gt 0) {
+            $matchedJob = $afterJobs[0]
+            break
+        }
+        Start-Sleep -Milliseconds 100
     }
 }
 
@@ -395,14 +430,26 @@ if ($matchedJob) {
     @{
         spoolJobId = [string]$matchedJob.JobId
         engineUsed = "sumatrapdf"
+        fastDespooled = $false
     } | ConvertTo-Json -Compress
 } else {
-    # The job may have despooled before observation. Never claim an unrelated
-    # queue entry merely because it appeared after submission.
-    @{
-        spoolJobId = "unobserved-$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
-        engineUsed = "sumatrapdf"
-    } | ConvertTo-Json -Compress
+    # Check printer queue state: if printer is clean with no error state,
+    # the small job despooled directly into hardware buffer
+    $printerObj = Get-CimInstance Win32_Printer -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq $printer } | Select-Object -First 1 WorkOffline, PrinterStatus, DetectedErrorState
+    $isClean = (-not $printerObj.WorkOffline) -and ($null -eq $printerObj.DetectedErrorState -or $printerObj.DetectedErrorState -eq 0 -or $printerObj.DetectedErrorState -eq 2)
+    if ($isClean) {
+        @{
+            spoolJobId = "despooled-$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
+            engineUsed = "sumatrapdf"
+            fastDespooled = $true
+        } | ConvertTo-Json -Compress
+    } else {
+        @{
+            spoolJobId = "unobserved-$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
+            engineUsed = "sumatrapdf"
+            fastDespooled = $false
+        } | ConvertTo-Json -Compress
+    }
 }
     `.trim();
 
@@ -410,20 +457,23 @@ if ($matchedJob) {
       const output = (await this.executor(psScript)).trim();
       let spoolJobId: string;
       let engineUsed: string | undefined;
+      let fastDespooled: boolean | undefined;
 
       try {
         const parsed = JSON.parse(output) as {
           spoolJobId?: string;
           engineUsed?: string;
+          fastDespooled?: boolean;
         };
         spoolJobId = parsed.spoolJobId || `unobserved-${Date.now()}`;
         engineUsed = parsed.engineUsed;
+        fastDespooled = parsed.fastDespooled;
       } catch {
         // Fallback for simple string output in tests
         spoolJobId = output || `unobserved-${Date.now()}`;
       }
 
-      return { spoolJobId, engineUsed };
+      return { spoolJobId, engineUsed, fastDespooled };
     } catch (err: unknown) {
       if (
         err instanceof UnsupportedPrintSettingError ||

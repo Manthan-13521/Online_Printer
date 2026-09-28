@@ -165,6 +165,59 @@ export class PaidPrintExecutor {
         spoolerJobId: submitted.spoolJobId,
         updatedAtMs: Date.now(),
       });
+
+      if (
+        submitted.fastDespooled ||
+        submitted.spoolJobId.startsWith("despooled-")
+      ) {
+        // Fast 1-page print: SumatraPDF exited 0, spooler dispatched directly into physical buffer
+        await this.client.submitPrintStep(
+          credentials.serverUrl,
+          credentials.agentId,
+          credentials.agentSecret,
+          job,
+          submitted.spoolJobId,
+        );
+        const printerStatus = await this.printer.getStatus(
+          job.windowsPrinterName,
+        );
+        if (
+          printerStatus.availability === "ONLINE" ||
+          printerStatus.availability === "AVAILABLE"
+        ) {
+          await this.client.reportPrintStep(
+            credentials.serverUrl,
+            credentials.agentId,
+            credentials.agentSecret,
+            job,
+            {
+              status: "SUCCEEDED",
+              spoolerJobId: submitted.spoolJobId,
+              failureCode: null,
+              failureDetail:
+                "Fast despool completed successfully to physical printer buffer.",
+            },
+          );
+          await this.journal.clear();
+          return;
+        } else if (printerStatus.availability === "BLOCKED") {
+          await this.client.reportPrintStep(
+            credentials.serverUrl,
+            credentials.agentId,
+            credentials.agentSecret,
+            job,
+            {
+              status: "BLOCKED",
+              spoolerJobId: submitted.spoolJobId,
+              failureCode: "PRINTER_ERROR",
+              failureDetail:
+                printerStatus.message ?? "Printer blocked during print.",
+            },
+          );
+          return;
+        }
+      }
+
       if (submitted.spoolJobId.startsWith("unobserved-")) {
         await this.client.reportPrintStep(
           credentials.serverUrl,
@@ -211,9 +264,25 @@ export class PaidPrintExecutor {
           .catch(() => undefined);
         await this.journal.clear();
       } else {
+        const errorMsg = error instanceof Error ? error.message : String(error);
         this.log(
-          `Print submission result is unresolved for ${job.jobCode}; it will be reconciled without resubmission.`,
+          `Print submission result is unresolved for ${job.jobCode}: ${errorMsg}`,
         );
+        await this.client
+          .reportPrintStep(
+            credentials.serverUrl,
+            credentials.agentId,
+            credentials.agentSecret,
+            job,
+            {
+              status: "UNCERTAIN",
+              spoolerJobId: null,
+              failureCode: "UNKNOWN",
+              failureDetail: `Print submission failed with unexpected error: ${errorMsg}`,
+            },
+          )
+          .catch(() => undefined);
+        await this.journal.clear();
       }
     } finally {
       await cleanup?.();

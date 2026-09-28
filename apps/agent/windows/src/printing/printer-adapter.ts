@@ -7,6 +7,10 @@ export interface PrinterSummary {
   id: string;
   displayName: string;
   isDefault: boolean;
+  portName?: string | null;
+  driverName?: string | null;
+  isVirtual?: boolean;
+  isEligibleForProductionPrint?: boolean;
 }
 
 export interface PrinterCapabilities {
@@ -44,6 +48,7 @@ export interface PrintSubmission {
 export interface SubmittedPrintJob {
   spoolJobId: string;
   engineUsed?: string | undefined;
+  fastDespooled?: boolean | undefined;
 }
 
 export class UnsupportedPrintSettingError extends Error {
