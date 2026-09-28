@@ -62,6 +62,20 @@ jobs:
           & $exe --help
           Write-Host "Smoke test passed successfully!"
 
+      - name: Bundle portable SumatraPDF.exe into distribution package
+        shell: pwsh
+        run: |
+          $dir = "dist-package/PrintGo-Windows-Test"
+          $sumatraZip = "sumatra-portable.zip"
+          Write-Host "Downloading portable SumatraPDF for deterministic printing..."
+          Invoke-WebRequest -Uri "https://files.sumatrapdfreader.org/software/sumatrapdf/rel/3.6.1/SumatraPDF-3.6.1-64.zip" -OutFile $sumatraZip
+          Expand-Archive -Path $sumatraZip -DestinationPath "sumatra-temp" -Force
+          $sumatraExe = Get-ChildItem "sumatra-temp" -Filter "SumatraPDF*.exe" | Select-Object -First 1
+          if (-not $sumatraExe) { throw "Could not find SumatraPDF executable in downloaded archive" }
+          Copy-Item $sumatraExe.FullName -Destination "$dir/SumatraPDF.exe" -Force
+          Write-Host "Successfully bundled SumatraPDF.exe into $dir"
+          Remove-Item -Recurse -Force "sumatra-temp", $sumatraZip
+
       - name: Calculate SHA-256 and package distribution ZIP
         shell: pwsh
         run: |
