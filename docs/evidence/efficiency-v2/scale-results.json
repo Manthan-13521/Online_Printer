@@ -1,0 +1,582 @@
+[
+  {
+    "target": 800,
+    "status": "PASS",
+    "duplicateAttempts": 0,
+    "lostJobs": 0,
+    "incorrectStates": 0,
+    "peakRSSMB": 141.71875,
+    "heapMB": 32.35149383544922,
+    "wallSeconds": 16.076047334,
+    "ordersPerSecond": 49.76347626869958,
+    "localProcessCpuMs": 13855.31,
+    "databaseBytes": 6213632,
+    "states": [
+      {
+        "status": "COMPLETED",
+        "n": 800
+      }
+    ],
+    "measured": {
+      "requests": 10779,
+      "latency": {
+        "count": 10779,
+        "p50": 3.1,
+        "p90": 44.6,
+        "p95": 70.9,
+        "p99": 91.9,
+        "max": 175.31420900000012,
+        "mean": 15.971026077094397
+      },
+      "routes": {
+        "select-printer": {
+          "hist": {
+            "count": 1,
+            "p50": 1.8,
+            "p90": 1.8,
+            "p95": 1.8,
+            "p99": 1.8,
+            "max": 1.7159169999999904,
+            "mean": 1.7159169999999904
+          },
+          "statements": 5,
+          "returnedRows": 2,
+          "changedRows": 3,
+          "queryMs": 0.36149999999997817
+        },
+        "agent-heartbeat": {
+          "hist": {
+            "count": 1283,
+            "p50": 2.9,
+            "p90": 3.6,
+            "p95": 3.9,
+            "p99": 7.4,
+            "max": 11.917707999999948,
+            "mean": 2.428224712392819
+          },
+          "statements": 21158,
+          "returnedRows": 5863,
+          "changedRows": 3667,
+          "queryMs": 1837.5331960000217
+        },
+        "config": {
+          "hist": {
+            "count": 800,
+            "p50": 1.3,
+            "p90": 1.8,
+            "p95": 2.1,
+            "p99": 3.1,
+            "max": 3.314208000000235,
+            "mean": 1.355470788750066
+          },
+          "statements": 1600,
+          "returnedRows": 7200,
+          "changedRows": 0,
+          "queryMs": 34.65305100001615
+        },
+        "draft": {
+          "hist": {
+            "count": 800,
+            "p50": 36.8,
+            "p90": 41.7,
+            "p95": 60.6,
+            "p99": 64.2,
+            "max": 65.01133299999992,
+            "mean": 37.95740889624999
+          },
+          "statements": 4000,
+          "returnedRows": 8000,
+          "changedRows": 1600,
+          "queryMs": 396.51580900004774
+        },
+        "upload-complete": {
+          "hist": {
+            "count": 800,
+            "p50": 13.8,
+            "p90": 21.5,
+            "p95": 23.2,
+            "p99": 40,
+            "max": 45.852792000000136,
+            "mean": 14.210271823750011
+          },
+          "statements": 4000,
+          "returnedRows": 8000,
+          "changedRows": 1600,
+          "queryMs": 291.1441830000135
+        },
+        "quote": {
+          "hist": {
+            "count": 800,
+            "p50": 20.3,
+            "p90": 23.7,
+            "p95": 40.6,
+            "p99": 45.1,
+            "max": 45.804709,
+            "mean": 21.607206924999982
+          },
+          "statements": 5600,
+          "returnedRows": 18400,
+          "changedRows": 800,
+          "queryMs": 556.4479939999883
+        },
+        "payment-create": {
+          "hist": {
+            "count": 800,
+            "p50": 36.9,
+            "p90": 51.5,
+            "p95": 55.4,
+            "p99": 87.8,
+            "max": 96.99412500000017,
+            "mean": 37.84720218624999
+          },
+          "statements": 14400,
+          "returnedRows": 28800,
+          "changedRows": 2400,
+          "queryMs": 1020.3842019999802
+        },
+        "payment-verify": {
+          "hist": {
+            "count": 800,
+            "p50": 76.4,
+            "p90": 93.8,
+            "p95": 123.4,
+            "p99": 165,
+            "max": 175.31420900000012,
+            "mean": 78.8575180225
+          },
+          "statements": 10400,
+          "returnedRows": 4800,
+          "changedRows": 5600,
+          "queryMs": 1081.893850999964
+        },
+        "tracking": {
+          "hist": {
+            "count": 800,
+            "p50": 10,
+            "p90": 15.1,
+            "p95": 16.5,
+            "p99": 27.3,
+            "max": 31.649124999999913,
+            "mean": 10.13161667125002
+          },
+          "statements": 1600,
+          "returnedRows": 2400,
+          "changedRows": 0,
+          "queryMs": 84.0560910000122
+        },
+        "claim-contention": {
+          "hist": {
+            "count": 85,
+            "p50": 37.5,
+            "p90": 38.4,
+            "p95": 38.5,
+            "p99": 38.6,
+            "max": 38.56983299999956,
+            "mean": 30.829568176470584
+          },
+          "statements": 789,
+          "returnedRows": 258,
+          "changedRows": 15,
+          "queryMs": 42.23733900000525
+        },
+        "print-start": {
+          "hist": {
+            "count": 1250,
+            "p50": 1.3,
+            "p90": 1.5,
+            "p95": 1.6,
+            "p99": 2.1,
+            "max": 5.939582999999402,
+            "mean": 1.2816847599999903
+          },
+          "statements": 8750,
+          "returnedRows": 3750,
+          "changedRows": 5000,
+          "queryMs": 722.0240750000853
+        },
+        "print-submitted": {
+          "hist": {
+            "count": 1250,
+            "p50": 1.1,
+            "p90": 1.2,
+            "p95": 1.2,
+            "p99": 1.4,
+            "max": 12.446375000000444,
+            "mean": 1.0358555232000137
+          },
+          "statements": 7500,
+          "returnedRows": 3750,
+          "changedRows": 3300,
+          "queryMs": 563.6343509998746
+        },
+        "print-result": {
+          "hist": {
+            "count": 1250,
+            "p50": 1.8,
+            "p90": 2.1,
+            "p95": 2.2,
+            "p99": 2.5,
+            "max": 7.617583000001105,
+            "mean": 1.5326428023999965
+          },
+          "statements": 11150,
+          "returnedRows": 5000,
+          "changedRows": 5250,
+          "queryMs": 1200.423126000027
+        },
+        "dashboard": {
+          "hist": {
+            "count": 29,
+            "p50": 0.6,
+            "p90": 0.7,
+            "p95": 0.9,
+            "p99": 1.2,
+            "max": 1.1073749999995925,
+            "mean": 0.5655402068965988
+          },
+          "statements": 290,
+          "returnedRows": 493,
+          "changedRows": 0,
+          "queryMs": 8.677003000017976
+        },
+        "admin-live": {
+          "hist": {
+            "count": 29,
+            "p50": 0.4,
+            "p90": 0.4,
+            "p95": 0.6,
+            "p99": 0.7,
+            "max": 0.6531669999994847,
+            "mean": 0.3275848275863045
+          },
+          "statements": 58,
+          "returnedRows": 29,
+          "changedRows": 0,
+          "queryMs": 6.158460000011473
+        },
+        "webhook-replay": {
+          "hist": {
+            "count": 2,
+            "p50": 0.3,
+            "p90": 1.8,
+            "p95": 1.8,
+            "p99": 1.8,
+            "max": 1.7968330000003334,
+            "mean": 1.0314164999999775
+          },
+          "statements": 4,
+          "returnedRows": 1,
+          "changedRows": 2,
+          "queryMs": 1.037543000002188
+        }
+      }
+    },
+    "operations": {
+      "statements": 97224,
+      "returnedRows": 99146,
+      "changedRows": 33237,
+      "queryMs": 8720.388797000067,
+      "r2": {
+        "PUT": 800,
+        "HEAD": 1600,
+        "GET": 1600,
+        "DELETE": 800
+      },
+      "provider": {
+        "create": 800,
+        "lookup": 800
+      }
+    },
+    "retentionTableChanges": 4000
+  },
+  {
+    "target": 1000,
+    "status": "PASS",
+    "duplicateAttempts": 0,
+    "lostJobs": 0,
+    "incorrectStates": 0,
+    "peakRSSMB": 190.125,
+    "heapMB": 29.1871337890625,
+    "wallSeconds": 20.55371025,
+    "ordersPerSecond": 48.65301630881947,
+    "localProcessCpuMs": 17439.749,
+    "databaseBytes": 7639040,
+    "states": [
+      {
+        "status": "COMPLETED",
+        "n": 1000
+      }
+    ],
+    "measured": {
+      "requests": 13403,
+      "latency": {
+        "count": 13403,
+        "p50": 3.3,
+        "p90": 45.4,
+        "p95": 74.1,
+        "p99": 95.3,
+        "max": 182.3450410000005,
+        "mean": 16.467127337610926
+      },
+      "routes": {
+        "select-printer": {
+          "hist": {
+            "count": 1,
+            "p50": 1.8,
+            "p90": 1.8,
+            "p95": 1.8,
+            "p99": 1.8,
+            "max": 1.70454200000313,
+            "mean": 1.70454200000313
+          },
+          "statements": 5,
+          "returnedRows": 2,
+          "changedRows": 3,
+          "queryMs": 0.35724900000786874
+        },
+        "agent-heartbeat": {
+          "hist": {
+            "count": 1591,
+            "p50": 3,
+            "p90": 3.7,
+            "p95": 4.1,
+            "p99": 7.4,
+            "max": 9.89900000000489,
+            "mean": 2.5170216247642356
+          },
+          "statements": 26290,
+          "returnedRows": 7279,
+          "changedRows": 4575,
+          "queryMs": 2360.9263100000935
+        },
+        "config": {
+          "hist": {
+            "count": 1000,
+            "p50": 1.3,
+            "p90": 1.7,
+            "p95": 2,
+            "p99": 2.8,
+            "max": 3.1367910000008123,
+            "mean": 1.3311122000000069
+          },
+          "statements": 2000,
+          "returnedRows": 9000,
+          "changedRows": 0,
+          "queryMs": 43.761454999850685
+        },
+        "draft": {
+          "hist": {
+            "count": 1000,
+            "p50": 37.4,
+            "p90": 43.1,
+            "p95": 45.2,
+            "p99": 63,
+            "max": 64.10133399999904,
+            "mean": 38.71750372200003
+          },
+          "statements": 5000,
+          "returnedRows": 10000,
+          "changedRows": 2000,
+          "queryMs": 504.26918899978045
+        },
+        "upload-complete": {
+          "hist": {
+            "count": 1000,
+            "p50": 14.1,
+            "p90": 22.2,
+            "p95": 23.6,
+            "p99": 38.2,
+            "max": 46.37237499999901,
+            "mean": 14.45496945699994
+          },
+          "statements": 5000,
+          "returnedRows": 10000,
+          "changedRows": 2000,
+          "queryMs": 374.08772800006045
+        },
+        "quote": {
+          "hist": {
+            "count": 1000,
+            "p50": 21.1,
+            "p90": 24,
+            "p95": 27.3,
+            "p99": 46.1,
+            "max": 46.6550419999985,
+            "mean": 22.111417673000073
+          },
+          "statements": 7000,
+          "returnedRows": 23000,
+          "changedRows": 1000,
+          "queryMs": 709.5285029999068
+        },
+        "payment-create": {
+          "hist": {
+            "count": 1000,
+            "p50": 37.5,
+            "p90": 52,
+            "p95": 65.4,
+            "p99": 117.2,
+            "max": 131.21516599999813,
+            "mean": 39.54945884600006
+          },
+          "statements": 18000,
+          "returnedRows": 36000,
+          "changedRows": 3000,
+          "queryMs": 1318.9391580001684
+        },
+        "payment-verify": {
+          "hist": {
+            "count": 1000,
+            "p50": 79,
+            "p90": 96.1,
+            "p95": 119.2,
+            "p99": 164.9,
+            "max": 182.3450410000005,
+            "mean": 81.34812611799987
+          },
+          "statements": 13000,
+          "returnedRows": 6000,
+          "changedRows": 7000,
+          "queryMs": 1406.9348189997909
+        },
+        "tracking": {
+          "hist": {
+            "count": 1000,
+            "p50": 10.2,
+            "p90": 15.6,
+            "p95": 17.6,
+            "p99": 27,
+            "max": 31.70300000000134,
+            "mean": 10.492625050999981
+          },
+          "statements": 2000,
+          "returnedRows": 3000,
+          "changedRows": 0,
+          "queryMs": 106.0487170001361
+        },
+        "claim-contention": {
+          "hist": {
+            "count": 85,
+            "p50": 39.6,
+            "p90": 40.6,
+            "p95": 40.7,
+            "p99": 40.8,
+            "max": 40.739667000001646,
+            "mean": 30.346902952941395
+          },
+          "statements": 789,
+          "returnedRows": 258,
+          "changedRows": 15,
+          "queryMs": 42.506663000021945
+        },
+        "print-start": {
+          "hist": {
+            "count": 1550,
+            "p50": 1.3,
+            "p90": 1.5,
+            "p95": 1.6,
+            "p99": 2.5,
+            "max": 10.372542000000976,
+            "mean": 1.316489634838703
+          },
+          "statements": 10850,
+          "returnedRows": 4650,
+          "changedRows": 6200,
+          "queryMs": 926.8249840000972
+        },
+        "print-submitted": {
+          "hist": {
+            "count": 1550,
+            "p50": 1.1,
+            "p90": 1.2,
+            "p95": 1.3,
+            "p99": 1.6,
+            "max": 6.6632079999981215,
+            "mean": 1.0485559148386998
+          },
+          "statements": 9300,
+          "returnedRows": 4650,
+          "changedRows": 4100,
+          "queryMs": 715.4371210001264
+        },
+        "print-result": {
+          "hist": {
+            "count": 1550,
+            "p50": 1.9,
+            "p90": 2.2,
+            "p95": 2.3,
+            "p99": 2.5,
+            "max": 7.51537499999904,
+            "mean": 1.5571796806451452
+          },
+          "statements": 13850,
+          "returnedRows": 6200,
+          "changedRows": 6550,
+          "queryMs": 1522.7351560000025
+        },
+        "dashboard": {
+          "hist": {
+            "count": 37,
+            "p50": 0.6,
+            "p90": 0.7,
+            "p95": 1.1,
+            "p99": 1.2,
+            "max": 1.112582999998267,
+            "mean": 0.5550124594595439
+          },
+          "statements": 370,
+          "returnedRows": 629,
+          "changedRows": 0,
+          "queryMs": 11.201949000067543
+        },
+        "admin-live": {
+          "hist": {
+            "count": 37,
+            "p50": 0.3,
+            "p90": 0.4,
+            "p95": 0.8,
+            "p99": 4.5,
+            "max": 4.448041999999987,
+            "mean": 0.42765194594539935
+          },
+          "statements": 74,
+          "returnedRows": 37,
+          "changedRows": 0,
+          "queryMs": 7.824335000004794
+        },
+        "webhook-replay": {
+          "hist": {
+            "count": 2,
+            "p50": 0.4,
+            "p90": 1.8,
+            "p95": 1.8,
+            "p99": 1.8,
+            "max": 1.770208999994793,
+            "mean": 1.057125499995891
+          },
+          "statements": 4,
+          "returnedRows": 1,
+          "changedRows": 2,
+          "queryMs": 1.03675099999964
+        }
+      }
+    },
+    "operations": {
+      "statements": 120932,
+      "returnedRows": 123706,
+      "changedRows": 41445,
+      "queryMs": 11139.338928000252,
+      "r2": {
+        "PUT": 1000,
+        "HEAD": 2000,
+        "GET": 2000,
+        "DELETE": 1000
+      },
+      "provider": {
+        "create": 1000,
+        "lookup": 1000
+      }
+    },
+    "retentionTableChanges": 5000
+  }
+]

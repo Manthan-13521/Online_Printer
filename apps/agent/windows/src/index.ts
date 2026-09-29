@@ -20,6 +20,13 @@ import {
   type AgentCredentials,
   type CredentialStore,
 } from "./storage/credential-store.js";
+import { RotatingLog } from "./storage/rotating-log.js";
+import { sanitizeLogContent } from "./support/support-package.js";
+import {
+  readAgentStatus,
+  getDefaultStatusFilePath,
+} from "./storage/status-file.js";
+import { createSupportPackage } from "./support/support-package.js";
 
 export type {
   PrintJobStatus,
@@ -118,21 +125,25 @@ async function runCli(): Promise<void> {
   const args = process.argv.slice(2);
 
   if (args.includes("--help") || args.includes("-h")) {
-    console.log(`PrintGo Windows Agent (v2.0.0)
+    console.log(`PrintGo Windows Agent (v2.1.0)
 Deterministic local print agent for PrintGo shops.
 
 Usage:
   PrintGo-Agent.exe [options]
 
 Options:
-  --pair <CODE>       Pair this agent with a one-time pairing code (XXXX-XXXX)
-  --server <URL>      PrintGo API server URL (default: https://printgo-api.printgo-worker.workers.dev)
-  --api-url <URL>     Alias for --server
-  --name <NAME>       Friendly display name for this computer/agent
-  --clear             Clear stored local DPAPI authentication credentials and exit
-  --reset-pairing     Reset local pairing credentials and exit (alias for --clear)
-  --version, -v       Print agent version and exit
-  --help, -h          Show this help message and exit
+  --pair <CODE>          Pair this agent with a one-time pairing code (XXXX-XXXX)
+  --pair-only           Exit after pairing without starting the daemon
+  --pair-url <URL>       Pair automatically using a printgo:// URL from Admin
+  --server <URL>         Shop API server URL from the connection link or technician configuration
+  --api-url <URL>        Alias for --server
+  --name <NAME>          Friendly display name for this computer/agent
+  --status               Show current agent and printer operational status
+  --support-package      Create a sanitized diagnostic ZIP package on Desktop
+  --clear                Clear stored local DPAPI authentication credentials and exit
+  --reset-pairing        Reset local pairing credentials and exit (alias for --clear)
+  --version, -v          Print agent version and exit
+  --help, -h             Show this help message and exit
 
 Configuration File:
   Settings can also be specified via 'printgo-config.json' in the current or executable directory:
@@ -150,7 +161,56 @@ SumatraPDF:
   }
 
   if (args.includes("--version") || args.includes("-v")) {
-    console.log("PrintGo Windows Agent v2.0.0");
+    console.log("PrintGo Windows Agent v2.1.0");
+    return;
+  }
+
+  if (
+    args.includes("--support-package") ||
+    args.includes("--create-support-package")
+  ) {
+    const credStore = createDefaultCredentialStore();
+    const printer = createDefaultPrinterAdapter();
+    console.log(
+      "[PrintGo Agent] Generating safe diagnostic support package...",
+    );
+    try {
+      const result = await createSupportPackage({
+        agentVersion: "2.1.0",
+        credentialStore: credStore,
+        printerAdapter: printer,
+      });
+      console.log(`[PrintGo Agent] ✅ Support package generated successfully:`);
+      console.log(`  File: ${result.zipPath}`);
+      console.log(`  Size: ${result.byteLength} bytes`);
+    } catch {
+      process.exitCode = 1;
+      console.error("[PrintGo Agent] Failed to generate support package.");
+    }
+    return;
+  }
+
+  if (args.includes("--status")) {
+    const status = await readAgentStatus();
+    if (!status) {
+      console.log(
+        "[PrintGo Agent] No active status found. Daemon may not be running or is starting up.",
+      );
+    } else {
+      console.log(`[PrintGo Agent] State: ${status.operationalState}`);
+      console.log(`  Version: ${status.agentVersion}`);
+      console.log(`  Agent ID: ${status.agentId ?? "Unpaired"}`);
+      console.log(`  Server: ${status.serverUrl ?? "None"}`);
+      console.log(
+        `  Last Heartbeat: ${status.lastHeartbeatMs ? new Date(status.lastHeartbeatMs).toLocaleString() : "Never"}`,
+      );
+      console.log(`  Printers (${status.printers.length} detected):`);
+      for (const p of status.printers) {
+        console.log(
+          `    - ${p.displayName} [${p.status}] ${p.isDefault ? "(Default)" : ""} ${p.isEligible ? "(Production Eligible)" : "(Virtual/Ineligible)"}`,
+        );
+      }
+    }
     return;
   }
 
@@ -178,12 +238,42 @@ SumatraPDF:
     }
   }
 
+  // Check for printgo:// custom protocol URL or --pair-url argument
+  let pairUrlArg: string | undefined;
+  const pairUrlIndex = args.indexOf("--pair-url");
+  if (pairUrlIndex !== -1 && args[pairUrlIndex + 1]) {
+    pairUrlArg = args[pairUrlIndex + 1];
+  } else {
+    const protocolArg = args.find((a) => a.startsWith("printgo://"));
+    if (protocolArg) pairUrlArg = protocolArg;
+  }
+
+  let protocolServerUrl: string | undefined;
+  let protocolPairCode: string | undefined;
+  let protocolDisplayName: string | undefined;
+
+  if (pairUrlArg) {
+    try {
+      // Normalize printgo://connect?server=... into standard URL parse
+      const normalized = pairUrlArg.replace(/^printgo:\/\/?/i, "http://dummy/");
+      const parsed = new URL(normalized);
+      protocolServerUrl = parsed.searchParams.get("server") || undefined;
+      protocolPairCode = parsed.searchParams.get("code") || undefined;
+      protocolDisplayName = parsed.searchParams.get("name") || undefined;
+    } catch (err) {
+      console.warn(
+        "[PrintGo Agent] Warning: Malformed pairing URL:",
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  }
+
   const pairIndex = args.indexOf("--pair");
   const candidatePairCode = pairIndex !== -1 ? args[pairIndex + 1] : undefined;
   let pairCodeArg =
     candidatePairCode && !candidatePairCode.startsWith("--")
       ? candidatePairCode
-      : process.env.PRINTGO_PAIR_CODE;
+      : protocolPairCode || process.env.PRINTGO_PAIR_CODE;
 
   const serverIndex =
     args.indexOf("--server") !== -1
@@ -199,12 +289,13 @@ SumatraPDF:
         : undefined;
   const serverUrl =
     candidateServerUrl ||
+    protocolServerUrl ||
     process.env.PRINTGO_SERVER_URL ||
     process.env.PRINTGO_API_URL ||
     configServerUrl ||
     (process.env.NODE_ENV === "development"
       ? "http://127.0.0.1:8787"
-      : "https://printgo-api.printgo-worker.workers.dev");
+      : undefined);
 
   const nameIndex = args.indexOf("--name");
   const candidateName = nameIndex !== -1 ? args[nameIndex + 1] : undefined;
@@ -216,6 +307,7 @@ SumatraPDF:
         : undefined;
   const displayName =
     candidateName ||
+    protocolDisplayName ||
     process.env.PRINTGO_AGENT_NAME ||
     configDisplayName ||
     `${os.hostname()} (PrintGo Agent)`;
@@ -273,10 +365,20 @@ SumatraPDF:
 
   let authErrorCleared = false;
 
+  const log = new RotatingLog(
+    path.join(path.dirname(getDefaultStatusFilePath()), "daemon.log"),
+  );
   const daemon = new AgentDaemon({
     client,
+    agentVersion: "2.1.0",
     credentialStore,
     printerAdapter,
+    onStatusChange: (message) => {
+      console.log(`[PrintGo Agent] ${sanitizeLogContent(message)}`);
+      void log
+        .write(message)
+        .catch(() => console.error("Agent log could not be saved."));
+    },
     onError: (err: Error) => {
       if (err instanceof AgentAuthError && !authErrorCleared) {
         authErrorCleared = true;
@@ -297,7 +399,11 @@ SumatraPDF:
   });
 
   if (pairCodeArg) {
-    console.log(`[PrintGo Agent] Initiating pairing with ${serverUrl}...`);
+    if (!serverUrl)
+      throw new Error(
+        "The shop server is required. Use the Admin connection link.",
+      );
+    console.log("[PrintGo Agent] Initiating pairing...");
     try {
       await daemon.pair(serverUrl, pairCodeArg, displayName);
     } catch (err: unknown) {
@@ -306,6 +412,11 @@ SumatraPDF:
       );
       process.exit(1);
     }
+  }
+
+  if (args.includes("--pair-only")) {
+    if (!pairCodeArg) throw new Error("A pairing code is required.");
+    return;
   }
 
   const started = await daemon.start();

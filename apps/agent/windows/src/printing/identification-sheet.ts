@@ -141,7 +141,9 @@ export function generateIdentificationSheetBuffer(
   const shopName = pdfSafeText(data.shopName ?? "PrintGo Shop Operations", 60);
   const jobCode = pdfSafeText(data.jobCode, 28);
   const customerName = pdfSafeText(data.customerName, 60);
-  const maskedPhone = maskPhoneNumber(data.maskedPhone);
+  const sheetPhone = data.customerPhone
+    ? pdfSafeText(data.customerPhone, 30)
+    : maskPhoneNumber(data.maskedPhone);
   const pageRange = pdfSafeText(data.pageRange, 45) || "All pages";
   const paidAt = formatPaidTime(data.paidAtMs, options);
   const amount = formatAmountPaise(data.amountPaidPaise);
@@ -151,17 +153,17 @@ export function generateIdentificationSheetBuffer(
   const lines: string[] = [
     "0.5 w",
     "50 795 m 545 795 l S",
-    "BT /F2 16 Tf 50 772 Td (PRINTGO) Tj ET",
-    `BT /F1 10 Tf 50 756 Td (${escapePdfText(`${shopName} - JOB IDENTIFICATION SHEET`)}) Tj ET`,
+    `BT /F2 ${Math.min(16, 495 / Math.max(1, shopName.length * 0.95)).toFixed(2)} Tf 50 772 Td (${escapePdfText(shopName)}) Tj ET`,
+    `BT /F1 10 Tf 50 756 Td (${escapePdfText("JOB IDENTIFICATION SHEET")}) Tj ET`,
     "50 744 m 545 744 l S",
     "0.75 w 50 635 495 90 re S",
     "BT /F1 10 Tf 65 700 Td (HUMAN JOB CODE - VERIFY WITH CUSTOMER) Tj ET",
-    `BT /F2 36 Tf 65 655 Td (${escapePdfText(jobCode)}) Tj ET`,
+    `BT /F2 ${Math.min(36, 465 / Math.max(1, jobCode.length * 0.95)).toFixed(2)} Tf 65 655 Td (${escapePdfText(jobCode)}) Tj ET`,
     "0.5 w 50 490 495 125 re S",
     "BT /F2 11 Tf 65 592 Td (CUSTOMER AND ORDER DETAILS) Tj ET",
     "BT /F1 11 Tf 16 TL 65 570 Td",
     `(${escapePdfText(`Customer Name:  ${customerName}`)}) Tj T*`,
-    `(${escapePdfText(`Phone Number:   ${maskedPhone}`)}) Tj T*`,
+    `(${escapePdfText(`Phone Number:   ${sheetPhone}`)}) Tj T*`,
     `(${escapePdfText(`Amount Paid:    ${amount} (INR)`)}) Tj T*`,
     `(${escapePdfText(`Paid / Ordered: ${paidAt}`)}) Tj T* ET`,
     "0.5 w 50 345 495 130 re S",

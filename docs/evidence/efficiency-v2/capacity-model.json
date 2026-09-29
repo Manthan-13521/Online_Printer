@@ -1,0 +1,207 @@
+{
+  "idleMeasured": {
+    "requests": 10800,
+    "changedTableRows": 900,
+    "statements": 11700
+  },
+  "scenarios": [
+    {
+      "label": "MODELED (read/write envelopes require deployed D1 metadata validation)",
+      "ordersPerDay": 60,
+      "hours": 15,
+      "assumptions": {
+        "visits": 240,
+        "failed": 3,
+        "averagePdfMiB": 2,
+        "trackingPolls": 8,
+        "activeQueueRowsAtMost": 100,
+        "dashboardAndLiveBothVisible": true,
+        "preflightRequests": 1350,
+        "retentionCronRuns": 288,
+        "modeledIndexedWritesPerOrder": 221,
+        "measuredTableWritesPerTwoStepOrder": 45,
+        "baselineTableWritesPerTwoStepOrder": 52
+      },
+      "agentPulses": 10800,
+      "heartbeatTableWrites": 900,
+      "metrics": {
+        "workers": 18585,
+        "reads": 641400,
+        "writes": 16700,
+        "classA": 1920,
+        "classB": 14670,
+        "r2GB": 0.0092
+      },
+      "headroomPercent": {
+        "workers": 81.42,
+        "reads": 87.17,
+        "writes": 83.3,
+        "classA": 99.81,
+        "classB": 99.85,
+        "r2GB": 99.91
+      },
+      "operatorWarnings": [
+        {
+          "resource": "workers",
+          "thresholdPercent": 65,
+          "modeledUsagePercent": 18.58,
+          "triggered": false,
+          "action": "Developer: compare production counters, subtract background/CLI traffic, and review capacity before growth. Never remove durable print boundaries to meet quotas."
+        },
+        {
+          "resource": "reads",
+          "thresholdPercent": 65,
+          "modeledUsagePercent": 12.83,
+          "triggered": false,
+          "action": "Developer: compare production counters, subtract background/CLI traffic, and review capacity before growth. Never remove durable print boundaries to meet quotas."
+        },
+        {
+          "resource": "writes",
+          "thresholdPercent": 65,
+          "modeledUsagePercent": 16.7,
+          "triggered": false,
+          "action": "Developer: compare production counters, subtract background/CLI traffic, and review capacity before growth. Never remove durable print boundaries to meet quotas."
+        }
+      ],
+      "twentyFourHourBacklogGB": 0.1172,
+      "database": {
+        "perDatabaseLimitMiB": 500,
+        "modeledRetainedKiBPerOrder": 8,
+        "approxDaysToLimit": 1066,
+        "warning": "Financial and audit history accumulates; no indefinite storage guarantee."
+      }
+    },
+    {
+      "label": "MODELED (read/write envelopes require deployed D1 metadata validation)",
+      "ordersPerDay": 800,
+      "hours": 15,
+      "assumptions": {
+        "visits": 3200,
+        "failed": 40,
+        "averagePdfMiB": 2,
+        "trackingPolls": 8,
+        "activeQueueRowsAtMost": 100,
+        "dashboardAndLiveBothVisible": true,
+        "preflightRequests": 1350,
+        "retentionCronRuns": 288,
+        "modeledIndexedWritesPerOrder": 221,
+        "measuredTableWritesPerTwoStepOrder": 45,
+        "baselineTableWritesPerTwoStepOrder": 52
+      },
+      "agentPulses": 10800,
+      "heartbeatTableWrites": 900,
+      "metrics": {
+        "workers": 42450,
+        "reads": 2518040,
+        "writes": 183200,
+        "classA": 25230,
+        "classB": 195600,
+        "r2GB": 0.1224
+      },
+      "headroomPercent": {
+        "workers": 57.55,
+        "reads": 49.64,
+        "writes": -83.2,
+        "classA": 97.48,
+        "classB": 98.04,
+        "r2GB": 98.78
+      },
+      "operatorWarnings": [
+        {
+          "resource": "workers",
+          "thresholdPercent": 65,
+          "modeledUsagePercent": 42.45,
+          "triggered": false,
+          "action": "Developer: compare production counters, subtract background/CLI traffic, and review capacity before growth. Never remove durable print boundaries to meet quotas."
+        },
+        {
+          "resource": "reads",
+          "thresholdPercent": 65,
+          "modeledUsagePercent": 50.36,
+          "triggered": false,
+          "action": "Developer: compare production counters, subtract background/CLI traffic, and review capacity before growth. Never remove durable print boundaries to meet quotas."
+        },
+        {
+          "resource": "writes",
+          "thresholdPercent": 65,
+          "modeledUsagePercent": 183.2,
+          "triggered": true,
+          "action": "Developer: compare production counters, subtract background/CLI traffic, and review capacity before growth. Never remove durable print boundaries to meet quotas."
+        }
+      ],
+      "twentyFourHourBacklogGB": 1.5625,
+      "database": {
+        "perDatabaseLimitMiB": 500,
+        "modeledRetainedKiBPerOrder": 8,
+        "approxDaysToLimit": 80,
+        "warning": "Financial and audit history accumulates; no indefinite storage guarantee."
+      }
+    },
+    {
+      "label": "MODELED (read/write envelopes require deployed D1 metadata validation)",
+      "ordersPerDay": 1000,
+      "hours": 15,
+      "assumptions": {
+        "visits": 4000,
+        "failed": 50,
+        "averagePdfMiB": 2,
+        "trackingPolls": 8,
+        "activeQueueRowsAtMost": 100,
+        "dashboardAndLiveBothVisible": true,
+        "preflightRequests": 1350,
+        "retentionCronRuns": 288,
+        "modeledIndexedWritesPerOrder": 221,
+        "measuredTableWritesPerTwoStepOrder": 45,
+        "baselineTableWritesPerTwoStepOrder": 52
+      },
+      "agentPulses": 10800,
+      "heartbeatTableWrites": 900,
+      "metrics": {
+        "workers": 48900,
+        "reads": 3025240,
+        "writes": 228200,
+        "classA": 31530,
+        "classB": 244500,
+        "r2GB": 0.153
+      },
+      "headroomPercent": {
+        "workers": 51.1,
+        "reads": 39.5,
+        "writes": -128.2,
+        "classA": 96.85,
+        "classB": 97.56,
+        "r2GB": 98.47
+      },
+      "operatorWarnings": [
+        {
+          "resource": "workers",
+          "thresholdPercent": 65,
+          "modeledUsagePercent": 48.9,
+          "triggered": false,
+          "action": "Developer: compare production counters, subtract background/CLI traffic, and review capacity before growth. Never remove durable print boundaries to meet quotas."
+        },
+        {
+          "resource": "reads",
+          "thresholdPercent": 65,
+          "modeledUsagePercent": 60.5,
+          "triggered": false,
+          "action": "Developer: compare production counters, subtract background/CLI traffic, and review capacity before growth. Never remove durable print boundaries to meet quotas."
+        },
+        {
+          "resource": "writes",
+          "thresholdPercent": 65,
+          "modeledUsagePercent": 228.2,
+          "triggered": true,
+          "action": "Developer: compare production counters, subtract background/CLI traffic, and review capacity before growth. Never remove durable print boundaries to meet quotas."
+        }
+      ],
+      "twentyFourHourBacklogGB": 1.9531,
+      "database": {
+        "perDatabaseLimitMiB": 500,
+        "modeledRetainedKiBPerOrder": 8,
+        "approxDaysToLimit": 64,
+        "warning": "Financial and audit history accumulates; no indefinite storage guarantee."
+      }
+    }
+  ]
+}

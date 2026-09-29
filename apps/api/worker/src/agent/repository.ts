@@ -14,6 +14,9 @@ export interface StoredAgent {
   displayName: string;
   isActive: boolean;
   lastHeartbeatAtMs: number | null;
+  onlinePrintingEnabled?: boolean;
+  hasPendingCommand?: boolean;
+  hasPrintWork?: boolean;
 }
 
 export interface StoredPairCode {
@@ -91,7 +94,7 @@ export interface AgentRepository {
   updateHeartbeat(input: {
     agentId: string;
     nowMs: number;
-    printers: readonly ValidatedPrinterReport[];
+    printers?: readonly ValidatedPrinterReport[];
   }): Promise<void>;
   listAgentsWithPrinters(nowMs: number): Promise<AdminAgentDetails[]>;
   revokeAgent(input: {
@@ -297,7 +300,10 @@ export class D1AgentRepository implements AgentRepository {
   ): Promise<StoredAgent | null> {
     const row = await this.db
       .prepare(
-        `SELECT id, display_name, is_active, last_heartbeat_at_ms
+        `SELECT id, display_name, is_active, last_heartbeat_at_ms,
+          (SELECT online_printing_enabled FROM installation WHERE id = 1) online_printing_enabled,
+          EXISTS(SELECT 1 FROM printer_test_commands c WHERE c.agent_id = agents.id AND c.status = 'PENDING') has_pending_command,
+          EXISTS(SELECT 1 FROM orders WHERE status IN ('QUEUED','CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED')) has_print_work
          FROM agents WHERE credential_hash = ?`,
       )
       .bind(credentialHash)
@@ -306,6 +312,9 @@ export class D1AgentRepository implements AgentRepository {
         display_name: string;
         is_active: number;
         last_heartbeat_at_ms: number | null;
+        online_printing_enabled: number | null;
+        has_pending_command: number;
+        has_print_work: number;
       }>();
     return row
       ? {
@@ -313,6 +322,9 @@ export class D1AgentRepository implements AgentRepository {
           displayName: row.display_name,
           isActive: row.is_active === 1,
           lastHeartbeatAtMs: row.last_heartbeat_at_ms,
+          onlinePrintingEnabled: row.online_printing_enabled === 1,
+          hasPendingCommand: row.has_pending_command === 1,
+          hasPrintWork: row.has_print_work === 1,
         }
       : null;
   }
@@ -343,8 +355,19 @@ export class D1AgentRepository implements AgentRepository {
   async updateHeartbeat(input: {
     agentId: string;
     nowMs: number;
-    printers: readonly ValidatedPrinterReport[];
+    printers?: readonly ValidatedPrinterReport[];
   }): Promise<void> {
+    const heartbeat = this.db
+      .prepare(
+        `UPDATE agents SET last_heartbeat_at_ms = ?, updated_at_ms = ?
+       WHERE id = ? AND is_active = 1
+       AND (last_heartbeat_at_ms IS NULL OR last_heartbeat_at_ms <= ?)`,
+      )
+      .bind(input.nowMs, input.nowMs, input.agentId, input.nowMs - 60_000);
+    if (input.printers === undefined) {
+      await heartbeat.run();
+      return;
+    }
     const existingPrinters = await this.db
       .prepare(
         `SELECT id, windows_printer_name, display_name, enabled, status,
@@ -371,15 +394,7 @@ export class D1AgentRepository implements AgentRepository {
       existingPrinters.results.map((p) => [p.windows_printer_name, p]),
     );
 
-    const statements: D1PreparedStatement[] = [
-      this.db
-        .prepare(
-          `UPDATE agents
-           SET last_heartbeat_at_ms = ?, updated_at_ms = ?
-           WHERE id = ? AND is_active = 1`,
-        )
-        .bind(input.nowMs, input.nowMs, input.agentId),
-    ];
+    const statements: D1PreparedStatement[] = [];
 
     const isFirstRegistration = existingPrinters.results.length === 0;
 
@@ -476,7 +491,10 @@ export class D1AgentRepository implements AgentRepository {
       input.printers.map((printer) => printer.windowsPrinterName),
     );
     for (const existing of existingPrinters.results) {
-      if (!reportedPrinterNames.has(existing.windows_printer_name)) {
+      if (
+        !reportedPrinterNames.has(existing.windows_printer_name) &&
+        existing.status !== "OFFLINE"
+      ) {
         statements.push(
           this.db
             .prepare(
@@ -491,6 +509,16 @@ export class D1AgentRepository implements AgentRepository {
       }
     }
 
+    // A state change proves current liveness immediately; otherwise persist once/minute.
+    statements.unshift(
+      statements.length > 0
+        ? this.db
+            .prepare(
+              `UPDATE agents SET last_heartbeat_at_ms = ?, updated_at_ms = ? WHERE id = ? AND is_active = 1`,
+            )
+            .bind(input.nowMs, input.nowMs, input.agentId)
+        : heartbeat,
+    );
     // Auto-select default production printer if currently unset or invalid
     statements.push(
       this.db
@@ -537,12 +565,10 @@ export class D1AgentRepository implements AgentRepository {
           `SELECT ptc.id, ptc.printer_id, ptc.agent_id, ptc.status, ptc.spooler_job_id,
                 ptc.failure_code, ptc.failure_detail, ptc.created_at_ms, ptc.expires_at_ms,
                 ptc.claimed_at_ms, ptc.finished_at_ms
-         FROM printer_test_commands ptc
-         INNER JOIN (
-           SELECT printer_id, MAX(created_at_ms) as max_created
-           FROM printer_test_commands
-           GROUP BY printer_id
-         ) latest ON ptc.printer_id = latest.printer_id AND ptc.created_at_ms = latest.max_created`,
+         FROM printers p JOIN printer_test_commands ptc ON ptc.id = (
+           SELECT id FROM printer_test_commands WHERE printer_id = p.id
+           ORDER BY created_at_ms DESC, id DESC LIMIT 1
+         )`,
         ),
         this.db.prepare(
           `SELECT default_production_printer_id FROM installation WHERE id = 1`,
@@ -877,6 +903,13 @@ export class D1AgentRepository implements AgentRepository {
     agentId: string,
     nowMs: number,
   ): Promise<AgentTestPrintCommand | null> {
+    const hasPending = await this.db
+      .prepare(
+        "SELECT 1 FROM printer_test_commands WHERE agent_id = ? AND status = 'PENDING' LIMIT 1",
+      )
+      .bind(agentId)
+      .first();
+    if (!hasPending) return null;
     // 1. Mark expired pending commands for this agent
     await this.db
       .prepare(

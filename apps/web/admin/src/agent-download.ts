@@ -8,13 +8,6 @@
  * "BUILD_PENDING", allowing the shop owner to see the setup steps without a broken or fabricated link.
  */
 
-export const DEFAULT_WINDOWS_AGENT_DOWNLOAD_URL =
-  "https://github.com/Manthan-13521/Online_Printer/releases/download/v2.0.0/PrintGo-Agent.exe";
-export const DEFAULT_WINDOWS_AGENT_ZIP_DOWNLOAD_URL =
-  "https://github.com/Manthan-13521/Online_Printer/releases/download/v2.0.0/PrintGo-Windows-Test.zip";
-export const DEFAULT_WINDOWS_AGENT_SHA256 =
-  "8554ed069448c4c953e90620ad962105394fa71a76eb94688f0e11cef07db91a";
-
 export interface WindowsAgentReleaseConfig {
   /** Download URL for the precompiled Windows executable or installer */
   downloadUrl: string | null;
@@ -37,42 +30,64 @@ export function getWindowsAgentReleaseConfig(): WindowsAgentReleaseConfig {
     import.meta.env.VITE_WINDOWS_AGENT_DOWNLOAD_URL as string | undefined
   )?.trim();
 
-  // If a production URL is explicitly configured in env, mark as live
+  const hash = String(import.meta.env.VITE_WINDOWS_AGENT_SHA256 ?? "").trim();
+  const version = String(
+    import.meta.env.VITE_WINDOWS_AGENT_VERSION ?? "",
+  ).trim();
+  let validUrl = false;
+  try {
+    const url = new URL(envUrl ?? "");
+    validUrl = url.protocol === "https:" && !url.username && !url.password;
+  } catch {
+    /* Missing or invalid configuration stays unavailable. */
+  }
   if (
     envUrl &&
-    (envUrl.startsWith("https://") || envUrl.startsWith("http://"))
+    validUrl &&
+    /^[a-f0-9]{64}$/i.test(hash) &&
+    /^v?\d+\.\d+\.\d+$/.test(version)
   ) {
     return {
       downloadUrl: envUrl,
-      fileName: "PrintGo-Agent.exe",
-      version: "v2.0.0",
+      fileName: "PrintGo-Setup.exe",
+      version,
       isLive: true,
-      statusNote: "Ready to download",
-      sha256: DEFAULT_WINDOWS_AGENT_SHA256,
-      zipDownloadUrl: DEFAULT_WINDOWS_AGENT_ZIP_DOWNLOAD_URL,
+      statusNote: "Installer provided by your shop technician",
+      sha256: hash,
     };
   }
-
-  // In production builds, default to the verified live GitHub Releases v2.0.0 URL
-  if (import.meta.env.PROD) {
-    return {
-      downloadUrl: DEFAULT_WINDOWS_AGENT_DOWNLOAD_URL,
-      fileName: "PrintGo-Agent.exe",
-      version: "v2.0.0",
-      isLive: true,
-      statusNote: "Ready to download (Verified v2.0.0 Release)",
-      sha256: DEFAULT_WINDOWS_AGENT_SHA256,
-      zipDownloadUrl: DEFAULT_WINDOWS_AGENT_ZIP_DOWNLOAD_URL,
-    };
-  }
-
   return {
     downloadUrl: null,
-    fileName: "PrintGo-Agent.exe",
-    version: "v2.0.0",
+    fileName: "PrintGo-Setup.exe",
+    version: "Pending",
     isLive: false,
     statusNote:
-      "Precompiled Windows binary hosting not configured. Packaged via GitHub Actions or locally with 'pnpm build:agent:windows'.",
-    sha256: DEFAULT_WINDOWS_AGENT_SHA256,
+      "Your shop technician has not yet provided the approved Windows installer.",
   };
+}
+
+export function buildAgentConnectionUrl(
+  code: string,
+  serverUrl: string,
+): string | null {
+  try {
+    const server = new URL(serverUrl);
+    if (
+      server.protocol !== "https:" ||
+      server.username ||
+      server.password ||
+      server.pathname !== "/" ||
+      server.search ||
+      server.hash
+    )
+      return null;
+    return (
+      "printgo://connect?server=" +
+      encodeURIComponent(server.origin) +
+      "&code=" +
+      encodeURIComponent(code)
+    );
+  } catch {
+    return null;
+  }
 }

@@ -13,7 +13,12 @@ import {
 } from "@printgo/validation";
 import { useEffect, useState, type FormEvent } from "react";
 
-import { adminApi, AdminApiError, friendlyAdminError } from "./api";
+import {
+  adminApi,
+  AdminApiError,
+  friendlyAdminError,
+  brandingUrl,
+} from "./api";
 import { AdminPwaInstall } from "./AdminPwaInstall";
 
 const PDF_LIMITS = [
@@ -35,6 +40,7 @@ export function ShopSettingsPage({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [logoBusy, setLogoBusy] = useState(false);
   const [confirmPause, setConfirmPause] = useState(false);
 
   const dirty =
@@ -93,6 +99,30 @@ export function ShopSettingsPage({
     }
   }
 
+  async function changeLogo(file: File | null) {
+    if (logoBusy) return;
+    setLogoBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const response = file
+        ? await adminApi.uploadLogo(file)
+        : await adminApi.removeLogo();
+      if (response.ok) {
+        const logoUrl = response.data.logoUrl;
+        setSettings((current) => (current ? { ...current, logoUrl } : current));
+        setSaved((current) => (current ? { ...current, logoUrl } : current));
+        setMessage(response.data.message);
+      }
+    } catch (caught) {
+      if (caught instanceof AdminApiError && caught.status === 401)
+        onSessionExpired(caught.message);
+      else setError(friendlyAdminError(caught));
+    } finally {
+      setLogoBusy(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="panel page-loading" aria-busy="true">
@@ -140,7 +170,7 @@ export function ShopSettingsPage({
       <form onSubmit={(event) => void save(event)}>
         <section className="panel form-section">
           <h2>Shop details</h2>
-          <label htmlFor="shop-name">Shop name</label>
+          <label htmlFor="shop-name">Shop name *</label>
           <input
             id="shop-name"
             maxLength={SHOP_NAME_MAX_LENGTH}
@@ -148,6 +178,39 @@ export function ShopSettingsPage({
             value={settings.shopName}
             onChange={(event) => patch({ shopName: event.target.value })}
           />
+          <label htmlFor="shop-logo">Shop logo (optional)</label>
+          {settings.logoUrl ? (
+            <img
+              src={brandingUrl(settings.logoUrl)}
+              alt="Current shop logo"
+              style={{ maxWidth: 160, maxHeight: 100, objectFit: "contain" }}
+            />
+          ) : null}
+          <input
+            id="shop-logo"
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            disabled={logoBusy}
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) void changeLogo(file);
+              event.target.value = "";
+            }}
+          />
+          <p className="field-help">
+            PNG, JPEG or WebP, up to 256 KB. Choosing a file saves the logo
+            immediately.
+          </p>
+          {settings.logoUrl ? (
+            <button
+              type="button"
+              disabled={logoBusy}
+              className="secondary-button"
+              onClick={() => void changeLogo(null)}
+            >
+              Remove logo
+            </button>
+          ) : null}
           <label htmlFor="contact-phone">Contact phone</label>
           <input
             id="contact-phone"
@@ -176,9 +239,7 @@ export function ShopSettingsPage({
               patch({ customerNotice: event.target.value || null })
             }
           />
-          <p className="field-help">
-            Plain text only. Shown to customers in a later phase.
-          </p>
+          <p className="field-help">Plain text only. Shown to customers.</p>
         </section>
 
         <section className="panel setting-card important-setting">
@@ -237,6 +298,10 @@ export function ShopSettingsPage({
             />
             <span>Print one identification sheet for each order</span>
           </label>
+          <p className="field-help">
+            Adds one shop identification sheet per order for sorting printed
+            jobs. Customers are not charged for this sheet.
+          </p>
           <fieldset disabled={!settings.identificationSheetEnabled}>
             <legend>Placement</legend>
             <label className="radio-row">

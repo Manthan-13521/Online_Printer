@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { checkSumatraPdfInstalled, runCli } from "./index.js";
+import {
+  AgentDaemon,
+  DevelopmentCredentialStore,
+  checkSumatraPdfInstalled,
+  runCli,
+} from "./index.js";
 
 describe("checkSumatraPdfInstalled", () => {
   const originalPlatform = process.platform;
@@ -41,6 +46,37 @@ describe("checkSumatraPdfInstalled", () => {
 
 describe("runCli CLI flags", () => {
   const originalArgv = [...process.argv];
+  beforeEach(() => {
+    vi.spyOn(DevelopmentCredentialStore.prototype, "load").mockResolvedValue(
+      null,
+    );
+    vi.spyOn(DevelopmentCredentialStore.prototype, "clear").mockResolvedValue();
+  });
+
+  it("pairs once and exits without starting the daemon in pair-only mode", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const pair = vi.spyOn(AgentDaemon.prototype, "pair").mockResolvedValue({
+      agentId: "test",
+      agentSecret: "test-secret",
+      serverUrl: "https://example.test",
+      displayName: "test",
+    });
+    const start = vi
+      .spyOn(AgentDaemon.prototype, "start")
+      .mockResolvedValue(true);
+    process.argv = [
+      "node",
+      "index.js",
+      "--pair-only",
+      "--pair",
+      "ABCD-EFGH",
+      "--server",
+      "https://example.test",
+    ];
+    await runCli();
+    expect(pair).toHaveBeenCalledOnce();
+    expect(start).not.toHaveBeenCalled();
+  });
 
   afterEach(() => {
     process.argv = [...originalArgv];
@@ -53,14 +89,14 @@ describe("runCli CLI flags", () => {
     process.argv = ["node", "index.js", "--version"];
     await runCli();
     expect(logSpy).toHaveBeenCalledWith(
-      expect.stringContaining("PrintGo Windows Agent v2.0.0"),
+      expect.stringContaining("PrintGo Windows Agent v2.1.0"),
     );
 
     logSpy.mockClear();
     process.argv = ["node", "index.js", "-v"];
     await runCli();
     expect(logSpy).toHaveBeenCalledWith(
-      expect.stringContaining("PrintGo Windows Agent v2.0.0"),
+      expect.stringContaining("PrintGo Windows Agent v2.1.0"),
     );
   });
 
@@ -70,7 +106,7 @@ describe("runCli CLI flags", () => {
     process.argv = ["node", "index.js", "--help"];
     await runCli();
     expect(logSpy).toHaveBeenCalledWith(
-      expect.stringContaining("PrintGo Windows Agent (v2.0.0)"),
+      expect.stringContaining("PrintGo Windows Agent (v2.1.0)"),
     );
     expect(logSpy).toHaveBeenCalledWith(
       expect.stringContaining("Usage:\n  PrintGo-Agent.exe [options]"),
@@ -83,7 +119,7 @@ describe("runCli CLI flags", () => {
     process.argv = ["node", "index.js", "-h"];
     await runCli();
     expect(logSpy).toHaveBeenCalledWith(
-      expect.stringContaining("PrintGo Windows Agent (v2.0.0)"),
+      expect.stringContaining("PrintGo Windows Agent (v2.1.0)"),
     );
   });
 
@@ -104,6 +140,29 @@ describe("runCli CLI flags", () => {
     await runCli();
     expect(logSpy).toHaveBeenCalledWith(
       expect.stringContaining("reset successfully"),
+    );
+  });
+
+  it("handles --status flag gracefully without errors", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    process.argv = ["node", "index.js", "--status"];
+    await runCli();
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining("[PrintGo Agent]"),
+    );
+  });
+
+  it("handles --support-package flag and outputs diagnostic package path", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    process.argv = ["node", "index.js", "--support-package"];
+    await runCli();
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Generating safe diagnostic support package"),
+    );
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Support package generated successfully"),
     );
   });
 });

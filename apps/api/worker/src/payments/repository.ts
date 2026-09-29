@@ -216,7 +216,9 @@ export class D1PaymentRepository implements PaymentRepository {
           service_charge_paise = ?, total_amount_paise = ?,
           status = 'PAYMENT_PENDING', updated_at_ms = ?
         WHERE id = ? AND status IN
-          ('UPLOADED', 'PAYMENT_PENDING', 'PAYMENT_FAILED', 'PAYMENT_CANCELLED')`,
+          ('UPLOADED', 'PAYMENT_PENDING', 'PAYMENT_FAILED', 'PAYMENT_CANCELLED')
+          AND (status <> 'PAYMENT_PENDING' OR selected_pages IS NOT ? OR printing_amount_paise IS NOT ?
+            OR service_charge_paise IS NOT ? OR total_amount_paise IS NOT ?)`,
       )
       .bind(
         input.selectedPages,
@@ -225,9 +227,29 @@ export class D1PaymentRepository implements PaymentRepository {
         input.totalAmountPaise,
         input.nowMs,
         input.orderId,
+        input.selectedPages,
+        input.printingAmountPaise,
+        input.serviceChargePaise,
+        input.totalAmountPaise,
       )
       .run();
-    return result.meta.changes === 1;
+    if (result.meta.changes === 1) return true;
+    // A no-op quote is valid only while the same authoritative quote remains payable.
+    return Boolean(
+      await this.db
+        .prepare(
+          `SELECT 1 FROM orders WHERE id = ? AND status = 'PAYMENT_PENDING'
+      AND selected_pages IS ? AND printing_amount_paise IS ? AND service_charge_paise IS ? AND total_amount_paise IS ?`,
+        )
+        .bind(
+          input.orderId,
+          input.selectedPages,
+          input.printingAmountPaise,
+          input.serviceChargePaise,
+          input.totalAmountPaise,
+        )
+        .first(),
+    );
   }
 
   private async findPayment(where: string, value: string) {
@@ -238,7 +260,7 @@ export class D1PaymentRepository implements PaymentRepository {
           p.currency, p.status, o.public_job_code,
           o.status AS order_status
         FROM payments p JOIN orders o ON o.id = p.order_id
-        WHERE ${where} = ? ORDER BY p.created_at_ms DESC LIMIT 1`,
+        WHERE p.provider = 'RAZORPAY' AND ${where} = ? ORDER BY p.created_at_ms DESC LIMIT 1`,
       )
       .bind(value)
       .first<PaymentRow>();
@@ -299,7 +321,7 @@ export class D1PaymentRepository implements PaymentRepository {
         .prepare(
           `UPDATE orders SET status = 'PAYMENT_PENDING', updated_at_ms = ?
           WHERE id = ? AND status IN
-            ('UPLOADED', 'PAYMENT_PENDING', 'PAYMENT_FAILED', 'PAYMENT_CANCELLED')`,
+            ('UPLOADED', 'PAYMENT_FAILED', 'PAYMENT_CANCELLED')`,
         )
         .bind(input.nowMs, input.orderId),
     ]);

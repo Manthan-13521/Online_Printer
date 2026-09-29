@@ -20,6 +20,8 @@ import type {
   AdminOrderPdfUrlResponse,
   AdminSetDefaultPrinterResponse,
   ApiFailure,
+  ApiResponse,
+  AdminDashboardData,
 } from "@printgo/api-contract";
 
 const API_BASE_URL =
@@ -75,7 +77,29 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
+export function brandingUrl(url: string): string {
+  return `${API_BASE_URL}${url}`;
+}
+
 export const adminApi = {
+  getDashboard(): Promise<ApiResponse<AdminDashboardData>> {
+    return request("/api/admin/dashboard");
+  },
+  uploadLogo(
+    file: File,
+  ): Promise<ApiResponse<{ logoUrl: string; message: string }>> {
+    return request("/api/admin/branding/logo", {
+      method: "PUT",
+      body: file,
+      headers: { "Content-Type": file.type },
+    });
+  },
+  removeLogo(): Promise<ApiResponse<{ logoUrl: null; message: string }>> {
+    return request("/api/admin/branding/logo/remove", {
+      method: "POST",
+      body: "{}",
+    });
+  },
   login(input: AdminLoginRequest): Promise<AdminLoginResponse> {
     return request("/api/admin/auth/login", {
       method: "POST",

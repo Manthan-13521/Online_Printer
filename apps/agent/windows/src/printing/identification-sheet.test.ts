@@ -53,7 +53,7 @@ describe("identification sheet", () => {
 
     expect(text.startsWith("%PDF-1.4")).toBe(true);
     expect(text).toContain("/Count 1 /MediaBox [0 0 595 842]");
-    expect(text).toContain("PRINTGO");
+    expect(text).toContain("ABC Xerox");
     expect(text).toContain("PG-A1B2C3");
     expect(text).toContain("Asha Rao");
     expect(text).toContain("******3210");
@@ -69,6 +69,19 @@ describe("identification sheet", () => {
     expect(text).not.toContain("PRIVATE-TRACKING-TOKEN");
     expect(text).not.toContain("private/customer/source.pdf");
     expect(text).not.toContain("pay_private");
+  });
+
+  it("prints full phone only on the local sheet and never embeds a logo", () => {
+    const text = generateIdentificationSheetBuffer({
+      ...data,
+      customerPhone: "+91 98765 43210",
+      logoUrl: "branding/secret-logo",
+    } as IdentificationSheetData).toString("ascii");
+    expect(text).toContain("+91 98765 43210");
+    expect(text).not.toContain("******3210");
+    expect(text.indexOf("ABC Xerox")).toBeLessThan(text.indexOf("PG-A1B2C3"));
+    expect(text).not.toContain("branding/secret-logo");
+    expect(text).not.toContain("/Subtype /Image");
   });
 
   it("uses fixed sheet settings independent of customer print settings", () => {

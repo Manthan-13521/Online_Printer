@@ -14,6 +14,8 @@ const migrations = [
   "0007_performance_optimization_indexes.sql",
   "0008_production_printer_reliability.sql",
   "0009_retention_and_pii_purge.sql",
+  "0010_efficiency_and_branding.sql",
+  "0011_retention_retry_schedule.sql",
 ].map((name) =>
   readFileSync(
     new URL(`../../../../../database/migrations/${name}`, import.meta.url),
@@ -239,6 +241,53 @@ describe("D1RetentionRepository — Database Queries and Index Safety", () => {
       .prepare("SELECT storage_status FROM uploads WHERE id = ?")
       .get(padUuid("upload_1")) as { storage_status: string };
     expect(row.storage_status).toBe("DELETE_PENDING");
+  });
+
+  it("backs off failed deletes without extending privacy expiry and locks concurrent cleanup", async () => {
+    seedOrderAndUpload({
+      orderId: "order_1",
+      uploadId: "upload_1",
+      status: "CREATED",
+      retentionReason: "UNPAID",
+      deleteAfterMs: now - 100,
+    });
+    const id = padUuid("upload_1");
+    expect(await repo.markUploadDeletePending(id, now)).toBe(true);
+    expect(await repo.markUploadDeletePending(id, now)).toBe(false);
+    expect(await repo.findExpiredUploads(now + 1, 5)).toHaveLength(0);
+    await repo.recordUploadDeleteFailed(id, "synthetic failure", now);
+    expect(await repo.findExpiredUploads(now + 299999, 5)).toHaveLength(0);
+    expect(await repo.findExpiredUploads(now + 300000, 5)).toHaveLength(1);
+    expect(await repo.markUploadDeletePending(id, now + 300000)).toBe(true);
+    await repo.recordUploadDeleteFailed(id, "synthetic failure", now + 300000);
+    expect(await repo.findExpiredUploads(now + 899999, 5)).toHaveLength(0);
+    expect(await repo.findExpiredUploads(now + 900000, 5)).toHaveLength(1);
+    expect(
+      sqlite.prepare("SELECT delete_after_ms FROM uploads WHERE id=?").get(id)!
+        .delete_after_ms,
+    ).toBe(now - 100);
+  });
+
+  it("makes repeated deletion and PII finalization write-free and event-idempotent", async () => {
+    seedOrderAndUpload({
+      orderId: "order_1",
+      uploadId: "upload_1",
+      status: "COMPLETED",
+      retentionReason: "COMPLETED",
+      deleteAfterMs: now - 100,
+      completedAtMs: now - 6 * 3600000,
+    });
+    const order = padUuid("order_1"),
+      upload = padUuid("upload_1");
+    await repo.recordUploadDeleted(upload, order, now);
+    expect(await repo.purgeOrderPii(order, now)).toBe(true);
+    const before = sqlite.prepare("SELECT total_changes() n").get()!.n;
+    await repo.recordUploadDeleted(upload, order, now + 1);
+    expect(await repo.purgeOrderPii(order, now + 1)).toBe(false);
+    expect(sqlite.prepare("SELECT total_changes() n").get()!.n).toBe(before);
+    expect(sqlite.prepare("SELECT COUNT(*) n FROM order_events").get()!.n).toBe(
+      2,
+    );
   });
 
   it("records upload deleted and creates audit event", async () => {

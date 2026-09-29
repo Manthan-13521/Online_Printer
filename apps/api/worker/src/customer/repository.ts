@@ -83,11 +83,12 @@ export class D1CustomerRepository implements CustomerRepository {
   async getPublicConfig(): Promise<CustomerConfigData | null> {
     const installation = await this.db
       .prepare(
-        `SELECT shop_name, contact_phone, customer_notice,
+        `SELECT logo_key, shop_name, contact_phone, customer_notice,
                        online_printing_enabled, max_pdf_size_bytes
                 FROM installation WHERE id = 1`,
       )
       .first<{
+        logo_key: string | null;
         shop_name: string;
         contact_phone: string | null;
         customer_notice: string | null;
@@ -107,6 +108,9 @@ export class D1CustomerRepository implements CustomerRepository {
       }>();
     return {
       shopName: installation.shop_name,
+      logoUrl: installation.logo_key
+        ? `/api/branding/logo/${installation.logo_key.slice("branding/".length)}`
+        : null,
       contactPhone: installation.contact_phone,
       customerNotice: installation.customer_notice,
       onlinePrintingEnabled: installation.online_printing_enabled === 1,
@@ -303,7 +307,10 @@ export class D1CustomerRepository implements CustomerRepository {
         `UPDATE orders SET selected_pages = ?, copies = ?, paper_size = ?,
       color_mode = ?, sides = ?, printing_amount_paise = ?, service_charge_paise = ?,
       total_amount_paise = ?, status = 'PAYMENT_PENDING', updated_at_ms = ?
-      WHERE id = ? AND status IN ('UPLOADED', 'PAYMENT_PENDING')`,
+      WHERE id = ? AND status IN ('UPLOADED', 'PAYMENT_PENDING')
+        AND (status <> 'PAYMENT_PENDING' OR selected_pages IS NOT ? OR copies IS NOT ? OR paper_size IS NOT ?
+          OR color_mode IS NOT ? OR sides IS NOT ? OR printing_amount_paise IS NOT ?
+          OR service_charge_paise IS NOT ? OR total_amount_paise IS NOT ?)`,
       )
       .bind(
         input.selectedPages,
@@ -316,6 +323,14 @@ export class D1CustomerRepository implements CustomerRepository {
         input.totalAmountPaise,
         input.nowMs,
         input.orderId,
+        input.selectedPages,
+        input.copies,
+        input.paperSize,
+        input.colorMode,
+        input.sides,
+        input.printingAmountPaise,
+        input.serviceChargePaise,
+        input.totalAmountPaise,
       )
       .run();
   }

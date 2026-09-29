@@ -33,6 +33,7 @@ vi.mock("./api", async (importOriginal) => {
       getPricing: vi.fn(),
       updatePricing: vi.fn(),
       getLiveOrders: vi.fn(),
+      getDashboard: vi.fn(),
     },
   };
 });
@@ -77,6 +78,17 @@ describe("Admin application", () => {
   beforeEach(() => {
     window.history.replaceState({}, "", "/admin");
     vi.resetAllMocks();
+    mockedApi.getDashboard.mockResolvedValue({
+      ok: true,
+      data: {
+        settings,
+        agents: [],
+        defaultProductionPrinterId: null,
+        queue: 0,
+        attention: 0,
+        completedToday: 0,
+      },
+    });
   });
 
   afterEach(cleanup);
@@ -115,7 +127,7 @@ describe("Admin application", () => {
     expect(screen.getByRole("link", { name: "Live Orders" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Security" })).toBeTruthy();
     expect(
-      screen.getByRole("heading", { name: "Welcome to PrintGo" }),
+      await screen.findByRole("heading", { name: "ABC Xerox" }),
     ).toBeTruthy();
     expect(screen.queryByText(/revenue|37 orders/iu)).toBeNull();
   });
@@ -181,7 +193,7 @@ describe("Admin application", () => {
     const user = userEvent.setup();
     render(<App />);
 
-    const name = await screen.findByLabelText("Shop name");
+    const name = await screen.findByLabelText("Shop name *");
     await user.clear(name);
     await user.type(name, "City Prints");
     expect(screen.getByText("Unsaved changes")).toBeTruthy();

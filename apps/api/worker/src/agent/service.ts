@@ -120,6 +120,7 @@ export class AgentService {
   async heartbeat(
     rawSecret: string,
     input: ValidatedAgentHeartbeatInput,
+    reportPrinters = true,
   ): Promise<AgentHeartbeatData> {
     const credentialHash = await hashSessionToken(rawSecret);
     const agent =
@@ -130,21 +131,31 @@ export class AgentService {
     }
 
     const nowMs = this.now();
-    await this.repository.updateHeartbeat({
-      agentId: agent.id,
-      nowMs,
-      printers: input.printers,
-    });
+    if (
+      reportPrinters ||
+      agent.lastHeartbeatAtMs === null ||
+      nowMs - agent.lastHeartbeatAtMs >= 60_000
+    ) {
+      await this.repository.updateHeartbeat({
+        agentId: agent.id,
+        nowMs,
+        ...(reportPrinters ? { printers: input.printers } : {}),
+      });
+    }
 
-    const nextCommand = await this.repository.claimPendingTestPrintCommand(
-      agent.id,
-      nowMs,
-    );
-    const printJob = await this.printing?.claimOrRenew(agent.id);
+    const nextCommand =
+      agent.hasPendingCommand === false
+        ? null
+        : await this.repository.claimPendingTestPrintCommand(agent.id, nowMs);
+    const printJob =
+      agent.hasPrintWork === false
+        ? null
+        : await this.printing?.claimOrRenew(agent.id);
 
     return {
       acknowledged: true,
       serverTimeMs: nowMs,
+      onlinePrintingEnabled: agent.onlinePrintingEnabled ?? true,
       ...(nextCommand ? { nextCommand } : {}),
       ...(printJob ? { printJob } : {}),
     };

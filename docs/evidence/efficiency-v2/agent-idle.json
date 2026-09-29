@@ -1,0 +1,11 @@
+{
+  "label": "SIMULATED 15-hour Agent; mocked PowerShell and HTTP, measured Mac process resources",
+  "calls": 10800,
+  "reports": 1,
+  "powerShellInvocations": 900,
+  "processCpuMs": 90.088,
+  "wallMs": 147.09216700000002,
+  "heapStart": 13409432,
+  "peakHeap": 20888704,
+  "rss": 96436224
+}

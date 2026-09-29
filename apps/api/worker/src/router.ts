@@ -1,3 +1,5 @@
+import { handleDashboard } from "./config/dashboard";
+import { handleBrandingRequest } from "./branding/routes";
 import { error, ok } from "./http";
 import { handleAdminAuthRequest } from "./auth/routes";
 import { handleAdminConfigurationRequest } from "./config/routes";
@@ -19,6 +21,15 @@ export async function routeRequest(
   if (request.method === "GET" && url.pathname === "/health") {
     return ok({ service: "printgo-api", status: "available" });
   }
+
+  if (
+    url.pathname.startsWith("/api/branding/") ||
+    url.pathname.startsWith("/api/admin/branding/")
+  )
+    return handleBrandingRequest(request, env);
+
+  if (url.pathname === "/api/admin/dashboard")
+    return handleDashboard(request, env);
 
   if (url.pathname.startsWith("/api/admin/auth/")) {
     return handleAdminAuthRequest(request, env);

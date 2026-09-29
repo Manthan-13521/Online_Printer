@@ -1,3 +1,4 @@
+import { applyShopBranding } from "../../branding";
 import { useEffect, useMemo, useState } from "react";
 
 import type {
@@ -13,7 +14,7 @@ import {
 } from "@printgo/domain";
 import { formatInr } from "@printgo/pricing";
 
-import { customerApi, uploadDirectly } from "./api";
+import { customerApi, uploadDirectly, resolveCustomerApiUrl } from "./api";
 import { inspectPdf } from "./pdf";
 import { PwaInstallBanner } from "./PwaInstallBanner";
 import { TrackingPage } from "./TrackingPage";
@@ -148,6 +149,11 @@ export function App() {
       })
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    if (config?.shopName) return applyShopBranding(config.shopName);
+    return undefined;
+  }, [config?.shopName]);
 
   const optionAvailable = useMemo(
     () =>
@@ -414,7 +420,29 @@ export function App() {
     }
   }
 
-  if (trackingJobCode) return <TrackingPage jobCode={trackingJobCode} />;
+  const shopHeader = (
+    <header className="hero">
+      {config?.logoUrl ? (
+        <img
+          src={resolveCustomerApiUrl(config.logoUrl)}
+          alt="Shop logo"
+          style={{ maxWidth: 144, maxHeight: 80, objectFit: "contain" }}
+        />
+      ) : null}
+      <h1>{config?.shopName ?? "Online printing"}</h1>
+      <p>
+        {config?.customerNotice ??
+          "Upload a PDF and review your print settings."}
+      </p>
+    </header>
+  );
+  if (trackingJobCode)
+    return (
+      <>
+        {shopHeader}
+        <TrackingPage jobCode={trackingJobCode} />
+      </>
+    );
 
   if (loading)
     return (
@@ -425,14 +453,7 @@ export function App() {
 
   return (
     <main className="page-shell">
-      <header className="hero">
-        <p className="eyebrow">PrintGo</p>
-        <h1>{config?.shopName ?? "Online printing"}</h1>
-        <p>
-          {config?.customerNotice ??
-            "Upload a PDF and review your print settings."}
-        </p>
-      </header>
+      {shopHeader}
       {!busy && !paymentBusy && !quote && !paymentSuccess ? (
         <PwaInstallBanner />
       ) : null}
@@ -777,6 +798,33 @@ export function App() {
           </section>
         </form>
       )}
+      <footer
+        className="customer-privacy-footer"
+        style={{
+          marginTop: "2.5rem",
+          paddingTop: "1.5rem",
+          borderTop: "1px solid #c9dcdf",
+          textAlign: "center",
+        }}
+      >
+        <p
+          className="muted"
+          style={{
+            fontSize: "0.85rem",
+            maxWidth: "520px",
+            margin: "0 auto 0.5rem auto",
+            lineHeight: "1.5",
+          }}
+        >
+          🔒 <strong>Privacy & Automatic Cleanup:</strong> Your document is
+          securely stored in private shop storage and automatically deleted
+          after printing. All customer information is erased from the shop
+          database after 5 hours.
+        </p>
+        <p className="muted" style={{ fontSize: "0.8rem", margin: 0 }}>
+          Powered by <strong>PrintGo</strong> · Secure Single-Shop Printing
+        </p>
+      </footer>
     </main>
   );
 }

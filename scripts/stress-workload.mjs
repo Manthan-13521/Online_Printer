@@ -29,7 +29,8 @@ export function workload(runtime, request) {
       const row = runtime.db
         .prepare("SELECT r2_object_key FROM uploads WHERE order_id=?")
         .get(job.orderId);
-      await runtime.env.PDF_BUCKET.get(row.r2_object_key);
+      if (job.currentStep.type === "CUSTOMER_DOCUMENT")
+        await runtime.env.PDF_BUCKET.get(row.r2_object_key);
       const path = `/api/agent/print-jobs/${job.orderId}/steps/${job.currentStep.stepId}`;
       const base = { claimId: job.claimId };
       await request("print-start", `${path}/start`, {

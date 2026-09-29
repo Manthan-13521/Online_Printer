@@ -69,6 +69,7 @@ export interface AdminLogoutData {
 export type AdminLogoutResponse = ApiResponse<AdminLogoutData>;
 
 export interface ShopSettings {
+  logoUrl?: string | null;
   shopName: string;
   contactPhone: string | null;
   address: string | null;
@@ -127,6 +128,7 @@ export interface CustomerPrintOption {
 }
 
 export interface CustomerConfigData {
+  logoUrl?: string | null;
   shopName: string;
   contactPhone: string | null;
   customerNotice: string | null;
@@ -349,6 +351,7 @@ export interface AgentTestPrintCommand {
 export interface AgentHeartbeatData {
   acknowledged: true;
   serverTimeMs: number;
+  onlinePrintingEnabled?: boolean;
   nextCommand?: AgentTestPrintCommand | null;
   printJob?: AgentPrintJob | null;
 }
@@ -568,6 +571,8 @@ export type AdminRevokeAgentResponse = ApiResponse<{
 }>;
 
 export interface IdentificationSheetData {
+  /** Private Agent payload, only for the intentional physical sheet. Never log. */
+  customerPhone?: string;
   jobCode: string;
   customerName: string;
   maskedPhone: string;
@@ -581,4 +586,13 @@ export interface IdentificationSheetData {
   instructions: string | null;
   paidAtMs: number;
   shopName?: string | undefined;
+}
+
+export interface AdminDashboardData {
+  settings: ShopSettings | null;
+  agents: AdminAgentDetails[];
+  defaultProductionPrinterId: string | null;
+  queue: number;
+  attention: number;
+  completedToday: number;
 }

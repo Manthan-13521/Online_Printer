@@ -46,6 +46,11 @@ export interface PrintSubmission {
 }
 
 export interface SubmittedPrintJob {
+  timings?: {
+    processStartedAtMs: number;
+    spoolCapturedAtMs: number | null;
+    acceptedAtMs: number;
+  };
   spoolJobId: string;
   engineUsed?: string | undefined;
   fastDespooled?: boolean | undefined;
@@ -95,7 +100,7 @@ export interface PrintJobStatus {
  * PDF library, shell command, or Windows driver implementation.
  */
 export interface PrinterAdapter {
-  listPrinters(): Promise<readonly PrinterSummary[]>;
+  listPrinters(forceRefresh?: boolean): Promise<readonly PrinterSummary[]>;
   getCapabilities(printerId: string): Promise<PrinterCapabilities>;
   getStatus(printerId: string): Promise<PrinterStatus>;
   submitPdfJob(submission: PrintSubmission): Promise<SubmittedPrintJob>;

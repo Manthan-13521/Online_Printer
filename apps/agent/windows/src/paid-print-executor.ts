@@ -24,12 +24,18 @@ export class PaidPrintExecutor {
     private readonly printer: PrinterAdapter,
     private readonly journal: ExecutionJournalStore = new ExecutionJournalStore(),
     private readonly log: (message: string) => void = () => undefined,
+    private readonly onStepFinished: () => void = () => undefined,
   ) {}
 
   async handle(
     credentials: AgentCredentials,
     job: AgentPrintJob,
   ): Promise<void> {
+    const timing = (event: string, atMs = Date.now()) =>
+      this.log(
+        `PRINT_TIMING step=${job.currentStep.stepId} event=${event} atMs=${atMs}`,
+      );
+    timing("preparation_start");
     const saved = await this.journal.load();
     const matching =
       saved?.orderId === job.orderId &&
@@ -120,6 +126,7 @@ export class PaidPrintExecutor {
     }
 
     try {
+      timing("submission_start");
       await this.client.startPrintStep(
         credentials.serverUrl,
         credentials.agentId,
@@ -158,6 +165,12 @@ export class PaidPrintExecutor {
         copies: settings.copies,
         settings: { ...settings, printerName: job.windowsPrinterName },
       });
+      if (submitted.timings) {
+        timing("sumatra_start", submitted.timings.processStartedAtMs);
+        if (submitted.timings.spoolCapturedAtMs !== null)
+          timing("spool_captured", submitted.timings.spoolCapturedAtMs);
+        timing("adapter_return", submitted.timings.acceptedAtMs);
+      }
       await this.journal.save({
         orderId: job.orderId,
         attemptId: job.attemptId,
@@ -168,57 +181,9 @@ export class PaidPrintExecutor {
 
       if (
         submitted.fastDespooled ||
-        submitted.spoolJobId.startsWith("despooled-")
+        submitted.spoolJobId.startsWith("despooled-") ||
+        submitted.spoolJobId.startsWith("unobserved-")
       ) {
-        // Fast 1-page print: SumatraPDF exited 0, spooler dispatched directly into physical buffer
-        await this.client.submitPrintStep(
-          credentials.serverUrl,
-          credentials.agentId,
-          credentials.agentSecret,
-          job,
-          submitted.spoolJobId,
-        );
-        const printerStatus = await this.printer.getStatus(
-          job.windowsPrinterName,
-        );
-        if (
-          printerStatus.availability === "ONLINE" ||
-          printerStatus.availability === "AVAILABLE"
-        ) {
-          await this.client.reportPrintStep(
-            credentials.serverUrl,
-            credentials.agentId,
-            credentials.agentSecret,
-            job,
-            {
-              status: "SUCCEEDED",
-              spoolerJobId: submitted.spoolJobId,
-              failureCode: null,
-              failureDetail:
-                "Fast despool completed successfully to physical printer buffer.",
-            },
-          );
-          await this.journal.clear();
-          return;
-        } else if (printerStatus.availability === "BLOCKED") {
-          await this.client.reportPrintStep(
-            credentials.serverUrl,
-            credentials.agentId,
-            credentials.agentSecret,
-            job,
-            {
-              status: "BLOCKED",
-              spoolerJobId: submitted.spoolJobId,
-              failureCode: "PRINTER_ERROR",
-              failureDetail:
-                printerStatus.message ?? "Printer blocked during print.",
-            },
-          );
-          return;
-        }
-      }
-
-      if (submitted.spoolJobId.startsWith("unobserved-")) {
         await this.client.reportPrintStep(
           credentials.serverUrl,
           credentials.agentId,
@@ -242,6 +207,9 @@ export class PaidPrintExecutor {
         job,
         submitted.spoolJobId,
       );
+      timing("spool_identity_persisted");
+      await cleanup();
+      cleanup = () => Promise.resolve();
       await this.observe(credentials, job, submitted.spoolJobId);
     } catch (error) {
       if (
@@ -264,25 +232,31 @@ export class PaidPrintExecutor {
           .catch(() => undefined);
         await this.journal.clear();
       } else {
-        const errorMsg = error instanceof Error ? error.message : String(error);
         this.log(
-          `Print submission result is unresolved for ${job.jobCode}: ${errorMsg}`,
+          "Print submission result is unresolved; human review required.",
         );
-        await this.client
-          .reportPrintStep(
+        // Keep a positively correlated local spool identity if the server is unreachable.
+        const savedSubmission = await this.journal.load();
+        try {
+          await this.client.reportPrintStep(
             credentials.serverUrl,
             credentials.agentId,
             credentials.agentSecret,
             job,
             {
               status: "UNCERTAIN",
-              spoolerJobId: null,
+              spoolerJobId: savedSubmission?.spoolerJobId ?? null,
               failureCode: "UNKNOWN",
-              failureDetail: `Print submission failed with unexpected error: ${errorMsg}`,
+              failureDetail:
+                "Print submission failed with an unexpected error; outcome uncertain.",
             },
-          )
-          .catch(() => undefined);
-        await this.journal.clear();
+          );
+          await this.journal.clear();
+        } catch {
+          this.log(
+            "Uncertain print report is pending; recovery journal retained.",
+          );
+        }
       }
     } finally {
       await cleanup?.();
@@ -360,5 +334,11 @@ export class PaidPrintExecutor {
       },
     );
     if (status !== "BLOCKED") await this.journal.clear();
+    if (status === "SUCCEEDED") {
+      this.log(
+        `PRINT_TIMING step=${job.currentStep.stepId} event=step_acknowledged atMs=${Date.now()}`,
+      );
+      this.onStepFinished();
+    }
   }
 }

@@ -1,0 +1,49 @@
+{
+  "httpRequests": 10800,
+  "tableRowsChanged": 900,
+  "statements": 33300,
+  "returnedRows": 10800,
+  "localWallMs": 1801.9857909999998,
+  "requests": 10801,
+  "latency": {
+    "count": 10801,
+    "p50": 0.2,
+    "p90": 0.4,
+    "p95": 0.6,
+    "p99": 0.7,
+    "max": 4.459333000000015,
+    "mean": 0.15577851624849576
+  },
+  "routes": {
+    "agent-heartbeat": {
+      "hist": {
+        "count": 1,
+        "p50": 2.4,
+        "p90": 2.4,
+        "p95": 2.4,
+        "p99": 2.4,
+        "max": 2.3552499999999554,
+        "mean": 2.3552499999999554
+      },
+      "statements": 6,
+      "returnedRows": 2,
+      "changedRows": 1,
+      "queryMs": 0.3573749999999336
+    },
+    "agent-pulse": {
+      "hist": {
+        "count": 10800,
+        "p50": 0.2,
+        "p90": 0.4,
+        "p95": 0.6,
+        "p99": 0.7,
+        "max": 4.459333000000015,
+        "mean": 0.15557486148148175
+      },
+      "statements": 33300,
+      "returnedRows": 10800,
+      "changedRows": 900,
+      "queryMs": 991.6227389999933
+    }
+  }
+}

@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { COMPLETED_RETENTION_MS } from "@printgo/domain";
+import { COMPLETED_RETENTION_MS, PRINT_CLAIM_LEASE_MS } from "@printgo/domain";
 import { D1PrintingRepository } from "./repository.js";
 
 const migrations = [
@@ -203,6 +203,12 @@ describe("paid-print D1 safety", () => {
       ).run(placement);
       const job = await repository.claimOrRenew(ids.agent1, 2_000);
       expect(job?.currentStep.type).toBe(expected[0]);
+      expect(job?.identificationSheet?.customerPhone).toBeDefined();
+      db.prepare(
+        "UPDATE installation SET identification_sheet_enabled = 0",
+      ).run();
+      const resumed = await repository.claimOrRenew(ids.agent1, 2_001);
+      expect(resumed?.identificationSheet).toEqual(job?.identificationSheet);
       const rows = db
         .prepare(
           "SELECT step_type FROM print_attempt_steps ORDER BY sequence_number",
@@ -214,6 +220,59 @@ describe("paid-print D1 safety", () => {
       ).toHaveLength(1);
     },
   );
+
+  it("does not multiply step events or metadata writes for simultaneous duplicate requests", async () => {
+    seed(db);
+    db.exec("UPDATE installation SET identification_sheet_enabled = 1");
+    for (let step = 0; step < 2; step++) {
+      const job = (await repository.claimOrRenew(
+        ids.agent1,
+        2_000 + step * 1000,
+      ))!;
+      const ownership = {
+        agentId: ids.agent1,
+        orderId: ids.order,
+        stepId: job.currentStep.stepId,
+        claimId: job.claimId,
+      };
+      await Promise.all(
+        [0, 1].map(() =>
+          repository.startStep({ ...ownership, nowMs: 2_100 + step * 1000 }),
+        ),
+      );
+      expect(
+        db
+          .prepare(
+            "SELECT COUNT(*) n FROM order_events WHERE event_type='PRINT_STEP_STARTED'",
+          )
+          .get()!.n,
+      ).toBe(step + 1);
+      const before = Number(db.prepare("SELECT total_changes() n").get()!.n);
+      await Promise.all(
+        [0, 1].map(() =>
+          repository.recordSubmission({
+            ...ownership,
+            nowMs: 2_200 + step * 1000,
+            spoolerJobId: String(40 + step),
+          }),
+        ),
+      );
+      const changed =
+        Number(db.prepare("SELECT total_changes() n").get()!.n) - before;
+      expect(changed).toBe(step === 0 ? 3 : 2);
+      await repository.recordResult({
+        ...ownership,
+        nowMs: 2_300 + step * 1000,
+        status: "SUCCEEDED",
+        spoolerJobId: String(40 + step),
+        failureCode: null,
+        failureDetail: null,
+      });
+    }
+    expect(
+      db.prepare("SELECT status FROM orders WHERE id=?").get(ids.order)!.status,
+    ).toBe("COMPLETED");
+  });
 
   it("rejects unpaid, missing-upload, stale capability, and unsupported-printer jobs", async () => {
     seed(db, { paid: false });
@@ -234,6 +293,80 @@ describe("paid-print D1 safety", () => {
     expect(await repository.claimOrRenew(ids.agent1, 2_000)).toBeNull();
     db.prepare("UPDATE agents SET is_active = 0 WHERE id = ?").run(ids.agent1);
     expect(await repository.claimOrRenew(ids.agent1, 2_000)).toBeNull();
+  });
+
+  it("keeps fast-job pulses read-only and renews a slow lease only in its final third", async () => {
+    seed(db);
+    const job = (await repository.claimOrRenew(ids.agent1, 2_000))!;
+    const changes = () =>
+      Number(db.prepare("SELECT total_changes() n").get()!.n);
+    const before = changes();
+    for (const nowMs of [7_000, 12_000, 42_000, 201_999]) {
+      expect(
+        (await repository.claimOrRenew(ids.agent1, nowMs))?.leaseExpiresAtMs,
+      ).toBe(job.leaseExpiresAtMs);
+    }
+    expect(changes()).toBe(before);
+    const renewed = (await repository.claimOrRenew(ids.agent1, 202_000))!;
+    expect(renewed.leaseExpiresAtMs).toBe(202_000 + PRINT_CLAIM_LEASE_MS);
+    expect(changes() - before).toBe(1);
+    expect(
+      (await repository.claimOrRenew(ids.agent1, 207_000))?.leaseExpiresAtMs,
+    ).toBe(202_000 + PRINT_CLAIM_LEASE_MS);
+    expect(changes() - before).toBe(1);
+    expect(
+      db
+        .prepare(
+          "SELECT COUNT(*) n FROM order_events WHERE event_type='PRINT_JOB_CLAIMED'",
+        )
+        .get()!.n,
+    ).toBe(1);
+  });
+
+  it("renews a blocked spool identity after interruption but never revives an expired submission", async () => {
+    seed(db);
+    const job = (await repository.claimOrRenew(ids.agent1, 2_000))!;
+    const ownership = {
+      agentId: ids.agent1,
+      orderId: ids.order,
+      stepId: job.currentStep.stepId,
+      claimId: job.claimId,
+    };
+    await repository.startStep({ ...ownership, nowMs: 2_100 });
+    await repository.recordSubmission({
+      ...ownership,
+      nowMs: 2_200,
+      spoolerJobId: "77",
+    });
+    await repository.recordResult({
+      ...ownership,
+      nowMs: 2_300,
+      status: "BLOCKED",
+      spoolerJobId: "77",
+      failureCode: "PAPER_OUT",
+      failureDetail: "Paper out",
+    });
+    // A temporary network gap shorter than the lease keeps the exact identity.
+    const resumed = (await repository.claimOrRenew(ids.agent1, 250_000))!;
+    expect(resumed.currentStep).toMatchObject({
+      status: "BLOCKED",
+      spoolerJobId: "77",
+    });
+    expect(resumed.leaseExpiresAtMs).toBe(250_000 + PRINT_CLAIM_LEASE_MS);
+    // A longer outage / crashed Agent can no longer renew or resubmit.
+    expect(
+      await repository.claimOrRenew(ids.agent1, 250_001 + PRINT_CLAIM_LEASE_MS),
+    ).toBeNull();
+    expect(
+      db
+        .prepare(
+          "SELECT status,spooler_job_id FROM print_attempt_steps WHERE id=?",
+        )
+        .get(job.currentStep.stepId),
+    ).toEqual({ status: "UNCERTAIN", spooler_job_id: "77" });
+    expect(db.prepare("SELECT COUNT(*) n FROM print_attempts").get()!.n).toBe(
+      1,
+    );
   });
 
   it("recovers an expired lease only when no submission started", async () => {

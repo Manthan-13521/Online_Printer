@@ -1,0 +1,861 @@
+{
+  "label": "MEASURED LOCAL: sequential process CPU includes SQLite, Request construction, body serialization and mocked services; not Cloudflare Worker CPU",
+  "observations": {
+    "browse": {
+      "statements": 2,
+      "returnedRows": 9,
+      "changedRows": 0,
+      "queryMs": 0.12070799999997917,
+      "r2": {
+        "PUT": 0,
+        "HEAD": 0,
+        "GET": 0,
+        "DELETE": 0
+      },
+      "provider": {
+        "create": 0,
+        "lookup": 0
+      }
+    },
+    "heartbeatIdle": {
+      "statements": 14,
+      "returnedRows": 2,
+      "changedRows": 2,
+      "queryMs": 1.2766690000000267,
+      "r2": {
+        "PUT": 0,
+        "HEAD": 0,
+        "GET": 0,
+        "DELETE": 0
+      },
+      "provider": {
+        "create": 0,
+        "lookup": 0
+      }
+    },
+    "uploadAbandon": {
+      "statements": 19,
+      "returnedRows": 52,
+      "changedRows": 5,
+      "queryMs": 1.8664570000000538,
+      "r2": {
+        "PUT": 1,
+        "HEAD": 1,
+        "GET": 1,
+        "DELETE": 0
+      },
+      "provider": {
+        "create": 0,
+        "lookup": 0
+      }
+    },
+    "paymentCancel": {
+      "statements": 43,
+      "returnedRows": 98,
+      "changedRows": 14,
+      "queryMs": 4.09225200000003,
+      "r2": {
+        "PUT": 1,
+        "HEAD": 2,
+        "GET": 1,
+        "DELETE": 0
+      },
+      "provider": {
+        "create": 1,
+        "lookup": 0
+      }
+    },
+    "paidThenPrint": {
+      "statements": 65,
+      "returnedRows": 106,
+      "changedRows": 18,
+      "queryMs": 6.7738310000000865,
+      "r2": {
+        "PUT": 1,
+        "HEAD": 2,
+        "GET": 1,
+        "DELETE": 0
+      },
+      "provider": {
+        "create": 1,
+        "lookup": 1
+      }
+    },
+    "adminLive": {
+      "statements": 2,
+      "returnedRows": 2,
+      "changedRows": 0,
+      "queryMs": 0.2527910000000304,
+      "r2": {
+        "PUT": 0,
+        "HEAD": 0,
+        "GET": 0,
+        "DELETE": 0
+      },
+      "provider": {
+        "create": 0,
+        "lookup": 0
+      }
+    }
+  },
+  "routes": {
+    "config": {
+      "wall": {
+        "count": 104,
+        "p50": 0.2,
+        "p90": 0.4,
+        "p95": 0.5,
+        "p99": 0.8,
+        "max": 16.450709000000018,
+        "mean": 0.37549485576924807
+      },
+      "cpu": {
+        "count": 104,
+        "p50": 0.2,
+        "p90": 0.4,
+        "p95": 0.5,
+        "p99": 0.8,
+        "max": 23.592,
+        "mean": 0.4504038461538461
+      },
+      "statements": 208,
+      "returnedRows": 936,
+      "changedRows": 0,
+      "queryMs": 9.833632999998542,
+      "errors": 0
+    },
+    "agent-heartbeat": {
+      "wall": {
+        "count": 102,
+        "p50": 1.7,
+        "p90": 2,
+        "p95": 2.2,
+        "p99": 3,
+        "max": 4.273416999999995,
+        "mean": 1.743339843137271
+      },
+      "cpu": {
+        "count": 102,
+        "p50": 1.7,
+        "p90": 2.2,
+        "p95": 2.5,
+        "p99": 4.2,
+        "max": 4.828,
+        "mean": 1.7758921568627455
+      },
+      "statements": 1428,
+      "returnedRows": 204,
+      "changedRows": 103,
+      "queryMs": 112.80080499999235,
+      "errors": 0
+    },
+    "draft": {
+      "wall": {
+        "count": 103,
+        "p50": 1.9,
+        "p90": 3,
+        "p95": 3.3,
+        "p99": 5.4,
+        "max": 8.438709000000017,
+        "mean": 2.0796201553398217
+      },
+      "cpu": {
+        "count": 103,
+        "p50": 1.7,
+        "p90": 2.4,
+        "p95": 3.1,
+        "p99": 5.9,
+        "max": 12.669,
+        "mean": 1.962388349514563
+      },
+      "statements": 515,
+      "returnedRows": 1030,
+      "changedRows": 206,
+      "queryMs": 68.63075399999803,
+      "errors": 0
+    },
+    "upload-complete": {
+      "wall": {
+        "count": 103,
+        "p50": 1.1,
+        "p90": 1.5,
+        "p95": 1.8,
+        "p99": 2.2,
+        "max": 2.392707999999999,
+        "mean": 1.156320757281547
+      },
+      "cpu": {
+        "count": 103,
+        "p50": 1,
+        "p90": 2.1,
+        "p95": 2.9,
+        "p99": 4.5,
+        "max": 9.61,
+        "mean": 1.2719514563106795
+      },
+      "statements": 515,
+      "returnedRows": 1030,
+      "changedRows": 206,
+      "queryMs": 45.39094800000282,
+      "errors": 0
+    },
+    "quote": {
+      "wall": {
+        "count": 103,
+        "p50": 1,
+        "p90": 1.4,
+        "p95": 1.8,
+        "p99": 5.5,
+        "max": 6.154707999999914,
+        "mean": 1.17357527184467
+      },
+      "cpu": {
+        "count": 103,
+        "p50": 0.9,
+        "p90": 1.7,
+        "p95": 2.6,
+        "p99": 3.3,
+        "max": 4.744,
+        "mean": 1.0837766990291255
+      },
+      "statements": 721,
+      "returnedRows": 2369,
+      "changedRows": 103,
+      "queryMs": 91.46359400000287,
+      "errors": 0
+    },
+    "payment-create": {
+      "wall": {
+        "count": 102,
+        "p50": 2.8,
+        "p90": 3.5,
+        "p95": 3.8,
+        "p99": 4,
+        "max": 4.569209000000001,
+        "mean": 2.9130955882353193
+      },
+      "cpu": {
+        "count": 102,
+        "p50": 2.5,
+        "p90": 3.6,
+        "p95": 4.4,
+        "p99": 5.2,
+        "max": 5.264,
+        "mean": 2.7215
+      },
+      "statements": 1734,
+      "returnedRows": 4386,
+      "changedRows": 510,
+      "queryMs": 197.11274600000425,
+      "errors": 0
+    },
+    "payment-cancel": {
+      "wall": {
+        "count": 1,
+        "p50": 2.1,
+        "p90": 2.1,
+        "p95": 2.1,
+        "p99": 2.1,
+        "max": 2.073999999999984,
+        "mean": 2.073999999999984
+      },
+      "cpu": {
+        "count": 1,
+        "p50": 1.7,
+        "p90": 1.7,
+        "p95": 1.7,
+        "p99": 1.7,
+        "max": 1.666,
+        "mean": 1.666
+      },
+      "statements": 7,
+      "returnedRows": 3,
+      "changedRows": 4,
+      "queryMs": 0.6998329999999839,
+      "errors": 0
+    },
+    "payment-verify": {
+      "wall": {
+        "count": 101,
+        "p50": 2.4,
+        "p90": 3.2,
+        "p95": 3.6,
+        "p99": 4.2,
+        "max": 5.477666999999997,
+        "mean": 2.542530900990101
+      },
+      "cpu": {
+        "count": 101,
+        "p50": 2.2,
+        "p90": 3.5,
+        "p95": 4,
+        "p99": 5.2,
+        "max": 5.371,
+        "mean": 2.441059405940593
+      },
+      "statements": 1313,
+      "returnedRows": 606,
+      "changedRows": 707,
+      "queryMs": 145.9666679999972,
+      "errors": 0
+    },
+    "tracking": {
+      "wall": {
+        "count": 101,
+        "p50": 0.3,
+        "p90": 0.4,
+        "p95": 0.5,
+        "p99": 0.9,
+        "max": 1.2671669999999722,
+        "mean": 0.3223180792079061
+      },
+      "cpu": {
+        "count": 101,
+        "p50": 0.3,
+        "p90": 0.5,
+        "p95": 0.5,
+        "p99": 1.5,
+        "max": 1.501,
+        "mean": 0.33637623762376234
+      },
+      "statements": 202,
+      "returnedRows": 303,
+      "changedRows": 0,
+      "queryMs": 14.883586000000122,
+      "errors": 0
+    },
+    "admin-live": {
+      "wall": {
+        "count": 101,
+        "p50": 0.9,
+        "p90": 1.3,
+        "p95": 1.4,
+        "p99": 1.9,
+        "max": 1.8926249999999527,
+        "mean": 0.8989393465346426
+      },
+      "cpu": {
+        "count": 101,
+        "p50": 0.9,
+        "p90": 1.3,
+        "p95": 2,
+        "p99": 2.5,
+        "max": 4.013,
+        "mean": 0.9751386138613864
+      },
+      "statements": 202,
+      "returnedRows": 5251,
+      "changedRows": 0,
+      "queryMs": 42.41928699999727,
+      "errors": 0
+    },
+    "invalid-webhook": {
+      "wall": {
+        "count": 100,
+        "p50": 0.2,
+        "p90": 0.4,
+        "p95": 0.9,
+        "p99": 1.1,
+        "max": 1.0610419999998157,
+        "mean": 0.24660544000000642
+      },
+      "cpu": {
+        "count": 100,
+        "p50": 0.2,
+        "p90": 0.5,
+        "p95": 1.1,
+        "p99": 1.3,
+        "max": 1.273,
+        "mean": 0.2689199999999998
+      },
+      "statements": 0,
+      "returnedRows": 0,
+      "changedRows": 0,
+      "queryMs": 0,
+      "errors": 0
+    },
+    "invalid-login": {
+      "wall": {
+        "count": 100,
+        "p50": 15.3,
+        "p90": 15.7,
+        "p95": 15.8,
+        "p99": 16,
+        "max": 16.07837500000005,
+        "mean": 15.323853769999998
+      },
+      "cpu": {
+        "count": 100,
+        "p50": 15.4,
+        "p90": 16,
+        "p95": 16.3,
+        "p99": 19.4,
+        "max": 24.313,
+        "mean": 15.576389999999998
+      },
+      "statements": 100,
+      "returnedRows": 0,
+      "changedRows": 0,
+      "queryMs": 3.0257500000007553,
+      "errors": 0
+    }
+  },
+  "queries": [
+    {
+      "sql": "SELECT shop_name, contact_phone, customer_notice,\n                       online_printing_enabled, max_pdf_size_bytes\n                FROM installation WHERE id = 1",
+      "calls": 617,
+      "returnedRows": 617,
+      "changedRows": 0,
+      "ms": 21.16557599999996,
+      "maxMs": 0.22166600000002745
+    },
+    {
+      "sql": "SELECT paper_size, color_mode, sides FROM print_rates\n                WHERE enabled = 1 ORDER BY paper_size, color_mode, sides",
+      "calls": 617,
+      "returnedRows": 4936,
+      "changedRows": 0,
+      "ms": 18.46248700000305,
+      "maxMs": 0.0827919999999267
+    },
+    {
+      "sql": "SELECT id, display_name, is_active, last_heartbeat_at_ms\n         FROM agents WHERE credential_hash = ?",
+      "calls": 102,
+      "returnedRows": 102,
+      "changedRows": 0,
+      "ms": 2.786788999999061,
+      "maxMs": 0.04441600000006929
+    },
+    {
+      "sql": "SELECT id, windows_printer_name, display_name, enabled, status,\n                status_reason, capabilities_json, is_production_eligible,\n                is_virtual, port_name, driver_name\n         FROM printers WHERE agent_id = ?",
+      "calls": 102,
+      "returnedRows": 102,
+      "changedRows": 0,
+      "ms": 3.8545010000017896,
+      "maxMs": 0.05083300000001145
+    },
+    {
+      "sql": "UPDATE agents\n           SET last_heartbeat_at_ms = ?, updated_at_ms = ?\n           WHERE id = ? AND is_active = 1",
+      "calls": 102,
+      "returnedRows": 0,
+      "changedRows": 102,
+      "ms": 16.070291000001248,
+      "maxMs": 0.8361249999999814
+    },
+    {
+      "sql": "UPDATE installation\n           SET default_production_printer_id = (\n             SELECT id FROM printers\n             WHERE enabled = 1 AND is_production_eligible = 1 AND is_virtual = 0\n             ORDER BY id ASC LIMIT 1\n           ), updated_at_ms = ?\n           WHERE id = 1 AND (\n             default_production_printer_id IS NULL\n             OR NOT EXISTS (\n               SELECT 1 FROM printers p\n               WHERE p.id = installation.default_production_printer_id\n                 AND p.is_production_eligible = 1 AND p.is_virtual = 0\n             )\n           )\n           AND EXISTS (\n             SELECT 1 FROM printers\n             WHERE enabled = 1 AND is_production_eligible = 1 AND is_virtual = 0\n           )",
+      "calls": 102,
+      "returnedRows": 0,
+      "changedRows": 1,
+      "ms": 4.571703999998476,
+      "maxMs": 0.0992080000000044
+    },
+    {
+      "sql": "UPDATE printer_test_commands\n         SET status = 'EXPIRED', finished_at_ms = ?\n         WHERE agent_id = ? AND status = 'PENDING' AND expires_at_ms <= ?",
+      "calls": 102,
+      "returnedRows": 0,
+      "changedRows": 0,
+      "ms": 4.118251999999728,
+      "maxMs": 0.07358299999987139
+    },
+    {
+      "sql": "SELECT c.id, c.printer_id, c.expires_at_ms, p.windows_printer_name\n         FROM printer_test_commands c\n         JOIN printers p ON c.printer_id = p.id\n         WHERE c.agent_id = ? AND c.status = 'PENDING' AND c.expires_at_ms > ?\n           AND p.enabled = 1\n         ORDER BY c.created_at_ms ASC\n         LIMIT 1",
+      "calls": 102,
+      "returnedRows": 0,
+      "changedRows": 0,
+      "ms": 4.373333999999602,
+      "maxMs": 0.06700000000000728
+    },
+    {
+      "sql": "UPDATE print_attempt_steps SET status = 'UNCERTAIN', failure_code = 'UNKNOWN',\n          failure_detail = 'Agent lease expired after physical submission may have started.',\n          finished_at_ms = ?, updated_at_ms = ?\n        WHERE print_attempt_id IN (\n          SELECT pa.id FROM print_attempts pa JOIN orders o ON o.id = pa.order_id\n          WHERE o.claim_expires_at_ms <= ? AND o.status IN ('CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED')\n            AND pa.status IN ('SUBMITTING','SPOOLING','PRINTING','BLOCKED')\n        ) AND status IN ('SUBMISSION_STARTED','SUBMITTED','BLOCKED')",
+      "calls": 102,
+      "returnedRows": 0,
+      "changedRows": 0,
+      "ms": 7.03450099999958,
+      "maxMs": 0.1327080000000933
+    },
+    {
+      "sql": "UPDATE print_attempts SET status = 'FAILED', failure_code = 'UNKNOWN',\n          failure_detail = 'Agent lease expired after physical submission may have started.',\n          finished_at_ms = ?, updated_at_ms = ?\n        WHERE order_id IN (\n          SELECT id FROM orders WHERE claim_expires_at_ms <= ?\n            AND status IN ('CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED')\n        ) AND status IN ('SUBMITTING','SPOOLING','PRINTING','BLOCKED')",
+      "calls": 102,
+      "returnedRows": 0,
+      "changedRows": 0,
+      "ms": 4.586414999999107,
+      "maxMs": 0.10854100000005928
+    },
+    {
+      "sql": "UPDATE orders SET status = 'ADMIN_ACTION_REQUIRED', updated_at_ms = ?\n        WHERE claim_expires_at_ms <= ? AND status IN ('CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED')\n          AND EXISTS (\n            SELECT 1 FROM print_attempts pa JOIN print_attempt_steps ps\n              ON ps.print_attempt_id = pa.id\n            WHERE pa.order_id = orders.id\n              AND ps.status IN ('SUBMISSION_STARTED','SUBMITTED','BLOCKED','UNCERTAIN')\n          )",
+      "calls": 102,
+      "returnedRows": 0,
+      "changedRows": 0,
+      "ms": 5.567125999997955,
+      "maxMs": 0.19404099999997015
+    },
+    {
+      "sql": "UPDATE print_attempts SET status = 'CANCELLED', finished_at_ms = ?, updated_at_ms = ?\n        WHERE order_id IN (\n          SELECT id FROM orders WHERE status = 'CLAIMED' AND claim_expires_at_ms <= ?\n        ) AND status = 'CREATED' AND NOT EXISTS (\n          SELECT 1 FROM print_attempt_steps ps\n          WHERE ps.print_attempt_id = print_attempts.id AND ps.status <> 'PENDING'\n        )",
+      "calls": 102,
+      "returnedRows": 0,
+      "changedRows": 0,
+      "ms": 4.149417999997212,
+      "maxMs": 0.0751250000000141
+    },
+    {
+      "sql": "UPDATE orders SET status = 'QUEUED', claimed_by_agent_id = NULL,\n          claim_id = NULL, claim_expires_at_ms = NULL, printer_id = NULL,\n          claimed_at_ms = NULL, updated_at_ms = ?\n        WHERE status = 'CLAIMED' AND claim_expires_at_ms <= ?\n          AND NOT EXISTS (\n            SELECT 1 FROM print_attempts pa JOIN print_attempt_steps ps\n              ON ps.print_attempt_id = pa.id\n            WHERE pa.order_id = orders.id\n              AND ps.status IN ('SUBMISSION_STARTED','SUBMITTED','BLOCKED','UNCERTAIN')\n          )",
+      "calls": 102,
+      "returnedRows": 0,
+      "changedRows": 0,
+      "ms": 5.693587000000406,
+      "maxMs": 0.0699170000000322
+    },
+    {
+      "sql": "SELECT o.id order_id, pa.id attempt_id, ps.id step_id,\n          ps.status step_status, ps.spooler_job_id, o.status order_status,\n          o.claim_id\n        FROM orders o JOIN print_attempts pa ON pa.order_id = o.id\n        JOIN print_attempt_steps ps ON ps.print_attempt_id = pa.id\n        WHERE o.claimed_by_agent_id = ?\n          AND o.status IN ('SPOOLING','PRINTING','PRINT_BLOCKED','PRINTED')\n          AND pa.status IN ('SUBMITTING','SPOOLING','PRINTING','BLOCKED')\n          AND NOT EXISTS (SELECT 1 FROM print_attempt_steps pending\n            WHERE pending.print_attempt_id = pa.id AND pending.status <> 'SUCCEEDED')\n        ORDER BY ps.sequence_number DESC LIMIT 1",
+      "calls": 102,
+      "returnedRows": 0,
+      "changedRows": 0,
+      "ms": 7.5992200000002015,
+      "maxMs": 0.10479099999997743
+    },
+    {
+      "sql": "SELECT o.id order_id, pa.id attempt_id, o.claim_id, o.claim_expires_at_ms,\n        o.public_job_code, o.printer_id, p.windows_printer_name, u.r2_object_key,\n        u.size_bytes, o.source_page_count, o.selected_pages, o.copies,\n        o.paper_size, o.color_mode, o.sides, o.customer_name, o.customer_phone,\n        o.instructions, o.total_amount_paise, o.currency, o.paid_at_ms,\n        i.shop_name, i.identification_sheet_enabled, ps.id step_id,\n        ps.sequence_number, ps.step_type, ps.status step_status, ps.spooler_job_id\n      FROM orders o\n      JOIN print_attempts pa ON pa.order_id = o.id\n        AND pa.status IN ('CREATED','SUBMITTING','SPOOLING','PRINTING','BLOCKED')\n      JOIN print_attempt_steps ps ON ps.print_attempt_id = pa.id\n        AND ps.status <> 'SUCCEEDED'\n      JOIN printers p ON p.id = o.printer_id AND p.agent_id = o.claimed_by_agent_id\n      JOIN uploads u ON u.order_id = o.id\n      JOIN installation i ON i.id = 1\n      WHERE o.claimed_by_agent_id = ?\n        AND o.status IN ('CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED')\n      ORDER BY ps.sequence_number LIMIT 1",
+      "calls": 102,
+      "returnedRows": 0,
+      "changedRows": 0,
+      "ms": 15.847288999999904,
+      "maxMs": 0.21412500000008095
+    },
+    {
+      "sql": "SELECT o.id order_id, p.id printer_id, i.identification_sheet_enabled,\n        i.identification_sheet_placement\n      FROM orders o\n      JOIN uploads u ON u.order_id = o.id\n      JOIN payments pay ON pay.order_id = o.id AND pay.status = 'PAID'\n        AND pay.provider_payment_id IS NOT NULL AND pay.verified_at_ms IS NOT NULL\n      JOIN agents a ON a.id = ? AND a.is_active = 1 AND a.last_heartbeat_at_ms >= ?\n      JOIN printers p ON p.agent_id = a.id AND p.enabled = 1 AND p.status = 'ONLINE'\n        AND p.is_production_eligible = 1 AND p.is_virtual = 0\n        AND p.capabilities_json IS NOT NULL\n      JOIN installation i ON i.id = 1\n        AND (i.default_production_printer_id IS NULL OR p.id = i.default_production_printer_id)\n      WHERE o.status = 'QUEUED' AND o.public_job_code IS NOT NULL\n        AND o.source_page_count IS NOT NULL AND u.storage_status = 'UPLOADED'\n        AND u.size_bytes IS NOT NULL AND u.deleted_at_ms IS NULL\n        AND (u.delete_after_ms IS NULL OR u.delete_after_ms > ?)\n        AND (o.color_mode = 'BW' OR json_extract(p.capabilities_json, '$.colour') = 1)\n        AND (o.sides = 'SINGLE' OR json_extract(p.capabilities_json, '$.duplex') = 1)\n        AND EXISTS (SELECT 1 FROM json_each(p.capabilities_json, '$.paperSizes')\n          WHERE upper(value) = o.paper_size)\n        AND NOT EXISTS (SELECT 1 FROM orders busy WHERE busy.claimed_by_agent_id = a.id\n          AND busy.status IN ('CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED'))\n      ORDER BY o.queued_at_ms, o.id, p.id LIMIT 1",
+      "calls": 102,
+      "returnedRows": 0,
+      "changedRows": 0,
+      "ms": 26.54837799999808,
+      "maxMs": 0.3579999999997199
+    },
+    {
+      "sql": "SELECT paper_size, color_mode, sides FROM print_rates\n                WHERE enabled = 1 ORDER BY paper_size, color_mode, sides LIMIT 1",
+      "calls": 103,
+      "returnedRows": 103,
+      "changedRows": 0,
+      "ms": 2.258959000001397,
+      "maxMs": 0.038000000000010914
+    },
+    {
+      "sql": "INSERT INTO orders\n        (id, customer_name, customer_phone, original_filename, source_page_count,\n         color_mode, paper_size, sides, instructions, status, created_at_ms,\n         updated_at_ms, draft_token_hash, draft_expires_at_ms)\n        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'UPLOADING', ?, ?, ?, ?)",
+      "calls": 103,
+      "returnedRows": 0,
+      "changedRows": 103,
+      "ms": 48.10016499999804,
+      "maxMs": 3.9735420000001795
+    },
+    {
+      "sql": "INSERT INTO uploads\n        (id, order_id, r2_object_key, original_filename, storage_status,\n         retention_reason, delete_after_ms, created_at_ms, updated_at_ms,\n         expected_size_bytes)\n        VALUES (?, ?, ?, ?, 'PENDING', 'UNPAID', ?, ?, ?, ?)",
+      "calls": 103,
+      "returnedRows": 0,
+      "changedRows": 103,
+      "ms": 12.962216999999299,
+      "maxMs": 0.3342090000001008
+    },
+    {
+      "sql": "SELECT o.id AS order_id, u.id AS upload_id,\n      u.r2_object_key, u.expected_size_bytes, u.size_bytes, o.source_page_count,\n      o.status, u.storage_status, o.draft_expires_at_ms\n      FROM orders o JOIN uploads u ON u.order_id = o.id\n      WHERE o.draft_token_hash = ?",
+      "calls": 206,
+      "returnedRows": 206,
+      "changedRows": 0,
+      "ms": 10.19959200000227,
+      "maxMs": 0.13608300000009876
+    },
+    {
+      "sql": "UPDATE uploads SET size_bytes = ?, mime_type = 'application/pdf',\n        storage_status = 'UPLOADED', uploaded_at_ms = ?, updated_at_ms = ?,\n        delete_after_ms = ?, validation_error_code = NULL WHERE id = ?",
+      "calls": 103,
+      "returnedRows": 0,
+      "changedRows": 103,
+      "ms": 21.727333000000698,
+      "maxMs": 0.988582999999835
+    },
+    {
+      "sql": "UPDATE orders SET status = 'UPLOADED', updated_at_ms = ?,\n        draft_expires_at_ms = ? WHERE id = ? AND status = 'UPLOADING'",
+      "calls": 103,
+      "returnedRows": 0,
+      "changedRows": 103,
+      "ms": 11.153456999999918,
+      "maxMs": 0.4913330000000542
+    },
+    {
+      "sql": "SELECT max_pdf_size_bytes FROM installation WHERE id = 1",
+      "calls": 205,
+      "returnedRows": 205,
+      "changedRows": 0,
+      "ms": 3.1371700000024134,
+      "maxMs": 0.17141700000001947
+    },
+    {
+      "sql": "SELECT paper_size, color_mode, sides, price_per_page_paise, enabled FROM print_rates",
+      "calls": 205,
+      "returnedRows": 1640,
+      "changedRows": 0,
+      "ms": 4.15621300000177,
+      "maxMs": 0.12458300000002964
+    },
+    {
+      "sql": "SELECT min_bytes_exclusive, max_bytes_inclusive, charge_paise, enabled\n         FROM file_size_service_charges ORDER BY sort_order",
+      "calls": 205,
+      "returnedRows": 820,
+      "changedRows": 0,
+      "ms": 3.6130489999970337,
+      "maxMs": 0.04291699999998855
+    },
+    {
+      "sql": "UPDATE orders SET selected_pages = ?, copies = ?, paper_size = ?,\n      color_mode = ?, sides = ?, printing_amount_paise = ?, service_charge_paise = ?,\n      total_amount_paise = ?, status = 'PAYMENT_PENDING', updated_at_ms = ?\n      WHERE id = ? AND status IN ('UPLOADED', 'PAYMENT_PENDING')",
+      "calls": 103,
+      "returnedRows": 0,
+      "changedRows": 103,
+      "ms": 74.4864120000004,
+      "maxMs": 5.7409999999999854
+    },
+    {
+      "sql": "SELECT o.id AS order_id, u.id AS upload_id, u.r2_object_key,\n          o.customer_name, o.customer_phone, o.original_filename,\n          o.source_page_count, o.selected_pages, o.copies, o.paper_size,\n          o.color_mode, o.sides, o.printing_amount_paise,\n          o.service_charge_paise, o.total_amount_paise, o.currency,\n          o.status AS order_status, o.public_job_code,\n          u.expected_size_bytes, u.size_bytes, u.storage_status,\n          o.draft_expires_at_ms, u.delete_after_ms\n        FROM orders o JOIN uploads u ON u.order_id = o.id\n        WHERE o.draft_token_hash = ?",
+      "calls": 204,
+      "returnedRows": 204,
+      "changedRows": 0,
+      "ms": 16.037653999999122,
+      "maxMs": 0.2213329999999587
+    },
+    {
+      "sql": "SELECT p.id, p.order_id, p.provider_order_id, p.provider_payment_id,\n          p.amount_paise, o.total_amount_paise AS order_amount_paise,\n          p.currency, p.status, o.public_job_code,\n          o.status AS order_status\n        FROM payments p JOIN orders o ON o.id = p.order_id\n        WHERE p.order_id = ? AND p.status IN ('CREATED', 'PENDING')\n        ORDER BY p.created_at_ms DESC LIMIT 1",
+      "calls": 102,
+      "returnedRows": 0,
+      "changedRows": 0,
+      "ms": 4.84296200000216,
+      "maxMs": 0.06783300000000736
+    },
+    {
+      "sql": "UPDATE orders SET selected_pages = ?, printing_amount_paise = ?,\n          service_charge_paise = ?, total_amount_paise = ?,\n          status = 'PAYMENT_PENDING', updated_at_ms = ?\n        WHERE id = ? AND status IN\n          ('UPLOADED', 'PAYMENT_PENDING', 'PAYMENT_FAILED', 'PAYMENT_CANCELLED')",
+      "calls": 102,
+      "returnedRows": 0,
+      "changedRows": 102,
+      "ms": 58.42324999999934,
+      "maxMs": 1.0167500000000018
+    },
+    {
+      "sql": "SELECT online_printing_enabled, default_production_printer_id FROM installation WHERE id = 1",
+      "calls": 102,
+      "returnedRows": 102,
+      "changedRows": 0,
+      "ms": 2.535049000000697,
+      "maxMs": 0.04624999999998636
+    },
+    {
+      "sql": "SELECT id FROM agents\n         WHERE is_active = 1\n           AND last_heartbeat_at_ms IS NOT NULL\n           AND last_heartbeat_at_ms >= ?",
+      "calls": 102,
+      "returnedRows": 510,
+      "changedRows": 0,
+      "ms": 2.683290999997638,
+      "maxMs": 0.04204199999998082
+    },
+    {
+      "sql": "SELECT id, agent_id, display_name, windows_printer_name, status, status_reason, capabilities_json\n         FROM printers\n         WHERE enabled = 1 AND is_production_eligible = 1 AND is_virtual = 0 AND agent_id IN (?,?,?,?,?)",
+      "calls": 102,
+      "returnedRows": 510,
+      "changedRows": 0,
+      "ms": 5.286747999999676,
+      "maxMs": 0.07699999999999818
+    },
+    {
+      "sql": "INSERT INTO payments\n            (id, order_id, provider_order_id, amount_paise, currency, status,\n             created_at_ms, updated_at_ms)\n          VALUES (?, ?, ?, ?, 'INR', 'CREATED', ?, ?)",
+      "calls": 102,
+      "returnedRows": 0,
+      "changedRows": 102,
+      "ms": 23.81353999999976,
+      "maxMs": 0.5964579999999842
+    },
+    {
+      "sql": "INSERT OR IGNORE INTO order_events\n            (id, order_id, event_type, from_status, to_status, actor_type,\n             details_json, created_at_ms, idempotency_key)\n          SELECT ?, id, 'PAYMENT_ORDER_CREATED', status, 'PAYMENT_PENDING',\n            'CUSTOMER', ?, ?, ? FROM orders WHERE id = ?",
+      "calls": 102,
+      "returnedRows": 0,
+      "changedRows": 102,
+      "ms": 11.752712000002049,
+      "maxMs": 0.21187499999996362
+    },
+    {
+      "sql": "UPDATE orders SET status = 'PAYMENT_PENDING', updated_at_ms = ?\n          WHERE id = ? AND status IN\n            ('UPLOADED', 'PAYMENT_PENDING', 'PAYMENT_FAILED', 'PAYMENT_CANCELLED')",
+      "calls": 102,
+      "returnedRows": 0,
+      "changedRows": 102,
+      "ms": 9.766043999999908,
+      "maxMs": 0.16329100000007202
+    },
+    {
+      "sql": "UPDATE payments SET provider_order_id = ?, status = 'PENDING',\n          updated_at_ms = ? WHERE id = ? AND status = 'CREATED'",
+      "calls": 102,
+      "returnedRows": 0,
+      "changedRows": 102,
+      "ms": 53.593084999999604,
+      "maxMs": 1.036875000000009
+    },
+    {
+      "sql": "SELECT p.id, p.order_id, p.provider_order_id, p.provider_payment_id,\n          p.amount_paise, o.total_amount_paise AS order_amount_paise,\n          p.currency, p.status, o.public_job_code,\n          o.status AS order_status\n        FROM payments p JOIN orders o ON o.id = p.order_id\n        WHERE p.provider_order_id = ? ORDER BY p.created_at_ms DESC LIMIT 1",
+      "calls": 102,
+      "returnedRows": 102,
+      "changedRows": 0,
+      "ms": 6.112624999999014,
+      "maxMs": 0.1312080000000151
+    },
+    {
+      "sql": "SELECT p.id, p.order_id, p.provider_order_id, p.provider_payment_id,\n          p.amount_paise, o.total_amount_paise AS order_amount_paise,\n          p.currency, p.status, o.public_job_code,\n          o.status AS order_status\n        FROM payments p JOIN orders o ON o.id = p.order_id\n        WHERE p.id = ? ORDER BY p.created_at_ms DESC LIMIT 1",
+      "calls": 203,
+      "returnedRows": 203,
+      "changedRows": 0,
+      "ms": 10.4557099999993,
+      "maxMs": 0.17945899999995163
+    },
+    {
+      "sql": "UPDATE payments SET status = 'CANCELLED', updated_at_ms = ?\n          WHERE id = ? AND status IN ('CREATED', 'PENDING')",
+      "calls": 1,
+      "returnedRows": 0,
+      "changedRows": 1,
+      "ms": 0.18449999999998568,
+      "maxMs": 0.18449999999998568
+    },
+    {
+      "sql": "UPDATE orders SET status = 'PAYMENT_CANCELLED', updated_at_ms = ?,\n            draft_expires_at_ms = ? WHERE id = ? AND status = 'PAYMENT_PENDING'",
+      "calls": 1,
+      "returnedRows": 0,
+      "changedRows": 1,
+      "ms": 0.17487500000001432,
+      "maxMs": 0.17487500000001432
+    },
+    {
+      "sql": "UPDATE uploads SET retention_reason = 'PAYMENT_FAILED_OR_CANCELLED',\n            delete_after_ms = ?, updated_at_ms = ? WHERE order_id = ?",
+      "calls": 1,
+      "returnedRows": 0,
+      "changedRows": 1,
+      "ms": 0.06058300000000827,
+      "maxMs": 0.06058300000000827
+    },
+    {
+      "sql": "INSERT OR IGNORE INTO order_events\n            (id, order_id, event_type, from_status, to_status, actor_type,\n             details_json, created_at_ms, idempotency_key)\n          VALUES (?, ?, 'PAYMENT_CANCELLED', 'PAYMENT_PENDING',\n            'PAYMENT_CANCELLED', 'CUSTOMER', ?, ?, ?)",
+      "calls": 1,
+      "returnedRows": 0,
+      "changedRows": 1,
+      "ms": 0.08695900000000734,
+      "maxMs": 0.08695900000000734
+    },
+    {
+      "sql": "UPDATE payments SET provider_payment_id = ?, status = 'PAID',\n            verified_at_ms = ?, updated_at_ms = ?\n          WHERE id = ? AND status IN ('CREATED', 'PENDING', 'FAILED', 'CANCELLED')",
+      "calls": 101,
+      "returnedRows": 0,
+      "changedRows": 101,
+      "ms": 20.516086999998834,
+      "maxMs": 0.5052090000000362
+    },
+    {
+      "sql": "UPDATE orders SET public_job_code = COALESCE(public_job_code, ?),\n            status = 'QUEUED', paid_at_ms = COALESCE(paid_at_ms, ?),\n            queued_at_ms = COALESCE(queued_at_ms, ?), updated_at_ms = ?\n          WHERE id = ? AND status IN\n            ('PAYMENT_PENDING', 'PAYMENT_FAILED', 'PAYMENT_CANCELLED', 'PAID')",
+      "calls": 101,
+      "returnedRows": 0,
+      "changedRows": 101,
+      "ms": 12.628456999999116,
+      "maxMs": 0.21337500000004184
+    },
+    {
+      "sql": "UPDATE uploads SET retention_reason = 'UNRESOLVED_PAID_FAILURE', delete_after_ms = ?,\n            updated_at_ms = ? WHERE order_id = ?",
+      "calls": 101,
+      "returnedRows": 0,
+      "changedRows": 101,
+      "ms": 6.483666000001222,
+      "maxMs": 0.08591599999999744
+    },
+    {
+      "sql": "INSERT OR IGNORE INTO order_events\n            (id, order_id, event_type, from_status, to_status, actor_type,\n             details_json, created_at_ms, idempotency_key)\n          VALUES (?, ?, 'PAYMENT_VERIFIED', 'PAYMENT_PENDING', 'PAID', ?, ?, ?, ?)",
+      "calls": 101,
+      "returnedRows": 0,
+      "changedRows": 101,
+      "ms": 9.804292000000686,
+      "maxMs": 0.1770000000001346
+    },
+    {
+      "sql": "INSERT OR IGNORE INTO order_events\n            (id, order_id, event_type, from_status, to_status, actor_type,\n             details_json, created_at_ms, idempotency_key)\n          VALUES (?, ?, 'JOB_CODE_ASSIGNED', 'PAID', 'PAID', 'SYSTEM', ?, ?, ?)",
+      "calls": 101,
+      "returnedRows": 0,
+      "changedRows": 101,
+      "ms": 5.908579999999574,
+      "maxMs": 0.16333399999984977
+    },
+    {
+      "sql": "INSERT OR IGNORE INTO order_events\n            (id, order_id, event_type, from_status, to_status, actor_type,\n             details_json, created_at_ms, idempotency_key)\n          VALUES (?, ?, 'QUEUED', 'PAID', 'QUEUED', 'SYSTEM', ?, ?, ?)",
+      "calls": 101,
+      "returnedRows": 0,
+      "changedRows": 101,
+      "ms": 4.9019160000005115,
+      "maxMs": 0.15004200000021228
+    },
+    {
+      "sql": "SELECT id, public_job_code, status, tracking_token_hash,\n          tracking_created_at_ms, tracking_expires_at_ms\n        FROM orders WHERE id = ?",
+      "calls": 202,
+      "returnedRows": 202,
+      "changedRows": 0,
+      "ms": 6.3392140000006805,
+      "maxMs": 0.14075000000002547
+    },
+    {
+      "sql": "UPDATE orders SET tracking_token_hash = ?, tracking_created_at_ms = ?,\n          tracking_expires_at_ms = ?, updated_at_ms = ?\n        WHERE id = ? AND tracking_token_hash IS NULL\n          AND public_job_code IS NOT NULL\n          AND status IN ('PAID', 'QUEUED', 'CLAIMED', 'SPOOLING', 'PRINTING',\n            'PRINT_BLOCKED', 'PRINT_FAILED', 'ADMIN_ACTION_REQUIRED', 'PRINTED',\n            'COMPLETED', 'CANCELLED')",
+      "calls": 101,
+      "returnedRows": 0,
+      "changedRows": 101,
+      "ms": 55.283746999998556,
+      "maxMs": 0.8902910000001611
+    },
+    {
+      "sql": "SELECT o.id, o.public_job_code, o.customer_name, o.status,\n          o.created_at_ms, o.updated_at_ms, o.paid_at_ms, o.selected_pages,\n          o.copies, o.paper_size, o.color_mode, o.sides, o.instructions,\n          o.pii_purged_at_ms, o.tracking_expires_at_ms, p.amount_paise, p.currency,\n          u.storage_status, u.delete_after_ms\n        FROM orders o\n        JOIN uploads u ON u.order_id = o.id\n        JOIN payments p ON p.order_id = o.id AND p.status = 'PAID'\n        WHERE o.public_job_code = ? AND o.tracking_token_hash = ?\n          AND o.tracking_created_at_ms IS NOT NULL\n          AND o.tracking_expires_at_ms IS NOT NULL\n          AND o.paid_at_ms IS NOT NULL\n        ORDER BY p.verified_at_ms DESC LIMIT 1",
+      "calls": 101,
+      "returnedRows": 101,
+      "changedRows": 0,
+      "ms": 10.196205000000276,
+      "maxMs": 0.24041700000009314
+    },
+    {
+      "sql": "SELECT event_type, to_status, created_at_ms\n        FROM order_events\n        WHERE order_id = ? AND (\n          event_type = 'PAYMENT_VERIFIED' OR\n          to_status IN ('QUEUED', 'CLAIMED', 'SPOOLING', 'PRINTING',\n            'PRINT_BLOCKED', 'PRINT_FAILED', 'ADMIN_ACTION_REQUIRED',\n            'PRINTED', 'COMPLETED', 'CANCELLED')\n        )\n        ORDER BY created_at_ms ASC, id ASC",
+      "calls": 101,
+      "returnedRows": 202,
+      "changedRows": 0,
+      "ms": 4.687380999999846,
+      "maxMs": 0.07895799999994324
+    },
+    {
+      "sql": "SELECT s.id, s.admin_id, s.expires_at_ms, s.revoked_at_ms,\n                a.login_identifier, a.is_active\n         FROM admin_sessions s\n         JOIN admins a ON a.id = s.admin_id\n         WHERE s.token_hash = ? LIMIT 1",
+      "calls": 101,
+      "returnedRows": 101,
+      "changedRows": 0,
+      "ms": 4.1969509999999275,
+      "maxMs": 0.13541600000007747
+    },
+    {
+      "sql": "WITH live_candidates AS (\n          SELECT * FROM (\n            SELECT id, public_job_code, customer_name, customer_phone,\n              selected_pages, copies, paper_size, color_mode, sides,\n              total_amount_paise, currency, status, claimed_by_agent_id, printer_id,\n              paid_at_ms, updated_at_ms\n            FROM orders\n            WHERE status IN ('QUEUED','CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED',\n              'PRINT_FAILED','ADMIN_ACTION_REQUIRED')\n            UNION ALL\n            SELECT id, public_job_code, customer_name, customer_phone,\n              selected_pages, copies, paper_size, color_mode, sides,\n              total_amount_paise, currency, status, claimed_by_agent_id, printer_id,\n              paid_at_ms, updated_at_ms\n            FROM orders\n            WHERE status = 'PRINTED' AND updated_at_ms >= ?\n          )\n          ORDER BY updated_at_ms DESC\n          LIMIT 100\n        )\n        SELECT o.id order_id, o.public_job_code, o.customer_name, o.customer_phone,\n          o.selected_pages, o.copies, o.paper_size, o.color_mode, o.sides,\n          o.total_amount_paise, o.currency, o.status, a.display_name agent_name,\n          p.display_name printer_name, pa.failure_detail, o.paid_at_ms, o.updated_at_ms\n        FROM live_candidates o\n        LEFT JOIN agents a ON a.id = o.claimed_by_agent_id\n        LEFT JOIN printers p ON p.id = o.printer_id\n        LEFT JOIN print_attempts pa ON pa.order_id = o.id AND pa.attempt_number =\n          (SELECT MAX(pa2.attempt_number) FROM print_attempts pa2 WHERE pa2.order_id = o.id)\n        ORDER BY o.updated_at_ms DESC",
+      "calls": 101,
+      "returnedRows": 5150,
+      "changedRows": 0,
+      "ms": 38.22233599999734,
+      "maxMs": 0.6854999999995925
+    },
+    {
+      "sql": "SELECT id, login_identifier, password_hash, is_active\n         FROM admins WHERE login_identifier = ? LIMIT 1",
+      "calls": 100,
+      "returnedRows": 0,
+      "changedRows": 0,
+      "ms": 3.0257500000007553,
+      "maxMs": 0.08300000000008367
+    }
+  ],
+  "operations": {
+    "statements": 6945,
+    "returnedRows": 16118,
+    "changedRows": 1839,
+    "queryMs": 732.2276039999942,
+    "r2": {
+      "PUT": 103,
+      "HEAD": 205,
+      "GET": 103,
+      "DELETE": 0
+    },
+    "provider": {
+      "create": 102,
+      "lookup": 101
+    }
+  }
+}

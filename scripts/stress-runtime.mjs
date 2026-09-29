@@ -4,14 +4,14 @@ import { resolve } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
 
-export async function createRuntime(directory) {
+export async function createRuntime(directory, { profileWrites = false } = {}) {
   mkdirSync(directory, { recursive: true });
   const { build } =
     await import("../apps/agent/windows/node_modules/esbuild/lib/main.js");
   const bundle = resolve(directory, "runtime.mjs");
   await build({
     stdin: {
-      contents: `export { routeRequest } from './apps/api/worker/src/router.ts'; export { hashPassword, hashSessionToken } from './packages/auth/src/index.ts';`,
+      contents: `export { routeRequest } from './apps/api/worker/src/router.ts'; export { hashPassword, hashSessionToken } from './packages/auth/src/index.ts'; export { RetentionService } from './apps/api/worker/src/retention/service.ts'; export { D1RetentionRepository } from './apps/api/worker/src/retention/repository.ts';`,
       resolveDir: process.cwd(),
     },
     outfile: bundle,
@@ -31,6 +31,38 @@ export async function createRuntime(directory) {
     .filter((x) => x.endsWith(".sql"))
     .sort())
     db.exec(readFileSync(`database/migrations/${name}`, "utf8"));
+  const writeProfile = new Map();
+  if (profileWrites) {
+    db.exec(
+      "CREATE TEMP TABLE write_observations (table_name TEXT, operation TEXT, transition TEXT)",
+    );
+    const tables = db
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
+      )
+      .all();
+    for (const { name } of tables) {
+      const columns = db
+        .prepare(`PRAGMA table_info("${name}")`)
+        .all()
+        .map((c) => c.name);
+      const state = ["status", "storage_status", "event_type"].find((c) =>
+        columns.includes(c),
+      );
+      for (const operation of ["INSERT", "UPDATE", "DELETE"]) {
+        const from =
+          operation === "INSERT" || !state
+            ? "'none'"
+            : `COALESCE(OLD.${state},'null')`;
+        const to =
+          operation === "DELETE" || !state
+            ? "'none'"
+            : `COALESCE(NEW.${state},'null')`;
+        db.exec(`CREATE TEMP TRIGGER "profile_${name}_${operation}" AFTER ${operation} ON "${name}"
+          BEGIN INSERT INTO write_observations VALUES ('${name}','${operation}',${from} || ' -> ' || ${to}); END`);
+      }
+    }
+  }
   const context = new AsyncLocalStorage();
   const queries = new Map();
   const totals = {
@@ -81,6 +113,40 @@ export async function createRuntime(directory) {
       totals.changedRows += changes;
       totals.queryMs += ms;
       const route = context.getStore();
+      if (profileWrites) {
+        const observed = db
+          .prepare(
+            "SELECT table_name, operation, transition, COUNT(*) n FROM write_observations GROUP BY table_name, operation, transition",
+          )
+          .all();
+        db.exec("DELETE FROM write_observations");
+        for (const row of observed) {
+          const endpoint = route?.endpoint ?? "background";
+          const profileKey = JSON.stringify([
+            key,
+            endpoint,
+            row.table_name,
+            row.operation,
+            row.transition,
+          ]);
+          const item = writeProfile.get(profileKey) ?? {
+            sqlId: key,
+            sql: this.sql,
+            endpoint,
+            category: endpoint.startsWith("retention")
+              ? "retention"
+              : endpoint === "background" || endpoint.startsWith("idle")
+                ? "background"
+                : "per-order",
+            table: row.table_name,
+            operation: row.operation,
+            transition: row.transition,
+            tableRowsWritten: 0,
+          };
+          item.tableRowsWritten += row.n;
+          writeProfile.set(profileKey, item);
+        }
+      }
       if (route) {
         route.statements++;
         route.returnedRows += results.length;
@@ -178,6 +244,7 @@ export async function createRuntime(directory) {
     );
   }
   const objects = new Map();
+  const metadata = new Map();
   const PDF_BUCKET = {
     async head(key) {
       totals.r2.HEAD++;
@@ -195,18 +262,22 @@ export async function createRuntime(directory) {
           )
         : b;
       return {
+        body: new Uint8Array(data),
+        httpMetadata: metadata.get(key),
         async arrayBuffer() {
           return Uint8Array.from(data).buffer;
         },
       };
     },
-    async put(key, bytes) {
+    async put(key, bytes, options) {
+      metadata.set(key, options?.httpMetadata);
       totals.r2.PUT++;
       objects.set(key, Buffer.from(bytes));
     },
     async delete(key) {
       totals.r2.DELETE++;
       objects.delete(key);
+      metadata.delete(key);
     },
   };
   const providerOrders = new Map();
@@ -266,6 +337,7 @@ export async function createRuntime(directory) {
     context,
     totals,
     queries,
+    writeProfile,
     objects,
     providerOrders,
     agentTokens,

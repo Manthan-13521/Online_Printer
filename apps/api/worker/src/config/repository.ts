@@ -37,6 +37,7 @@ export interface ConfigurationRepository {
 }
 
 interface SettingsRow {
+  logo_key: string | null;
   shop_name: string;
   contact_phone: string | null;
   address: string | null;
@@ -97,7 +98,7 @@ export class D1ConfigurationRepository implements ConfigurationRepository {
   async getSettings(): Promise<ShopSettings | null> {
     const row = await this.db
       .prepare(
-        `SELECT shop_name, contact_phone, address, customer_notice,
+        `SELECT logo_key, shop_name, contact_phone, address, customer_notice,
                 online_printing_enabled, max_pdf_size_bytes,
                 identification_sheet_enabled, identification_sheet_placement
          FROM installation WHERE id = 1`,
@@ -106,6 +107,9 @@ export class D1ConfigurationRepository implements ConfigurationRepository {
     return row
       ? {
           shopName: row.shop_name,
+          logoUrl: row.logo_key
+            ? `/api/branding/logo/${row.logo_key.slice("branding/".length)}`
+            : null,
           contactPhone: row.contact_phone,
           address: row.address,
           customerNotice: row.customer_notice,

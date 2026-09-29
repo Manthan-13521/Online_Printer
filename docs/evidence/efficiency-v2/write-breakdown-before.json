@@ -1,0 +1,2041 @@
+{
+  "label": "MEASURED SQLite table-row mutations for SIMULATED two-step paid orders, including retention. Index writes and billing rows are not measured. Setup excluded. One heartbeat/minute attributed separately.",
+  "scenarios": [
+    {
+      "orders": 1,
+      "requests": 16,
+      "requestsPerOrder": 16,
+      "returnedRows": 141,
+      "returnedRowsPerOrder": 141,
+      "tableRowsWritten": 53,
+      "writesPerOrderExcludingBackground": 52,
+      "tables": {
+        "orders": 16,
+        "order_events": 11,
+        "payments": 3,
+        "uploads": 7,
+        "print_attempts": 7,
+        "print_attempt_steps": 8,
+        "agents": 1,
+        "printers": 0,
+        "admins": 0,
+        "admin_sessions": 0,
+        "payment_provider_events": 0
+      },
+      "categories": {
+        "background": 1,
+        "per-order": 46,
+        "retention": 6
+      },
+      "statements": [
+        {
+          "sqlId": "84404d7f104d",
+          "sql": "UPDATE print_attempt_steps SET status = 'SUBMISSION_STARTED',\n          submission_started_at_ms = ?, updated_at_ms = ?\n        WHERE id = ? AND print_attempt_id = ? AND status = 'PENDING'",
+          "endpoint": "print-start",
+          "category": "per-order",
+          "table": "print_attempt_steps",
+          "operation": "UPDATE",
+          "transition": "PENDING -> SUBMISSION_STARTED",
+          "tableRowsWritten": 2
+        },
+        {
+          "sqlId": "7dc9cad07305",
+          "sql": "INSERT INTO order_events (id, order_id, event_type, from_status, to_status,\n          actor_type, actor_id, created_at_ms) VALUES (?, ?, 'PRINT_STEP_STARTED', ?,\n          ?, 'AGENT', ?, ?)",
+          "endpoint": "print-start",
+          "category": "per-order",
+          "table": "order_events",
+          "operation": "INSERT",
+          "transition": "none -> PRINT_STEP_STARTED",
+          "tableRowsWritten": 2
+        },
+        {
+          "sqlId": "f52b516f96f4",
+          "sql": "UPDATE print_attempt_steps SET status = 'SUBMITTED', spooler_job_id = ?,\n          submitted_at_ms = ?, last_observed_at_ms = ?, updated_at_ms = ?\n        WHERE id = ? AND status = 'SUBMISSION_STARTED' AND spooler_job_id IS NULL",
+          "endpoint": "print-submitted",
+          "category": "per-order",
+          "table": "print_attempt_steps",
+          "operation": "UPDATE",
+          "transition": "SUBMISSION_STARTED -> SUBMITTED",
+          "tableRowsWritten": 2
+        },
+        {
+          "sqlId": "4f8609b26fbe",
+          "sql": "UPDATE print_attempts SET status = 'PRINTING', windows_job_id = COALESCE(windows_job_id, ?),\n          submitted_at_ms = COALESCE(submitted_at_ms, ?), last_observed_at_ms = ?, updated_at_ms = ?\n        WHERE id = ?",
+          "endpoint": "print-submitted",
+          "category": "per-order",
+          "table": "print_attempts",
+          "operation": "UPDATE",
+          "transition": "SUBMITTING -> PRINTING",
+          "tableRowsWritten": 2
+        },
+        {
+          "sqlId": "c2c4a71fae09",
+          "sql": "UPDATE print_attempt_steps SET status = ?, spooler_job_id = COALESCE(spooler_job_id, ?),\n        failure_code = ?, failure_detail = ?, last_observed_at_ms = ?, finished_at_ms = ?,\n        updated_at_ms = ? WHERE id = ? AND status = ?",
+          "endpoint": "print-result",
+          "category": "per-order",
+          "table": "print_attempt_steps",
+          "operation": "UPDATE",
+          "transition": "SUBMITTED -> SUCCEEDED",
+          "tableRowsWritten": 2
+        },
+        {
+          "sqlId": "e2821c66b493",
+          "sql": "UPDATE agents SET last_heartbeat_at_ms = ?, updated_at_ms = ?\n       WHERE id = ? AND is_active = 1\n       AND (last_heartbeat_at_ms IS NULL OR last_heartbeat_at_ms <= ?)",
+          "endpoint": "idle-liveness",
+          "category": "background",
+          "table": "agents",
+          "operation": "UPDATE",
+          "transition": "none -> none",
+          "tableRowsWritten": 1
+        },
+        {
+          "sqlId": "86a294e6169e",
+          "sql": "INSERT INTO orders\n        (id, customer_name, customer_phone, original_filename, source_page_count,\n         color_mode, paper_size, sides, instructions, status, created_at_ms,\n         updated_at_ms, draft_token_hash, draft_expires_at_ms)\n        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'UPLOADING', ?, ?, ?, ?)",
+          "endpoint": "draft",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "INSERT",
+          "transition": "none -> UPLOADING",
+          "tableRowsWritten": 1
+        },
+        {
+          "sqlId": "68b3de46e82c",
+          "sql": "INSERT INTO uploads\n        (id, order_id, r2_object_key, original_filename, storage_status,\n         retention_reason, delete_after_ms, created_at_ms, updated_at_ms,\n         expected_size_bytes)\n        VALUES (?, ?, ?, ?, 'PENDING', 'UNPAID', ?, ?, ?, ?)",
+          "endpoint": "draft",
+          "category": "per-order",
+          "table": "uploads",
+          "operation": "INSERT",
+          "transition": "none -> PENDING",
+          "tableRowsWritten": 1
+        },
+        {
+          "sqlId": "73946b0cb351",
+          "sql": "UPDATE uploads SET size_bytes = ?, mime_type = 'application/pdf',\n        storage_status = 'UPLOADED', uploaded_at_ms = ?, updated_at_ms = ?,\n        delete_after_ms = ?, validation_error_code = NULL WHERE id = ?",
+          "endpoint": "upload-complete",
+          "category": "per-order",
+          "table": "uploads",
+          "operation": "UPDATE",
+          "transition": "PENDING -> UPLOADED",
+          "tableRowsWritten": 1
+        },
+        {
+          "sqlId": "ac91ac52bf52",
+          "sql": "UPDATE orders SET status = 'UPLOADED', updated_at_ms = ?,\n        draft_expires_at_ms = ? WHERE id = ? AND status = 'UPLOADING'",
+          "endpoint": "upload-complete",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "UPLOADING -> UPLOADED",
+          "tableRowsWritten": 1
+        },
+        {
+          "sqlId": "1c6e3565d0d3",
+          "sql": "UPDATE orders SET selected_pages = ?, copies = ?, paper_size = ?,\n      color_mode = ?, sides = ?, printing_amount_paise = ?, service_charge_paise = ?,\n      total_amount_paise = ?, status = 'PAYMENT_PENDING', updated_at_ms = ?\n      WHERE id = ? AND status IN ('UPLOADED', 'PAYMENT_PENDING')",
+          "endpoint": "quote",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "UPLOADED -> PAYMENT_PENDING",
+          "tableRowsWritten": 1
+        },
+        {
+          "sqlId": "ff09ce6a3fa0",
+          "sql": "UPDATE orders SET selected_pages = ?, printing_amount_paise = ?,\n          service_charge_paise = ?, total_amount_paise = ?,\n          status = 'PAYMENT_PENDING', updated_at_ms = ?\n        WHERE id = ? AND status IN\n          ('UPLOADED', 'PAYMENT_PENDING', 'PAYMENT_FAILED', 'PAYMENT_CANCELLED')",
+          "endpoint": "payment-create",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "PAYMENT_PENDING -> PAYMENT_PENDING",
+          "tableRowsWritten": 1
+        },
+        {
+          "sqlId": "d3f652c9547e",
+          "sql": "INSERT INTO payments\n            (id, order_id, provider_order_id, amount_paise, currency, status,\n             created_at_ms, updated_at_ms)\n          VALUES (?, ?, ?, ?, 'INR', 'CREATED', ?, ?)",
+          "endpoint": "payment-create",
+          "category": "per-order",
+          "table": "payments",
+          "operation": "INSERT",
+          "transition": "none -> CREATED",
+          "tableRowsWritten": 1
+        },
+        {
+          "sqlId": "3f5532754c6c",
+          "sql": "INSERT OR IGNORE INTO order_events\n            (id, order_id, event_type, from_status, to_status, actor_type,\n             details_json, created_at_ms, idempotency_key)\n          SELECT ?, id, 'PAYMENT_ORDER_CREATED', status, 'PAYMENT_PENDING',\n            'CUSTOMER', ?, ?, ? FROM orders WHERE id = ?",
+          "endpoint": "payment-create",
+          "category": "per-order",
+          "table": "order_events",
+          "operation": "INSERT",
+          "transition": "none -> PAYMENT_ORDER_CREATED",
+          "tableRowsWritten": 1
+        },
+        {
+          "sqlId": "1ded0fb3a8a7",
+          "sql": "UPDATE orders SET status = 'PAYMENT_PENDING', updated_at_ms = ?\n          WHERE id = ? AND status IN\n            ('UPLOADED', 'PAYMENT_PENDING', 'PAYMENT_FAILED', 'PAYMENT_CANCELLED')",
+          "endpoint": "payment-create",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "PAYMENT_PENDING -> PAYMENT_PENDING",
+          "tableRowsWritten": 1
+        },
+        {
+          "sqlId": "836f40fef6f0",
+          "sql": "UPDATE payments SET provider_order_id = ?, status = 'PENDING',\n          updated_at_ms = ? WHERE id = ? AND status = 'CREATED'",
+          "endpoint": "payment-create",
+          "category": "per-order",
+          "table": "payments",
+          "operation": "UPDATE",
+          "transition": "CREATED -> PENDING",
+          "tableRowsWritten": 1
+        },
+        {
+          "sqlId": "494b246327ae",
+          "sql": "UPDATE payments SET provider_payment_id = ?, status = 'PAID',\n            verified_at_ms = ?, updated_at_ms = ?\n          WHERE id = ? AND status IN ('CREATED', 'PENDING', 'FAILED', 'CANCELLED')",
+          "endpoint": "payment-verify",
+          "category": "per-order",
+          "table": "payments",
+          "operation": "UPDATE",
+          "transition": "PENDING -> PAID",
+          "tableRowsWritten": 1
+        },
+        {
+          "sqlId": "69d15f5be6d5",
+          "sql": "UPDATE orders SET public_job_code = COALESCE(public_job_code, ?),\n            status = 'QUEUED', paid_at_ms = COALESCE(paid_at_ms, ?),\n            queued_at_ms = COALESCE(queued_at_ms, ?), updated_at_ms = ?\n          WHERE id = ? AND status IN\n            ('PAYMENT_PENDING', 'PAYMENT_FAILED', 'PAYMENT_CANCELLED', 'PAID')",
+          "endpoint": "payment-verify",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "PAYMENT_PENDING -> QUEUED",
+          "tableRowsWritten": 1
+        },
+        {
+          "sqlId": "2d1db866d380",
+          "sql": "UPDATE uploads SET retention_reason = 'UNRESOLVED_PAID_FAILURE', delete_after_ms = ?,\n            updated_at_ms = ? WHERE order_id = ?",
+          "endpoint": "payment-verify",
+          "category": "per-order",
+          "table": "uploads",
+          "operation": "UPDATE",
+          "transition": "UPLOADED -> UPLOADED",
+          "tableRowsWritten": 1
+        },
+        {
+          "sqlId": "e5f935da3a9a",
+          "sql": "INSERT OR IGNORE INTO order_events\n            (id, order_id, event_type, from_status, to_status, actor_type,\n             details_json, created_at_ms, idempotency_key)\n          VALUES (?, ?, 'PAYMENT_VERIFIED', 'PAYMENT_PENDING', 'PAID', ?, ?, ?, ?)",
+          "endpoint": "payment-verify",
+          "category": "per-order",
+          "table": "order_events",
+          "operation": "INSERT",
+          "transition": "none -> PAYMENT_VERIFIED",
+          "tableRowsWritten": 1
+        },
+        {
+          "sqlId": "2cb9c46fe4f0",
+          "sql": "INSERT OR IGNORE INTO order_events\n            (id, order_id, event_type, from_status, to_status, actor_type,\n             details_json, created_at_ms, idempotency_key)\n          VALUES (?, ?, 'JOB_CODE_ASSIGNED', 'PAID', 'PAID', 'SYSTEM', ?, ?, ?)",
+          "endpoint": "payment-verify",
+          "category": "per-order",
+          "table": "order_events",
+          "operation": "INSERT",
+          "transition": "none -> JOB_CODE_ASSIGNED",
+          "tableRowsWritten": 1
+        },
+        {
+          "sqlId": "64b545c273a4",
+          "sql": "INSERT OR IGNORE INTO order_events\n            (id, order_id, event_type, from_status, to_status, actor_type,\n             details_json, created_at_ms, idempotency_key)\n          VALUES (?, ?, 'QUEUED', 'PAID', 'QUEUED', 'SYSTEM', ?, ?, ?)",
+          "endpoint": "payment-verify",
+          "category": "per-order",
+          "table": "order_events",
+          "operation": "INSERT",
+          "transition": "none -> QUEUED",
+          "tableRowsWritten": 1
+        },
+        {
+          "sqlId": "24c7f0b72aca",
+          "sql": "UPDATE orders SET tracking_token_hash = ?, tracking_created_at_ms = ?,\n          tracking_expires_at_ms = ?, updated_at_ms = ?\n        WHERE id = ? AND tracking_token_hash IS NULL\n          AND public_job_code IS NOT NULL\n          AND status IN ('PAID', 'QUEUED', 'CLAIMED', 'SPOOLING', 'PRINTING',\n            'PRINT_BLOCKED', 'PRINT_FAILED', 'ADMIN_ACTION_REQUIRED', 'PRINTED',\n            'COMPLETED', 'CANCELLED')",
+          "endpoint": "payment-verify",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "QUEUED -> QUEUED",
+          "tableRowsWritten": 1
+        },
+        {
+          "sqlId": "e511489437d5",
+          "sql": "UPDATE orders SET status = 'CLAIMED', claimed_by_agent_id = ?, claim_id = ?,\n          claim_expires_at_ms = ?, printer_id = ?, claimed_at_ms = ?, updated_at_ms = ?\n        WHERE id = ? AND status = 'QUEUED' AND EXISTS (\n          SELECT 1 FROM payments WHERE order_id = orders.id AND status = 'PAID'\n            AND provider_payment_id IS NOT NULL AND verified_at_ms IS NOT NULL\n        ) AND EXISTS (\n          SELECT 1 FROM uploads WHERE order_id = orders.id AND storage_status = 'UPLOADED'\n            AND deleted_at_ms IS NULL AND size_bytes IS NOT NULL\n            AND (delete_after_ms IS NULL OR delete_after_ms > ?)\n        ) AND EXISTS (\n          SELECT 1 FROM printers p JOIN agents a ON a.id = p.agent_id\n          WHERE p.id = ? AND p.agent_id = ? AND p.enabled = 1 AND p.status = 'ONLINE'\n            AND p.is_production_eligible = 1 AND p.is_virtual = 0\n            AND a.is_active = 1 AND a.last_heartbeat_at_ms >= ?\n            AND p.capabilities_json IS NOT NULL\n            AND (orders.color_mode = 'BW' OR json_extract(p.capabilities_json, '$.colour') = 1)\n            AND (orders.sides = 'SINGLE' OR json_extract(p.capabilities_json, '$.duplex') = 1)\n            AND EXISTS (SELECT 1 FROM json_each(p.capabilities_json, '$.paperSizes')\n              WHERE upper(value) = orders.paper_size)\n        )",
+          "endpoint": "agent-heartbeat",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "QUEUED -> CLAIMED",
+          "tableRowsWritten": 1
+        },
+        {
+          "sqlId": "44a3a1c82ecc",
+          "sql": "INSERT INTO print_attempts (id, order_id, attempt_number, agent_id, printer_id,\n          status, identification_sheet_included, created_at_ms, updated_at_ms)\n        SELECT ?, id, COALESCE((SELECT MAX(attempt_number) + 1 FROM print_attempts\n          WHERE order_id = orders.id), 1), ?, ?, 'CREATED', ?, ?, ?\n        FROM orders WHERE id = ? AND claim_id = ? AND claimed_by_agent_id = ?",
+          "endpoint": "agent-heartbeat",
+          "category": "per-order",
+          "table": "print_attempts",
+          "operation": "INSERT",
+          "transition": "none -> CREATED",
+          "tableRowsWritten": 1
+        },
+        {
+          "sqlId": "ee4e2fce5841",
+          "sql": "INSERT INTO print_attempt_steps (id, print_attempt_id, order_id, sequence_number,\n              step_type, created_at_ms, updated_at_ms)\n            SELECT ?, ?, ?, ?, 'CUSTOMER_DOCUMENT', ?, ? FROM print_attempts WHERE id = ?",
+          "endpoint": "agent-heartbeat",
+          "category": "per-order",
+          "table": "print_attempt_steps",
+          "operation": "INSERT",
+          "transition": "none -> PENDING",
+          "tableRowsWritten": 1
+        },
+        {
+          "sqlId": "0b203af80397",
+          "sql": "INSERT INTO print_attempt_steps (id, print_attempt_id, order_id, sequence_number,\n              step_type, created_at_ms, updated_at_ms)\n            SELECT ?, ?, ?, ?, 'IDENTIFICATION_SHEET', ?, ? FROM print_attempts WHERE id = ?",
+          "endpoint": "agent-heartbeat",
+          "category": "per-order",
+          "table": "print_attempt_steps",
+          "operation": "INSERT",
+          "transition": "none -> PENDING",
+          "tableRowsWritten": 1
+        },
+        {
+          "sqlId": "289f9f4d1ad2",
+          "sql": "INSERT INTO order_events (id, order_id, event_type, from_status, to_status,\n          actor_type, actor_id, created_at_ms)\n        SELECT ?, id, 'PRINT_JOB_CLAIMED', 'QUEUED', 'CLAIMED', 'AGENT', ?, ?\n        FROM orders WHERE id = ? AND claim_id = ?",
+          "endpoint": "agent-heartbeat",
+          "category": "per-order",
+          "table": "order_events",
+          "operation": "INSERT",
+          "transition": "none -> PRINT_JOB_CLAIMED",
+          "tableRowsWritten": 1
+        },
+        {
+          "sqlId": "f9fa1b633360",
+          "sql": "UPDATE print_attempts SET status = 'SUBMITTING', updated_at_ms = ?\n        WHERE id = ? AND status IN ('CREATED','PRINTING')",
+          "endpoint": "print-start",
+          "category": "per-order",
+          "table": "print_attempts",
+          "operation": "UPDATE",
+          "transition": "CREATED -> SUBMITTING",
+          "tableRowsWritten": 1
+        },
+        {
+          "sqlId": "5dc64fdefac3",
+          "sql": "UPDATE orders SET status = ?, print_started_at_ms = COALESCE(print_started_at_ms, ?),\n          claim_expires_at_ms = ?, updated_at_ms = ? WHERE id = ? AND claim_id = ?\n          AND status IN ('CLAIMED','PRINTING')",
+          "endpoint": "print-start",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "CLAIMED -> SPOOLING",
+          "tableRowsWritten": 1
+        },
+        {
+          "sqlId": "d0268a24a226",
+          "sql": "UPDATE orders SET status = 'PRINTING', claim_expires_at_ms = ?, updated_at_ms = ?\n        WHERE id = ? AND claim_id = ? AND status IN ('SPOOLING','PRINT_BLOCKED')",
+          "endpoint": "print-submitted",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "SPOOLING -> PRINTING",
+          "tableRowsWritten": 1
+        },
+        {
+          "sqlId": "086ffd5de6a5",
+          "sql": "UPDATE print_attempts SET status = 'PRINTING', failure_code = NULL, failure_detail = NULL, last_observed_at_ms = ?, updated_at_ms = ? WHERE id = ?",
+          "endpoint": "print-result",
+          "category": "per-order",
+          "table": "print_attempts",
+          "operation": "UPDATE",
+          "transition": "PRINTING -> PRINTING",
+          "tableRowsWritten": 1
+        },
+        {
+          "sqlId": "35ee5b177056",
+          "sql": "UPDATE orders SET status = 'PRINTING', claim_expires_at_ms = ?, updated_at_ms = ? WHERE id = ? AND claim_id = ?",
+          "endpoint": "print-result",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "PRINTING -> PRINTING",
+          "tableRowsWritten": 1
+        },
+        {
+          "sqlId": "f20efec5c9d4",
+          "sql": "UPDATE orders SET claim_expires_at_ms = ?, updated_at_ms = ?\n         WHERE id = ? AND claimed_by_agent_id = ? AND claim_id = ?",
+          "endpoint": "agent-heartbeat",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "PRINTING -> PRINTING",
+          "tableRowsWritten": 1
+        },
+        {
+          "sqlId": "f9fa1b633360",
+          "sql": "UPDATE print_attempts SET status = 'SUBMITTING', updated_at_ms = ?\n        WHERE id = ? AND status IN ('CREATED','PRINTING')",
+          "endpoint": "print-start",
+          "category": "per-order",
+          "table": "print_attempts",
+          "operation": "UPDATE",
+          "transition": "PRINTING -> SUBMITTING",
+          "tableRowsWritten": 1
+        },
+        {
+          "sqlId": "5dc64fdefac3",
+          "sql": "UPDATE orders SET status = ?, print_started_at_ms = COALESCE(print_started_at_ms, ?),\n          claim_expires_at_ms = ?, updated_at_ms = ? WHERE id = ? AND claim_id = ?\n          AND status IN ('CLAIMED','PRINTING')",
+          "endpoint": "print-start",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "PRINTING -> PRINTING",
+          "tableRowsWritten": 1
+        },
+        {
+          "sqlId": "6bf36c3a1971",
+          "sql": "UPDATE print_attempts SET status = 'SUCCEEDED', finished_at_ms = COALESCE(finished_at_ms, ?), updated_at_ms = ? WHERE id = ? AND status <> 'SUCCEEDED'",
+          "endpoint": "print-result",
+          "category": "per-order",
+          "table": "print_attempts",
+          "operation": "UPDATE",
+          "transition": "PRINTING -> SUCCEEDED",
+          "tableRowsWritten": 1
+        },
+        {
+          "sqlId": "3cc83be13720",
+          "sql": "UPDATE orders SET status = 'PRINTED', printed_at_ms = COALESCE(printed_at_ms, ?), updated_at_ms = ? WHERE id = ? AND claim_id = ? AND status NOT IN ('PRINTED','COMPLETED')",
+          "endpoint": "print-result",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "PRINTING -> PRINTED",
+          "tableRowsWritten": 1
+        },
+        {
+          "sqlId": "e4b36761ff1f",
+          "sql": "UPDATE orders SET status = 'COMPLETED', completed_at_ms = COALESCE(completed_at_ms, ?), updated_at_ms = ? WHERE id = ? AND claim_id = ? AND status = 'PRINTED'",
+          "endpoint": "print-result",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "PRINTED -> COMPLETED",
+          "tableRowsWritten": 1
+        },
+        {
+          "sqlId": "248d0138422a",
+          "sql": "UPDATE uploads SET retention_reason = 'COMPLETED', delete_after_ms = ?, updated_at_ms = ? WHERE order_id = ? AND storage_status = 'UPLOADED' AND retention_reason IS NOT 'COMPLETED'",
+          "endpoint": "print-result",
+          "category": "per-order",
+          "table": "uploads",
+          "operation": "UPDATE",
+          "transition": "UPLOADED -> UPLOADED",
+          "tableRowsWritten": 1
+        },
+        {
+          "sqlId": "ccfbf8edd2dc",
+          "sql": "INSERT OR IGNORE INTO order_events (id, order_id, event_type, from_status,\n            to_status, actor_type, actor_id, idempotency_key, created_at_ms)\n          VALUES (?, ?, 'ORDER_PRINTED', ?, 'PRINTED', 'AGENT', ?, ?, ?)",
+          "endpoint": "print-result",
+          "category": "per-order",
+          "table": "order_events",
+          "operation": "INSERT",
+          "transition": "none -> ORDER_PRINTED",
+          "tableRowsWritten": 1
+        },
+        {
+          "sqlId": "18d8d901d763",
+          "sql": "INSERT OR IGNORE INTO order_events (id, order_id, event_type, from_status,\n            to_status, actor_type, actor_id, idempotency_key, created_at_ms)\n          VALUES (?, ?, 'ORDER_COMPLETED', 'PRINTED', 'COMPLETED', 'AGENT', ?, ?, ?)",
+          "endpoint": "print-result",
+          "category": "per-order",
+          "table": "order_events",
+          "operation": "INSERT",
+          "transition": "none -> ORDER_COMPLETED",
+          "tableRowsWritten": 1
+        },
+        {
+          "sqlId": "f4c5221ce052",
+          "sql": "UPDATE uploads\n         SET storage_status = 'DELETE_PENDING', updated_at_ms = ?\n         WHERE id = ? AND storage_status <> 'DELETED'",
+          "endpoint": "retention-cleanup",
+          "category": "retention",
+          "table": "uploads",
+          "operation": "UPDATE",
+          "transition": "UPLOADED -> DELETE_PENDING",
+          "tableRowsWritten": 1
+        },
+        {
+          "sqlId": "064df8d7316d",
+          "sql": "UPDATE uploads\n           SET storage_status = 'DELETED',\n               deleted_at_ms = ?,\n               original_filename = 'document.pdf',\n               updated_at_ms = ?\n           WHERE id = ?",
+          "endpoint": "retention-cleanup",
+          "category": "retention",
+          "table": "uploads",
+          "operation": "UPDATE",
+          "transition": "DELETE_PENDING -> DELETED",
+          "tableRowsWritten": 1
+        },
+        {
+          "sqlId": "05d1e8bd01b4",
+          "sql": "INSERT INTO order_events\n             (id, order_id, event_type, from_status, to_status, actor_type, actor_id, details_json, created_at_ms)\n           VALUES (?, ?, 'PDF_DELETED', NULL, NULL, 'SYSTEM', 'CRON_RETENTION', ?, ?)",
+          "endpoint": "retention-cleanup",
+          "category": "retention",
+          "table": "order_events",
+          "operation": "INSERT",
+          "transition": "none -> PDF_DELETED",
+          "tableRowsWritten": 1
+        },
+        {
+          "sqlId": "f2c8e7a1dff3",
+          "sql": "UPDATE orders\n           SET customer_name = 'Customer details expired for privacy',\n               customer_phone = 'REDACTED',\n               original_filename = 'document.pdf',\n               instructions = NULL,\n               pii_purged_at_ms = ?,\n               updated_at_ms = ?\n           WHERE id = ? AND pii_purged_at_ms IS NULL",
+          "endpoint": "retention-cleanup",
+          "category": "retention",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "COMPLETED -> COMPLETED",
+          "tableRowsWritten": 1
+        },
+        {
+          "sqlId": "ace92bf659c0",
+          "sql": "UPDATE uploads\n           SET original_filename = 'document.pdf',\n               updated_at_ms = ?\n           WHERE order_id = ?",
+          "endpoint": "retention-cleanup",
+          "category": "retention",
+          "table": "uploads",
+          "operation": "UPDATE",
+          "transition": "DELETED -> DELETED",
+          "tableRowsWritten": 1
+        },
+        {
+          "sqlId": "cbe8b30c5cd9",
+          "sql": "INSERT INTO order_events\n             (id, order_id, event_type, from_status, to_status, actor_type, actor_id, details_json, created_at_ms)\n           VALUES (?, ?, 'PII_PURGED', NULL, NULL, 'SYSTEM', 'CRON_RETENTION', ?, ?)",
+          "endpoint": "retention-cleanup",
+          "category": "retention",
+          "table": "order_events",
+          "operation": "INSERT",
+          "transition": "none -> PII_PURGED",
+          "tableRowsWritten": 1
+        }
+      ]
+    },
+    {
+      "orders": 10,
+      "requests": 160,
+      "requestsPerOrder": 16,
+      "returnedRows": 1298,
+      "returnedRowsPerOrder": 129.8,
+      "tableRowsWritten": 530,
+      "writesPerOrderExcludingBackground": 52,
+      "tables": {
+        "orders": 160,
+        "order_events": 110,
+        "payments": 30,
+        "uploads": 70,
+        "print_attempts": 70,
+        "print_attempt_steps": 80,
+        "agents": 10,
+        "printers": 0,
+        "admins": 0,
+        "admin_sessions": 0,
+        "payment_provider_events": 0
+      },
+      "categories": {
+        "background": 10,
+        "per-order": 460,
+        "retention": 60
+      },
+      "statements": [
+        {
+          "sqlId": "84404d7f104d",
+          "sql": "UPDATE print_attempt_steps SET status = 'SUBMISSION_STARTED',\n          submission_started_at_ms = ?, updated_at_ms = ?\n        WHERE id = ? AND print_attempt_id = ? AND status = 'PENDING'",
+          "endpoint": "print-start",
+          "category": "per-order",
+          "table": "print_attempt_steps",
+          "operation": "UPDATE",
+          "transition": "PENDING -> SUBMISSION_STARTED",
+          "tableRowsWritten": 20
+        },
+        {
+          "sqlId": "7dc9cad07305",
+          "sql": "INSERT INTO order_events (id, order_id, event_type, from_status, to_status,\n          actor_type, actor_id, created_at_ms) VALUES (?, ?, 'PRINT_STEP_STARTED', ?,\n          ?, 'AGENT', ?, ?)",
+          "endpoint": "print-start",
+          "category": "per-order",
+          "table": "order_events",
+          "operation": "INSERT",
+          "transition": "none -> PRINT_STEP_STARTED",
+          "tableRowsWritten": 20
+        },
+        {
+          "sqlId": "f52b516f96f4",
+          "sql": "UPDATE print_attempt_steps SET status = 'SUBMITTED', spooler_job_id = ?,\n          submitted_at_ms = ?, last_observed_at_ms = ?, updated_at_ms = ?\n        WHERE id = ? AND status = 'SUBMISSION_STARTED' AND spooler_job_id IS NULL",
+          "endpoint": "print-submitted",
+          "category": "per-order",
+          "table": "print_attempt_steps",
+          "operation": "UPDATE",
+          "transition": "SUBMISSION_STARTED -> SUBMITTED",
+          "tableRowsWritten": 20
+        },
+        {
+          "sqlId": "4f8609b26fbe",
+          "sql": "UPDATE print_attempts SET status = 'PRINTING', windows_job_id = COALESCE(windows_job_id, ?),\n          submitted_at_ms = COALESCE(submitted_at_ms, ?), last_observed_at_ms = ?, updated_at_ms = ?\n        WHERE id = ?",
+          "endpoint": "print-submitted",
+          "category": "per-order",
+          "table": "print_attempts",
+          "operation": "UPDATE",
+          "transition": "SUBMITTING -> PRINTING",
+          "tableRowsWritten": 20
+        },
+        {
+          "sqlId": "c2c4a71fae09",
+          "sql": "UPDATE print_attempt_steps SET status = ?, spooler_job_id = COALESCE(spooler_job_id, ?),\n        failure_code = ?, failure_detail = ?, last_observed_at_ms = ?, finished_at_ms = ?,\n        updated_at_ms = ? WHERE id = ? AND status = ?",
+          "endpoint": "print-result",
+          "category": "per-order",
+          "table": "print_attempt_steps",
+          "operation": "UPDATE",
+          "transition": "SUBMITTED -> SUCCEEDED",
+          "tableRowsWritten": 20
+        },
+        {
+          "sqlId": "e2821c66b493",
+          "sql": "UPDATE agents SET last_heartbeat_at_ms = ?, updated_at_ms = ?\n       WHERE id = ? AND is_active = 1\n       AND (last_heartbeat_at_ms IS NULL OR last_heartbeat_at_ms <= ?)",
+          "endpoint": "idle-liveness",
+          "category": "background",
+          "table": "agents",
+          "operation": "UPDATE",
+          "transition": "none -> none",
+          "tableRowsWritten": 10
+        },
+        {
+          "sqlId": "86a294e6169e",
+          "sql": "INSERT INTO orders\n        (id, customer_name, customer_phone, original_filename, source_page_count,\n         color_mode, paper_size, sides, instructions, status, created_at_ms,\n         updated_at_ms, draft_token_hash, draft_expires_at_ms)\n        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'UPLOADING', ?, ?, ?, ?)",
+          "endpoint": "draft",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "INSERT",
+          "transition": "none -> UPLOADING",
+          "tableRowsWritten": 10
+        },
+        {
+          "sqlId": "68b3de46e82c",
+          "sql": "INSERT INTO uploads\n        (id, order_id, r2_object_key, original_filename, storage_status,\n         retention_reason, delete_after_ms, created_at_ms, updated_at_ms,\n         expected_size_bytes)\n        VALUES (?, ?, ?, ?, 'PENDING', 'UNPAID', ?, ?, ?, ?)",
+          "endpoint": "draft",
+          "category": "per-order",
+          "table": "uploads",
+          "operation": "INSERT",
+          "transition": "none -> PENDING",
+          "tableRowsWritten": 10
+        },
+        {
+          "sqlId": "73946b0cb351",
+          "sql": "UPDATE uploads SET size_bytes = ?, mime_type = 'application/pdf',\n        storage_status = 'UPLOADED', uploaded_at_ms = ?, updated_at_ms = ?,\n        delete_after_ms = ?, validation_error_code = NULL WHERE id = ?",
+          "endpoint": "upload-complete",
+          "category": "per-order",
+          "table": "uploads",
+          "operation": "UPDATE",
+          "transition": "PENDING -> UPLOADED",
+          "tableRowsWritten": 10
+        },
+        {
+          "sqlId": "ac91ac52bf52",
+          "sql": "UPDATE orders SET status = 'UPLOADED', updated_at_ms = ?,\n        draft_expires_at_ms = ? WHERE id = ? AND status = 'UPLOADING'",
+          "endpoint": "upload-complete",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "UPLOADING -> UPLOADED",
+          "tableRowsWritten": 10
+        },
+        {
+          "sqlId": "1c6e3565d0d3",
+          "sql": "UPDATE orders SET selected_pages = ?, copies = ?, paper_size = ?,\n      color_mode = ?, sides = ?, printing_amount_paise = ?, service_charge_paise = ?,\n      total_amount_paise = ?, status = 'PAYMENT_PENDING', updated_at_ms = ?\n      WHERE id = ? AND status IN ('UPLOADED', 'PAYMENT_PENDING')",
+          "endpoint": "quote",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "UPLOADED -> PAYMENT_PENDING",
+          "tableRowsWritten": 10
+        },
+        {
+          "sqlId": "ff09ce6a3fa0",
+          "sql": "UPDATE orders SET selected_pages = ?, printing_amount_paise = ?,\n          service_charge_paise = ?, total_amount_paise = ?,\n          status = 'PAYMENT_PENDING', updated_at_ms = ?\n        WHERE id = ? AND status IN\n          ('UPLOADED', 'PAYMENT_PENDING', 'PAYMENT_FAILED', 'PAYMENT_CANCELLED')",
+          "endpoint": "payment-create",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "PAYMENT_PENDING -> PAYMENT_PENDING",
+          "tableRowsWritten": 10
+        },
+        {
+          "sqlId": "d3f652c9547e",
+          "sql": "INSERT INTO payments\n            (id, order_id, provider_order_id, amount_paise, currency, status,\n             created_at_ms, updated_at_ms)\n          VALUES (?, ?, ?, ?, 'INR', 'CREATED', ?, ?)",
+          "endpoint": "payment-create",
+          "category": "per-order",
+          "table": "payments",
+          "operation": "INSERT",
+          "transition": "none -> CREATED",
+          "tableRowsWritten": 10
+        },
+        {
+          "sqlId": "3f5532754c6c",
+          "sql": "INSERT OR IGNORE INTO order_events\n            (id, order_id, event_type, from_status, to_status, actor_type,\n             details_json, created_at_ms, idempotency_key)\n          SELECT ?, id, 'PAYMENT_ORDER_CREATED', status, 'PAYMENT_PENDING',\n            'CUSTOMER', ?, ?, ? FROM orders WHERE id = ?",
+          "endpoint": "payment-create",
+          "category": "per-order",
+          "table": "order_events",
+          "operation": "INSERT",
+          "transition": "none -> PAYMENT_ORDER_CREATED",
+          "tableRowsWritten": 10
+        },
+        {
+          "sqlId": "1ded0fb3a8a7",
+          "sql": "UPDATE orders SET status = 'PAYMENT_PENDING', updated_at_ms = ?\n          WHERE id = ? AND status IN\n            ('UPLOADED', 'PAYMENT_PENDING', 'PAYMENT_FAILED', 'PAYMENT_CANCELLED')",
+          "endpoint": "payment-create",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "PAYMENT_PENDING -> PAYMENT_PENDING",
+          "tableRowsWritten": 10
+        },
+        {
+          "sqlId": "836f40fef6f0",
+          "sql": "UPDATE payments SET provider_order_id = ?, status = 'PENDING',\n          updated_at_ms = ? WHERE id = ? AND status = 'CREATED'",
+          "endpoint": "payment-create",
+          "category": "per-order",
+          "table": "payments",
+          "operation": "UPDATE",
+          "transition": "CREATED -> PENDING",
+          "tableRowsWritten": 10
+        },
+        {
+          "sqlId": "494b246327ae",
+          "sql": "UPDATE payments SET provider_payment_id = ?, status = 'PAID',\n            verified_at_ms = ?, updated_at_ms = ?\n          WHERE id = ? AND status IN ('CREATED', 'PENDING', 'FAILED', 'CANCELLED')",
+          "endpoint": "payment-verify",
+          "category": "per-order",
+          "table": "payments",
+          "operation": "UPDATE",
+          "transition": "PENDING -> PAID",
+          "tableRowsWritten": 10
+        },
+        {
+          "sqlId": "69d15f5be6d5",
+          "sql": "UPDATE orders SET public_job_code = COALESCE(public_job_code, ?),\n            status = 'QUEUED', paid_at_ms = COALESCE(paid_at_ms, ?),\n            queued_at_ms = COALESCE(queued_at_ms, ?), updated_at_ms = ?\n          WHERE id = ? AND status IN\n            ('PAYMENT_PENDING', 'PAYMENT_FAILED', 'PAYMENT_CANCELLED', 'PAID')",
+          "endpoint": "payment-verify",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "PAYMENT_PENDING -> QUEUED",
+          "tableRowsWritten": 10
+        },
+        {
+          "sqlId": "2d1db866d380",
+          "sql": "UPDATE uploads SET retention_reason = 'UNRESOLVED_PAID_FAILURE', delete_after_ms = ?,\n            updated_at_ms = ? WHERE order_id = ?",
+          "endpoint": "payment-verify",
+          "category": "per-order",
+          "table": "uploads",
+          "operation": "UPDATE",
+          "transition": "UPLOADED -> UPLOADED",
+          "tableRowsWritten": 10
+        },
+        {
+          "sqlId": "e5f935da3a9a",
+          "sql": "INSERT OR IGNORE INTO order_events\n            (id, order_id, event_type, from_status, to_status, actor_type,\n             details_json, created_at_ms, idempotency_key)\n          VALUES (?, ?, 'PAYMENT_VERIFIED', 'PAYMENT_PENDING', 'PAID', ?, ?, ?, ?)",
+          "endpoint": "payment-verify",
+          "category": "per-order",
+          "table": "order_events",
+          "operation": "INSERT",
+          "transition": "none -> PAYMENT_VERIFIED",
+          "tableRowsWritten": 10
+        },
+        {
+          "sqlId": "2cb9c46fe4f0",
+          "sql": "INSERT OR IGNORE INTO order_events\n            (id, order_id, event_type, from_status, to_status, actor_type,\n             details_json, created_at_ms, idempotency_key)\n          VALUES (?, ?, 'JOB_CODE_ASSIGNED', 'PAID', 'PAID', 'SYSTEM', ?, ?, ?)",
+          "endpoint": "payment-verify",
+          "category": "per-order",
+          "table": "order_events",
+          "operation": "INSERT",
+          "transition": "none -> JOB_CODE_ASSIGNED",
+          "tableRowsWritten": 10
+        },
+        {
+          "sqlId": "64b545c273a4",
+          "sql": "INSERT OR IGNORE INTO order_events\n            (id, order_id, event_type, from_status, to_status, actor_type,\n             details_json, created_at_ms, idempotency_key)\n          VALUES (?, ?, 'QUEUED', 'PAID', 'QUEUED', 'SYSTEM', ?, ?, ?)",
+          "endpoint": "payment-verify",
+          "category": "per-order",
+          "table": "order_events",
+          "operation": "INSERT",
+          "transition": "none -> QUEUED",
+          "tableRowsWritten": 10
+        },
+        {
+          "sqlId": "24c7f0b72aca",
+          "sql": "UPDATE orders SET tracking_token_hash = ?, tracking_created_at_ms = ?,\n          tracking_expires_at_ms = ?, updated_at_ms = ?\n        WHERE id = ? AND tracking_token_hash IS NULL\n          AND public_job_code IS NOT NULL\n          AND status IN ('PAID', 'QUEUED', 'CLAIMED', 'SPOOLING', 'PRINTING',\n            'PRINT_BLOCKED', 'PRINT_FAILED', 'ADMIN_ACTION_REQUIRED', 'PRINTED',\n            'COMPLETED', 'CANCELLED')",
+          "endpoint": "payment-verify",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "QUEUED -> QUEUED",
+          "tableRowsWritten": 10
+        },
+        {
+          "sqlId": "e511489437d5",
+          "sql": "UPDATE orders SET status = 'CLAIMED', claimed_by_agent_id = ?, claim_id = ?,\n          claim_expires_at_ms = ?, printer_id = ?, claimed_at_ms = ?, updated_at_ms = ?\n        WHERE id = ? AND status = 'QUEUED' AND EXISTS (\n          SELECT 1 FROM payments WHERE order_id = orders.id AND status = 'PAID'\n            AND provider_payment_id IS NOT NULL AND verified_at_ms IS NOT NULL\n        ) AND EXISTS (\n          SELECT 1 FROM uploads WHERE order_id = orders.id AND storage_status = 'UPLOADED'\n            AND deleted_at_ms IS NULL AND size_bytes IS NOT NULL\n            AND (delete_after_ms IS NULL OR delete_after_ms > ?)\n        ) AND EXISTS (\n          SELECT 1 FROM printers p JOIN agents a ON a.id = p.agent_id\n          WHERE p.id = ? AND p.agent_id = ? AND p.enabled = 1 AND p.status = 'ONLINE'\n            AND p.is_production_eligible = 1 AND p.is_virtual = 0\n            AND a.is_active = 1 AND a.last_heartbeat_at_ms >= ?\n            AND p.capabilities_json IS NOT NULL\n            AND (orders.color_mode = 'BW' OR json_extract(p.capabilities_json, '$.colour') = 1)\n            AND (orders.sides = 'SINGLE' OR json_extract(p.capabilities_json, '$.duplex') = 1)\n            AND EXISTS (SELECT 1 FROM json_each(p.capabilities_json, '$.paperSizes')\n              WHERE upper(value) = orders.paper_size)\n        )",
+          "endpoint": "agent-heartbeat",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "QUEUED -> CLAIMED",
+          "tableRowsWritten": 10
+        },
+        {
+          "sqlId": "44a3a1c82ecc",
+          "sql": "INSERT INTO print_attempts (id, order_id, attempt_number, agent_id, printer_id,\n          status, identification_sheet_included, created_at_ms, updated_at_ms)\n        SELECT ?, id, COALESCE((SELECT MAX(attempt_number) + 1 FROM print_attempts\n          WHERE order_id = orders.id), 1), ?, ?, 'CREATED', ?, ?, ?\n        FROM orders WHERE id = ? AND claim_id = ? AND claimed_by_agent_id = ?",
+          "endpoint": "agent-heartbeat",
+          "category": "per-order",
+          "table": "print_attempts",
+          "operation": "INSERT",
+          "transition": "none -> CREATED",
+          "tableRowsWritten": 10
+        },
+        {
+          "sqlId": "ee4e2fce5841",
+          "sql": "INSERT INTO print_attempt_steps (id, print_attempt_id, order_id, sequence_number,\n              step_type, created_at_ms, updated_at_ms)\n            SELECT ?, ?, ?, ?, 'CUSTOMER_DOCUMENT', ?, ? FROM print_attempts WHERE id = ?",
+          "endpoint": "agent-heartbeat",
+          "category": "per-order",
+          "table": "print_attempt_steps",
+          "operation": "INSERT",
+          "transition": "none -> PENDING",
+          "tableRowsWritten": 10
+        },
+        {
+          "sqlId": "0b203af80397",
+          "sql": "INSERT INTO print_attempt_steps (id, print_attempt_id, order_id, sequence_number,\n              step_type, created_at_ms, updated_at_ms)\n            SELECT ?, ?, ?, ?, 'IDENTIFICATION_SHEET', ?, ? FROM print_attempts WHERE id = ?",
+          "endpoint": "agent-heartbeat",
+          "category": "per-order",
+          "table": "print_attempt_steps",
+          "operation": "INSERT",
+          "transition": "none -> PENDING",
+          "tableRowsWritten": 10
+        },
+        {
+          "sqlId": "289f9f4d1ad2",
+          "sql": "INSERT INTO order_events (id, order_id, event_type, from_status, to_status,\n          actor_type, actor_id, created_at_ms)\n        SELECT ?, id, 'PRINT_JOB_CLAIMED', 'QUEUED', 'CLAIMED', 'AGENT', ?, ?\n        FROM orders WHERE id = ? AND claim_id = ?",
+          "endpoint": "agent-heartbeat",
+          "category": "per-order",
+          "table": "order_events",
+          "operation": "INSERT",
+          "transition": "none -> PRINT_JOB_CLAIMED",
+          "tableRowsWritten": 10
+        },
+        {
+          "sqlId": "f9fa1b633360",
+          "sql": "UPDATE print_attempts SET status = 'SUBMITTING', updated_at_ms = ?\n        WHERE id = ? AND status IN ('CREATED','PRINTING')",
+          "endpoint": "print-start",
+          "category": "per-order",
+          "table": "print_attempts",
+          "operation": "UPDATE",
+          "transition": "CREATED -> SUBMITTING",
+          "tableRowsWritten": 10
+        },
+        {
+          "sqlId": "5dc64fdefac3",
+          "sql": "UPDATE orders SET status = ?, print_started_at_ms = COALESCE(print_started_at_ms, ?),\n          claim_expires_at_ms = ?, updated_at_ms = ? WHERE id = ? AND claim_id = ?\n          AND status IN ('CLAIMED','PRINTING')",
+          "endpoint": "print-start",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "CLAIMED -> SPOOLING",
+          "tableRowsWritten": 10
+        },
+        {
+          "sqlId": "d0268a24a226",
+          "sql": "UPDATE orders SET status = 'PRINTING', claim_expires_at_ms = ?, updated_at_ms = ?\n        WHERE id = ? AND claim_id = ? AND status IN ('SPOOLING','PRINT_BLOCKED')",
+          "endpoint": "print-submitted",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "SPOOLING -> PRINTING",
+          "tableRowsWritten": 10
+        },
+        {
+          "sqlId": "086ffd5de6a5",
+          "sql": "UPDATE print_attempts SET status = 'PRINTING', failure_code = NULL, failure_detail = NULL, last_observed_at_ms = ?, updated_at_ms = ? WHERE id = ?",
+          "endpoint": "print-result",
+          "category": "per-order",
+          "table": "print_attempts",
+          "operation": "UPDATE",
+          "transition": "PRINTING -> PRINTING",
+          "tableRowsWritten": 10
+        },
+        {
+          "sqlId": "35ee5b177056",
+          "sql": "UPDATE orders SET status = 'PRINTING', claim_expires_at_ms = ?, updated_at_ms = ? WHERE id = ? AND claim_id = ?",
+          "endpoint": "print-result",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "PRINTING -> PRINTING",
+          "tableRowsWritten": 10
+        },
+        {
+          "sqlId": "f20efec5c9d4",
+          "sql": "UPDATE orders SET claim_expires_at_ms = ?, updated_at_ms = ?\n         WHERE id = ? AND claimed_by_agent_id = ? AND claim_id = ?",
+          "endpoint": "agent-heartbeat",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "PRINTING -> PRINTING",
+          "tableRowsWritten": 10
+        },
+        {
+          "sqlId": "f9fa1b633360",
+          "sql": "UPDATE print_attempts SET status = 'SUBMITTING', updated_at_ms = ?\n        WHERE id = ? AND status IN ('CREATED','PRINTING')",
+          "endpoint": "print-start",
+          "category": "per-order",
+          "table": "print_attempts",
+          "operation": "UPDATE",
+          "transition": "PRINTING -> SUBMITTING",
+          "tableRowsWritten": 10
+        },
+        {
+          "sqlId": "5dc64fdefac3",
+          "sql": "UPDATE orders SET status = ?, print_started_at_ms = COALESCE(print_started_at_ms, ?),\n          claim_expires_at_ms = ?, updated_at_ms = ? WHERE id = ? AND claim_id = ?\n          AND status IN ('CLAIMED','PRINTING')",
+          "endpoint": "print-start",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "PRINTING -> PRINTING",
+          "tableRowsWritten": 10
+        },
+        {
+          "sqlId": "6bf36c3a1971",
+          "sql": "UPDATE print_attempts SET status = 'SUCCEEDED', finished_at_ms = COALESCE(finished_at_ms, ?), updated_at_ms = ? WHERE id = ? AND status <> 'SUCCEEDED'",
+          "endpoint": "print-result",
+          "category": "per-order",
+          "table": "print_attempts",
+          "operation": "UPDATE",
+          "transition": "PRINTING -> SUCCEEDED",
+          "tableRowsWritten": 10
+        },
+        {
+          "sqlId": "3cc83be13720",
+          "sql": "UPDATE orders SET status = 'PRINTED', printed_at_ms = COALESCE(printed_at_ms, ?), updated_at_ms = ? WHERE id = ? AND claim_id = ? AND status NOT IN ('PRINTED','COMPLETED')",
+          "endpoint": "print-result",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "PRINTING -> PRINTED",
+          "tableRowsWritten": 10
+        },
+        {
+          "sqlId": "e4b36761ff1f",
+          "sql": "UPDATE orders SET status = 'COMPLETED', completed_at_ms = COALESCE(completed_at_ms, ?), updated_at_ms = ? WHERE id = ? AND claim_id = ? AND status = 'PRINTED'",
+          "endpoint": "print-result",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "PRINTED -> COMPLETED",
+          "tableRowsWritten": 10
+        },
+        {
+          "sqlId": "248d0138422a",
+          "sql": "UPDATE uploads SET retention_reason = 'COMPLETED', delete_after_ms = ?, updated_at_ms = ? WHERE order_id = ? AND storage_status = 'UPLOADED' AND retention_reason IS NOT 'COMPLETED'",
+          "endpoint": "print-result",
+          "category": "per-order",
+          "table": "uploads",
+          "operation": "UPDATE",
+          "transition": "UPLOADED -> UPLOADED",
+          "tableRowsWritten": 10
+        },
+        {
+          "sqlId": "ccfbf8edd2dc",
+          "sql": "INSERT OR IGNORE INTO order_events (id, order_id, event_type, from_status,\n            to_status, actor_type, actor_id, idempotency_key, created_at_ms)\n          VALUES (?, ?, 'ORDER_PRINTED', ?, 'PRINTED', 'AGENT', ?, ?, ?)",
+          "endpoint": "print-result",
+          "category": "per-order",
+          "table": "order_events",
+          "operation": "INSERT",
+          "transition": "none -> ORDER_PRINTED",
+          "tableRowsWritten": 10
+        },
+        {
+          "sqlId": "18d8d901d763",
+          "sql": "INSERT OR IGNORE INTO order_events (id, order_id, event_type, from_status,\n            to_status, actor_type, actor_id, idempotency_key, created_at_ms)\n          VALUES (?, ?, 'ORDER_COMPLETED', 'PRINTED', 'COMPLETED', 'AGENT', ?, ?, ?)",
+          "endpoint": "print-result",
+          "category": "per-order",
+          "table": "order_events",
+          "operation": "INSERT",
+          "transition": "none -> ORDER_COMPLETED",
+          "tableRowsWritten": 10
+        },
+        {
+          "sqlId": "f4c5221ce052",
+          "sql": "UPDATE uploads\n         SET storage_status = 'DELETE_PENDING', updated_at_ms = ?\n         WHERE id = ? AND storage_status <> 'DELETED'",
+          "endpoint": "retention-cleanup",
+          "category": "retention",
+          "table": "uploads",
+          "operation": "UPDATE",
+          "transition": "UPLOADED -> DELETE_PENDING",
+          "tableRowsWritten": 10
+        },
+        {
+          "sqlId": "064df8d7316d",
+          "sql": "UPDATE uploads\n           SET storage_status = 'DELETED',\n               deleted_at_ms = ?,\n               original_filename = 'document.pdf',\n               updated_at_ms = ?\n           WHERE id = ?",
+          "endpoint": "retention-cleanup",
+          "category": "retention",
+          "table": "uploads",
+          "operation": "UPDATE",
+          "transition": "DELETE_PENDING -> DELETED",
+          "tableRowsWritten": 10
+        },
+        {
+          "sqlId": "05d1e8bd01b4",
+          "sql": "INSERT INTO order_events\n             (id, order_id, event_type, from_status, to_status, actor_type, actor_id, details_json, created_at_ms)\n           VALUES (?, ?, 'PDF_DELETED', NULL, NULL, 'SYSTEM', 'CRON_RETENTION', ?, ?)",
+          "endpoint": "retention-cleanup",
+          "category": "retention",
+          "table": "order_events",
+          "operation": "INSERT",
+          "transition": "none -> PDF_DELETED",
+          "tableRowsWritten": 10
+        },
+        {
+          "sqlId": "f2c8e7a1dff3",
+          "sql": "UPDATE orders\n           SET customer_name = 'Customer details expired for privacy',\n               customer_phone = 'REDACTED',\n               original_filename = 'document.pdf',\n               instructions = NULL,\n               pii_purged_at_ms = ?,\n               updated_at_ms = ?\n           WHERE id = ? AND pii_purged_at_ms IS NULL",
+          "endpoint": "retention-cleanup",
+          "category": "retention",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "COMPLETED -> COMPLETED",
+          "tableRowsWritten": 10
+        },
+        {
+          "sqlId": "ace92bf659c0",
+          "sql": "UPDATE uploads\n           SET original_filename = 'document.pdf',\n               updated_at_ms = ?\n           WHERE order_id = ?",
+          "endpoint": "retention-cleanup",
+          "category": "retention",
+          "table": "uploads",
+          "operation": "UPDATE",
+          "transition": "DELETED -> DELETED",
+          "tableRowsWritten": 10
+        },
+        {
+          "sqlId": "cbe8b30c5cd9",
+          "sql": "INSERT INTO order_events\n             (id, order_id, event_type, from_status, to_status, actor_type, actor_id, details_json, created_at_ms)\n           VALUES (?, ?, 'PII_PURGED', NULL, NULL, 'SYSTEM', 'CRON_RETENTION', ?, ?)",
+          "endpoint": "retention-cleanup",
+          "category": "retention",
+          "table": "order_events",
+          "operation": "INSERT",
+          "transition": "none -> PII_PURGED",
+          "tableRowsWritten": 10
+        }
+      ]
+    },
+    {
+      "orders": 60,
+      "requests": 960,
+      "requestsPerOrder": 16,
+      "returnedRows": 7748,
+      "returnedRowsPerOrder": 129.13333333333333,
+      "tableRowsWritten": 3180,
+      "writesPerOrderExcludingBackground": 52,
+      "tables": {
+        "orders": 960,
+        "order_events": 660,
+        "payments": 180,
+        "uploads": 420,
+        "print_attempts": 420,
+        "print_attempt_steps": 480,
+        "agents": 60,
+        "printers": 0,
+        "admins": 0,
+        "admin_sessions": 0,
+        "payment_provider_events": 0
+      },
+      "categories": {
+        "background": 60,
+        "per-order": 2760,
+        "retention": 360
+      },
+      "statements": [
+        {
+          "sqlId": "84404d7f104d",
+          "sql": "UPDATE print_attempt_steps SET status = 'SUBMISSION_STARTED',\n          submission_started_at_ms = ?, updated_at_ms = ?\n        WHERE id = ? AND print_attempt_id = ? AND status = 'PENDING'",
+          "endpoint": "print-start",
+          "category": "per-order",
+          "table": "print_attempt_steps",
+          "operation": "UPDATE",
+          "transition": "PENDING -> SUBMISSION_STARTED",
+          "tableRowsWritten": 120
+        },
+        {
+          "sqlId": "7dc9cad07305",
+          "sql": "INSERT INTO order_events (id, order_id, event_type, from_status, to_status,\n          actor_type, actor_id, created_at_ms) VALUES (?, ?, 'PRINT_STEP_STARTED', ?,\n          ?, 'AGENT', ?, ?)",
+          "endpoint": "print-start",
+          "category": "per-order",
+          "table": "order_events",
+          "operation": "INSERT",
+          "transition": "none -> PRINT_STEP_STARTED",
+          "tableRowsWritten": 120
+        },
+        {
+          "sqlId": "f52b516f96f4",
+          "sql": "UPDATE print_attempt_steps SET status = 'SUBMITTED', spooler_job_id = ?,\n          submitted_at_ms = ?, last_observed_at_ms = ?, updated_at_ms = ?\n        WHERE id = ? AND status = 'SUBMISSION_STARTED' AND spooler_job_id IS NULL",
+          "endpoint": "print-submitted",
+          "category": "per-order",
+          "table": "print_attempt_steps",
+          "operation": "UPDATE",
+          "transition": "SUBMISSION_STARTED -> SUBMITTED",
+          "tableRowsWritten": 120
+        },
+        {
+          "sqlId": "4f8609b26fbe",
+          "sql": "UPDATE print_attempts SET status = 'PRINTING', windows_job_id = COALESCE(windows_job_id, ?),\n          submitted_at_ms = COALESCE(submitted_at_ms, ?), last_observed_at_ms = ?, updated_at_ms = ?\n        WHERE id = ?",
+          "endpoint": "print-submitted",
+          "category": "per-order",
+          "table": "print_attempts",
+          "operation": "UPDATE",
+          "transition": "SUBMITTING -> PRINTING",
+          "tableRowsWritten": 120
+        },
+        {
+          "sqlId": "c2c4a71fae09",
+          "sql": "UPDATE print_attempt_steps SET status = ?, spooler_job_id = COALESCE(spooler_job_id, ?),\n        failure_code = ?, failure_detail = ?, last_observed_at_ms = ?, finished_at_ms = ?,\n        updated_at_ms = ? WHERE id = ? AND status = ?",
+          "endpoint": "print-result",
+          "category": "per-order",
+          "table": "print_attempt_steps",
+          "operation": "UPDATE",
+          "transition": "SUBMITTED -> SUCCEEDED",
+          "tableRowsWritten": 120
+        },
+        {
+          "sqlId": "e2821c66b493",
+          "sql": "UPDATE agents SET last_heartbeat_at_ms = ?, updated_at_ms = ?\n       WHERE id = ? AND is_active = 1\n       AND (last_heartbeat_at_ms IS NULL OR last_heartbeat_at_ms <= ?)",
+          "endpoint": "idle-liveness",
+          "category": "background",
+          "table": "agents",
+          "operation": "UPDATE",
+          "transition": "none -> none",
+          "tableRowsWritten": 60
+        },
+        {
+          "sqlId": "86a294e6169e",
+          "sql": "INSERT INTO orders\n        (id, customer_name, customer_phone, original_filename, source_page_count,\n         color_mode, paper_size, sides, instructions, status, created_at_ms,\n         updated_at_ms, draft_token_hash, draft_expires_at_ms)\n        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'UPLOADING', ?, ?, ?, ?)",
+          "endpoint": "draft",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "INSERT",
+          "transition": "none -> UPLOADING",
+          "tableRowsWritten": 60
+        },
+        {
+          "sqlId": "68b3de46e82c",
+          "sql": "INSERT INTO uploads\n        (id, order_id, r2_object_key, original_filename, storage_status,\n         retention_reason, delete_after_ms, created_at_ms, updated_at_ms,\n         expected_size_bytes)\n        VALUES (?, ?, ?, ?, 'PENDING', 'UNPAID', ?, ?, ?, ?)",
+          "endpoint": "draft",
+          "category": "per-order",
+          "table": "uploads",
+          "operation": "INSERT",
+          "transition": "none -> PENDING",
+          "tableRowsWritten": 60
+        },
+        {
+          "sqlId": "73946b0cb351",
+          "sql": "UPDATE uploads SET size_bytes = ?, mime_type = 'application/pdf',\n        storage_status = 'UPLOADED', uploaded_at_ms = ?, updated_at_ms = ?,\n        delete_after_ms = ?, validation_error_code = NULL WHERE id = ?",
+          "endpoint": "upload-complete",
+          "category": "per-order",
+          "table": "uploads",
+          "operation": "UPDATE",
+          "transition": "PENDING -> UPLOADED",
+          "tableRowsWritten": 60
+        },
+        {
+          "sqlId": "ac91ac52bf52",
+          "sql": "UPDATE orders SET status = 'UPLOADED', updated_at_ms = ?,\n        draft_expires_at_ms = ? WHERE id = ? AND status = 'UPLOADING'",
+          "endpoint": "upload-complete",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "UPLOADING -> UPLOADED",
+          "tableRowsWritten": 60
+        },
+        {
+          "sqlId": "1c6e3565d0d3",
+          "sql": "UPDATE orders SET selected_pages = ?, copies = ?, paper_size = ?,\n      color_mode = ?, sides = ?, printing_amount_paise = ?, service_charge_paise = ?,\n      total_amount_paise = ?, status = 'PAYMENT_PENDING', updated_at_ms = ?\n      WHERE id = ? AND status IN ('UPLOADED', 'PAYMENT_PENDING')",
+          "endpoint": "quote",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "UPLOADED -> PAYMENT_PENDING",
+          "tableRowsWritten": 60
+        },
+        {
+          "sqlId": "ff09ce6a3fa0",
+          "sql": "UPDATE orders SET selected_pages = ?, printing_amount_paise = ?,\n          service_charge_paise = ?, total_amount_paise = ?,\n          status = 'PAYMENT_PENDING', updated_at_ms = ?\n        WHERE id = ? AND status IN\n          ('UPLOADED', 'PAYMENT_PENDING', 'PAYMENT_FAILED', 'PAYMENT_CANCELLED')",
+          "endpoint": "payment-create",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "PAYMENT_PENDING -> PAYMENT_PENDING",
+          "tableRowsWritten": 60
+        },
+        {
+          "sqlId": "d3f652c9547e",
+          "sql": "INSERT INTO payments\n            (id, order_id, provider_order_id, amount_paise, currency, status,\n             created_at_ms, updated_at_ms)\n          VALUES (?, ?, ?, ?, 'INR', 'CREATED', ?, ?)",
+          "endpoint": "payment-create",
+          "category": "per-order",
+          "table": "payments",
+          "operation": "INSERT",
+          "transition": "none -> CREATED",
+          "tableRowsWritten": 60
+        },
+        {
+          "sqlId": "3f5532754c6c",
+          "sql": "INSERT OR IGNORE INTO order_events\n            (id, order_id, event_type, from_status, to_status, actor_type,\n             details_json, created_at_ms, idempotency_key)\n          SELECT ?, id, 'PAYMENT_ORDER_CREATED', status, 'PAYMENT_PENDING',\n            'CUSTOMER', ?, ?, ? FROM orders WHERE id = ?",
+          "endpoint": "payment-create",
+          "category": "per-order",
+          "table": "order_events",
+          "operation": "INSERT",
+          "transition": "none -> PAYMENT_ORDER_CREATED",
+          "tableRowsWritten": 60
+        },
+        {
+          "sqlId": "1ded0fb3a8a7",
+          "sql": "UPDATE orders SET status = 'PAYMENT_PENDING', updated_at_ms = ?\n          WHERE id = ? AND status IN\n            ('UPLOADED', 'PAYMENT_PENDING', 'PAYMENT_FAILED', 'PAYMENT_CANCELLED')",
+          "endpoint": "payment-create",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "PAYMENT_PENDING -> PAYMENT_PENDING",
+          "tableRowsWritten": 60
+        },
+        {
+          "sqlId": "836f40fef6f0",
+          "sql": "UPDATE payments SET provider_order_id = ?, status = 'PENDING',\n          updated_at_ms = ? WHERE id = ? AND status = 'CREATED'",
+          "endpoint": "payment-create",
+          "category": "per-order",
+          "table": "payments",
+          "operation": "UPDATE",
+          "transition": "CREATED -> PENDING",
+          "tableRowsWritten": 60
+        },
+        {
+          "sqlId": "494b246327ae",
+          "sql": "UPDATE payments SET provider_payment_id = ?, status = 'PAID',\n            verified_at_ms = ?, updated_at_ms = ?\n          WHERE id = ? AND status IN ('CREATED', 'PENDING', 'FAILED', 'CANCELLED')",
+          "endpoint": "payment-verify",
+          "category": "per-order",
+          "table": "payments",
+          "operation": "UPDATE",
+          "transition": "PENDING -> PAID",
+          "tableRowsWritten": 60
+        },
+        {
+          "sqlId": "69d15f5be6d5",
+          "sql": "UPDATE orders SET public_job_code = COALESCE(public_job_code, ?),\n            status = 'QUEUED', paid_at_ms = COALESCE(paid_at_ms, ?),\n            queued_at_ms = COALESCE(queued_at_ms, ?), updated_at_ms = ?\n          WHERE id = ? AND status IN\n            ('PAYMENT_PENDING', 'PAYMENT_FAILED', 'PAYMENT_CANCELLED', 'PAID')",
+          "endpoint": "payment-verify",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "PAYMENT_PENDING -> QUEUED",
+          "tableRowsWritten": 60
+        },
+        {
+          "sqlId": "2d1db866d380",
+          "sql": "UPDATE uploads SET retention_reason = 'UNRESOLVED_PAID_FAILURE', delete_after_ms = ?,\n            updated_at_ms = ? WHERE order_id = ?",
+          "endpoint": "payment-verify",
+          "category": "per-order",
+          "table": "uploads",
+          "operation": "UPDATE",
+          "transition": "UPLOADED -> UPLOADED",
+          "tableRowsWritten": 60
+        },
+        {
+          "sqlId": "e5f935da3a9a",
+          "sql": "INSERT OR IGNORE INTO order_events\n            (id, order_id, event_type, from_status, to_status, actor_type,\n             details_json, created_at_ms, idempotency_key)\n          VALUES (?, ?, 'PAYMENT_VERIFIED', 'PAYMENT_PENDING', 'PAID', ?, ?, ?, ?)",
+          "endpoint": "payment-verify",
+          "category": "per-order",
+          "table": "order_events",
+          "operation": "INSERT",
+          "transition": "none -> PAYMENT_VERIFIED",
+          "tableRowsWritten": 60
+        },
+        {
+          "sqlId": "2cb9c46fe4f0",
+          "sql": "INSERT OR IGNORE INTO order_events\n            (id, order_id, event_type, from_status, to_status, actor_type,\n             details_json, created_at_ms, idempotency_key)\n          VALUES (?, ?, 'JOB_CODE_ASSIGNED', 'PAID', 'PAID', 'SYSTEM', ?, ?, ?)",
+          "endpoint": "payment-verify",
+          "category": "per-order",
+          "table": "order_events",
+          "operation": "INSERT",
+          "transition": "none -> JOB_CODE_ASSIGNED",
+          "tableRowsWritten": 60
+        },
+        {
+          "sqlId": "64b545c273a4",
+          "sql": "INSERT OR IGNORE INTO order_events\n            (id, order_id, event_type, from_status, to_status, actor_type,\n             details_json, created_at_ms, idempotency_key)\n          VALUES (?, ?, 'QUEUED', 'PAID', 'QUEUED', 'SYSTEM', ?, ?, ?)",
+          "endpoint": "payment-verify",
+          "category": "per-order",
+          "table": "order_events",
+          "operation": "INSERT",
+          "transition": "none -> QUEUED",
+          "tableRowsWritten": 60
+        },
+        {
+          "sqlId": "24c7f0b72aca",
+          "sql": "UPDATE orders SET tracking_token_hash = ?, tracking_created_at_ms = ?,\n          tracking_expires_at_ms = ?, updated_at_ms = ?\n        WHERE id = ? AND tracking_token_hash IS NULL\n          AND public_job_code IS NOT NULL\n          AND status IN ('PAID', 'QUEUED', 'CLAIMED', 'SPOOLING', 'PRINTING',\n            'PRINT_BLOCKED', 'PRINT_FAILED', 'ADMIN_ACTION_REQUIRED', 'PRINTED',\n            'COMPLETED', 'CANCELLED')",
+          "endpoint": "payment-verify",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "QUEUED -> QUEUED",
+          "tableRowsWritten": 60
+        },
+        {
+          "sqlId": "e511489437d5",
+          "sql": "UPDATE orders SET status = 'CLAIMED', claimed_by_agent_id = ?, claim_id = ?,\n          claim_expires_at_ms = ?, printer_id = ?, claimed_at_ms = ?, updated_at_ms = ?\n        WHERE id = ? AND status = 'QUEUED' AND EXISTS (\n          SELECT 1 FROM payments WHERE order_id = orders.id AND status = 'PAID'\n            AND provider_payment_id IS NOT NULL AND verified_at_ms IS NOT NULL\n        ) AND EXISTS (\n          SELECT 1 FROM uploads WHERE order_id = orders.id AND storage_status = 'UPLOADED'\n            AND deleted_at_ms IS NULL AND size_bytes IS NOT NULL\n            AND (delete_after_ms IS NULL OR delete_after_ms > ?)\n        ) AND EXISTS (\n          SELECT 1 FROM printers p JOIN agents a ON a.id = p.agent_id\n          WHERE p.id = ? AND p.agent_id = ? AND p.enabled = 1 AND p.status = 'ONLINE'\n            AND p.is_production_eligible = 1 AND p.is_virtual = 0\n            AND a.is_active = 1 AND a.last_heartbeat_at_ms >= ?\n            AND p.capabilities_json IS NOT NULL\n            AND (orders.color_mode = 'BW' OR json_extract(p.capabilities_json, '$.colour') = 1)\n            AND (orders.sides = 'SINGLE' OR json_extract(p.capabilities_json, '$.duplex') = 1)\n            AND EXISTS (SELECT 1 FROM json_each(p.capabilities_json, '$.paperSizes')\n              WHERE upper(value) = orders.paper_size)\n        )",
+          "endpoint": "agent-heartbeat",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "QUEUED -> CLAIMED",
+          "tableRowsWritten": 60
+        },
+        {
+          "sqlId": "44a3a1c82ecc",
+          "sql": "INSERT INTO print_attempts (id, order_id, attempt_number, agent_id, printer_id,\n          status, identification_sheet_included, created_at_ms, updated_at_ms)\n        SELECT ?, id, COALESCE((SELECT MAX(attempt_number) + 1 FROM print_attempts\n          WHERE order_id = orders.id), 1), ?, ?, 'CREATED', ?, ?, ?\n        FROM orders WHERE id = ? AND claim_id = ? AND claimed_by_agent_id = ?",
+          "endpoint": "agent-heartbeat",
+          "category": "per-order",
+          "table": "print_attempts",
+          "operation": "INSERT",
+          "transition": "none -> CREATED",
+          "tableRowsWritten": 60
+        },
+        {
+          "sqlId": "ee4e2fce5841",
+          "sql": "INSERT INTO print_attempt_steps (id, print_attempt_id, order_id, sequence_number,\n              step_type, created_at_ms, updated_at_ms)\n            SELECT ?, ?, ?, ?, 'CUSTOMER_DOCUMENT', ?, ? FROM print_attempts WHERE id = ?",
+          "endpoint": "agent-heartbeat",
+          "category": "per-order",
+          "table": "print_attempt_steps",
+          "operation": "INSERT",
+          "transition": "none -> PENDING",
+          "tableRowsWritten": 60
+        },
+        {
+          "sqlId": "0b203af80397",
+          "sql": "INSERT INTO print_attempt_steps (id, print_attempt_id, order_id, sequence_number,\n              step_type, created_at_ms, updated_at_ms)\n            SELECT ?, ?, ?, ?, 'IDENTIFICATION_SHEET', ?, ? FROM print_attempts WHERE id = ?",
+          "endpoint": "agent-heartbeat",
+          "category": "per-order",
+          "table": "print_attempt_steps",
+          "operation": "INSERT",
+          "transition": "none -> PENDING",
+          "tableRowsWritten": 60
+        },
+        {
+          "sqlId": "289f9f4d1ad2",
+          "sql": "INSERT INTO order_events (id, order_id, event_type, from_status, to_status,\n          actor_type, actor_id, created_at_ms)\n        SELECT ?, id, 'PRINT_JOB_CLAIMED', 'QUEUED', 'CLAIMED', 'AGENT', ?, ?\n        FROM orders WHERE id = ? AND claim_id = ?",
+          "endpoint": "agent-heartbeat",
+          "category": "per-order",
+          "table": "order_events",
+          "operation": "INSERT",
+          "transition": "none -> PRINT_JOB_CLAIMED",
+          "tableRowsWritten": 60
+        },
+        {
+          "sqlId": "f9fa1b633360",
+          "sql": "UPDATE print_attempts SET status = 'SUBMITTING', updated_at_ms = ?\n        WHERE id = ? AND status IN ('CREATED','PRINTING')",
+          "endpoint": "print-start",
+          "category": "per-order",
+          "table": "print_attempts",
+          "operation": "UPDATE",
+          "transition": "CREATED -> SUBMITTING",
+          "tableRowsWritten": 60
+        },
+        {
+          "sqlId": "5dc64fdefac3",
+          "sql": "UPDATE orders SET status = ?, print_started_at_ms = COALESCE(print_started_at_ms, ?),\n          claim_expires_at_ms = ?, updated_at_ms = ? WHERE id = ? AND claim_id = ?\n          AND status IN ('CLAIMED','PRINTING')",
+          "endpoint": "print-start",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "CLAIMED -> SPOOLING",
+          "tableRowsWritten": 60
+        },
+        {
+          "sqlId": "d0268a24a226",
+          "sql": "UPDATE orders SET status = 'PRINTING', claim_expires_at_ms = ?, updated_at_ms = ?\n        WHERE id = ? AND claim_id = ? AND status IN ('SPOOLING','PRINT_BLOCKED')",
+          "endpoint": "print-submitted",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "SPOOLING -> PRINTING",
+          "tableRowsWritten": 60
+        },
+        {
+          "sqlId": "086ffd5de6a5",
+          "sql": "UPDATE print_attempts SET status = 'PRINTING', failure_code = NULL, failure_detail = NULL, last_observed_at_ms = ?, updated_at_ms = ? WHERE id = ?",
+          "endpoint": "print-result",
+          "category": "per-order",
+          "table": "print_attempts",
+          "operation": "UPDATE",
+          "transition": "PRINTING -> PRINTING",
+          "tableRowsWritten": 60
+        },
+        {
+          "sqlId": "35ee5b177056",
+          "sql": "UPDATE orders SET status = 'PRINTING', claim_expires_at_ms = ?, updated_at_ms = ? WHERE id = ? AND claim_id = ?",
+          "endpoint": "print-result",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "PRINTING -> PRINTING",
+          "tableRowsWritten": 60
+        },
+        {
+          "sqlId": "f20efec5c9d4",
+          "sql": "UPDATE orders SET claim_expires_at_ms = ?, updated_at_ms = ?\n         WHERE id = ? AND claimed_by_agent_id = ? AND claim_id = ?",
+          "endpoint": "agent-heartbeat",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "PRINTING -> PRINTING",
+          "tableRowsWritten": 60
+        },
+        {
+          "sqlId": "f9fa1b633360",
+          "sql": "UPDATE print_attempts SET status = 'SUBMITTING', updated_at_ms = ?\n        WHERE id = ? AND status IN ('CREATED','PRINTING')",
+          "endpoint": "print-start",
+          "category": "per-order",
+          "table": "print_attempts",
+          "operation": "UPDATE",
+          "transition": "PRINTING -> SUBMITTING",
+          "tableRowsWritten": 60
+        },
+        {
+          "sqlId": "5dc64fdefac3",
+          "sql": "UPDATE orders SET status = ?, print_started_at_ms = COALESCE(print_started_at_ms, ?),\n          claim_expires_at_ms = ?, updated_at_ms = ? WHERE id = ? AND claim_id = ?\n          AND status IN ('CLAIMED','PRINTING')",
+          "endpoint": "print-start",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "PRINTING -> PRINTING",
+          "tableRowsWritten": 60
+        },
+        {
+          "sqlId": "6bf36c3a1971",
+          "sql": "UPDATE print_attempts SET status = 'SUCCEEDED', finished_at_ms = COALESCE(finished_at_ms, ?), updated_at_ms = ? WHERE id = ? AND status <> 'SUCCEEDED'",
+          "endpoint": "print-result",
+          "category": "per-order",
+          "table": "print_attempts",
+          "operation": "UPDATE",
+          "transition": "PRINTING -> SUCCEEDED",
+          "tableRowsWritten": 60
+        },
+        {
+          "sqlId": "3cc83be13720",
+          "sql": "UPDATE orders SET status = 'PRINTED', printed_at_ms = COALESCE(printed_at_ms, ?), updated_at_ms = ? WHERE id = ? AND claim_id = ? AND status NOT IN ('PRINTED','COMPLETED')",
+          "endpoint": "print-result",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "PRINTING -> PRINTED",
+          "tableRowsWritten": 60
+        },
+        {
+          "sqlId": "e4b36761ff1f",
+          "sql": "UPDATE orders SET status = 'COMPLETED', completed_at_ms = COALESCE(completed_at_ms, ?), updated_at_ms = ? WHERE id = ? AND claim_id = ? AND status = 'PRINTED'",
+          "endpoint": "print-result",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "PRINTED -> COMPLETED",
+          "tableRowsWritten": 60
+        },
+        {
+          "sqlId": "248d0138422a",
+          "sql": "UPDATE uploads SET retention_reason = 'COMPLETED', delete_after_ms = ?, updated_at_ms = ? WHERE order_id = ? AND storage_status = 'UPLOADED' AND retention_reason IS NOT 'COMPLETED'",
+          "endpoint": "print-result",
+          "category": "per-order",
+          "table": "uploads",
+          "operation": "UPDATE",
+          "transition": "UPLOADED -> UPLOADED",
+          "tableRowsWritten": 60
+        },
+        {
+          "sqlId": "ccfbf8edd2dc",
+          "sql": "INSERT OR IGNORE INTO order_events (id, order_id, event_type, from_status,\n            to_status, actor_type, actor_id, idempotency_key, created_at_ms)\n          VALUES (?, ?, 'ORDER_PRINTED', ?, 'PRINTED', 'AGENT', ?, ?, ?)",
+          "endpoint": "print-result",
+          "category": "per-order",
+          "table": "order_events",
+          "operation": "INSERT",
+          "transition": "none -> ORDER_PRINTED",
+          "tableRowsWritten": 60
+        },
+        {
+          "sqlId": "18d8d901d763",
+          "sql": "INSERT OR IGNORE INTO order_events (id, order_id, event_type, from_status,\n            to_status, actor_type, actor_id, idempotency_key, created_at_ms)\n          VALUES (?, ?, 'ORDER_COMPLETED', 'PRINTED', 'COMPLETED', 'AGENT', ?, ?, ?)",
+          "endpoint": "print-result",
+          "category": "per-order",
+          "table": "order_events",
+          "operation": "INSERT",
+          "transition": "none -> ORDER_COMPLETED",
+          "tableRowsWritten": 60
+        },
+        {
+          "sqlId": "f4c5221ce052",
+          "sql": "UPDATE uploads\n         SET storage_status = 'DELETE_PENDING', updated_at_ms = ?\n         WHERE id = ? AND storage_status <> 'DELETED'",
+          "endpoint": "retention-cleanup",
+          "category": "retention",
+          "table": "uploads",
+          "operation": "UPDATE",
+          "transition": "UPLOADED -> DELETE_PENDING",
+          "tableRowsWritten": 60
+        },
+        {
+          "sqlId": "064df8d7316d",
+          "sql": "UPDATE uploads\n           SET storage_status = 'DELETED',\n               deleted_at_ms = ?,\n               original_filename = 'document.pdf',\n               updated_at_ms = ?\n           WHERE id = ?",
+          "endpoint": "retention-cleanup",
+          "category": "retention",
+          "table": "uploads",
+          "operation": "UPDATE",
+          "transition": "DELETE_PENDING -> DELETED",
+          "tableRowsWritten": 60
+        },
+        {
+          "sqlId": "05d1e8bd01b4",
+          "sql": "INSERT INTO order_events\n             (id, order_id, event_type, from_status, to_status, actor_type, actor_id, details_json, created_at_ms)\n           VALUES (?, ?, 'PDF_DELETED', NULL, NULL, 'SYSTEM', 'CRON_RETENTION', ?, ?)",
+          "endpoint": "retention-cleanup",
+          "category": "retention",
+          "table": "order_events",
+          "operation": "INSERT",
+          "transition": "none -> PDF_DELETED",
+          "tableRowsWritten": 60
+        },
+        {
+          "sqlId": "f2c8e7a1dff3",
+          "sql": "UPDATE orders\n           SET customer_name = 'Customer details expired for privacy',\n               customer_phone = 'REDACTED',\n               original_filename = 'document.pdf',\n               instructions = NULL,\n               pii_purged_at_ms = ?,\n               updated_at_ms = ?\n           WHERE id = ? AND pii_purged_at_ms IS NULL",
+          "endpoint": "retention-cleanup",
+          "category": "retention",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "COMPLETED -> COMPLETED",
+          "tableRowsWritten": 60
+        },
+        {
+          "sqlId": "ace92bf659c0",
+          "sql": "UPDATE uploads\n           SET original_filename = 'document.pdf',\n               updated_at_ms = ?\n           WHERE order_id = ?",
+          "endpoint": "retention-cleanup",
+          "category": "retention",
+          "table": "uploads",
+          "operation": "UPDATE",
+          "transition": "DELETED -> DELETED",
+          "tableRowsWritten": 60
+        },
+        {
+          "sqlId": "cbe8b30c5cd9",
+          "sql": "INSERT INTO order_events\n             (id, order_id, event_type, from_status, to_status, actor_type, actor_id, details_json, created_at_ms)\n           VALUES (?, ?, 'PII_PURGED', NULL, NULL, 'SYSTEM', 'CRON_RETENTION', ?, ?)",
+          "endpoint": "retention-cleanup",
+          "category": "retention",
+          "table": "order_events",
+          "operation": "INSERT",
+          "transition": "none -> PII_PURGED",
+          "tableRowsWritten": 60
+        }
+      ]
+    },
+    {
+      "orders": 800,
+      "requests": 12800,
+      "requestsPerOrder": 16,
+      "returnedRows": 103208,
+      "returnedRowsPerOrder": 129.01,
+      "tableRowsWritten": 42400,
+      "writesPerOrderExcludingBackground": 52,
+      "tables": {
+        "orders": 12800,
+        "order_events": 8800,
+        "payments": 2400,
+        "uploads": 5600,
+        "print_attempts": 5600,
+        "print_attempt_steps": 6400,
+        "agents": 800,
+        "printers": 0,
+        "admins": 0,
+        "admin_sessions": 0,
+        "payment_provider_events": 0
+      },
+      "categories": {
+        "background": 800,
+        "per-order": 36800,
+        "retention": 4800
+      },
+      "statements": [
+        {
+          "sqlId": "84404d7f104d",
+          "sql": "UPDATE print_attempt_steps SET status = 'SUBMISSION_STARTED',\n          submission_started_at_ms = ?, updated_at_ms = ?\n        WHERE id = ? AND print_attempt_id = ? AND status = 'PENDING'",
+          "endpoint": "print-start",
+          "category": "per-order",
+          "table": "print_attempt_steps",
+          "operation": "UPDATE",
+          "transition": "PENDING -> SUBMISSION_STARTED",
+          "tableRowsWritten": 1600
+        },
+        {
+          "sqlId": "7dc9cad07305",
+          "sql": "INSERT INTO order_events (id, order_id, event_type, from_status, to_status,\n          actor_type, actor_id, created_at_ms) VALUES (?, ?, 'PRINT_STEP_STARTED', ?,\n          ?, 'AGENT', ?, ?)",
+          "endpoint": "print-start",
+          "category": "per-order",
+          "table": "order_events",
+          "operation": "INSERT",
+          "transition": "none -> PRINT_STEP_STARTED",
+          "tableRowsWritten": 1600
+        },
+        {
+          "sqlId": "f52b516f96f4",
+          "sql": "UPDATE print_attempt_steps SET status = 'SUBMITTED', spooler_job_id = ?,\n          submitted_at_ms = ?, last_observed_at_ms = ?, updated_at_ms = ?\n        WHERE id = ? AND status = 'SUBMISSION_STARTED' AND spooler_job_id IS NULL",
+          "endpoint": "print-submitted",
+          "category": "per-order",
+          "table": "print_attempt_steps",
+          "operation": "UPDATE",
+          "transition": "SUBMISSION_STARTED -> SUBMITTED",
+          "tableRowsWritten": 1600
+        },
+        {
+          "sqlId": "4f8609b26fbe",
+          "sql": "UPDATE print_attempts SET status = 'PRINTING', windows_job_id = COALESCE(windows_job_id, ?),\n          submitted_at_ms = COALESCE(submitted_at_ms, ?), last_observed_at_ms = ?, updated_at_ms = ?\n        WHERE id = ?",
+          "endpoint": "print-submitted",
+          "category": "per-order",
+          "table": "print_attempts",
+          "operation": "UPDATE",
+          "transition": "SUBMITTING -> PRINTING",
+          "tableRowsWritten": 1600
+        },
+        {
+          "sqlId": "c2c4a71fae09",
+          "sql": "UPDATE print_attempt_steps SET status = ?, spooler_job_id = COALESCE(spooler_job_id, ?),\n        failure_code = ?, failure_detail = ?, last_observed_at_ms = ?, finished_at_ms = ?,\n        updated_at_ms = ? WHERE id = ? AND status = ?",
+          "endpoint": "print-result",
+          "category": "per-order",
+          "table": "print_attempt_steps",
+          "operation": "UPDATE",
+          "transition": "SUBMITTED -> SUCCEEDED",
+          "tableRowsWritten": 1600
+        },
+        {
+          "sqlId": "e2821c66b493",
+          "sql": "UPDATE agents SET last_heartbeat_at_ms = ?, updated_at_ms = ?\n       WHERE id = ? AND is_active = 1\n       AND (last_heartbeat_at_ms IS NULL OR last_heartbeat_at_ms <= ?)",
+          "endpoint": "idle-liveness",
+          "category": "background",
+          "table": "agents",
+          "operation": "UPDATE",
+          "transition": "none -> none",
+          "tableRowsWritten": 800
+        },
+        {
+          "sqlId": "86a294e6169e",
+          "sql": "INSERT INTO orders\n        (id, customer_name, customer_phone, original_filename, source_page_count,\n         color_mode, paper_size, sides, instructions, status, created_at_ms,\n         updated_at_ms, draft_token_hash, draft_expires_at_ms)\n        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'UPLOADING', ?, ?, ?, ?)",
+          "endpoint": "draft",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "INSERT",
+          "transition": "none -> UPLOADING",
+          "tableRowsWritten": 800
+        },
+        {
+          "sqlId": "68b3de46e82c",
+          "sql": "INSERT INTO uploads\n        (id, order_id, r2_object_key, original_filename, storage_status,\n         retention_reason, delete_after_ms, created_at_ms, updated_at_ms,\n         expected_size_bytes)\n        VALUES (?, ?, ?, ?, 'PENDING', 'UNPAID', ?, ?, ?, ?)",
+          "endpoint": "draft",
+          "category": "per-order",
+          "table": "uploads",
+          "operation": "INSERT",
+          "transition": "none -> PENDING",
+          "tableRowsWritten": 800
+        },
+        {
+          "sqlId": "73946b0cb351",
+          "sql": "UPDATE uploads SET size_bytes = ?, mime_type = 'application/pdf',\n        storage_status = 'UPLOADED', uploaded_at_ms = ?, updated_at_ms = ?,\n        delete_after_ms = ?, validation_error_code = NULL WHERE id = ?",
+          "endpoint": "upload-complete",
+          "category": "per-order",
+          "table": "uploads",
+          "operation": "UPDATE",
+          "transition": "PENDING -> UPLOADED",
+          "tableRowsWritten": 800
+        },
+        {
+          "sqlId": "ac91ac52bf52",
+          "sql": "UPDATE orders SET status = 'UPLOADED', updated_at_ms = ?,\n        draft_expires_at_ms = ? WHERE id = ? AND status = 'UPLOADING'",
+          "endpoint": "upload-complete",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "UPLOADING -> UPLOADED",
+          "tableRowsWritten": 800
+        },
+        {
+          "sqlId": "1c6e3565d0d3",
+          "sql": "UPDATE orders SET selected_pages = ?, copies = ?, paper_size = ?,\n      color_mode = ?, sides = ?, printing_amount_paise = ?, service_charge_paise = ?,\n      total_amount_paise = ?, status = 'PAYMENT_PENDING', updated_at_ms = ?\n      WHERE id = ? AND status IN ('UPLOADED', 'PAYMENT_PENDING')",
+          "endpoint": "quote",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "UPLOADED -> PAYMENT_PENDING",
+          "tableRowsWritten": 800
+        },
+        {
+          "sqlId": "ff09ce6a3fa0",
+          "sql": "UPDATE orders SET selected_pages = ?, printing_amount_paise = ?,\n          service_charge_paise = ?, total_amount_paise = ?,\n          status = 'PAYMENT_PENDING', updated_at_ms = ?\n        WHERE id = ? AND status IN\n          ('UPLOADED', 'PAYMENT_PENDING', 'PAYMENT_FAILED', 'PAYMENT_CANCELLED')",
+          "endpoint": "payment-create",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "PAYMENT_PENDING -> PAYMENT_PENDING",
+          "tableRowsWritten": 800
+        },
+        {
+          "sqlId": "d3f652c9547e",
+          "sql": "INSERT INTO payments\n            (id, order_id, provider_order_id, amount_paise, currency, status,\n             created_at_ms, updated_at_ms)\n          VALUES (?, ?, ?, ?, 'INR', 'CREATED', ?, ?)",
+          "endpoint": "payment-create",
+          "category": "per-order",
+          "table": "payments",
+          "operation": "INSERT",
+          "transition": "none -> CREATED",
+          "tableRowsWritten": 800
+        },
+        {
+          "sqlId": "3f5532754c6c",
+          "sql": "INSERT OR IGNORE INTO order_events\n            (id, order_id, event_type, from_status, to_status, actor_type,\n             details_json, created_at_ms, idempotency_key)\n          SELECT ?, id, 'PAYMENT_ORDER_CREATED', status, 'PAYMENT_PENDING',\n            'CUSTOMER', ?, ?, ? FROM orders WHERE id = ?",
+          "endpoint": "payment-create",
+          "category": "per-order",
+          "table": "order_events",
+          "operation": "INSERT",
+          "transition": "none -> PAYMENT_ORDER_CREATED",
+          "tableRowsWritten": 800
+        },
+        {
+          "sqlId": "1ded0fb3a8a7",
+          "sql": "UPDATE orders SET status = 'PAYMENT_PENDING', updated_at_ms = ?\n          WHERE id = ? AND status IN\n            ('UPLOADED', 'PAYMENT_PENDING', 'PAYMENT_FAILED', 'PAYMENT_CANCELLED')",
+          "endpoint": "payment-create",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "PAYMENT_PENDING -> PAYMENT_PENDING",
+          "tableRowsWritten": 800
+        },
+        {
+          "sqlId": "836f40fef6f0",
+          "sql": "UPDATE payments SET provider_order_id = ?, status = 'PENDING',\n          updated_at_ms = ? WHERE id = ? AND status = 'CREATED'",
+          "endpoint": "payment-create",
+          "category": "per-order",
+          "table": "payments",
+          "operation": "UPDATE",
+          "transition": "CREATED -> PENDING",
+          "tableRowsWritten": 800
+        },
+        {
+          "sqlId": "494b246327ae",
+          "sql": "UPDATE payments SET provider_payment_id = ?, status = 'PAID',\n            verified_at_ms = ?, updated_at_ms = ?\n          WHERE id = ? AND status IN ('CREATED', 'PENDING', 'FAILED', 'CANCELLED')",
+          "endpoint": "payment-verify",
+          "category": "per-order",
+          "table": "payments",
+          "operation": "UPDATE",
+          "transition": "PENDING -> PAID",
+          "tableRowsWritten": 800
+        },
+        {
+          "sqlId": "69d15f5be6d5",
+          "sql": "UPDATE orders SET public_job_code = COALESCE(public_job_code, ?),\n            status = 'QUEUED', paid_at_ms = COALESCE(paid_at_ms, ?),\n            queued_at_ms = COALESCE(queued_at_ms, ?), updated_at_ms = ?\n          WHERE id = ? AND status IN\n            ('PAYMENT_PENDING', 'PAYMENT_FAILED', 'PAYMENT_CANCELLED', 'PAID')",
+          "endpoint": "payment-verify",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "PAYMENT_PENDING -> QUEUED",
+          "tableRowsWritten": 800
+        },
+        {
+          "sqlId": "2d1db866d380",
+          "sql": "UPDATE uploads SET retention_reason = 'UNRESOLVED_PAID_FAILURE', delete_after_ms = ?,\n            updated_at_ms = ? WHERE order_id = ?",
+          "endpoint": "payment-verify",
+          "category": "per-order",
+          "table": "uploads",
+          "operation": "UPDATE",
+          "transition": "UPLOADED -> UPLOADED",
+          "tableRowsWritten": 800
+        },
+        {
+          "sqlId": "e5f935da3a9a",
+          "sql": "INSERT OR IGNORE INTO order_events\n            (id, order_id, event_type, from_status, to_status, actor_type,\n             details_json, created_at_ms, idempotency_key)\n          VALUES (?, ?, 'PAYMENT_VERIFIED', 'PAYMENT_PENDING', 'PAID', ?, ?, ?, ?)",
+          "endpoint": "payment-verify",
+          "category": "per-order",
+          "table": "order_events",
+          "operation": "INSERT",
+          "transition": "none -> PAYMENT_VERIFIED",
+          "tableRowsWritten": 800
+        },
+        {
+          "sqlId": "2cb9c46fe4f0",
+          "sql": "INSERT OR IGNORE INTO order_events\n            (id, order_id, event_type, from_status, to_status, actor_type,\n             details_json, created_at_ms, idempotency_key)\n          VALUES (?, ?, 'JOB_CODE_ASSIGNED', 'PAID', 'PAID', 'SYSTEM', ?, ?, ?)",
+          "endpoint": "payment-verify",
+          "category": "per-order",
+          "table": "order_events",
+          "operation": "INSERT",
+          "transition": "none -> JOB_CODE_ASSIGNED",
+          "tableRowsWritten": 800
+        },
+        {
+          "sqlId": "64b545c273a4",
+          "sql": "INSERT OR IGNORE INTO order_events\n            (id, order_id, event_type, from_status, to_status, actor_type,\n             details_json, created_at_ms, idempotency_key)\n          VALUES (?, ?, 'QUEUED', 'PAID', 'QUEUED', 'SYSTEM', ?, ?, ?)",
+          "endpoint": "payment-verify",
+          "category": "per-order",
+          "table": "order_events",
+          "operation": "INSERT",
+          "transition": "none -> QUEUED",
+          "tableRowsWritten": 800
+        },
+        {
+          "sqlId": "24c7f0b72aca",
+          "sql": "UPDATE orders SET tracking_token_hash = ?, tracking_created_at_ms = ?,\n          tracking_expires_at_ms = ?, updated_at_ms = ?\n        WHERE id = ? AND tracking_token_hash IS NULL\n          AND public_job_code IS NOT NULL\n          AND status IN ('PAID', 'QUEUED', 'CLAIMED', 'SPOOLING', 'PRINTING',\n            'PRINT_BLOCKED', 'PRINT_FAILED', 'ADMIN_ACTION_REQUIRED', 'PRINTED',\n            'COMPLETED', 'CANCELLED')",
+          "endpoint": "payment-verify",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "QUEUED -> QUEUED",
+          "tableRowsWritten": 800
+        },
+        {
+          "sqlId": "e511489437d5",
+          "sql": "UPDATE orders SET status = 'CLAIMED', claimed_by_agent_id = ?, claim_id = ?,\n          claim_expires_at_ms = ?, printer_id = ?, claimed_at_ms = ?, updated_at_ms = ?\n        WHERE id = ? AND status = 'QUEUED' AND EXISTS (\n          SELECT 1 FROM payments WHERE order_id = orders.id AND status = 'PAID'\n            AND provider_payment_id IS NOT NULL AND verified_at_ms IS NOT NULL\n        ) AND EXISTS (\n          SELECT 1 FROM uploads WHERE order_id = orders.id AND storage_status = 'UPLOADED'\n            AND deleted_at_ms IS NULL AND size_bytes IS NOT NULL\n            AND (delete_after_ms IS NULL OR delete_after_ms > ?)\n        ) AND EXISTS (\n          SELECT 1 FROM printers p JOIN agents a ON a.id = p.agent_id\n          WHERE p.id = ? AND p.agent_id = ? AND p.enabled = 1 AND p.status = 'ONLINE'\n            AND p.is_production_eligible = 1 AND p.is_virtual = 0\n            AND a.is_active = 1 AND a.last_heartbeat_at_ms >= ?\n            AND p.capabilities_json IS NOT NULL\n            AND (orders.color_mode = 'BW' OR json_extract(p.capabilities_json, '$.colour') = 1)\n            AND (orders.sides = 'SINGLE' OR json_extract(p.capabilities_json, '$.duplex') = 1)\n            AND EXISTS (SELECT 1 FROM json_each(p.capabilities_json, '$.paperSizes')\n              WHERE upper(value) = orders.paper_size)\n        )",
+          "endpoint": "agent-heartbeat",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "QUEUED -> CLAIMED",
+          "tableRowsWritten": 800
+        },
+        {
+          "sqlId": "44a3a1c82ecc",
+          "sql": "INSERT INTO print_attempts (id, order_id, attempt_number, agent_id, printer_id,\n          status, identification_sheet_included, created_at_ms, updated_at_ms)\n        SELECT ?, id, COALESCE((SELECT MAX(attempt_number) + 1 FROM print_attempts\n          WHERE order_id = orders.id), 1), ?, ?, 'CREATED', ?, ?, ?\n        FROM orders WHERE id = ? AND claim_id = ? AND claimed_by_agent_id = ?",
+          "endpoint": "agent-heartbeat",
+          "category": "per-order",
+          "table": "print_attempts",
+          "operation": "INSERT",
+          "transition": "none -> CREATED",
+          "tableRowsWritten": 800
+        },
+        {
+          "sqlId": "ee4e2fce5841",
+          "sql": "INSERT INTO print_attempt_steps (id, print_attempt_id, order_id, sequence_number,\n              step_type, created_at_ms, updated_at_ms)\n            SELECT ?, ?, ?, ?, 'CUSTOMER_DOCUMENT', ?, ? FROM print_attempts WHERE id = ?",
+          "endpoint": "agent-heartbeat",
+          "category": "per-order",
+          "table": "print_attempt_steps",
+          "operation": "INSERT",
+          "transition": "none -> PENDING",
+          "tableRowsWritten": 800
+        },
+        {
+          "sqlId": "0b203af80397",
+          "sql": "INSERT INTO print_attempt_steps (id, print_attempt_id, order_id, sequence_number,\n              step_type, created_at_ms, updated_at_ms)\n            SELECT ?, ?, ?, ?, 'IDENTIFICATION_SHEET', ?, ? FROM print_attempts WHERE id = ?",
+          "endpoint": "agent-heartbeat",
+          "category": "per-order",
+          "table": "print_attempt_steps",
+          "operation": "INSERT",
+          "transition": "none -> PENDING",
+          "tableRowsWritten": 800
+        },
+        {
+          "sqlId": "289f9f4d1ad2",
+          "sql": "INSERT INTO order_events (id, order_id, event_type, from_status, to_status,\n          actor_type, actor_id, created_at_ms)\n        SELECT ?, id, 'PRINT_JOB_CLAIMED', 'QUEUED', 'CLAIMED', 'AGENT', ?, ?\n        FROM orders WHERE id = ? AND claim_id = ?",
+          "endpoint": "agent-heartbeat",
+          "category": "per-order",
+          "table": "order_events",
+          "operation": "INSERT",
+          "transition": "none -> PRINT_JOB_CLAIMED",
+          "tableRowsWritten": 800
+        },
+        {
+          "sqlId": "f9fa1b633360",
+          "sql": "UPDATE print_attempts SET status = 'SUBMITTING', updated_at_ms = ?\n        WHERE id = ? AND status IN ('CREATED','PRINTING')",
+          "endpoint": "print-start",
+          "category": "per-order",
+          "table": "print_attempts",
+          "operation": "UPDATE",
+          "transition": "CREATED -> SUBMITTING",
+          "tableRowsWritten": 800
+        },
+        {
+          "sqlId": "5dc64fdefac3",
+          "sql": "UPDATE orders SET status = ?, print_started_at_ms = COALESCE(print_started_at_ms, ?),\n          claim_expires_at_ms = ?, updated_at_ms = ? WHERE id = ? AND claim_id = ?\n          AND status IN ('CLAIMED','PRINTING')",
+          "endpoint": "print-start",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "CLAIMED -> SPOOLING",
+          "tableRowsWritten": 800
+        },
+        {
+          "sqlId": "d0268a24a226",
+          "sql": "UPDATE orders SET status = 'PRINTING', claim_expires_at_ms = ?, updated_at_ms = ?\n        WHERE id = ? AND claim_id = ? AND status IN ('SPOOLING','PRINT_BLOCKED')",
+          "endpoint": "print-submitted",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "SPOOLING -> PRINTING",
+          "tableRowsWritten": 800
+        },
+        {
+          "sqlId": "086ffd5de6a5",
+          "sql": "UPDATE print_attempts SET status = 'PRINTING', failure_code = NULL, failure_detail = NULL, last_observed_at_ms = ?, updated_at_ms = ? WHERE id = ?",
+          "endpoint": "print-result",
+          "category": "per-order",
+          "table": "print_attempts",
+          "operation": "UPDATE",
+          "transition": "PRINTING -> PRINTING",
+          "tableRowsWritten": 800
+        },
+        {
+          "sqlId": "35ee5b177056",
+          "sql": "UPDATE orders SET status = 'PRINTING', claim_expires_at_ms = ?, updated_at_ms = ? WHERE id = ? AND claim_id = ?",
+          "endpoint": "print-result",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "PRINTING -> PRINTING",
+          "tableRowsWritten": 800
+        },
+        {
+          "sqlId": "f20efec5c9d4",
+          "sql": "UPDATE orders SET claim_expires_at_ms = ?, updated_at_ms = ?\n         WHERE id = ? AND claimed_by_agent_id = ? AND claim_id = ?",
+          "endpoint": "agent-heartbeat",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "PRINTING -> PRINTING",
+          "tableRowsWritten": 800
+        },
+        {
+          "sqlId": "f9fa1b633360",
+          "sql": "UPDATE print_attempts SET status = 'SUBMITTING', updated_at_ms = ?\n        WHERE id = ? AND status IN ('CREATED','PRINTING')",
+          "endpoint": "print-start",
+          "category": "per-order",
+          "table": "print_attempts",
+          "operation": "UPDATE",
+          "transition": "PRINTING -> SUBMITTING",
+          "tableRowsWritten": 800
+        },
+        {
+          "sqlId": "5dc64fdefac3",
+          "sql": "UPDATE orders SET status = ?, print_started_at_ms = COALESCE(print_started_at_ms, ?),\n          claim_expires_at_ms = ?, updated_at_ms = ? WHERE id = ? AND claim_id = ?\n          AND status IN ('CLAIMED','PRINTING')",
+          "endpoint": "print-start",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "PRINTING -> PRINTING",
+          "tableRowsWritten": 800
+        },
+        {
+          "sqlId": "6bf36c3a1971",
+          "sql": "UPDATE print_attempts SET status = 'SUCCEEDED', finished_at_ms = COALESCE(finished_at_ms, ?), updated_at_ms = ? WHERE id = ? AND status <> 'SUCCEEDED'",
+          "endpoint": "print-result",
+          "category": "per-order",
+          "table": "print_attempts",
+          "operation": "UPDATE",
+          "transition": "PRINTING -> SUCCEEDED",
+          "tableRowsWritten": 800
+        },
+        {
+          "sqlId": "3cc83be13720",
+          "sql": "UPDATE orders SET status = 'PRINTED', printed_at_ms = COALESCE(printed_at_ms, ?), updated_at_ms = ? WHERE id = ? AND claim_id = ? AND status NOT IN ('PRINTED','COMPLETED')",
+          "endpoint": "print-result",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "PRINTING -> PRINTED",
+          "tableRowsWritten": 800
+        },
+        {
+          "sqlId": "e4b36761ff1f",
+          "sql": "UPDATE orders SET status = 'COMPLETED', completed_at_ms = COALESCE(completed_at_ms, ?), updated_at_ms = ? WHERE id = ? AND claim_id = ? AND status = 'PRINTED'",
+          "endpoint": "print-result",
+          "category": "per-order",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "PRINTED -> COMPLETED",
+          "tableRowsWritten": 800
+        },
+        {
+          "sqlId": "248d0138422a",
+          "sql": "UPDATE uploads SET retention_reason = 'COMPLETED', delete_after_ms = ?, updated_at_ms = ? WHERE order_id = ? AND storage_status = 'UPLOADED' AND retention_reason IS NOT 'COMPLETED'",
+          "endpoint": "print-result",
+          "category": "per-order",
+          "table": "uploads",
+          "operation": "UPDATE",
+          "transition": "UPLOADED -> UPLOADED",
+          "tableRowsWritten": 800
+        },
+        {
+          "sqlId": "ccfbf8edd2dc",
+          "sql": "INSERT OR IGNORE INTO order_events (id, order_id, event_type, from_status,\n            to_status, actor_type, actor_id, idempotency_key, created_at_ms)\n          VALUES (?, ?, 'ORDER_PRINTED', ?, 'PRINTED', 'AGENT', ?, ?, ?)",
+          "endpoint": "print-result",
+          "category": "per-order",
+          "table": "order_events",
+          "operation": "INSERT",
+          "transition": "none -> ORDER_PRINTED",
+          "tableRowsWritten": 800
+        },
+        {
+          "sqlId": "18d8d901d763",
+          "sql": "INSERT OR IGNORE INTO order_events (id, order_id, event_type, from_status,\n            to_status, actor_type, actor_id, idempotency_key, created_at_ms)\n          VALUES (?, ?, 'ORDER_COMPLETED', 'PRINTED', 'COMPLETED', 'AGENT', ?, ?, ?)",
+          "endpoint": "print-result",
+          "category": "per-order",
+          "table": "order_events",
+          "operation": "INSERT",
+          "transition": "none -> ORDER_COMPLETED",
+          "tableRowsWritten": 800
+        },
+        {
+          "sqlId": "f4c5221ce052",
+          "sql": "UPDATE uploads\n         SET storage_status = 'DELETE_PENDING', updated_at_ms = ?\n         WHERE id = ? AND storage_status <> 'DELETED'",
+          "endpoint": "retention-cleanup",
+          "category": "retention",
+          "table": "uploads",
+          "operation": "UPDATE",
+          "transition": "UPLOADED -> DELETE_PENDING",
+          "tableRowsWritten": 800
+        },
+        {
+          "sqlId": "064df8d7316d",
+          "sql": "UPDATE uploads\n           SET storage_status = 'DELETED',\n               deleted_at_ms = ?,\n               original_filename = 'document.pdf',\n               updated_at_ms = ?\n           WHERE id = ?",
+          "endpoint": "retention-cleanup",
+          "category": "retention",
+          "table": "uploads",
+          "operation": "UPDATE",
+          "transition": "DELETE_PENDING -> DELETED",
+          "tableRowsWritten": 800
+        },
+        {
+          "sqlId": "05d1e8bd01b4",
+          "sql": "INSERT INTO order_events\n             (id, order_id, event_type, from_status, to_status, actor_type, actor_id, details_json, created_at_ms)\n           VALUES (?, ?, 'PDF_DELETED', NULL, NULL, 'SYSTEM', 'CRON_RETENTION', ?, ?)",
+          "endpoint": "retention-cleanup",
+          "category": "retention",
+          "table": "order_events",
+          "operation": "INSERT",
+          "transition": "none -> PDF_DELETED",
+          "tableRowsWritten": 800
+        },
+        {
+          "sqlId": "f2c8e7a1dff3",
+          "sql": "UPDATE orders\n           SET customer_name = 'Customer details expired for privacy',\n               customer_phone = 'REDACTED',\n               original_filename = 'document.pdf',\n               instructions = NULL,\n               pii_purged_at_ms = ?,\n               updated_at_ms = ?\n           WHERE id = ? AND pii_purged_at_ms IS NULL",
+          "endpoint": "retention-cleanup",
+          "category": "retention",
+          "table": "orders",
+          "operation": "UPDATE",
+          "transition": "COMPLETED -> COMPLETED",
+          "tableRowsWritten": 800
+        },
+        {
+          "sqlId": "ace92bf659c0",
+          "sql": "UPDATE uploads\n           SET original_filename = 'document.pdf',\n               updated_at_ms = ?\n           WHERE order_id = ?",
+          "endpoint": "retention-cleanup",
+          "category": "retention",
+          "table": "uploads",
+          "operation": "UPDATE",
+          "transition": "DELETED -> DELETED",
+          "tableRowsWritten": 800
+        },
+        {
+          "sqlId": "cbe8b30c5cd9",
+          "sql": "INSERT INTO order_events\n             (id, order_id, event_type, from_status, to_status, actor_type, actor_id, details_json, created_at_ms)\n           VALUES (?, ?, 'PII_PURGED', NULL, NULL, 'SYSTEM', 'CRON_RETENTION', ?, ?)",
+          "endpoint": "retention-cleanup",
+          "category": "retention",
+          "table": "order_events",
+          "operation": "INSERT",
+          "transition": "none -> PII_PURGED",
+          "tableRowsWritten": 800
+        }
+      ]
+    }
+  ]
+}

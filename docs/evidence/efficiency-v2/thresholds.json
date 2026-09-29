@@ -1,0 +1,8 @@
+{
+  "duplicateAttempts": 0,
+  "lostJobs": 0,
+  "incorrectStates": 0,
+  "unexpectedResponses": 0,
+  "peakRSSMB": 512,
+  "p95LocalApiMs": 250
+}

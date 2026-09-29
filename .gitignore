@@ -33,3 +33,6 @@ artifacts/
 *.sqlite3
 .tmp/
 tmp/
+installer/stage/
+installer/dist/
+*.zip

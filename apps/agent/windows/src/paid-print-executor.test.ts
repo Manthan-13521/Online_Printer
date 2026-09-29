@@ -180,6 +180,51 @@ describe("PaidPrintExecutor duplicate prevention", () => {
     });
   });
 
+  it("fails closed on uncorrelated fast despool and never marks it successful", async () => {
+    const api = client();
+    const printer = adapter();
+    vi.mocked(printer.submitPdfJob).mockResolvedValue({
+      spoolJobId: "despooled-123",
+      fastDespooled: true,
+    });
+    await new PaidPrintExecutor(api, printer, await journal()).handle(
+      credentials,
+      job("IDENTIFICATION_SHEET"),
+    );
+    expect(api.reportPrintStep).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({ status: "UNCERTAIN" }),
+    );
+    expect(api.submitPrintStep).not.toHaveBeenCalled();
+    expect(printer.getJobStatus).not.toHaveBeenCalled();
+  });
+
+  it("removes the local sheet before monitoring and immediately signals a successful next step", async () => {
+    const api = client();
+    const printer = adapter();
+    const next = vi.fn();
+    let file = "";
+    vi.mocked(printer.submitPdfJob).mockImplementation((submission) => {
+      file = submission.localPdfPath;
+      return Promise.resolve({ spoolJobId: "42" });
+    });
+    vi.mocked(printer.getJobStatus).mockImplementation(async () => {
+      await expect(fs.stat(file)).rejects.toMatchObject({ code: "ENOENT" });
+      return { state: "COMPLETED_OR_REMOVED", spoolJobId: "42" };
+    });
+    await new PaidPrintExecutor(
+      api,
+      printer,
+      await journal(),
+      () => undefined,
+      next,
+    ).handle(credentials, job("IDENTIFICATION_SHEET"));
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
   it("reconciles a persisted spool ID after restart without submitting again", async () => {
     const api = client();
     const printer = adapter();
@@ -221,6 +266,25 @@ describe("PaidPrintExecutor duplicate prevention", () => {
       expect.anything(),
       expect.objectContaining({ status: "UNCERTAIN" }),
     );
+  });
+
+  it("retains the real spool identity across a network failure and restart", async () => {
+    const api = client();
+    const printer = adapter();
+    const store = await journal();
+    vi.mocked(api.submitPrintStep).mockRejectedValueOnce(new Error("offline"));
+    vi.mocked(api.reportPrintStep).mockRejectedValueOnce(new Error("offline"));
+    await new PaidPrintExecutor(api, printer, store).handle(
+      credentials,
+      job("IDENTIFICATION_SHEET"),
+    );
+    expect(await store.load()).toMatchObject({ spoolerJobId: "42" });
+    await new PaidPrintExecutor(client(), printer, store).handle(
+      credentials,
+      job("IDENTIFICATION_SHEET", "SUBMISSION_STARTED"),
+    );
+    expect(printer.submitPdfJob).toHaveBeenCalledTimes(1);
+    expect(await store.load()).toBeNull();
   });
 
   it("observes the same blocked spool job and never resubmits", async () => {

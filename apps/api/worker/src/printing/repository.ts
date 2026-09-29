@@ -104,6 +104,7 @@ function mapJob(row: JobRow | null): ClaimedPrintJobRecord | null {
             jobCode: row.public_job_code,
             customerName: row.customer_name,
             maskedPhone: maskPhoneNumber(row.customer_phone),
+            customerPhone: row.customer_phone,
             paperSize: row.paper_size,
             colorMode: row.color_mode,
             sides: row.sides,
@@ -276,7 +277,7 @@ export class D1PrintingRepository implements PrintingRepository {
         u.size_bytes, o.source_page_count, o.selected_pages, o.copies,
         o.paper_size, o.color_mode, o.sides, o.customer_name, o.customer_phone,
         o.instructions, o.total_amount_paise, o.currency, o.paid_at_ms,
-        i.shop_name, i.identification_sheet_enabled, ps.id step_id,
+        i.shop_name, EXISTS(SELECT 1 FROM print_attempt_steps ids WHERE ids.print_attempt_id = pa.id AND ids.step_type = 'IDENTIFICATION_SHEET') identification_sheet_enabled, ps.id step_id,
         ps.sequence_number, ps.step_type, ps.status step_status, ps.spooler_job_id
       FROM orders o
       JOIN print_attempts pa ON pa.order_id = o.id
@@ -299,19 +300,40 @@ export class D1PrintingRepository implements PrintingRepository {
     agentId: string,
     nowMs: number,
   ): Promise<ClaimedPrintJobRecord | null> {
+    // Empty queues must not run the recovery/claim write chain on every pulse.
+    const work = await this.db
+      .prepare(
+        `SELECT 1 FROM orders WHERE status IN ('QUEUED','CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED') LIMIT 1`,
+      )
+      .first();
+    if (!work) return null;
     await this.recoverExpiredClaims(nowMs);
     await this.finishOrphanedSuccess(agentId, nowMs);
     const existing = await this.findCurrent(agentId);
     if (existing && existing.leaseExpiresAtMs > nowMs) {
+      // Leave fast jobs alone; renew only in the last third of the configured lease.
+      if (existing.leaseExpiresAtMs - nowMs > PRINT_CLAIM_LEASE_MS / 3)
+        return existing;
       const lease = nowMs + PRINT_CLAIM_LEASE_MS;
       await this.db
         .prepare(
           `UPDATE orders SET claim_expires_at_ms = ?, updated_at_ms = ?
-         WHERE id = ? AND claimed_by_agent_id = ? AND claim_id = ?`,
+         WHERE id = ? AND claimed_by_agent_id = ? AND claim_id = ?
+           AND claim_expires_at_ms > ? AND claim_expires_at_ms <= ?
+           AND status IN ('CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED')`,
         )
-        .bind(lease, nowMs, existing.orderId, agentId, existing.claimId)
+        .bind(
+          lease,
+          nowMs,
+          existing.orderId,
+          agentId,
+          existing.claimId,
+          nowMs,
+          nowMs + PRINT_CLAIM_LEASE_MS / 3,
+        )
         .run();
-      return { ...existing, leaseExpiresAtMs: lease };
+      // Re-read ownership: a concurrent completion/recovery must not receive a fabricated lease.
+      return this.findCurrent(agentId);
     }
 
     const candidate = await this.db
@@ -598,14 +620,14 @@ export class D1PrintingRepository implements PrintingRepository {
       this.db
         .prepare(
           `UPDATE print_attempts SET status = 'SUBMITTING', updated_at_ms = ?
-        WHERE id = ? AND status IN ('CREATED','PRINTING')`,
+        WHERE id = ? AND status IN ('CREATED','PRINTING') AND changes() = 1`,
         )
         .bind(input.nowMs, current.attempt_id),
       this.db
         .prepare(
           `UPDATE orders SET status = ?, print_started_at_ms = COALESCE(print_started_at_ms, ?),
           claim_expires_at_ms = ?, updated_at_ms = ? WHERE id = ? AND claim_id = ?
-          AND status IN ('CLAIMED','PRINTING')`,
+          AND status IN ('CLAIMED','PRINTING') AND changes() = 1`,
         )
         .bind(
           nextOrderStatus,
@@ -618,8 +640,8 @@ export class D1PrintingRepository implements PrintingRepository {
       this.db
         .prepare(
           `INSERT INTO order_events (id, order_id, event_type, from_status, to_status,
-          actor_type, actor_id, created_at_ms) VALUES (?, ?, 'PRINT_STEP_STARTED', ?,
-          ?, 'AGENT', ?, ?)`,
+          actor_type, actor_id, created_at_ms) SELECT ?, ?, 'PRINT_STEP_STARTED', ?,
+          ?, 'AGENT', ?, ? WHERE changes() = 1`,
         )
         .bind(
           crypto.randomUUID(),
@@ -666,7 +688,7 @@ export class D1PrintingRepository implements PrintingRepository {
         .prepare(
           `UPDATE print_attempts SET status = 'PRINTING', windows_job_id = COALESCE(windows_job_id, ?),
           submitted_at_ms = COALESCE(submitted_at_ms, ?), last_observed_at_ms = ?, updated_at_ms = ?
-        WHERE id = ?`,
+        WHERE id = ? AND changes() = 1`,
         )
         .bind(
           input.spoolerJobId,
@@ -678,7 +700,7 @@ export class D1PrintingRepository implements PrintingRepository {
       this.db
         .prepare(
           `UPDATE orders SET status = 'PRINTING', claim_expires_at_ms = ?, updated_at_ms = ?
-        WHERE id = ? AND claim_id = ? AND status IN ('SPOOLING','PRINT_BLOCKED')`,
+        WHERE id = ? AND claim_id = ? AND status IN ('SPOOLING','PRINT_BLOCKED') AND changes() = 1`,
         )
         .bind(lease, input.nowMs, input.orderId, input.claimId),
     ]);
@@ -803,18 +825,19 @@ export class D1PrintingRepository implements PrintingRepository {
         await this.db.batch([
           this.db
             .prepare(
-              "UPDATE print_attempts SET status = 'PRINTING', failure_code = NULL, failure_detail = NULL, last_observed_at_ms = ?, updated_at_ms = ? WHERE id = ?",
+              "UPDATE print_attempts SET status = 'PRINTING', failure_code = NULL, failure_detail = NULL, last_observed_at_ms = ?, updated_at_ms = ? WHERE id = ? AND (status <> 'PRINTING' OR failure_code IS NOT NULL OR failure_detail IS NOT NULL)",
             )
             .bind(input.nowMs, input.nowMs, current.attempt_id),
           this.db
             .prepare(
-              "UPDATE orders SET status = 'PRINTING', claim_expires_at_ms = ?, updated_at_ms = ? WHERE id = ? AND claim_id = ?",
+              "UPDATE orders SET status = 'PRINTING', claim_expires_at_ms = ?, updated_at_ms = ? WHERE id = ? AND claim_id = ? AND (status <> 'PRINTING' OR claim_expires_at_ms <= ?)",
             )
             .bind(
               input.nowMs + PRINT_CLAIM_LEASE_MS,
               input.nowMs,
               input.orderId,
               input.claimId,
+              input.nowMs + PRINT_CLAIM_LEASE_MS / 3,
             ),
         ]);
       }
@@ -841,17 +864,19 @@ export class D1PrintingRepository implements PrintingRepository {
         .bind(input.nowMs, input.nowMs, current.attempt_id),
       this.db
         .prepare(
-          "UPDATE orders SET status = 'PRINTED', printed_at_ms = COALESCE(printed_at_ms, ?), updated_at_ms = ? WHERE id = ? AND claim_id = ? AND status NOT IN ('PRINTED','COMPLETED')",
+          // PRINTED and COMPLETED already shared one atomic batch. Keep both forensic events below.
+          "UPDATE orders SET status = 'COMPLETED', printed_at_ms = COALESCE(printed_at_ms, ?), completed_at_ms = COALESCE(completed_at_ms, ?), updated_at_ms = ? WHERE id = ? AND claim_id = ? AND status <> 'COMPLETED'",
         )
-        .bind(input.nowMs, input.nowMs, input.orderId, input.claimId),
+        .bind(
+          input.nowMs,
+          input.nowMs,
+          input.nowMs,
+          input.orderId,
+          input.claimId,
+        ),
       this.db
         .prepare(
-          "UPDATE orders SET status = 'COMPLETED', completed_at_ms = COALESCE(completed_at_ms, ?), updated_at_ms = ? WHERE id = ? AND claim_id = ? AND status = 'PRINTED'",
-        )
-        .bind(input.nowMs, input.nowMs, input.orderId, input.claimId),
-      this.db
-        .prepare(
-          "UPDATE uploads SET retention_reason = 'COMPLETED', delete_after_ms = ?, updated_at_ms = ? WHERE order_id = ? AND storage_status = 'UPLOADED' AND retention_reason IS NULL",
+          "UPDATE uploads SET retention_reason = 'COMPLETED', delete_after_ms = ?, updated_at_ms = ? WHERE order_id = ? AND storage_status = 'UPLOADED' AND retention_reason IS NOT 'COMPLETED'",
         )
         .bind(input.nowMs + COMPLETED_RETENTION_MS, input.nowMs, input.orderId),
       this.db

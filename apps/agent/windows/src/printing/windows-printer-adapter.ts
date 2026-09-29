@@ -52,6 +52,9 @@ interface CimPrinterOutput {
 
 export class WindowsPrinterAdapter implements PrinterAdapter {
   private readonly executor: PowerShellExecutor;
+  private inventory: readonly PrinterSummary[] = [];
+  private inventoryAtMs = -Infinity;
+
   private readonly capabilitiesCache = new Map<
     string,
     { caps: PrinterCapabilities; cachedAtMs: number }
@@ -76,23 +79,65 @@ export class WindowsPrinterAdapter implements PrinterAdapter {
     }
   }
 
-  async listPrinters(): Promise<readonly PrinterSummary[]> {
+  async listPrinters(forceRefresh = false): Promise<readonly PrinterSummary[]> {
     this.ensureWindows();
 
-    const psCommand = `
-Get-CimInstance Win32_Printer | Select-Object Name, Default, WorkOffline, PrinterStatus, DetectedErrorState, ExtendedPrinterStatus, CapabilityDescriptions, PortName, DriverName | ConvertTo-Json -Compress
-    `.trim();
+    const full = forceRefresh || Date.now() - this.inventoryAtMs >= 300_000;
+    // One process refreshes health for all queues; inventory/capabilities share the slow reconciliation.
+    const fields = full
+      ? "Name, Default, WorkOffline, PrinterStatus, DetectedErrorState, ExtendedPrinterStatus, Color, CapabilityDescriptions, PrinterPaperNames, PortName, DriverName"
+      : "Name, WorkOffline, PrinterStatus, DetectedErrorState, DriverName, PortName";
+    const psCommand = `Get-CimInstance Win32_Printer | Select-Object ${fields} | ConvertTo-Json -Compress`;
 
     try {
       const output = (await this.executor(psCommand)).trim();
-      if (!output) return [];
+      if (!output) {
+        this.inventory = [];
+        this.inventoryAtMs = -Infinity;
+        this.capabilitiesCache.clear();
+        this.statusCache.clear();
+        return [];
+      }
 
       const parsed: unknown = JSON.parse(output);
       const list: CimPrinterOutput[] = Array.isArray(parsed)
         ? (parsed as CimPrinterOutput[])
         : [parsed as CimPrinterOutput];
 
-      return list
+      const valid = list.filter(
+        (p) => p && typeof p.Name === "string" && p.Name.trim().length > 0,
+      );
+      const names = new Set(valid.map((p) => p.Name));
+      for (const name of this.capabilitiesCache.keys())
+        if (!names.has(name)) this.capabilitiesCache.delete(name);
+      for (const name of this.statusCache.keys())
+        if (!names.has(name)) this.statusCache.delete(name);
+      for (const p of valid)
+        this.statusCache.set(p.Name, {
+          status: this.parsePrinterStatus(p),
+          cachedAtMs: Date.now(),
+        });
+      if (!full) {
+        const changed =
+          valid.some((p) => {
+            const old = this.inventory.find((i) => i.id === p.Name);
+            return (
+              !old ||
+              (old.driverName ?? null) !== (p.DriverName ?? null) ||
+              (old.portName ?? null) !== (p.PortName ?? null)
+            );
+          }) || valid.length !== this.inventory.length;
+        if (changed) return this.listPrinters(true);
+        if (
+          valid.some(
+            (p) => this.parsePrinterStatus(p).availability !== "ONLINE",
+          )
+        )
+          this.inventoryAtMs = -Infinity;
+        return this.inventory;
+      }
+      this.inventoryAtMs = Date.now();
+      this.inventory = list
         .filter(
           (p) => p && typeof p.Name === "string" && p.Name.trim().length > 0,
         )
@@ -103,6 +148,10 @@ Get-CimInstance Win32_Printer | Select-Object Name, Default, WorkOffline, Printe
             driverName: p.DriverName ?? null,
           });
 
+          this.capabilitiesCache.set(p.Name, {
+            caps: this.parseCapabilities(p),
+            cachedAtMs: Date.now(),
+          });
           const status = this.parsePrinterStatus(p);
           this.statusCache.set(p.Name, {
             status,
@@ -120,7 +169,12 @@ Get-CimInstance Win32_Printer | Select-Object Name, Default, WorkOffline, Printe
               classification.isEligibleForProductionPrint,
           };
         });
+      return this.inventory;
     } catch (err: unknown) {
+      this.inventory = [];
+      this.inventoryAtMs = -Infinity;
+      this.capabilitiesCache.clear();
+      this.statusCache.clear();
       console.error("Failed to query Win32_Printer:", err);
       return [];
     }
@@ -151,52 +205,7 @@ Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $printer } | Select-O
       }
 
       const p = JSON.parse(output) as CimPrinterOutput;
-      const caps = Array.isArray(p.CapabilityDescriptions)
-        ? p.CapabilityDescriptions
-        : [];
-      const capsText = caps.join(" ").toLowerCase();
-
-      let colour: boolean | "UNKNOWN" = "UNKNOWN";
-      if (typeof p.Color === "boolean") {
-        colour = p.Color;
-      } else if (capsText.includes("color") || capsText.includes("colour")) {
-        colour = true;
-      } else if (
-        capsText.includes("monochrome") ||
-        capsText.includes("mono") ||
-        capsText.includes("black and white") ||
-        caps.length > 0
-      ) {
-        colour = false;
-      }
-
-      let duplex: boolean | "UNKNOWN" = "UNKNOWN";
-      if (capsText.includes("duplex") || capsText.includes("two-sided")) {
-        duplex = true;
-      } else if (
-        capsText.includes("simplex") ||
-        capsText.includes("single-sided") ||
-        caps.length > 0
-      ) {
-        duplex = false;
-      }
-
-      const paperSizesSet = new Set<string>(["A4", "LETTER"]);
-      if (Array.isArray(p.PrinterPaperNames)) {
-        for (const name of p.PrinterPaperNames) {
-          const upper = String(name).trim().toUpperCase();
-          if (upper) paperSizesSet.add(upper);
-        }
-      }
-      if (capsText.includes("a3")) {
-        paperSizesSet.add("A3");
-      }
-
-      const result: PrinterCapabilities = {
-        colour,
-        duplex,
-        paperSizes: Array.from(paperSizesSet),
-      };
+      const result = this.parseCapabilities(p);
       this.capabilitiesCache.set(printerId, {
         caps: result,
         cachedAtMs: Date.now(),
@@ -211,6 +220,55 @@ Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $printer } | Select-O
     }
   }
 
+  private parseCapabilities(p: CimPrinterOutput): PrinterCapabilities {
+    const caps = Array.isArray(p.CapabilityDescriptions)
+      ? p.CapabilityDescriptions
+      : [];
+    const capsText = caps.join(" ").toLowerCase();
+
+    let colour: boolean | "UNKNOWN" = "UNKNOWN";
+    if (typeof p.Color === "boolean") {
+      colour = p.Color;
+    } else if (capsText.includes("color") || capsText.includes("colour")) {
+      colour = true;
+    } else if (
+      capsText.includes("monochrome") ||
+      capsText.includes("mono") ||
+      capsText.includes("black and white") ||
+      caps.length > 0
+    ) {
+      colour = false;
+    }
+
+    let duplex: boolean | "UNKNOWN" = "UNKNOWN";
+    if (capsText.includes("duplex") || capsText.includes("two-sided")) {
+      duplex = true;
+    } else if (
+      capsText.includes("simplex") ||
+      capsText.includes("single-sided") ||
+      caps.length > 0
+    ) {
+      duplex = false;
+    }
+
+    const paperSizesSet = new Set<string>(["A4", "LETTER"]);
+    if (Array.isArray(p.PrinterPaperNames)) {
+      for (const name of p.PrinterPaperNames) {
+        const upper = String(name).trim().toUpperCase();
+        if (upper) paperSizesSet.add(upper);
+      }
+    }
+    if (capsText.includes("a3")) {
+      paperSizesSet.add("A3");
+    }
+
+    return {
+      colour,
+      duplex,
+      paperSizes: Array.from(paperSizesSet),
+    };
+  }
+
   private parsePrinterStatus(p: CimPrinterOutput): PrinterStatus {
     if (p.WorkOffline) {
       return {
@@ -220,6 +278,10 @@ Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $printer } | Select-O
     }
 
     switch (p.DetectedErrorState) {
+      case 9:
+        return { availability: "OFFLINE", message: "Printer is offline" };
+      case 10:
+        return { availability: "BLOCKED", message: "Printer requires service" };
       case 8:
         return { availability: "BLOCKED", message: "Paper Jam" };
       case 7:
@@ -250,7 +312,10 @@ Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $printer } | Select-O
       return { availability: "ONLINE" };
     }
 
-    return { availability: "ONLINE" };
+    return {
+      availability: "UNKNOWN",
+      message: "Printer readiness is not reported by Windows",
+    };
   }
 
   async getStatus(printerId: string): Promise<PrinterStatus> {
@@ -386,6 +451,14 @@ if (-not $sumatra -or -not (Test-Path $sumatra)) {
     }
 }
 
+# Fresh readiness in this same process, before any physical side effect. Never trust the idle snapshot here.
+$ready = Get-CimInstance Win32_Printer -ErrorAction Stop | Where-Object { $_.Name -eq $printer }
+if (-not $ready -or $ready.WorkOffline -or $ready.PrinterStatus -eq 7 -or
+    $ready.DetectedErrorState -in @(4,6,7,8,9,10,11) -or
+    ($ready.PrinterStatus -notin @(3,4,5) -and $ready.DetectedErrorState -ne 2)) {
+    throw "Printer readiness could not be confirmed before submission."
+}
+
 # 2. Record pre-submission spooler job IDs for this exact printer
 $beforeIds = @(Get-CimInstance Win32_PrintJob -ErrorAction SilentlyContinue | Where-Object { $_.Name.StartsWith("$printer,") } | ForEach-Object { [int]$_.JobId })
 
@@ -399,6 +472,7 @@ $psi.Arguments = "-print-to \`"$printer\`" -print-settings \`"$settings\`" -sile
 $psi.CreateNoWindow = $true
 $psi.UseShellExecute = $false
 $psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
+$processStartedAtMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
 $proc = [System.Diagnostics.Process]::Start($psi)
 if (-not $proc) {
     throw "SumatraPDF print process could not be started."
@@ -408,6 +482,7 @@ if (-not $proc) {
 $fileName = [System.IO.Path]::GetFileName($pdf)
 $fileNameWithoutExt = [System.IO.Path]::GetFileNameWithoutExtension($pdf)
 
+$spoolCapturedAtMs = $null
 $matchedJob = $null
 $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 
@@ -421,6 +496,7 @@ while (-not $proc.HasExited -and $stopwatch.ElapsedMilliseconds -lt 25000) {
     })
     if ($runningJobs.Count -gt 0) {
         $matchedJob = $runningJobs[0]
+        $spoolCapturedAtMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
         break
     }
 }
@@ -444,6 +520,7 @@ if (-not $matchedJob) {
         })
         if ($afterJobs.Count -gt 0) {
             $matchedJob = $afterJobs[0]
+            $spoolCapturedAtMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
             break
         }
         Start-Sleep -Milliseconds 100
@@ -455,25 +532,16 @@ if ($matchedJob) {
         spoolJobId = [string]$matchedJob.JobId
         engineUsed = "sumatrapdf"
         fastDespooled = $false
+        timings = @{ processStartedAtMs = $processStartedAtMs; spoolCapturedAtMs = $spoolCapturedAtMs; acceptedAtMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() }
     } | ConvertTo-Json -Compress
 } else {
-    # Check printer queue state: if printer is clean with no error state,
-    # the small job despooled directly into hardware buffer
-    $printerObj = Get-CimInstance Win32_Printer -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq $printer } | Select-Object -First 1 WorkOffline, PrinterStatus, DetectedErrorState
-    $isClean = (-not $printerObj.WorkOffline) -and ($null -eq $printerObj.DetectedErrorState -or $printerObj.DetectedErrorState -eq 0 -or $printerObj.DetectedErrorState -eq 2)
-    if ($isClean) {
-        @{
-            spoolJobId = "despooled-$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
-            engineUsed = "sumatrapdf"
-            fastDespooled = $true
-        } | ConvertTo-Json -Compress
-    } else {
-        @{
-            spoolJobId = "unobserved-$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
-            engineUsed = "sumatrapdf"
-            fastDespooled = $false
-        } | ConvertTo-Json -Compress
-    }
+    # No positively correlated job ID: never infer success from a healthy printer.
+    @{
+        spoolJobId = "unobserved-$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
+        engineUsed = "sumatrapdf"
+        fastDespooled = $false
+        timings = @{ processStartedAtMs = $processStartedAtMs; spoolCapturedAtMs = $null; acceptedAtMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() }
+    } | ConvertTo-Json -Compress
 }
     `.trim();
 
@@ -482,22 +550,30 @@ if ($matchedJob) {
       let spoolJobId: string;
       let engineUsed: string | undefined;
       let fastDespooled: boolean | undefined;
+      let timings: SubmittedPrintJob["timings"];
 
       try {
         const parsed = JSON.parse(output) as {
           spoolJobId?: string;
           engineUsed?: string;
           fastDespooled?: boolean;
+          timings?: SubmittedPrintJob["timings"];
         };
         spoolJobId = parsed.spoolJobId || `unobserved-${Date.now()}`;
         engineUsed = parsed.engineUsed;
         fastDespooled = parsed.fastDespooled;
+        timings = parsed.timings;
       } catch {
         // Fallback for simple string output in tests
         spoolJobId = output || `unobserved-${Date.now()}`;
       }
 
-      return { spoolJobId, engineUsed, fastDespooled };
+      return {
+        spoolJobId,
+        engineUsed,
+        fastDespooled,
+        ...(timings ? { timings } : {}),
+      };
     } catch (err: unknown) {
       if (
         err instanceof UnsupportedPrintSettingError ||

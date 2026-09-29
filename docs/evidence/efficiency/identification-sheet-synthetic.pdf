@@ -1,0 +1,60 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 595 842] >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /Resources << /Font <<
+/F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+/F2 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>
+>> >> /Contents 4 0 R >>
+endobj
+4 0 obj
+<< /Length 1136 >>
+stream
+0.5 w
+50 795 m 545 795 l S
+BT /F2 16.00 Tf 50 772 Td (ABC Xerox) Tj ET
+BT /F1 10 Tf 50 756 Td (JOB IDENTIFICATION SHEET) Tj ET
+50 744 m 545 744 l S
+0.75 w 50 635 495 90 re S
+BT /F1 10 Tf 65 700 Td (HUMAN JOB CODE - VERIFY WITH CUSTOMER) Tj ET
+BT /F2 36.00 Tf 65 655 Td (PG-DEMO-1234) Tj ET
+0.5 w 50 490 495 125 re S
+BT /F2 11 Tf 65 592 Td (CUSTOMER AND ORDER DETAILS) Tj ET
+BT /F1 11 Tf 16 TL 65 570 Td
+(Customer Name:  Synthetic Customer) Tj T*
+(Phone Number:   +91 90000 00000) Tj T*
+(Amount Paid:    Rs. 50.00 \(INR\)) Tj T*
+(Paid / Ordered: 29 Sept 2026, 10:00 am) Tj T* ET
+0.5 w 50 345 495 130 re S
+BT /F2 11 Tf 65 452 Td (CUSTOMER PRINT SUMMARY) Tj ET
+BT /F1 11 Tf 16 TL 65 430 Td
+(Paper Size:     A4) Tj T*
+(Colour Mode:    Black & White) Tj T*
+(Sides:          Single-sided) Tj T*
+(Page Range:     1-5) Tj T*
+(Copies Ordered: 10) Tj T* ET
+0.5 w 50 155 495 175 re S
+BT /F2 11 Tf 65 305 Td (CUSTOMER SPECIAL INSTRUCTIONS) Tj ET
+BT /F1 10 Tf 15 TL 65 282 Td
+(Synthetic example only. Please staple each set.) Tj T*
+ET
+0.5 w 50 75 m 545 75 l S
+BT /F1 9 Tf 50 58 Td (One identification sheet per order. Not a customer document.) Tj ET
+endstream
+endobj
+xref
+0 5
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000139 00000 n 
+0000000354 00000 n 
+trailer
+<< /Size 5 /Root 1 0 R >>
+startxref
+1542
+%%EOF

@@ -1,3 +1,4 @@
+import { startVisiblePolling } from "../../polling";
 import type { AdminLiveOrder } from "@printgo/api-contract";
 import { useEffect, useState } from "react";
 
@@ -30,63 +31,28 @@ export function LiveOrdersPage({
 
   useEffect(() => {
     let active = true;
-    let timer: ReturnType<typeof setInterval> | null = null;
-
-    const fetchOrders = () => {
-      if (typeof document !== "undefined" && document.hidden) return;
-      void adminApi
-        .getLiveOrders()
-        .then((response) => {
-          if (active && response.ok) setOrders(response.data.orders);
-        })
-        .catch((caught: unknown) => {
-          if (!active) return;
-          if (caught instanceof AdminApiError && caught.status === 401) {
-            onSessionExpired("Your session has expired. Please sign in again.");
-          } else setError(friendlyAdminError(caught));
-        });
-    };
-
-    fetchOrders();
-
-    const startPolling = () => {
-      if (timer) clearInterval(timer);
-      timer = setInterval(fetchOrders, pollIntervalMs);
-    };
-
-    const stopPolling = () => {
-      if (timer) {
-        clearInterval(timer);
-        timer = null;
+    let previous = "";
+    const stop = startVisiblePolling(async () => {
+      try {
+        const response = await adminApi.getLiveOrders();
+        if (!active || !response.ok) return undefined;
+        setOrders(response.data.orders);
+        setError(null);
+        const snapshot = JSON.stringify(response.data.orders);
+        const changed = snapshot !== previous;
+        previous = snapshot;
+        return changed;
+      } catch (caught) {
+        if (!active) return undefined;
+        if (caught instanceof AdminApiError && caught.status === 401) {
+          onSessionExpired("Your session has expired. Please sign in again.");
+        } else setError(friendlyAdminError(caught));
       }
-    };
-
-    const handleVisibilityChange = () => {
-      if (typeof document !== "undefined" && document.hidden) {
-        stopPolling();
-      } else {
-        fetchOrders();
-        startPolling();
-      }
-    };
-
-    if (typeof document === "undefined" || !document.hidden) {
-      startPolling();
-    }
-
-    if (typeof document !== "undefined") {
-      document.addEventListener("visibilitychange", handleVisibilityChange);
-    }
-
+      return undefined;
+    }, pollIntervalMs);
     return () => {
       active = false;
-      stopPolling();
-      if (typeof document !== "undefined") {
-        document.removeEventListener(
-          "visibilitychange",
-          handleVisibilityChange,
-        );
-      }
+      stop();
     };
   }, [onSessionExpired, pollIntervalMs]);
 

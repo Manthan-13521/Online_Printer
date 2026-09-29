@@ -13,6 +13,7 @@ import { PricingPage } from "./PricingPage";
 import { PrinterPage } from "./PrinterPage";
 import { ShopSettingsPage } from "./ShopSettingsPage";
 import { LiveOrdersPage } from "./LiveOrdersPage";
+import { DashboardPage } from "./DashboardPage";
 
 const navigation = [
   { label: "Dashboard", path: "/admin" },
@@ -330,10 +331,12 @@ function PageContent({
   path,
   admin,
   onSignedOut,
+  onNavigate,
 }: {
   path: string;
   admin: AdminProfile;
   onSignedOut: (message: string) => void;
+  onNavigate: (path: string) => void;
 }) {
   const item = navigation.find((entry) => entry.path === path) ?? navigation[0];
   if (item.path === "/admin/security")
@@ -348,14 +351,7 @@ function PageContent({
     return <LiveOrdersPage onSessionExpired={onSignedOut} />;
   if (item.path === "/admin")
     return (
-      <div className="welcome">
-        <p className="eyebrow">Workspace ready</p>
-        <h1>Welcome to PrintGo</h1>
-        <p>
-          Your Admin Portal is ready. Setup will continue in the next
-          configuration steps.
-        </p>
-      </div>
+      <DashboardPage onSessionExpired={onSignedOut} onNavigate={onNavigate} />
     );
   return (
     <div className="welcome">
@@ -468,6 +464,7 @@ function AdminShell({
           path={activePath}
           admin={admin}
           onSignedOut={onSignedOut}
+          onNavigate={navigate}
         />
       </main>
     </div>

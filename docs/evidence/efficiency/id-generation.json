@@ -1,0 +1,7 @@
+{
+  "label": "MEASURED Mac in-memory PDF generation, no physical printing",
+  "samples": 200,
+  "p50Ms": 0.06691600000000619,
+  "p95Ms": 0.11374999999999602,
+  "maxMs": 16.79416700000001
+}

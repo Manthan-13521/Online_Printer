@@ -70,7 +70,9 @@ try {
   });
   console.log(`[Build Agent] Generated dist/sea-prep.blob`);
 } catch (err) {
-  console.warn(`[Build Agent] Could not generate sea-prep.blob:`, err.message);
+  throw new Error("SEA preparation failed; no package may be produced.", {
+    cause: err,
+  });
 }
 
 // If on Windows, inject blob into node.exe to produce PrintGo-Agent.exe
@@ -81,9 +83,10 @@ if (process.platform === "win32") {
   );
   fs.copyFileSync(process.execPath, exePath);
 
-  console.log("[Build Agent] Injecting SEA blob using postject...");
+  execSync(`signtool remove /s "${exePath}"`, { stdio: "inherit" });
+  console.log("[Build Agent] Injecting SEA blob using pinned postject...");
   execSync(
-    `npx --yes postject "${exePath}" NODE_SEA_BLOB "${path.resolve(distDir, "sea-prep.blob")}" --sentinel-fuse NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2`,
+    `npx --yes postject@1.0.0-alpha.6 "${exePath}" NODE_SEA_BLOB "${path.resolve(distDir, "sea-prep.blob")}" --sentinel-fuse NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2`,
     { stdio: "inherit" },
   );
   console.log(`[Build Agent] Successfully created ${exePath}`);
@@ -109,9 +112,18 @@ if (fs.existsSync(path.resolve(distDir, "sea-prep.blob"))) {
     path.resolve(packageDir, "sea-prep.blob"),
   );
 }
-fs.copyFileSync(seaConfigPath, path.resolve(packageDir, "sea-config.json"));
+const stagedSeaConfig = {
+  main: "bundle.cjs",
+  output: "sea-prep.blob",
+  disableExperimentalSEAWarning: true,
+};
+fs.writeFileSync(
+  path.resolve(packageDir, "sea-config.json"),
+  JSON.stringify(stagedSeaConfig, null, 2) + "\n",
+  "utf8",
+);
 
-if (fs.existsSync(exePath)) {
+if (process.platform === "win32" && fs.existsSync(exePath)) {
   fs.copyFileSync(exePath, path.resolve(packageDir, "PrintGo-Agent.exe"));
 }
 

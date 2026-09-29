@@ -1,0 +1,22 @@
+(node:12304) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+{"target":800,"status":"PASS","duplicateAttempts":0,"lostJobs":0,"peakRSSMB":142.53125}
+node:internal/modules/run_main:123
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:
+
+  assert.ok(route.hist.p95 < thresholds.p95LocalApiMs)
+
+    at scale (file:///Users/manthanjaiswal/Printe_Go_/scripts/efficiency-audit.mjs:441:14)
+    at async file:///Users/manthanjaiswal/Printe_Go_/scripts/efficiency-audit.mjs:478:20 {
+  generatedMessage: true,
+  code: 'ERR_ASSERTION',
+  actual: false,
+  expected: true,
+  operator: '==',
+  diff: 'simple'
+}
+
+Node.js v22.23.1

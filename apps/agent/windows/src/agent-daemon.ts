@@ -4,7 +4,6 @@ import type {
   AgentPrinterReport,
   AgentTestPrintCommand,
 } from "@printgo/api-contract";
-import { AGENT_HEARTBEAT_INTERVAL_MS } from "@printgo/domain";
 import { AgentAuthError, AgentClient } from "./agent-client.js";
 import { createDiagnosticPdfFile } from "./printing/diagnostic-pdf.js";
 import type { PrinterAdapter } from "./printing/printer-adapter.js";
@@ -15,12 +14,18 @@ import type {
 } from "./storage/credential-store.js";
 import { PaidPrintExecutor } from "./paid-print-executor.js";
 import { ExecutionJournalStore } from "./storage/execution-journal.js";
+import {
+  writeAgentStatus,
+  type PrinterStatusInfo,
+} from "./storage/status-file.js";
 
 export interface AgentDaemonOptions {
   client?: AgentClient;
   credentialStore: CredentialStore;
   printerAdapter: PrinterAdapter;
   heartbeatIntervalMs?: number;
+  printerRefreshMs?: number;
+  random?: () => number;
   agentVersion?: string;
   onStatusChange?: (status: string) => void;
   onError?: (err: Error) => void;
@@ -35,19 +40,38 @@ export class AgentDaemon {
   private readonly onStatusChange: ((status: string) => void) | undefined;
   private readonly onError: ((err: Error) => void) | undefined;
 
+  private readonly printerRefreshMs: number;
+  private readonly random: () => number;
+  private printerReports: AgentPrinterReport[] = [];
+  private lastPrinterRefreshMs = -Infinity;
+  private lastReportedPrinters = "";
+  private nextDelayMs = 5_000;
+  private failures = 0;
+  private lastStatusWriteMs = -Infinity;
+
   private credentials: AgentCredentials | null = null;
   private timer: NodeJS.Timeout | null = null;
   private running = false;
   private isBeating = false;
-  private readonly executedCommandIds = new Set<string>();
+  private readonly executedCommandIds = new Map<string, number>();
   private readonly paidPrintExecutor: PaidPrintExecutor;
 
   constructor(options: AgentDaemonOptions) {
     this.client = options.client ?? new AgentClient();
     this.credentialStore = options.credentialStore;
     this.printerAdapter = options.printerAdapter;
-    this.heartbeatIntervalMs =
-      options.heartbeatIntervalMs ?? AGENT_HEARTBEAT_INTERVAL_MS;
+    this.heartbeatIntervalMs = options.heartbeatIntervalMs ?? 5_000;
+    this.printerRefreshMs = options.printerRefreshMs ?? 60_000;
+    this.random = options.random ?? Math.random;
+    if (
+      !Number.isFinite(this.heartbeatIntervalMs) ||
+      this.heartbeatIntervalMs < 100 ||
+      this.heartbeatIntervalMs > 30_000 ||
+      !Number.isFinite(this.printerRefreshMs) ||
+      this.printerRefreshMs < 1_000 ||
+      this.printerRefreshMs > 60_000
+    )
+      throw new Error("Invalid Agent polling intervals.");
     this.agentVersion = options.agentVersion ?? "2.0.0";
     this.onStatusChange = options.onStatusChange;
     this.onError = options.onError;
@@ -56,6 +80,9 @@ export class AgentDaemon {
       this.printerAdapter,
       new ExecutionJournalStore(),
       (message) => this.log(message),
+      () => {
+        this.nextDelayMs = 0;
+      },
     );
   }
 
@@ -101,6 +128,16 @@ export class AgentDaemon {
     this.credentials = await this.credentialStore.load();
     if (!this.credentials) {
       this.log("No credentials found. Daemon is idle awaiting pairing.");
+      void writeAgentStatus({
+        operationalState: "UNPAIRED",
+        agentVersion: this.agentVersion,
+        agentId: null,
+        displayName: null,
+        serverUrl: null,
+        lastHeartbeatMs: null,
+        printers: [],
+        updatedAtMs: Date.now(),
+      }).catch(() => undefined);
       return false;
     }
 
@@ -112,23 +149,36 @@ export class AgentDaemon {
     // Perform immediate first heartbeat
     await this.pulse();
 
-    // Schedule regular heartbeat if still running
-    if (this.running) {
-      this.timer = setInterval(() => {
-        void this.pulse();
-      }, this.heartbeatIntervalMs);
-    }
+    this.schedulePulse();
 
     return this.running;
   }
 
+  private schedulePulse(): void {
+    if (!this.running) return;
+    this.timer = setTimeout(() => {
+      this.timer = null;
+      void this.pulse().finally(() => this.schedulePulse());
+    }, this.nextDelayMs);
+  }
+
   stop(): void {
     if (this.timer) {
-      clearInterval(this.timer);
+      clearTimeout(this.timer);
       this.timer = null;
     }
     this.running = false;
     this.log("Agent daemon stopped.");
+    void writeAgentStatus({
+      operationalState: "OFFLINE",
+      agentVersion: this.agentVersion,
+      agentId: this.credentials?.agentId ?? null,
+      displayName: this.credentials?.displayName ?? null,
+      serverUrl: this.credentials?.serverUrl ?? null,
+      lastHeartbeatMs: null,
+      printers: [],
+      updatedAtMs: Date.now(),
+    }).catch(() => undefined);
   }
 
   async pulse(): Promise<void> {
@@ -136,41 +186,59 @@ export class AgentDaemon {
     this.isBeating = true;
 
     try {
-      const summaries = await this.printerAdapter.listPrinters();
-      const printerReports: AgentPrinterReport[] = [];
+      const unhealthy =
+        this.printerReports.length === 0 ||
+        this.printerReports.some((p) => p.status !== "ONLINE");
+      const refreshEveryMs = unhealthy
+        ? Math.min(30_000, this.printerRefreshMs)
+        : this.printerRefreshMs;
+      const refreshPrinters =
+        Date.now() - this.lastPrinterRefreshMs >=
+        (this.nextDelayMs === 0 ? 60_000 : refreshEveryMs);
+      if (refreshPrinters) {
+        const summaries = await this.printerAdapter.listPrinters();
+        const printerReports: AgentPrinterReport[] = [];
 
-      for (const summary of summaries) {
-        const [caps, status] = await Promise.all([
-          this.printerAdapter.getCapabilities(summary.id),
-          this.printerAdapter.getStatus(summary.id),
-        ]);
+        for (const summary of summaries) {
+          const [caps, status] = await Promise.all([
+            this.printerAdapter.getCapabilities(summary.id),
+            this.printerAdapter.getStatus(summary.id),
+          ]);
 
-        printerReports.push({
-          windowsPrinterName: summary.id,
-          displayName: summary.displayName,
-          isDefault: summary.isDefault,
-          status:
-            status.availability === "AVAILABLE"
-              ? "ONLINE"
-              : status.availability,
-          statusReason: status.message ?? null,
-          capabilities: {
-            colour: caps.colour,
-            duplex: caps.duplex,
-            paperSizes: caps.paperSizes,
-          },
-          isEligibleForProductionPrint:
-            summary.isEligibleForProductionPrint ?? true,
-          isVirtual: summary.isVirtual ?? false,
-          portName: summary.portName ?? null,
-          driverName: summary.driverName ?? null,
-        });
+          printerReports.push({
+            windowsPrinterName: summary.id,
+            displayName: summary.displayName,
+            isDefault: summary.isDefault,
+            status:
+              status.availability === "AVAILABLE"
+                ? "ONLINE"
+                : status.availability,
+            statusReason: status.message ?? null,
+            capabilities: {
+              colour: caps.colour,
+              duplex: caps.duplex,
+              paperSizes: caps.paperSizes,
+            },
+            isEligibleForProductionPrint:
+              summary.isEligibleForProductionPrint ?? true,
+            isVirtual: summary.isVirtual ?? false,
+            portName: summary.portName ?? null,
+            driverName: summary.driverName ?? null,
+          });
+        }
+
+        this.printerReports = printerReports;
+        this.lastPrinterRefreshMs = Date.now();
       }
-
-      const request: AgentHeartbeatRequest = {
+      const printerReports = this.printerReports;
+      const printerSnapshot = JSON.stringify(printerReports);
+      const reportChanged = printerSnapshot !== this.lastReportedPrinters;
+      const request: Omit<AgentHeartbeatRequest, "printers"> & {
+        printers?: AgentPrinterReport[];
+      } = {
         agentVersion: this.agentVersion,
         operationalState: "ONLINE",
-        printers: printerReports,
+        ...(reportChanged ? { printers: printerReports } : {}),
       };
 
       const heartbeatData = await this.client.sendHeartbeat(
@@ -180,9 +248,42 @@ export class AgentDaemon {
         request,
       );
 
-      this.log(
-        `Heartbeat acknowledged by ${this.credentials.serverUrl} (${printerReports.length} printers reported).`,
+      this.lastReportedPrinters = printerSnapshot;
+      this.failures = 0;
+      const ready = printerReports.some(
+        (p) =>
+          p.status === "ONLINE" &&
+          p.isEligibleForProductionPrint !== false &&
+          !p.isVirtual,
       );
+      this.nextDelayMs =
+        heartbeatData.onlinePrintingEnabled === false || !ready
+          ? 30_000
+          : this.heartbeatIntervalMs;
+      if (Date.now() - this.lastStatusWriteMs >= 60_000 || refreshPrinters) {
+        this.lastStatusWriteMs = Date.now();
+
+        const printerStatusList: PrinterStatusInfo[] = printerReports.map(
+          (p) => ({
+            name: p.windowsPrinterName,
+            displayName: p.displayName,
+            status: p.status,
+            statusReason: p.statusReason ?? null,
+            isDefault: p.isDefault ?? false,
+            isEligible: p.isEligibleForProductionPrint ?? true,
+          }),
+        );
+        void writeAgentStatus({
+          operationalState: "ONLINE",
+          agentVersion: this.agentVersion,
+          agentId: this.credentials.agentId,
+          displayName: this.credentials.displayName,
+          serverUrl: this.credentials.serverUrl,
+          lastHeartbeatMs: Date.now(),
+          printers: printerStatusList,
+          updatedAtMs: Date.now(),
+        }).catch(() => undefined);
+      }
 
       // Check if server returned a diagnostic test command
       if (heartbeatData.nextCommand?.type === "TEST_PRINT") {
@@ -202,9 +303,15 @@ export class AgentDaemon {
         this.stop();
         if (this.onError) this.onError(err);
       } else {
-        this.log(
-          `Heartbeat error: ${err instanceof Error ? err.message : String(err)}`,
-        );
+        this.failures++;
+        this.lastPrinterRefreshMs = -Infinity;
+        this.nextDelayMs =
+          Math.min(
+            30_000,
+            this.heartbeatIntervalMs * 2 ** Math.min(this.failures, 6),
+          ) *
+          (0.8 + this.random() * 0.2);
+        this.log("Agent communication failed; retrying with bounded backoff.");
         if (this.onError && err instanceof Error) this.onError(err);
       }
     } finally {
@@ -231,7 +338,13 @@ export class AgentDaemon {
       return;
     }
 
-    this.executedCommandIds.add(command.commandId);
+    for (const [id, expiry] of this.executedCommandIds) {
+      if (expiry <= Date.now()) this.executedCommandIds.delete(id);
+    }
+    // An explicit operator test also refreshes local inventory/capability caches.
+    await this.printerAdapter.listPrinters(true);
+    this.lastPrinterRefreshMs = -Infinity;
+    this.executedCommandIds.set(command.commandId, command.expiresAtMs);
     this.log(
       `Executing test print command ${command.commandId} for printer ${command.windowsPrinterName}...`,
     );

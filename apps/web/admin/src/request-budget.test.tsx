@@ -105,20 +105,20 @@ describe("Admin Live Orders Request Budget & Polling Optimization", () => {
     getLiveOrdersMock.mockResolvedValue({ ok: true, data: { orders: [] } });
     const { unmount } = render(<LiveOrdersPage onSessionExpired={vi.fn()} />);
     await vi.advanceTimersByTimeAsync(12 * 60 * 60 * 1000);
-    expect(getLiveOrdersMock).toHaveBeenCalledTimes(2161);
+    expect(getLiveOrdersMock).toHaveBeenCalledTimes(1082);
     Object.defineProperty(document, "hidden", {
       configurable: true,
       value: true,
     });
     document.dispatchEvent(new Event("visibilitychange"));
     await vi.advanceTimersByTimeAsync(12 * 60 * 60 * 1000);
-    expect(getLiveOrdersMock).toHaveBeenCalledTimes(2161);
+    expect(getLiveOrdersMock).toHaveBeenCalledTimes(1082);
     Object.defineProperty(document, "hidden", {
       configurable: true,
       value: false,
     });
     document.dispatchEvent(new Event("visibilitychange"));
-    expect(getLiveOrdersMock).toHaveBeenCalledTimes(2162);
+    expect(getLiveOrdersMock).toHaveBeenCalledTimes(1083);
     unmount();
     expect(vi.getTimerCount()).toBe(0);
   });

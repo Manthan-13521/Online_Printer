@@ -80,10 +80,11 @@ export class D1RetentionRepository implements RetentionRepository {
          WHERE storage_status <> 'DELETED'
            AND delete_after_ms IS NOT NULL
            AND delete_after_ms <= ?
+           AND (next_cleanup_attempt_at_ms IS NULL OR next_cleanup_attempt_at_ms <= ?)
          ORDER BY delete_after_ms ASC
          LIMIT ?`,
       )
-      .bind(nowMs, limit)
+      .bind(nowMs, nowMs, limit)
       .all<UploadRow>();
 
     return (result.results ?? []).map((row) => ({
@@ -103,10 +104,11 @@ export class D1RetentionRepository implements RetentionRepository {
     const result = await this.db
       .prepare(
         `UPDATE uploads
-         SET storage_status = 'DELETE_PENDING', updated_at_ms = ?
-         WHERE id = ? AND storage_status <> 'DELETED'`,
+         SET storage_status = 'DELETE_PENDING', updated_at_ms = ?, next_cleanup_attempt_at_ms = ?
+         WHERE id = ? AND storage_status <> 'DELETED' AND delete_after_ms <= ?
+           AND (next_cleanup_attempt_at_ms IS NULL OR next_cleanup_attempt_at_ms <= ?)`,
       )
-      .bind(nowMs, uploadId)
+      .bind(nowMs, nowMs + 300_000, uploadId, nowMs, nowMs)
       .run();
 
     return Number(result.meta.changes ?? 0) > 0;
@@ -123,16 +125,17 @@ export class D1RetentionRepository implements RetentionRepository {
           `UPDATE uploads
            SET storage_status = 'DELETED',
                deleted_at_ms = ?,
+               next_cleanup_attempt_at_ms = NULL,
                original_filename = 'document.pdf',
                updated_at_ms = ?
-           WHERE id = ?`,
+           WHERE id = ? AND storage_status <> 'DELETED'`,
         )
         .bind(nowMs, nowMs, uploadId),
       this.db
         .prepare(
           `INSERT INTO order_events
              (id, order_id, event_type, from_status, to_status, actor_type, actor_id, details_json, created_at_ms)
-           VALUES (?, ?, 'PDF_DELETED', NULL, NULL, 'SYSTEM', 'CRON_RETENTION', ?, ?)`,
+           SELECT ?, ?, 'PDF_DELETED', NULL, NULL, 'SYSTEM', 'CRON_RETENTION', ?, ? WHERE changes() = 1`,
         )
         .bind(
           crypto.randomUUID(),
@@ -156,10 +159,11 @@ export class D1RetentionRepository implements RetentionRepository {
          SET storage_status = 'DELETE_FAILED',
              deletion_attempt_count = deletion_attempt_count + 1,
              last_deletion_error = ?,
+             next_cleanup_attempt_at_ms = ? + MIN(3600000, 300000 * (1 << MIN(deletion_attempt_count, 4))),
              updated_at_ms = ?
-         WHERE id = ?`,
+         WHERE id = ? AND storage_status = 'DELETE_PENDING' `,
       )
-      .bind(errorMsg.slice(0, 500), nowMs, uploadId)
+      .bind(errorMsg.slice(0, 500), nowMs, nowMs, uploadId)
       .run();
   }
 
@@ -205,17 +209,9 @@ export class D1RetentionRepository implements RetentionRepository {
         .bind(nowMs, nowMs, orderId),
       this.db
         .prepare(
-          `UPDATE uploads
-           SET original_filename = 'document.pdf',
-               updated_at_ms = ?
-           WHERE order_id = ?`,
-        )
-        .bind(nowMs, orderId),
-      this.db
-        .prepare(
           `INSERT INTO order_events
              (id, order_id, event_type, from_status, to_status, actor_type, actor_id, details_json, created_at_ms)
-           VALUES (?, ?, 'PII_PURGED', NULL, NULL, 'SYSTEM', 'CRON_RETENTION', ?, ?)`,
+           SELECT ?, ?, 'PII_PURGED', NULL, NULL, 'SYSTEM', 'CRON_RETENTION', ?, ? WHERE changes() = 1`,
         )
         .bind(
           crypto.randomUUID(),
@@ -223,6 +219,14 @@ export class D1RetentionRepository implements RetentionRepository {
           JSON.stringify({ purgedAtMs: nowMs }),
           nowMs,
         ),
+      this.db
+        .prepare(
+          `UPDATE uploads
+           SET original_filename = 'document.pdf',
+               updated_at_ms = ?
+           WHERE order_id = ? AND original_filename IS NOT 'document.pdf'`,
+        )
+        .bind(nowMs, orderId),
     ];
 
     const results = await this.db.batch(statements);

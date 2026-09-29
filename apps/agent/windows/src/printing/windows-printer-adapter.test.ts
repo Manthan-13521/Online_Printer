@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   DevelopmentPrinterAdapter,
@@ -26,7 +26,108 @@ function createScriptCapturingExecutor(spoolJobId = "42", capsJson?: string) {
   return { executor, scripts };
 }
 
+afterEach(() => vi.useRealTimers());
+
 describe("WindowsPrinterAdapter with mock executor", () => {
+  it("reuses slow inventory and shares capability collection while keeping health fresh", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    let driver = "Driver A";
+    const scripts: string[] = [];
+    const adapter = new WindowsPrinterAdapter((script) => {
+      scripts.push(script);
+      return Promise.resolve(
+        JSON.stringify({
+          Name: "Printer",
+          DriverName: driver,
+          PortName: "USB001",
+          WorkOffline: false,
+          PrinterStatus: 3,
+          Color: false,
+          CapabilityDescriptions: ["Simplex"],
+          PrinterPaperNames: ["A4"],
+        }),
+      );
+    });
+    await adapter.listPrinters();
+    await adapter.getCapabilities("Printer");
+    expect(scripts).toHaveLength(1);
+    vi.setSystemTime(60_000);
+    await adapter.listPrinters();
+    expect((await adapter.getStatus("Printer")).availability).toBe("ONLINE");
+    expect(scripts[1]).not.toContain("CapabilityDescriptions");
+    vi.setSystemTime(120_000);
+    driver = "Driver B";
+    await adapter.listPrinters();
+    expect(scripts).toHaveLength(4); // Changed driver triggers an immediate full reconciliation.
+    expect(scripts[3]).toContain("CapabilityDescriptions");
+    vi.setSystemTime(420_000);
+    await adapter.listPrinters();
+    expect(scripts[4]).toContain("CapabilityDescriptions");
+    await adapter.listPrinters(true);
+    expect(scripts[5]).toContain("CapabilityDescriptions");
+  });
+
+  it.each([
+    [3, "ONLINE"],
+    [5, "ONLINE"],
+    [9, "OFFLINE"],
+    [10, "BLOCKED"],
+  ] as const)(
+    "interprets CIM error state %s without treating low-supply warnings as failures",
+    async (errorState, expected) => {
+      const adapter = new WindowsPrinterAdapter(() =>
+        Promise.resolve(
+          JSON.stringify({
+            Name: "Printer",
+            PrinterStatus: 3,
+            DetectedErrorState: errorState,
+          }),
+        ),
+      );
+      await adapter.listPrinters();
+      expect((await adapter.getStatus("Printer")).availability).toBe(expected);
+    },
+  );
+
+  it("does not report a printer ONLINE when Windows omits health information", async () => {
+    const adapter = new WindowsPrinterAdapter(() =>
+      Promise.resolve(JSON.stringify({ Name: "Printer" })),
+    );
+    await adapter.listPrinters();
+    expect((await adapter.getStatus("Printer")).availability).toBe("UNKNOWN");
+  });
+
+  it("drops stale ONLINE snapshots when discovery fails or the printer disappears", async () => {
+    let response = JSON.stringify({ Name: "Printer", PrinterStatus: 3 });
+    const adapter = new WindowsPrinterAdapter(() => Promise.resolve(response));
+    expect(await adapter.listPrinters()).toHaveLength(1);
+    response = "";
+    expect(await adapter.listPrinters()).toHaveLength(0);
+    expect((await adapter.getStatus("Printer")).availability).toBe("OFFLINE");
+  });
+
+  it("checks real printer readiness inside the submission process before Sumatra starts", async () => {
+    const { executor, scripts } = createScriptCapturingExecutor("42");
+    const adapter = new WindowsPrinterAdapter(executor);
+    await adapter.submitPdfJob({
+      printerId: "Test Printer",
+      localPdfPath: "C:/synthetic.pdf",
+    });
+    const submit = scripts.find((script) =>
+      script.includes("ProcessStartInfo"),
+    )!;
+    expect(submit).toContain(
+      "Printer readiness could not be confirmed before submission.",
+    );
+    expect(submit).toContain(
+      "$ready.DetectedErrorState -in @(4,6,7,8,9,10,11)",
+    );
+    expect(submit.indexOf("$ready = Get-CimInstance")).toBeLessThan(
+      submit.indexOf("ProcessStartInfo"),
+    );
+  });
+
   it("parses Win32_Printer output into PrinterSummary list", async () => {
     const mockExecutor = vi.fn(() =>
       Promise.resolve(

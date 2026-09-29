@@ -1,0 +1,135 @@
+{
+  "recordedAt": "2026-09-29T08:06:49.397013+00:00",
+  "hostPlatform": "macOS",
+  "gitHead": "61d0ff91ddb76b81304516186330423418c5b23e",
+  "workingTree": "Uncommitted prior work plus this pass; HEAD alone does not identify the tested source.",
+  "checks": [
+    {
+      "command": "pnpm test",
+      "exitCode": 0,
+      "testsPassed": 523,
+      "testsSkipped": 1,
+      "testFilesPassed": 70,
+      "log": ".tmp/pre-hardware/test-final.log"
+    },
+    {
+      "command": "pnpm typecheck",
+      "exitCode": 0,
+      "log": ".tmp/pre-hardware/typecheck-final.log"
+    },
+    {
+      "command": "pnpm lint",
+      "exitCode": 0,
+      "log": ".tmp/pre-hardware/lint-verified.log"
+    },
+    {
+      "command": "pnpm format:check",
+      "exitCode": 0,
+      "log": ".tmp/pre-hardware/format-check-final.log"
+    },
+    {
+      "command": "WRANGLER_HIDE_BANNER=true WRANGLER_SEND_METRICS=false pnpm db:validate",
+      "exitCode": 0,
+      "scope": "Isolated local D1 only",
+      "log": ".tmp/pre-hardware/db-final.log"
+    },
+    {
+      "command": "WRANGLER_HIDE_BANNER=true WRANGLER_SEND_METRICS=false pnpm build",
+      "exitCode": 0,
+      "scope": "Includes Worker dry-run, not deployment; existing customer chunk-size warning retained",
+      "log": ".tmp/pre-hardware/build-final.log"
+    },
+    {
+      "command": "pnpm build:agent:windows",
+      "exitCode": 0,
+      "scope": "Mac bundle and SEA preparation blob only. Native Windows EXE NOT VERIFIED.",
+      "log": ".tmp/pre-hardware/build-agent-windows.log"
+    },
+    {
+      "command": "node scripts/efficiency-audit.mjs",
+      "exitCode": 0,
+      "log": ".tmp/pre-hardware/efficiency.log"
+    },
+    {
+      "command": "node scripts/efficiency-budget.mjs",
+      "exitCode": 0
+    },
+    {
+      "command": "node scripts/calculate-free-tier-capacity.mjs",
+      "exitCode": 0
+    },
+    {
+      "command": "pnpm windows:verify",
+      "equivalentExecutedCommand": "node scripts/windows-verify.mjs",
+      "exitCode": 2,
+      "scope": "Expected non-Windows pending gate. No remote host contact."
+    },
+    {
+      "command": "node scripts/windows-verify.mjs --observe-seconds 0",
+      "exitCode": 1,
+      "scope": "Invalid duration rejected before diagnostics"
+    },
+    {
+      "command": "node --check scripts/windows-verify.mjs; node --check scripts/package-installer.mjs",
+      "exitCode": 0,
+      "scope": "JavaScript parsing only, not Windows compilation"
+    },
+    {
+      "command": "git diff --check",
+      "exitCode": 0
+    },
+    {
+      "command": "Scoped UTF-8 repository pattern scan",
+      "unresolvedFindings": 0,
+      "evidence": "docs/evidence/pre-hardware/secret-scan.json"
+    }
+  ],
+  "earlierFailures": [
+    {
+      "check": "Full test initial run",
+      "result": "3 stale download/setup expectations failed; repaired for explicit installer hash/version and reran complete suite."
+    },
+    {
+      "check": "Format initial run",
+      "result": "One index.test.ts formatting issue repaired; full formatting rechecked."
+    },
+    {
+      "check": "Build first and second run",
+      "result": "Wrangler bundled successfully but did not exit; identified external update-check connection, terminated only owned dry-run processes. Final full build passed with banner/update check and telemetry disabled."
+    }
+  ],
+  "simulations": [
+    {
+      "orders": 800,
+      "status": "PASS",
+      "duplicateAttempts": 0,
+      "lostJobs": 0,
+      "incorrectStates": 0,
+      "peakRssMiB": 141.71875,
+      "p95LocalApiMs": 70.9
+    },
+    {
+      "orders": 1000,
+      "status": "PASS",
+      "duplicateAttempts": 0,
+      "lostJobs": 0,
+      "incorrectStates": 0,
+      "peakRssMiB": 190.125,
+      "p95LocalApiMs": 74.1
+    }
+  ],
+  "notVerified": [
+    "C# compilation",
+    "Inno installer compilation/install/uninstall",
+    "PowerShell harness execution",
+    "Windows DPAPI",
+    "Windows process/startup/protocol behavior",
+    "Physical sheets and failure recovery",
+    "Actual Windows CPU/RAM/PowerShell launch rate",
+    "Actual Cloudflare production counters/cost",
+    "Signing and third-party distribution approval",
+    "Race-free maintenance/updater integration"
+  ],
+  "deploymentPerformed": false,
+  "windowsContactAttempted": false
+}

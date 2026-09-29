@@ -1,0 +1,58 @@
+{
+  "label": "MODELED process launches; SIMULATED with injected PowerShell executor on Mac. No Windows CPU/RAM measurement",
+  "stableOnePrinter": {
+    "beforePerHour": 126,
+    "afterPerHour": 60,
+    "beforePer15h": 1890,
+    "afterPer15h": 900,
+    "inventoryAndCapabilitiesPerHour": 12,
+    "healthOnlyPerHour": 48,
+    "standaloneCapabilitiesSteadyState": 0
+  },
+  "policy": {
+    "fullInventoryTtlMs": 300000,
+    "readyHealthMs": 60000,
+    "unavailableHealthMs": 30000,
+    "directCapabilityFallbackTtlMs": 600000,
+    "statusMicrocacheMs": 5000,
+    "beforeSubmission": "Fresh Win32_Printer readiness in the existing submission process before Sumatra starts"
+  },
+  "categories": [
+    {
+      "category": "PRINTER DISCOVERY",
+      "source": "WindowsPrinterAdapter.listPrinters",
+      "processes": "Startup, every five minutes, explicit diagnostic refresh, detected name/driver/port changes or error recovery"
+    },
+    {
+      "category": "PRINTER HEALTH",
+      "source": "WindowsPrinterAdapter.listPrinters/getStatus",
+      "processes": "One all-queue health invocation/minute while ready, 30s unavailable; shares full reconciliation invocation"
+    },
+    {
+      "category": "CAPABILITIES",
+      "source": "WindowsPrinterAdapter.parseCapabilities/getCapabilities",
+      "processes": "Included in full inventory; direct fallback only when cache missing/expired"
+    },
+    {
+      "category": "ACTIVE SPOOL MONITORING",
+      "source": "WindowsPrinterAdapter.submitPdfJob/getJobStatus",
+      "processes": "One submission process, internal Win32_PrintJob checks; separate status invocation per monitor observation (existing 1s cadence), not included in idle count"
+    },
+    {
+      "category": "RECOVERY",
+      "source": "PaidPrintExecutor and WindowsPrinterAdapter.getJobStatus/cancelJob",
+      "processes": "Observe saved spool identity without resubmission; explicit cancellation uses its own process"
+    },
+    {
+      "category": "ADMIN TEST",
+      "source": "AgentDaemon.handleTestPrintCommand",
+      "processes": "Explicit full inventory, submission and bounded monitor; not periodic"
+    },
+    {
+      "category": "CREDENTIALS/CONTROL CENTER",
+      "source": "storage/credential-store and control-center",
+      "processes": "DPAPI on credential operations; Control Center reads local agent-status.json, no second cloud polling loop"
+    }
+  ],
+  "limits": "New printer/driver/port identities invalidate caches when observed by health; other capability/default changes reconcile within five minutes or explicit refresh. Ready health has a 60s observation bound, not 5 minutes. Actual Windows driver/CIM behavior pending."
+}

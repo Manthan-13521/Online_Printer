@@ -1,0 +1,47 @@
+{
+  "label": "MODELED scheduling from source, checked with accelerated fake-clock Agent and actual local API simulations; not live traffic",
+  "normalReady": {
+    "intervalMs": 5000,
+    "httpPerHour": 720,
+    "httpPer15Hours": 10800,
+    "expectedUniformArrivalDiscoveryMs": 2500,
+    "worstConfiguredDiscoveryMs": 5000
+  },
+  "afterConfirmedStep": {
+    "intervalMs": 0,
+    "simultaneousSteps": false
+  },
+  "offOrPrinterUnavailable": {
+    "intervalMs": 30000,
+    "healthRefreshMs": 30000
+  },
+  "networkFailure": {
+    "exponential": true,
+    "jitterFactor": [0.8, 1.0],
+    "maxMs": 30000,
+    "afterReconnect": "Process returned work immediately; then normal 5-second ready cadence"
+  },
+  "liveness": {
+    "persistenceMs": 60000,
+    "offlineThresholdMs": 90000,
+    "tableWritesPerHour": 60,
+    "authoritativeStore": "agents.last_heartbeat_at_ms"
+  },
+  "idleD1": {
+    "beforeStatementsPerPulse": 3,
+    "afterStatementsPerPulse": 1,
+    "extraStatementOncePerMinute": 1,
+    "measuredStatementsPer15Hours": 11700,
+    "indexedAuthAndExists": true
+  },
+  "alternatives": {
+    "ready30Seconds": "Rejected: up to 30s discovery delay",
+    "temporary2Seconds": "Not selected: 1800 requests/hour versus 720; completed steps already schedule immediately and reconnect response already checks paid work"
+  },
+  "dashboard": {
+    "requestsPerHour": 120,
+    "hiddenRequests": 0,
+    "aggregation": "Already one endpoint; unchanged"
+  },
+  "customerConfig": "One mount fetch shared across routes; max-age=30, stale-while-revalidate=60 retained; payment and readiness checks remain server-authoritative/no-store"
+}

@@ -101,7 +101,10 @@ export async function handleAgentRequest(
     }
   }
 
-  if (request.method === "POST" && pathname === "/api/agent/heartbeat") {
+  if (
+    request.method === "POST" &&
+    (pathname === "/api/agent/heartbeat" || pathname === "/api/agent/pulse")
+  ) {
     const token = bearerToken(request);
     if (!token) {
       return error(
@@ -113,7 +116,12 @@ export async function handleAgentRequest(
     }
     try {
       const rawBody = await readJson(request);
-      const validation = validateAgentHeartbeatInput(rawBody);
+      const reportPrinters = pathname === "/api/agent/heartbeat";
+      const validation = validateAgentHeartbeatInput(
+        !reportPrinters && typeof rawBody === "object" && rawBody !== null
+          ? { ...rawBody, printers: [] }
+          : rawBody,
+      );
       if (!validation.ok) {
         return error(
           400,
@@ -122,7 +130,11 @@ export async function handleAgentRequest(
           NO_STORE,
         );
       }
-      const result = await service.heartbeat(token, validation.value);
+      const result = await service.heartbeat(
+        token,
+        validation.value,
+        reportPrinters,
+      );
       return ok(result, 200, NO_STORE);
     } catch (caught) {
       return mapAgentError(caught);

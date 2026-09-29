@@ -11,6 +11,9 @@
     "admin:bootstrap": "pnpm --filter @printgo/auth build && node scripts/bootstrap-admin.mjs",
     "build": "pnpm -r --if-present build",
     "build:agent:windows": "node scripts/build-agent-windows.mjs",
+    "package:installer": "node scripts/package-installer.mjs",
+    "shop:provision": "node scripts/provision-shop.mjs",
+    "shop:configure": "node scripts/configure-shop.mjs",
     "db:validate": "sh scripts/validate-d1-local.sh",
     "db:setup:local": "sh scripts/setup-d1-local.sh",
     "dev:customer": "pnpm --filter @printgo/customer dev",
@@ -21,7 +24,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit && pnpm -r --if-present typecheck"
+    "typecheck": "tsc --noEmit && pnpm -r --if-present typecheck",
+    "windows:verify": "node scripts/windows-verify.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.0",

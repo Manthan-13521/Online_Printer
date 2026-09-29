@@ -27,7 +27,12 @@ export class RetentionService {
     dryRun?: boolean;
   }): Promise<CleanupResult> {
     const nowMs = this.now();
-    const batchLimit = Math.max(1, Math.min(options?.batchLimit ?? 50, 100));
+    // 7 reads + (3 PDF writes + 3 PII writes) * 5 = at most 37 D1 queries.
+    // Five R2 deletes and admin authentication still fit the Free subrequest budget.
+    const requested = options?.batchLimit ?? 5;
+    const batchLimit = Number.isFinite(requested)
+      ? Math.max(1, Math.min(Math.floor(requested), 5))
+      : 5;
     const dryRun = options?.dryRun ?? false;
 
     const stats = await this.repository.getRetentionStats(nowMs);
@@ -58,6 +63,11 @@ export class RetentionService {
 
     // 1. Process expired PDF deletions in R2
     for (const upload of expiredUploads) {
+      // Defense in depth: branding is never part of the customer PDF lifecycle.
+      if (upload.r2ObjectKey.startsWith("branding/")) {
+        failedUploads++;
+        continue;
+      }
       const locked = await this.repository.markUploadDeletePending(
         upload.id,
         nowMs,

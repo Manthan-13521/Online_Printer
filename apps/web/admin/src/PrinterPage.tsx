@@ -1,3 +1,4 @@
+import { startVisiblePolling } from "../../polling";
 import type {
   AdminAgentDetails,
   AdminPrinterDetails,
@@ -6,7 +7,10 @@ import type {
 import { useEffect, useState } from "react";
 
 import { adminApi, AdminApiError, friendlyAdminError } from "./api";
-import { getWindowsAgentReleaseConfig } from "./agent-download";
+import {
+  getWindowsAgentReleaseConfig,
+  buildAgentConnectionUrl,
+} from "./agent-download";
 
 function formatRelativeTime(dateString: string | null): string {
   if (!dateString) return "Never";
@@ -126,11 +130,7 @@ export function PrinterPage({
   }, [hasActiveTestPrints, testPrints]);
 
   useEffect(() => {
-    void loadPrinters();
-    const interval = setInterval(() => {
-      void loadPrinters();
-    }, 15000);
-    return () => clearInterval(interval);
+    return startVisiblePolling(loadPrinters, 30_000);
   }, []);
 
   async function handleGeneratePairCode() {
@@ -256,11 +256,30 @@ export function PrinterPage({
     }
   }
 
+  const connectionLink = pairCode
+    ? buildAgentConnectionUrl(
+        pairCode,
+        String(import.meta.env.VITE_API_BASE_URL || window.location.origin),
+      )
+    : null;
   function copyPairCode() {
-    if (!pairCode) return;
-    void navigator.clipboard.writeText(pairCode);
-    setCopiedCode(true);
-    setTimeout(() => setCopiedCode(false), 3000);
+    if (!connectionLink) {
+      setError(
+        "Your technician must configure a secure shop connection before pairing.",
+      );
+      return;
+    }
+    void navigator.clipboard
+      .writeText(connectionLink)
+      .then(() => {
+        setCopiedCode(true);
+        setTimeout(() => setCopiedCode(false), 3000);
+      })
+      .catch(() =>
+        setError(
+          "The connection link could not be copied. Use Connect This PC instead.",
+        ),
+      );
   }
 
   const release = getWindowsAgentReleaseConfig();
@@ -371,7 +390,7 @@ export function PrinterPage({
                 aria-disabled="true"
                 title={release.statusNote}
               >
-                Download for Windows (Build Pending)
+                Windows installer pending
               </button>
             )}
           </div>
@@ -416,12 +435,12 @@ export function PrinterPage({
               computer connected to your printer.
             </li>
             <li>
-              <strong>Generate & copy pairing code:</strong> Click "Generate
-              Pairing Code" below.
+              <strong>Create a connection link:</strong> Click "Generate Pairing
+              Code" below.
             </li>
             <li>
-              <strong>Enter pairing code in Agent:</strong> Paste the code when
-              prompted in the agent console.
+              <strong>Connect this PC:</strong> Use the connection button, or
+              paste the copied connection link into Control Center.
             </li>
             <li>
               <strong>Select & enable detected printer:</strong> Verify your
@@ -450,8 +469,8 @@ export function PrinterPage({
                   Agent Pairing Code
                 </h3>
                 <p className="muted" style={{ margin: "0.25rem 0 0 0" }}>
-                  Run the PrintGo Windows Agent on your shop computer and enter
-                  this code when prompted.
+                  Open this page on your shop PC and connect through Control
+                  Center.
                 </p>
               </div>
               <button
@@ -465,15 +484,24 @@ export function PrinterPage({
             <div
               style={{
                 display: "flex",
+                flexWrap: "wrap",
                 alignItems: "center",
                 gap: "1rem",
                 margin: "1rem 0",
               }}
             >
+              <a
+                className="primary-button"
+                href={connectionLink ?? undefined}
+                aria-disabled={!connectionLink}
+                style={{ textDecoration: "none", display: "inline-block" }}
+              >
+                ⚡ Connect This PC Automatically
+              </a>
               <span
                 style={{
                   fontFamily: "monospace",
-                  fontSize: "2rem",
+                  fontSize: "1.75rem",
                   fontWeight: "bold",
                   letterSpacing: "0.2em",
                 }}
@@ -485,7 +513,7 @@ export function PrinterPage({
                 onClick={copyPairCode}
                 type="button"
               >
-                {copiedCode ? "Copied!" : "Copy Code"}
+                {copiedCode ? "Copied!" : "Copy Connection Link"}
               </button>
             </div>
             <p className="field-help" style={{ margin: 0 }}>

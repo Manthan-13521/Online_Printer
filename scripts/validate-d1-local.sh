@@ -12,59 +12,11 @@ trap cleanup EXIT INT TERM
 
 cd "$repository_root"
 
-pnpm --dir apps/api/worker exec wrangler d1 execute printgo-local \
-  --config="$repository_root/database/wrangler.local.jsonc" \
-  --local \
-  --persist-to="$validation_dir" \
-  --file="$repository_root/database/migrations/0001_initial_schema.sql"
-
-pnpm --dir apps/api/worker exec wrangler d1 execute printgo-local \
-  --config="$repository_root/database/wrangler.local.jsonc" \
-  --local \
-  --persist-to="$validation_dir" \
-  --file="$repository_root/database/migrations/0002_customer_draft_upload.sql"
-
-pnpm --dir apps/api/worker exec wrangler d1 execute printgo-local \
-  --config="$repository_root/database/wrangler.local.jsonc" \
-  --local \
-  --persist-to="$validation_dir" \
-  --file="$repository_root/database/migrations/0003_payment_idempotency.sql"
-
-pnpm --dir apps/api/worker exec wrangler d1 execute printgo-local \
-  --config="$repository_root/database/wrangler.local.jsonc" \
-  --local \
-  --persist-to="$validation_dir" \
-  --file="$repository_root/database/migrations/0004_customer_tracking.sql"
-
-pnpm --dir apps/api/worker exec wrangler d1 execute printgo-local \
-  --config="$repository_root/database/wrangler.local.jsonc" \
-  --local \
-  --persist-to="$validation_dir" \
-  --file="$repository_root/database/migrations/0005_printer_test_commands.sql"
-
-pnpm --dir apps/api/worker exec wrangler d1 execute printgo-local \
-  --config="$repository_root/database/wrangler.local.jsonc" \
-  --local \
-  --persist-to="$validation_dir" \
-  --file="$repository_root/database/migrations/0006_paid_print_execution.sql"
-
-pnpm --dir apps/api/worker exec wrangler d1 execute printgo-local \
-  --config="$repository_root/database/wrangler.local.jsonc" \
-  --local \
-  --persist-to="$validation_dir" \
-  --file="$repository_root/database/migrations/0007_performance_optimization_indexes.sql"
-
-pnpm --dir apps/api/worker exec wrangler d1 execute printgo-local \
-  --config="$repository_root/database/wrangler.local.jsonc" \
-  --local \
-  --persist-to="$validation_dir" \
-  --file="$repository_root/database/migrations/0008_production_printer_reliability.sql"
-
-pnpm --dir apps/api/worker exec wrangler d1 execute printgo-local \
-  --config="$repository_root/database/wrangler.local.jsonc" \
-  --local \
-  --persist-to="$validation_dir" \
-  --file="$repository_root/database/migrations/0009_retention_and_pii_purge.sql"
+for migration in "$repository_root"/database/migrations/*.sql; do
+  pnpm --dir apps/api/worker exec wrangler d1 execute printgo-local \
+    --config="$repository_root/database/wrangler.local.jsonc" --local \
+    --persist-to="$validation_dir" --file="$migration"
+done
 
 pnpm --dir apps/api/worker exec wrangler d1 execute printgo-local \
   --config="$repository_root/database/wrangler.local.jsonc" \

@@ -195,75 +195,8 @@ export function formatScenarioReport(name, input) {
   return out;
 }
 
+// Legacy export retained for historical stress comparisons. Current CLI model:
 if (process.argv[1]?.endsWith("calculate-free-tier-capacity.mjs")) {
-  const scenarios = [
-    {
-      name: "SCENARIO A — NORMAL (1,500 jobs/mo, 1 Agent, 2 MB PDF)",
-      input: {
-        completedJobsPerMonth: 1500,
-        abandonedSessionsPerMonth: 4500,
-        customerConfigCallsPerSession: 1,
-        trackingPollsPerJob: 6,
-        adminVisibleHoursPerDay: 12,
-        adminPollIntervalSeconds: 20,
-        agentCount: 1,
-        agentHeartbeatSeconds: 30,
-        averagePdfMb: 2,
-        failedPaymentPercent: 5,
-        unresolvedFailurePercent: 1,
-      },
-    },
-    {
-      name: "SCENARIO B — STRESS (1,500 jobs/mo, 7,500 abandoned, 2 Agents, 5 MB PDF, frequent tracking)",
-      input: {
-        completedJobsPerMonth: 1500,
-        abandonedSessionsPerMonth: 7500,
-        customerConfigCallsPerSession: 2,
-        trackingPollsPerJob: 12,
-        adminVisibleHoursPerDay: 12,
-        adminPollIntervalSeconds: 20,
-        agentCount: 2,
-        agentHeartbeatSeconds: 30,
-        averagePdfMb: 5,
-        failedPaymentPercent: 10,
-        unresolvedFailurePercent: 2,
-      },
-    },
-    {
-      name: "SCENARIO C — HIGH ACTIVITY DAY (100 jobs/day, heavy admin, 2 Agents)",
-      input: {
-        completedJobsPerMonth: 3000,
-        abandonedSessionsPerMonth: 9000,
-        customerConfigCallsPerSession: 1,
-        trackingPollsPerJob: 8,
-        adminVisibleHoursPerDay: 16,
-        adminPollIntervalSeconds: 15,
-        agentCount: 2,
-        agentHeartbeatSeconds: 30,
-        averagePdfMb: 3,
-        failedPaymentPercent: 5,
-        unresolvedFailurePercent: 1,
-      },
-    },
-    {
-      name: "SCENARIO D — MAX PDF BURST (25 MiB max uploads)",
-      input: {
-        completedJobsPerMonth: 1500,
-        abandonedSessionsPerMonth: 4500,
-        customerConfigCallsPerSession: 1,
-        trackingPollsPerJob: 6,
-        adminVisibleHoursPerDay: 12,
-        adminPollIntervalSeconds: 20,
-        agentCount: 1,
-        agentHeartbeatSeconds: 30,
-        averagePdfMb: 25,
-        failedPaymentPercent: 5,
-        unresolvedFailurePercent: 1,
-      },
-    },
-  ];
-
-  for (const s of scenarios) {
-    console.log(formatScenarioReport(s.name, s.input));
-  }
+  const { efficiencyBudget } = await import("./efficiency-budget.mjs");
+  console.log(JSON.stringify([60, 800, 1000].map(efficiencyBudget), null, 2));
 }

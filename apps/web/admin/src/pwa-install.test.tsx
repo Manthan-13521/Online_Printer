@@ -158,7 +158,7 @@ describe("Admin PWA Installation & Windows Agent Download", () => {
 
   it("returns safe unconfigured state from getWindowsAgentReleaseConfig when no URL is set", () => {
     const config = getWindowsAgentReleaseConfig();
-    expect(config.fileName).toBe("PrintGo-Agent.exe");
+    expect(config.fileName).toBe("PrintGo-Setup.exe");
     expect(config.isLive).toBe(false);
     expect(config.downloadUrl).toBeNull();
   });
@@ -180,15 +180,15 @@ describe("Admin PWA Installation & Windows Agent Download", () => {
 
     // Verify disabled Download button with truthful message
     const downloadBtn = screen.getByRole("button", {
-      name: /Download for Windows \(Build Pending\)/i,
+      name: /Windows installer pending/i,
     });
     expect((downloadBtn as HTMLButtonElement).disabled).toBe(true);
 
     // Verify setup steps
     expect(screen.getByText(/Download PrintGo Agent/i)).toBeTruthy();
     expect(screen.getByText(/Install on Windows/i)).toBeTruthy();
-    expect(screen.getByText(/Generate & copy pairing code/i)).toBeTruthy();
-    expect(screen.getByText(/Enter pairing code in Agent/i)).toBeTruthy();
+    expect(screen.getByText(/Create a connection link/i)).toBeTruthy();
+    expect(screen.getByText(/Connect this PC:/i)).toBeTruthy();
     expect(screen.getByText(/Select & enable detected printer/i)).toBeTruthy();
     expect(screen.getByText(/Run test print/i)).toBeTruthy();
   });
@@ -201,6 +201,10 @@ describe("Admin PWA Installation & Windows Agent Download", () => {
 
     const envRecord = import.meta.env as Record<string, string>;
     const originalEnv = envRecord.VITE_WINDOWS_AGENT_DOWNLOAD_URL ?? "";
+    const originalHash = envRecord.VITE_WINDOWS_AGENT_SHA256;
+    const originalVersion = envRecord.VITE_WINDOWS_AGENT_VERSION;
+    envRecord.VITE_WINDOWS_AGENT_SHA256 = "a".repeat(64);
+    envRecord.VITE_WINDOWS_AGENT_VERSION = "2.1.0";
     envRecord.VITE_WINDOWS_AGENT_DOWNLOAD_URL =
       "https://github.com/Manthan-13521/Online_Printer/releases/download/v2.0.0/PrintGo-Agent.exe";
 
@@ -214,10 +218,16 @@ describe("Admin PWA Installation & Windows Agent Download", () => {
         expect(link.getAttribute("href")).toBe(
           "https://github.com/Manthan-13521/Online_Printer/releases/download/v2.0.0/PrintGo-Agent.exe",
         );
-        expect(link.getAttribute("download")).toBe("PrintGo-Agent.exe");
+        expect(link.getAttribute("download")).toBe("PrintGo-Setup.exe");
       });
     } finally {
       envRecord.VITE_WINDOWS_AGENT_DOWNLOAD_URL = originalEnv;
+      if (originalHash === undefined)
+        delete envRecord.VITE_WINDOWS_AGENT_SHA256;
+      else envRecord.VITE_WINDOWS_AGENT_SHA256 = originalHash;
+      if (originalVersion === undefined)
+        delete envRecord.VITE_WINDOWS_AGENT_VERSION;
+      else envRecord.VITE_WINDOWS_AGENT_VERSION = originalVersion;
     }
   });
 });

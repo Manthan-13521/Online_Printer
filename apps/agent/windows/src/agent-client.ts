@@ -91,6 +91,7 @@ export class AgentClient {
             "X-PrintGo-Agent-Id": agentId,
           },
           body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(15_000),
         },
       );
     } catch (error) {
@@ -216,21 +217,27 @@ export class AgentClient {
     serverUrl: string,
     agentId: string,
     agentSecret: string,
-    report: AgentHeartbeatRequest,
+    report: Omit<AgentHeartbeatRequest, "printers"> & {
+      printers?: AgentHeartbeatRequest["printers"];
+    },
   ): Promise<AgentHeartbeatData> {
     const cleanUrl = normalizeAgentServerUrl(serverUrl);
 
     let response: Response;
     try {
-      response = await fetch(`${cleanUrl}/api/agent/heartbeat`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${agentSecret}`,
-          "X-PrintGo-Agent-Id": agentId,
+      response = await fetch(
+        `${cleanUrl}/api/agent/${report.printers === undefined ? "pulse" : "heartbeat"}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${agentSecret}`,
+            "X-PrintGo-Agent-Id": agentId,
+          },
+          body: JSON.stringify(report),
+          signal: AbortSignal.timeout(15_000),
         },
-        body: JSON.stringify(report),
-      });
+      );
     } catch (err: unknown) {
       throw new AgentApiError(
         "NETWORK_ERROR",
@@ -284,6 +291,7 @@ export class AgentClient {
             "X-PrintGo-Agent-Id": agentId,
           },
           body: JSON.stringify(report),
+          signal: AbortSignal.timeout(15_000),
         },
       );
     } catch (err: unknown) {

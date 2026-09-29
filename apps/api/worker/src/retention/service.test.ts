@@ -251,17 +251,17 @@ describe("RetentionService — Automated Cleanup & Privacy Purge", () => {
     expect(repo.purgeOrderPii).not.toHaveBeenCalled();
   });
 
-  it("respects batch limit bounds between 1 and 100", async () => {
+  it("caps cleanup to the per-invocation free-tier query budget", async () => {
     const repo = createMockRepository();
     const r2 = createMockR2Bucket();
 
     const service = new RetentionService(repo, r2, () => baseTime);
     await service.runCleanup({ batchLimit: 25 });
 
-    expect(repo.findExpiredUploads).toHaveBeenCalledWith(baseTime, 25);
+    expect(repo.findExpiredUploads).toHaveBeenCalledWith(baseTime, 5);
     expect(repo.findPiiPurgeCandidates).toHaveBeenCalledWith(
       baseTime - COMPLETED_CUSTOMER_PII_PURGE_MS,
-      25,
+      5,
     );
   });
 });

@@ -30,6 +30,8 @@ function isTerminalStatus(status: string): boolean {
     status === "PRINTED" ||
     status === "COMPLETED" ||
     status === "CANCELLED" ||
+    status === "FAILED" ||
+    status === "EXPIRED" ||
     status === "PAYMENT_NOT_RECEIVED"
   );
 }
@@ -47,6 +49,8 @@ export function TrackingPage({ jobCode }: { jobCode: string }) {
     let active = true;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const mountTime = Date.now();
+    terminalReachedRef.current = false;
+    let busy = false;
 
     const fragment = window.location.hash.slice(1);
     const fragmentToken = TOKEN_PATTERN.test(fragment) ? fragment : null;
@@ -65,7 +69,9 @@ export function TrackingPage({ jobCode }: { jobCode: string }) {
 
     const fetchStatus = () => {
       if (typeof document !== "undefined" && document.hidden) return;
-      if (terminalReachedRef.current) return;
+      if (terminalReachedRef.current || busy || !active) return;
+      if (timer) clearTimeout(timer);
+      busy = true;
       customerApi
         .tracking(jobCode, stored)
         .then((tracking) => {
@@ -90,7 +96,15 @@ export function TrackingPage({ jobCode }: { jobCode: string }) {
               ? "invalid"
               : "network",
           );
+          if (
+            caught instanceof Error &&
+            caught.message === "TRACKING_NOT_FOUND"
+          )
+            terminalReachedRef.current = true;
           scheduleNextPoll();
+        })
+        .finally(() => {
+          busy = false;
         });
     };
 
@@ -105,6 +119,7 @@ export function TrackingPage({ jobCode }: { jobCode: string }) {
     fetchStatus();
 
     const handleVisibilityChange = () => {
+      if (timer) clearTimeout(timer);
       if (typeof document !== "undefined" && !document.hidden && active) {
         if (!terminalReachedRef.current) {
           fetchStatus();
