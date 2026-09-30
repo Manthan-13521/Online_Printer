@@ -345,6 +345,8 @@ export interface AgentTestPrintCommand {
   commandId: string;
   printerId: string;
   windowsPrinterName: string;
+  printerDisplayName: string;
+  shopName: string;
   expiresAtMs: number;
 }
 

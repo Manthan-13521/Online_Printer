@@ -1235,61 +1235,6 @@
     ]
   },
   {
-    "sql": "SELECT COUNT(*) AS count FROM uploads\n           WHERE storage_status <> 'DELETED' AND retention_reason = 'UNPAID' AND delete_after_ms <= ?",
-    "plan": [
-      {
-        "id": 4,
-        "parent": 0,
-        "notused": 192,
-        "detail": "SEARCH uploads USING INDEX uploads_retention_cleanup_idx (delete_after_ms<?)"
-      }
-    ]
-  },
-  {
-    "sql": "SELECT COUNT(*) AS count FROM uploads\n           WHERE storage_status <> 'DELETED' AND retention_reason = 'PAYMENT_FAILED_OR_CANCELLED' AND delete_after_ms <= ?",
-    "plan": [
-      {
-        "id": 4,
-        "parent": 0,
-        "notused": 192,
-        "detail": "SEARCH uploads USING INDEX uploads_retention_cleanup_idx (delete_after_ms<?)"
-      }
-    ]
-  },
-  {
-    "sql": "SELECT COUNT(*) AS count FROM uploads\n           WHERE storage_status <> 'DELETED' AND retention_reason = 'COMPLETED' AND delete_after_ms <= ?",
-    "plan": [
-      {
-        "id": 4,
-        "parent": 0,
-        "notused": 192,
-        "detail": "SEARCH uploads USING INDEX uploads_retention_cleanup_idx (delete_after_ms<?)"
-      }
-    ]
-  },
-  {
-    "sql": "SELECT COUNT(*) AS count FROM uploads\n           WHERE storage_status <> 'DELETED' AND retention_reason = 'UNRESOLVED_PAID_FAILURE' AND delete_after_ms <= ?",
-    "plan": [
-      {
-        "id": 4,
-        "parent": 0,
-        "notused": 192,
-        "detail": "SEARCH uploads USING INDEX uploads_retention_cleanup_idx (delete_after_ms<?)"
-      }
-    ]
-  },
-  {
-    "sql": "SELECT COUNT(*) AS count FROM orders\n           WHERE status = 'COMPLETED' AND pii_purged_at_ms IS NULL AND completed_at_ms IS NOT NULL AND completed_at_ms <= ?",
-    "plan": [
-      {
-        "id": 4,
-        "parent": 0,
-        "notused": 49,
-        "detail": "SEARCH orders USING INDEX orders_status_completed_idx (status=? AND completed_at_ms>? AND completed_at_ms<?)"
-      }
-    ]
-  },
-  {
     "sql": "SELECT id, order_id, r2_object_key, retention_reason, delete_after_ms, deletion_attempt_count\n         FROM uploads\n         WHERE storage_status <> 'DELETED'\n           AND delete_after_ms IS NOT NULL\n           AND delete_after_ms <= ?\n           AND (next_cleanup_attempt_at_ms IS NULL OR next_cleanup_attempt_at_ms <= ?)\n         ORDER BY delete_after_ms ASC\n         LIMIT ?",
     "plan": [
       {

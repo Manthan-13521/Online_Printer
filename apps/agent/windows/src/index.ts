@@ -380,6 +380,9 @@ SumatraPDF:
         .catch(() => console.error("Agent log could not be saved."));
     },
     onError: (err: Error) => {
+      void log
+        .write(`[ERROR] ${sanitizeLogContent(err.message)}`)
+        .catch(() => undefined);
       if (err instanceof AgentAuthError && !authErrorCleared) {
         authErrorCleared = true;
         console.error(

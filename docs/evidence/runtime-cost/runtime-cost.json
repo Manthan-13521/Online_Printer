@@ -1,0 +1,207 @@
+{
+  "generatedAt": "2026-09-29T17:26:08.712Z",
+  "scope": "Local actual Worker routes with SQLite and mocked providers. No Cloudflare telemetry, Windows, physical printer, R2 network or payment provider.",
+  "idle": [
+    {
+      "label": "SIMULATED local current handlers; rows are SQLite returned/changed table rows, not Cloudflare D1 billed rows",
+      "seconds": 600,
+      "agentHttpRequests": 120,
+      "scheduledInvocations": 2,
+      "totalWorkerInvocationsIfCronIsCounted": 122,
+      "statements": 134,
+      "returnedRows": 120,
+      "changedRows": 10,
+      "r2": {
+        "PUT": 0,
+        "HEAD": 0,
+        "GET": 0,
+        "DELETE": 0
+      },
+      "httpRequests": 120,
+      "routes": {
+        "agent-job-poll": {
+          "endpoint": "agent-job-poll",
+          "calls": 120,
+          "statements": 130,
+          "returnedRows": 120,
+          "changedRows": 10,
+          "queryMs": 11.550963999999937
+        }
+      }
+    },
+    {
+      "label": "SIMULATED local current handlers; rows are SQLite returned/changed table rows, not Cloudflare D1 billed rows",
+      "seconds": 3600,
+      "agentHttpRequests": 720,
+      "scheduledInvocations": 12,
+      "totalWorkerInvocationsIfCronIsCounted": 732,
+      "statements": 804,
+      "returnedRows": 720,
+      "changedRows": 60,
+      "r2": {
+        "PUT": 0,
+        "HEAD": 0,
+        "GET": 0,
+        "DELETE": 0
+      },
+      "httpRequests": 720,
+      "routes": {
+        "agent-job-poll": {
+          "endpoint": "agent-job-poll",
+          "calls": 720,
+          "statements": 780,
+          "returnedRows": 720,
+          "changedRows": 60,
+          "queryMs": 57.08629200000098
+        }
+      }
+    },
+    {
+      "label": "SIMULATED local current handlers; rows are SQLite returned/changed table rows, not Cloudflare D1 billed rows",
+      "seconds": 54000,
+      "agentHttpRequests": 10800,
+      "scheduledInvocations": 180,
+      "totalWorkerInvocationsIfCronIsCounted": 10980,
+      "statements": 12060,
+      "returnedRows": 10800,
+      "changedRows": 900,
+      "r2": {
+        "PUT": 0,
+        "HEAD": 0,
+        "GET": 0,
+        "DELETE": 0
+      },
+      "httpRequests": 10800,
+      "routes": {
+        "agent-job-poll": {
+          "endpoint": "agent-job-poll",
+          "calls": 10800,
+          "statements": 11700,
+          "returnedRows": 10800,
+          "changedRows": 900,
+          "queryMs": 860.4793360000177
+        }
+      }
+    }
+  ],
+  "testPrint": {
+    "label": "MEASURED local current handlers; excludes the already-scheduled Agent poll and optional repeated Admin status polls",
+    "commandId": "31c0fc03-9712-4f5d-ab6b-75358b0c2a07",
+    "additionalHttpRequestsBeyondNormalAgentPolling": 4,
+    "normalPollUsedToClaim": 1,
+    "statements": 20,
+    "returnedRows": 13,
+    "changedRows": 5,
+    "r2": {
+      "PUT": 0,
+      "HEAD": 0,
+      "GET": 0,
+      "DELETE": 0
+    },
+    "httpRequests": 5,
+    "routes": {
+      "test-print-request": {
+        "endpoint": "test-print-request",
+        "calls": 1,
+        "statements": 6,
+        "returnedRows": 3,
+        "changedRows": 2,
+        "queryMs": 0.41024900000047637
+      },
+      "test-print-claim-with-next-poll": {
+        "endpoint": "test-print-claim-with-next-poll",
+        "calls": 1,
+        "statements": 5,
+        "returnedRows": 3,
+        "changedRows": 1,
+        "queryMs": 0.616168000000016
+      },
+      "test-print-submitted": {
+        "endpoint": "test-print-submitted",
+        "calls": 1,
+        "statements": 3,
+        "returnedRows": 2,
+        "changedRows": 1,
+        "queryMs": 0.4819990000000871
+      },
+      "test-print-result": {
+        "endpoint": "test-print-result",
+        "calls": 1,
+        "statements": 3,
+        "returnedRows": 2,
+        "changedRows": 1,
+        "queryMs": 0.5067920000001322
+      },
+      "test-print-admin-status": {
+        "endpoint": "test-print-admin-status",
+        "calls": 1,
+        "statements": 3,
+        "returnedRows": 3,
+        "changedRows": 0,
+        "queryMs": 0.13358300000027157
+      }
+    }
+  },
+  "uiPolls": {
+    "label": "MEASURED local empty-shop handler samples; visible tabs only, hidden tabs make zero calls",
+    "statements": 18,
+    "returnedRows": 31,
+    "changedRows": 0,
+    "r2": {
+      "PUT": 0,
+      "HEAD": 0,
+      "GET": 0,
+      "DELETE": 0
+    },
+    "httpRequests": 3,
+    "routes": {
+      "admin-dashboard-poll": {
+        "endpoint": "admin-dashboard-poll",
+        "calls": 1,
+        "statements": 10,
+        "returnedRows": 17,
+        "changedRows": 0,
+        "queryMs": 0.2984580000011192
+      },
+      "admin-printer-page-poll": {
+        "endpoint": "admin-printer-page-poll",
+        "calls": 1,
+        "statements": 6,
+        "returnedRows": 13,
+        "changedRows": 0,
+        "queryMs": 0.1775840000000244
+      },
+      "admin-live-orders-poll": {
+        "endpoint": "admin-live-orders-poll",
+        "calls": 1,
+        "statements": 2,
+        "returnedRows": 1,
+        "changedRows": 0,
+        "queryMs": 0.20895800000016607
+      }
+    }
+  },
+  "printerSync": {
+    "label": "MEASURED local unchanged full printer report after one minute; stable cycles use /pulse instead",
+    "statements": 4,
+    "returnedRows": 2,
+    "changedRows": 1,
+    "r2": {
+      "PUT": 0,
+      "HEAD": 0,
+      "GET": 0,
+      "DELETE": 0
+    },
+    "httpRequests": 1,
+    "routes": {
+      "printer-state-sync": {
+        "endpoint": "printer-state-sync",
+        "calls": 1,
+        "statements": 4,
+        "returnedRows": 2,
+        "changedRows": 1,
+        "queryMs": 0.3129159999998592
+      }
+    }
+  }
+}

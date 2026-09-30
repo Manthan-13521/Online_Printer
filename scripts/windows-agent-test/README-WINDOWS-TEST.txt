@@ -71,7 +71,7 @@ STEP 5: Print Diagnostic / Identification Test Page
      "[PrintGo Agent] Received diagnostic/test print request..."
      "[PrintGo Agent] Spooling PDF via SumatraPDF..."
      "[PrintGo Agent] Spool job completed successfully."
-   - Confirm the physical printer produces the diagnostic sheet with correct margins!
+   - Confirm one small page contains only the shop name, printer name, and "TEST PRINT CONFIRMED" with correct margins.
 
 --------------------------------------------------------------------------------
 4. COMMAND-LINE OPTIONS & ENVIRONMENT VARIABLES

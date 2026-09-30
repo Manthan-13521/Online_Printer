@@ -186,6 +186,8 @@ describe("AgentService", () => {
           type: "TEST_PRINT" as const,
           printerId: "printer-1",
           windowsPrinterName: "Canon_MF4700",
+          printerDisplayName: "Front Desk Canon",
+          shopName: "Central Xerox Shop",
           expiresAtMs: 1_800_000,
         }),
       ),
@@ -204,6 +206,8 @@ describe("AgentService", () => {
       type: "TEST_PRINT",
       printerId: "printer-1",
       windowsPrinterName: "Canon_MF4700",
+      printerDisplayName: "Front Desk Canon",
+      shopName: "Central Xerox Shop",
       expiresAtMs: 1_800_000,
     });
   });

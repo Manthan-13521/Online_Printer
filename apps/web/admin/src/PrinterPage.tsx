@@ -91,43 +91,49 @@ export function PrinterPage({
     }
   }
 
-  const hasActiveTestPrints = Object.values(testPrints).some(
-    (tp) =>
-      tp &&
-      (tp.status === "PENDING" ||
-        tp.status === "CLAIMED" ||
-        tp.status === "SUBMITTED"),
-  );
+  const activeTestPrinterIds = Object.entries(testPrints)
+    .filter(
+      ([, tp]) =>
+        tp &&
+        (tp.status === "PENDING" ||
+          tp.status === "CLAIMED" ||
+          tp.status === "SUBMITTED"),
+    )
+    .map(([printerId]) => printerId)
+    .sort();
+  const activeTestPrinterKey = activeTestPrinterIds.join("\n");
 
   useEffect(() => {
-    if (!hasActiveTestPrints) return;
-    const interval = setInterval(() => {
-      if (typeof document !== "undefined" && document.hidden) return;
-      const activePrinters = Object.entries(testPrints).filter(
-        ([, tp]) =>
-          tp &&
-          (tp.status === "PENDING" ||
-            tp.status === "CLAIMED" ||
-            tp.status === "SUBMITTED"),
-      );
-      for (const [printerId] of activePrinters) {
-        void adminApi
-          .getTestPrintStatus(printerId)
-          .then((res) => {
-            if (res.ok) {
+    if (!activeTestPrinterKey) return;
+    const printerIds = activeTestPrinterKey.split("\n");
+    const snapshots = new Map<string, string>();
+    return startVisiblePolling(
+      async () => {
+        let changed = false;
+        await Promise.all(
+          printerIds.map(async (printerId) => {
+            try {
+              const res = await adminApi.getTestPrintStatus(printerId);
+              if (!res.ok) return;
+              const snapshot = JSON.stringify(res.data.testPrint);
+              changed ||= snapshots.get(printerId) !== snapshot;
+              snapshots.set(printerId, snapshot);
               setTestPrints((prev) => ({
                 ...prev,
                 [printerId]: res.data.testPrint,
               }));
+            } catch {
+              // A diagnostic-status refresh is informational. The Agent and the
+              // command record remain authoritative and the next poll retries.
             }
-          })
-          .catch(() => {
-            // Ignore background poll errors
-          });
-      }
-    }, 2000);
-    return () => clearInterval(interval);
-  }, [hasActiveTestPrints, testPrints]);
+          }),
+        );
+        return changed;
+      },
+      2_000,
+      5_000,
+    );
+  }, [activeTestPrinterKey]);
 
   useEffect(() => {
     return startVisiblePolling(loadPrinters, 30_000);

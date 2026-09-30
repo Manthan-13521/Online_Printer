@@ -130,6 +130,8 @@ describe("RetentionService — Automated Cleanup & Privacy Purge", () => {
     expect(result.processedUploads).toBe(1);
     expect(result.deletedUploads).toBe(1);
     expect(result.failedUploads).toBe(0);
+    expect(result.stats).toBeNull();
+    expect(repo.getRetentionStats).not.toHaveBeenCalled();
     expect(repo.markUploadDeletePending).toHaveBeenCalledWith(
       "upload_1",
       baseTime,
@@ -243,6 +245,8 @@ describe("RetentionService — Automated Cleanup & Privacy Purge", () => {
     const result = await service.runCleanup({ dryRun: true });
 
     expect(result.dryRun).toBe(true);
+    expect(result.stats).not.toBeNull();
+    expect(repo.getRetentionStats).toHaveBeenCalledTimes(1);
     expect(result.processedUploads).toBe(1);
     expect(result.deletedUploads).toBe(0);
     expect(result.purgedPiiCount).toBe(0);

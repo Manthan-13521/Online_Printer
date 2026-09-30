@@ -10,6 +10,10 @@ import type {
   CredentialStore,
 } from "./storage/credential-store";
 
+vi.mock("./storage/status-file", () => ({
+  writeAgentStatus: vi.fn(() => Promise.resolve()),
+}));
+
 function createMockStore(
   initialCreds: AgentCredentials | null = null,
 ): CredentialStore {
@@ -225,6 +229,185 @@ describe("AgentDaemon", () => {
 
     // CRITICAL: client.pair must NEVER be called, preserving the server's one-time pair code!
     expect(mockClient.pair).not.toHaveBeenCalled();
+  });
+
+  it("keeps running and schedules the next pulse after a successful test print", async () => {
+    const store = createMockStore({
+      agentId: "agent_1",
+      agentSecret: "secret_1",
+      serverUrl: "https://api.printgo.shop",
+      displayName: "Front Desk PC",
+    });
+    const adapter = createMockAdapter();
+    vi.mocked(adapter.submitPdfJob).mockResolvedValue({ spoolJobId: "451" });
+    vi.mocked(adapter.getJobStatus).mockResolvedValue({
+      state: "COMPLETED_OR_REMOVED",
+      spoolJobId: "451",
+    });
+    const client = {
+      sendHeartbeat: vi
+        .fn()
+        .mockResolvedValueOnce({
+          acknowledged: true,
+          serverTimeMs: 1,
+          nextCommand: {
+            type: "TEST_PRINT",
+            commandId: "cmd-success",
+            printerId: "printer-1",
+            windowsPrinterName: "p1",
+            printerDisplayName: "Front Desk Canon",
+            shopName: "Central Xerox Shop",
+            expiresAtMs: Date.now() + 60_000,
+          },
+        })
+        .mockResolvedValue({ acknowledged: true, serverTimeMs: 2 }),
+      reportCommand: vi.fn(() => Promise.resolve()),
+    } as unknown as AgentClient;
+    const daemon = new AgentDaemon({
+      client,
+      credentialStore: store,
+      printerAdapter: adapter,
+    });
+
+    await daemon.start();
+    expect(daemon.isRunning()).toBe(true);
+    expect(client.reportCommand).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(client.sendHeartbeat).toHaveBeenCalledTimes(2);
+    expect(daemon.isRunning()).toBe(true);
+    daemon.stop();
+  });
+
+  it.each([
+    ["child process failure", "submit", new Error("Sumatra exited 1")],
+    ["printer discovery error", "discover", new Error("CIM unavailable")],
+  ])(
+    "keeps running after test-print %s",
+    async (_label, failurePoint, failure) => {
+      const store = createMockStore({
+        agentId: "agent_1",
+        agentSecret: "secret_1",
+        serverUrl: "https://api.printgo.shop",
+        displayName: "Front Desk PC",
+      });
+      const adapter = createMockAdapter();
+      if (failurePoint === "submit") {
+        vi.mocked(adapter.submitPdfJob).mockRejectedValue(failure);
+      } else {
+        vi.mocked(adapter.listPrinters)
+          .mockResolvedValueOnce([
+            { id: "p1", displayName: "Printer 1", isDefault: true },
+          ])
+          .mockRejectedValueOnce(failure);
+      }
+      const client = {
+        sendHeartbeat: vi.fn(() =>
+          Promise.resolve({
+            acknowledged: true,
+            serverTimeMs: 1,
+            nextCommand: {
+              type: "TEST_PRINT" as const,
+              commandId: `cmd-${failurePoint}`,
+              printerId: "printer-1",
+              windowsPrinterName: "p1",
+              printerDisplayName: "Printer 1",
+              shopName: "Test Shop",
+              expiresAtMs: Date.now() + 60_000,
+            },
+          }),
+        ),
+        reportCommand: vi.fn(() => Promise.resolve()),
+      } as unknown as AgentClient;
+      const daemon = new AgentDaemon({
+        client,
+        credentialStore: store,
+        printerAdapter: adapter,
+      });
+
+      await daemon.start();
+      expect(daemon.isRunning()).toBe(true);
+      expect(client.reportCommand).toHaveBeenCalledWith(
+        expect.any(String),
+        "agent_1",
+        "secret_1",
+        `cmd-${failurePoint}`,
+        expect.objectContaining({ status: "FAILED" }),
+      );
+      daemon.stop();
+    },
+  );
+
+  it("keeps running when test-print acknowledgement and the error callback fail", async () => {
+    const adapter = createMockAdapter();
+    vi.mocked(adapter.submitPdfJob).mockResolvedValue({ spoolJobId: "452" });
+    vi.mocked(adapter.getJobStatus).mockResolvedValue({
+      state: "COMPLETED_OR_REMOVED",
+      spoolJobId: "452",
+    });
+    const client = {
+      sendHeartbeat: vi.fn(() =>
+        Promise.resolve({
+          acknowledged: true,
+          serverTimeMs: 1,
+          nextCommand: {
+            type: "TEST_PRINT" as const,
+            commandId: "cmd-ack-failure",
+            printerId: "printer-1",
+            windowsPrinterName: "p1",
+            printerDisplayName: "Printer 1",
+            shopName: "Test Shop",
+            expiresAtMs: Date.now() + 60_000,
+          },
+        }),
+      ),
+      reportCommand: vi.fn(() => Promise.reject(new Error("network down"))),
+    } as unknown as AgentClient;
+    const daemon = new AgentDaemon({
+      client,
+      credentialStore: createMockStore({
+        agentId: "agent_1",
+        agentSecret: "secret_1",
+        serverUrl: "https://api.printgo.shop",
+        displayName: "Front Desk PC",
+      }),
+      printerAdapter: adapter,
+      onError: () => {
+        throw new Error("observer failed");
+      },
+    });
+
+    await expect(daemon.start()).resolves.toBe(true);
+    expect(daemon.isRunning()).toBe(true);
+    daemon.stop();
+  });
+
+  it("survives a scheduled network interruption and resumes polling", async () => {
+    const client = {
+      sendHeartbeat: vi
+        .fn()
+        .mockResolvedValueOnce({ acknowledged: true, serverTimeMs: 1 })
+        .mockRejectedValueOnce(new Error("network interrupted"))
+        .mockResolvedValue({ acknowledged: true, serverTimeMs: 2 }),
+    } as unknown as AgentClient;
+    const daemon = new AgentDaemon({
+      client,
+      credentialStore: createMockStore({
+        agentId: "agent_1",
+        agentSecret: "secret_1",
+        serverUrl: "https://api.printgo.shop",
+        displayName: "Front Desk PC",
+      }),
+      printerAdapter: createMockAdapter(),
+      random: () => 1,
+    });
+
+    await daemon.start();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(daemon.isRunning()).toBe(true);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(client.sendHeartbeat).toHaveBeenCalledTimes(3);
+    expect(daemon.isRunning()).toBe(true);
+    daemon.stop();
   });
 
   it("warns and re-throws if credential store save fails after server pairing", async () => {

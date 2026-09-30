@@ -272,7 +272,9 @@ async function scale(target) {
     );
     await work.heartbeat(0);
     // Use both two-step orders and document-only orders. One Agent owns the queue.
-    for (const burst of [10, 25, 50]) {
+    for (const requestedBurst of [10, 25, 50]) {
+      const burst = Math.min(requestedBurst, target - paid);
+      if (burst <= 0) break;
       simulatedNow += Math.floor((15 * 3600_000 * burst) / target);
       await work.heartbeat(0);
       r.db
@@ -302,6 +304,7 @@ async function scale(target) {
         "Concurrent pulses cannot create multiple active attempts",
       );
       for (let i = 0; i < burst * 2; i++) await work.heartbeat(0);
+      peakRSS = Math.max(peakRSS, process.memoryUsage().rss / 1048576);
       assert.equal(
         r.db
           .prepare("SELECT COUNT(*) n FROM orders WHERE status='COMPLETED'")
@@ -404,7 +407,7 @@ async function scale(target) {
       const beforeQueries = r.totals.statements;
       const beforeDeletes = r.totals.r2.DELETE;
       await retention.runCleanup({ batchLimit: 100 });
-      assert.ok(r.totals.statements - beforeQueries <= 37);
+      assert.ok(r.totals.statements - beforeQueries <= 32);
       assert.ok(r.totals.r2.DELETE - beforeDeletes <= 5);
     }
     assert.equal(
@@ -476,8 +479,6 @@ try {
     JSON.stringify(idle, null, 2) + "\n",
   );
   for (const target of [60, 800, 1000]) {
-    // The smallest scenario uses the capacity model; bursts require at least 85 orders.
-    if (target === 60) continue;
     const result = await scale(target);
     results.push(result);
     writeFileSync(

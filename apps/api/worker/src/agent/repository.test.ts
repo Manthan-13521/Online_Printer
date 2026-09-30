@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { D1AgentRepository } from "./repository.js";
+import { D1AgentRepository, toAdminTestPrintDetails } from "./repository.js";
 
 const schemaSql = readFileSync(
   new URL(
@@ -173,4 +173,33 @@ describe("D1AgentRepository safety invariants", () => {
       last_status_at_ms: 2_000,
     });
   });
+
+  it.each(["PENDING", "CLAIMED", "SUBMITTED"])(
+    "presents stale %s diagnostics as terminal without losing spool identity",
+    (status) => {
+      expect(
+        toAdminTestPrintDetails(
+          {
+            id: "40000000-0000-4000-8000-000000000001",
+            printer_id: "30000000-0000-4000-8000-000000000001",
+            agent_id: "20000000-0000-4000-8000-000000000002",
+            status,
+            spooler_job_id: status === "SUBMITTED" ? "451" : null,
+            failure_code: null,
+            failure_detail: null,
+            created_at_ms: 1_000,
+            expires_at_ms: 2_000,
+            claimed_at_ms: status === "PENDING" ? null : 1_500,
+            finished_at_ms: null,
+          },
+          2_001,
+        ),
+      ).toEqual(
+        expect.objectContaining({
+          status: "EXPIRED",
+          spoolerJobId: status === "SUBMITTED" ? "451" : null,
+        }),
+      );
+    },
+  );
 });

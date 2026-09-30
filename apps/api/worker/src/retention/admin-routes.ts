@@ -82,6 +82,7 @@ export async function handleAdminRetentionRequest(
 
     const result = await service.runCleanup({
       dryRun,
+      includeStats: true,
       ...(batchLimit !== undefined ? { batchLimit } : {}),
     });
     return withAdminCors(ok(result), env.ADMIN_ALLOWED_ORIGIN);

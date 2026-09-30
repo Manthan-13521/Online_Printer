@@ -137,6 +137,46 @@ describe("AgentClient", () => {
           Authorization: "Bearer secret_abc",
           "X-PrintGo-Agent-Id": "agent_99",
         },
+        body: JSON.stringify({
+          agentVersion: "2.0.0",
+          operationalState: "ONLINE",
+          printers: [],
+        }),
+      }),
+    );
+  });
+
+  it("uses the read-mostly pulse endpoint when printers are unchanged", async () => {
+    global.fetch = vi.fn().mockResolvedValueOnce(
+      mockResponse(200, true, {
+        ok: true,
+        data: { acknowledged: true, serverTimeMs: 1_234_567_890 },
+      }),
+    );
+
+    const client = new AgentClient();
+    const result = await client.sendHeartbeat(
+      "https://api.printgo.shop",
+      "agent_99",
+      "secret_abc",
+      {
+        agentVersion: "2.1.0",
+        operationalState: "ONLINE",
+      },
+    );
+
+    expect(result).toEqual({
+      acknowledged: true,
+      serverTimeMs: 1_234_567_890,
+    });
+    expect(global.fetch).toHaveBeenCalledWith(
+      "https://api.printgo.shop/api/agent/pulse",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          agentVersion: "2.1.0",
+          operationalState: "ONLINE",
+        }),
       }),
     );
   });

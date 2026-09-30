@@ -5,8 +5,8 @@
       "orders": 1,
       "requests": 16,
       "requestsPerOrder": 16,
-      "returnedRows": 142,
-      "returnedRowsPerOrder": 142,
+      "returnedRows": 137,
+      "returnedRowsPerOrder": 137,
       "tableRowsWritten": 46,
       "writesPerOrderExcludingBackground": 45,
       "tables": {
@@ -444,8 +444,8 @@
       "orders": 10,
       "requests": 160,
       "requestsPerOrder": 16,
-      "returnedRows": 1308,
-      "returnedRowsPerOrder": 130.8,
+      "returnedRows": 1298,
+      "returnedRowsPerOrder": 129.8,
       "tableRowsWritten": 460,
       "writesPerOrderExcludingBackground": 45,
       "tables": {
@@ -883,8 +883,8 @@
       "orders": 60,
       "requests": 960,
       "requestsPerOrder": 16,
-      "returnedRows": 7808,
-      "returnedRowsPerOrder": 130.13333333333333,
+      "returnedRows": 7748,
+      "returnedRowsPerOrder": 129.13333333333333,
       "tableRowsWritten": 2760,
       "writesPerOrderExcludingBackground": 45,
       "tables": {
@@ -1322,8 +1322,8 @@
       "orders": 800,
       "requests": 12800,
       "requestsPerOrder": 16,
-      "returnedRows": 104008,
-      "returnedRowsPerOrder": 130.01,
+      "returnedRows": 103208,
+      "returnedRowsPerOrder": 129.01,
       "tableRowsWritten": 36800,
       "writesPerOrderExcludingBackground": 45,
       "tables": {

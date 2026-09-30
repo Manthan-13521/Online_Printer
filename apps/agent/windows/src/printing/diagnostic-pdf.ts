@@ -5,9 +5,6 @@ import * as path from "node:path";
 
 export interface DiagnosticPdfOptions {
   printerDisplayName: string;
-  agentDisplayName: string;
-  commandId?: string;
-  timestamp?: Date;
   shopName?: string;
 }
 
@@ -28,77 +25,27 @@ function escapePdfText(text: string): string {
 export function generateDiagnosticPdfBuffer(
   options: DiagnosticPdfOptions,
 ): Buffer {
-  const now = options.timestamp ?? new Date();
-  const dateStr = now
-    .toISOString()
-    .replace("T", " ")
-    .replace(/\.\d{3}Z$/, " UTC");
-  const shopName = options.shopName ?? "PrintGo Diagnostics";
-  const agentName = options.agentDisplayName || "PrintGo Agent";
+  const shopName = options.shopName?.trim() || "PRINTGO";
   const printerName =
     options.printerDisplayName || "Configured Windows Printer";
-  const commandId = options.commandId ?? "manual-test";
 
   // Build the text commands for the PDF content stream
   // A4 dimensions: 595 x 842 points. Origin (0,0) is bottom-left.
   const lines: string[] = [
-    // Header separator line
-    "0.5 w",
-    "50 790 m 545 790 l S",
-
-    // Title
     "BT",
-    "/F1 20 Tf",
+    "/F1 18 Tf",
     "50 760 Td",
-    `(${escapePdfText("PRINTGO TEST PAGE")}) Tj`,
+    `(${escapePdfText(shopName)}) Tj`,
     "ET",
-
-    // Subtitle
+    "BT",
+    "/F1 12 Tf",
+    "50 720 Td",
+    `(${escapePdfText(`Printer: ${printerName}`)}) Tj`,
+    "ET",
     "BT",
     "/F1 14 Tf",
-    "50 735 Td",
-    `(${escapePdfText("NOT A CUSTOMER ORDER")}) Tj`,
-    "ET",
-
-    // Divider line
-    "50 715 m 545 715 l S",
-
-    // Diagnostics details
-    "BT",
-    "/F1 11 Tf",
-    "18 TL", // Leading
-    "50 685 Td",
-    `(${escapePdfText(`Shop: ${shopName}`)}) Tj T*`,
-    `(${escapePdfText(`Agent: ${agentName}`)}) Tj T*`,
-    `(${escapePdfText(`Printer: ${printerName}`)}) Tj T*`,
-    `(${escapePdfText(`Date / Time: ${dateStr}`)}) Tj T*`,
-    `(${escapePdfText(`Command ID: ${commandId}`)}) Tj T*`,
-    `(${escapePdfText("Test Type: Local Diagnostic Connectivity Verification")}) Tj T*`,
-    `(${escapePdfText("Paper Size: A4 (Standard)")}) Tj T*`,
-    `(${escapePdfText("Copies: 1")}) Tj T*`,
-    "ET",
-
-    // Box outline for status note
-    "0.75 w",
-    "50 460 495 65 re S",
-
-    "BT",
-    "/F1 10 Tf",
-    "15 TL",
-    "60 505 Td",
-    `(${escapePdfText("SUCCESSFUL SPOOL SUBMISSION PROVES THAT:")}) Tj T*`,
-    `(${escapePdfText("- The Windows Agent received and validated this test command.")}) Tj T*`,
-    `(${escapePdfText("- The Windows print spooler accepted the local diagnostic document.")}) Tj T*`,
-    `(${escapePdfText("- Communication between PrintGo cloud and the shop computer is operational.")}) Tj T*`,
-    "ET",
-
-    // Footer divider and footer text
-    "0.5 w",
-    "50 80 m 545 80 l S",
-    "BT",
-    "/F1 9 Tf",
-    "50 65 Td",
-    `(${escapePdfText("PrintGo V2 - Diagnostic Document - No Customer Files or R2 Objects Used")}) Tj`,
+    "50 680 Td",
+    `(${escapePdfText("TEST PRINT CONFIRMED")}) Tj`,
     "ET",
   ];
 

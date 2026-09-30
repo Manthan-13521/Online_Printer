@@ -240,4 +240,43 @@ describe("D1PaymentReadiness", () => {
       printerId: "printer_mono",
     });
   });
+
+  it("regression: agent process alive but heartbeat stops updating -> fails closed as AGENT_OFFLINE", async () => {
+    let agentHeartbeatQueryCount = 0;
+    const mockDb = createMockDb({
+      installation: () => Promise.resolve({ online_printing_enabled: 1 }),
+      agents: () => {
+        agentHeartbeatQueryCount++;
+        // Simulates D1 query: WHERE last_heartbeat_at_ms >= (nowMs - 90_000)
+        // When heartbeat stopped 8 minutes ago, no agent rows match
+        return Promise.resolve([]);
+      },
+      printers: () =>
+        Promise.resolve([
+          {
+            id: "printer_hp",
+            status: "ONLINE",
+            capabilities_json: JSON.stringify({
+              colour: false,
+              duplex: true,
+              paperSizes: ["A4"],
+            }),
+          },
+        ]),
+    });
+    const readiness = new D1PaymentReadiness(mockDb, { APP_ENV: "production" });
+
+    const result = await readiness.check({
+      paperSize: "A4",
+      colorMode: "BW",
+      sides: "DOUBLE",
+    });
+
+    expect(result).toEqual({
+      ready: false,
+      reason: "AGENT_OFFLINE",
+      message: "The shop printer agent is currently offline.",
+    });
+    expect(agentHeartbeatQueryCount).toBe(1);
+  });
 });

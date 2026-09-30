@@ -158,7 +158,16 @@ export class AgentDaemon {
     if (!this.running) return;
     this.timer = setTimeout(() => {
       this.timer = null;
-      void this.pulse().finally(() => this.schedulePulse());
+      void this.pulse()
+        .catch((err: unknown) => {
+          // Last-resort boundary: a programming or callback failure in one
+          // iteration must not become an unhandled rejection that kills the
+          // long-running Agent.
+          const error = err instanceof Error ? err : new Error(String(err));
+          this.log(`Unexpected Agent iteration failure: ${error.message}`);
+          this.notifyError(error);
+        })
+        .finally(() => this.schedulePulse());
     }, this.nextDelayMs);
   }
 
@@ -290,10 +299,18 @@ export class AgentDaemon {
         await this.handleTestPrintCommand(heartbeatData.nextCommand);
       }
       if (heartbeatData.printJob?.type === "PAID_PRINT_JOB") {
-        await this.paidPrintExecutor.handle(
-          this.credentials,
-          heartbeatData.printJob,
-        );
+        try {
+          await this.paidPrintExecutor.handle(
+            this.credentials,
+            heartbeatData.printJob,
+          );
+        } catch (err: unknown) {
+          const error = err instanceof Error ? err : new Error(String(err));
+          this.log(
+            `Paid print operation failed inside its safety boundary: ${error.message}`,
+          );
+          this.notifyError(error);
+        }
       }
     } catch (err: unknown) {
       if (err instanceof AgentAuthError) {
@@ -301,7 +318,7 @@ export class AgentDaemon {
           `Agent authorization failed: ${err.message}. Stopping daemon.`,
         );
         this.stop();
-        if (this.onError) this.onError(err);
+        this.notifyError(err);
       } else {
         this.failures++;
         this.lastPrinterRefreshMs = -Infinity;
@@ -311,8 +328,11 @@ export class AgentDaemon {
             this.heartbeatIntervalMs * 2 ** Math.min(this.failures, 6),
           ) *
           (0.8 + this.random() * 0.2);
-        this.log("Agent communication failed; retrying with bounded backoff.");
-        if (this.onError && err instanceof Error) this.onError(err);
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        this.log(
+          `Agent communication failed: ${errorMsg}; retrying with bounded backoff.`,
+        );
+        if (err instanceof Error) this.notifyError(err);
       }
     } finally {
       this.isBeating = false;
@@ -341,9 +361,6 @@ export class AgentDaemon {
     for (const [id, expiry] of this.executedCommandIds) {
       if (expiry <= Date.now()) this.executedCommandIds.delete(id);
     }
-    // An explicit operator test also refreshes local inventory/capability caches.
-    await this.printerAdapter.listPrinters(true);
-    this.lastPrinterRefreshMs = -Infinity;
     this.executedCommandIds.set(command.commandId, command.expiresAtMs);
     this.log(
       `Executing test print command ${command.commandId} for printer ${command.windowsPrinterName}...`,
@@ -351,11 +368,16 @@ export class AgentDaemon {
 
     let tempPdfPath: string | null = null;
     try {
+      // An explicit operator test also refreshes local inventory/capability
+      // caches. Keep this inside the per-command boundary: discovery failure
+      // is a failed test, not an Agent-process failure.
+      await this.printerAdapter.listPrinters(true);
+      this.lastPrinterRefreshMs = -Infinity;
+
       // 1. Generate local diagnostic document
       tempPdfPath = await createDiagnosticPdfFile({
-        printerDisplayName: command.windowsPrinterName,
-        agentDisplayName: this.credentials.displayName,
-        commandId: command.commandId,
+        shopName: command.shopName,
+        printerDisplayName: command.printerDisplayName,
       });
 
       // 2. Submit to Windows printer via adapter
@@ -422,9 +444,11 @@ export class AgentDaemon {
         },
       );
     } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error(String(err));
       this.log(
-        `Test print failed: ${err instanceof Error ? err.message : String(err)}`,
+        `Test print failed: ${error.message}. The Agent will remain running.`,
       );
+      this.notifyError(error);
       try {
         await this.client.reportCommand(
           this.credentials.serverUrl,
@@ -434,7 +458,7 @@ export class AgentDaemon {
           {
             status: "FAILED",
             failureCode: "PRINTER_ERROR",
-            failureDetail: err instanceof Error ? err.message : String(err),
+            failureDetail: error.message,
           },
         );
       } catch {
@@ -450,9 +474,27 @@ export class AgentDaemon {
 
   private log(message: string): void {
     if (this.onStatusChange) {
-      this.onStatusChange(message);
+      try {
+        this.onStatusChange(message);
+      } catch (err: unknown) {
+        console.error(
+          "[PrintGo Agent] Status callback failed:",
+          err instanceof Error ? err.message : String(err),
+        );
+      }
     } else {
       console.log(`[PrintGo Agent] ${message}`);
+    }
+  }
+
+  private notifyError(error: Error): void {
+    if (!this.onError) return;
+    try {
+      this.onError(error);
+    } catch (callbackError: unknown) {
+      this.log(
+        `Error callback failed: ${callbackError instanceof Error ? callbackError.message : String(callbackError)}`,
+      );
     }
   }
 

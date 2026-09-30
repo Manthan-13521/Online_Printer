@@ -4,7 +4,7 @@ import type { RetentionRepository, RetentionStats } from "./repository";
 export interface CleanupResult {
   dryRun: boolean;
   timestampMs: number;
-  stats: RetentionStats;
+  stats: RetentionStats | null;
   processedUploads: number;
   deletedUploads: number;
   failedUploads: number;
@@ -25,17 +25,22 @@ export class RetentionService {
   async runCleanup(options?: {
     batchLimit?: number;
     dryRun?: boolean;
+    includeStats?: boolean;
   }): Promise<CleanupResult> {
     const nowMs = this.now();
-    // 7 reads + (3 PDF writes + 3 PII writes) * 5 = at most 37 D1 queries.
-    // Five R2 deletes and admin authentication still fit the Free subrequest budget.
+    // Normal scheduled cleanup needs only the two indexed candidate reads.
+    // Optional operator statistics add five count queries. Five R2 deletes and
+    // the bounded mutation batches still fit the Free subrequest budget.
     const requested = options?.batchLimit ?? 5;
     const batchLimit = Number.isFinite(requested)
       ? Math.max(1, Math.min(Math.floor(requested), 5))
       : 5;
     const dryRun = options?.dryRun ?? false;
 
-    const stats = await this.repository.getRetentionStats(nowMs);
+    const stats =
+      options?.includeStats === true || dryRun
+        ? await this.repository.getRetentionStats(nowMs)
+        : null;
     const expiredUploads = await this.repository.findExpiredUploads(
       nowMs,
       batchLimit,

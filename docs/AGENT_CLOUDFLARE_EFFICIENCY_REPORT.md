@@ -1,5 +1,7 @@
 # Agent and Cloudflare efficiency — Phase 2
 
+Follow-up physical-observation investigation and the current runtime-cost/reliability pass: [Agent runtime reliability and cost attribution](AGENT_RUNTIME_RELIABILITY_COST_REPORT.md).
+
 29 September 2026. Repository work only. No production deployment, real payment, Windows connection attempt or physical printing. PHYSICAL/WINDOWS VERIFICATION: PENDING. Phase 1 branding, identification content and commercial-hardening work are preserved.
 
 ## Before and after

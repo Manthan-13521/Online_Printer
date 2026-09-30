@@ -47,7 +47,7 @@ export function toAdminTestPrintDetails(
 ): AdminTestPrintDetails {
   let status = row.status;
   if (
-    status === "PENDING" &&
+    ["PENDING", "CLAIMED", "SUBMITTED"].includes(status) &&
     nowMs !== undefined &&
     nowMs >= row.expires_at_ms
   ) {
@@ -923,9 +923,12 @@ export class D1AgentRepository implements AgentRepository {
     // 2. Find oldest pending command with printer info
     const pending = await this.db
       .prepare(
-        `SELECT c.id, c.printer_id, c.expires_at_ms, p.windows_printer_name
+        `SELECT c.id, c.printer_id, c.expires_at_ms,
+                p.windows_printer_name, p.display_name AS printer_display_name,
+                i.shop_name
          FROM printer_test_commands c
          JOIN printers p ON c.printer_id = p.id
+         JOIN installation i ON i.id = 1
          WHERE c.agent_id = ? AND c.status = 'PENDING' AND c.expires_at_ms > ?
            AND p.enabled = 1
          ORDER BY c.created_at_ms ASC
@@ -937,6 +940,8 @@ export class D1AgentRepository implements AgentRepository {
         printer_id: string;
         expires_at_ms: number;
         windows_printer_name: string;
+        printer_display_name: string;
+        shop_name: string;
       }>();
 
     if (!pending) {
@@ -962,6 +967,8 @@ export class D1AgentRepository implements AgentRepository {
       type: "TEST_PRINT",
       printerId: pending.printer_id,
       windowsPrinterName: pending.windows_printer_name,
+      printerDisplayName: pending.printer_display_name,
+      shopName: pending.shop_name,
       expiresAtMs: pending.expires_at_ms,
     };
   }
@@ -1032,21 +1039,10 @@ export class D1AgentRepository implements AgentRepository {
       return false;
     }
 
-    await this.db
-      .prepare(
-        `INSERT INTO audit_logs (
-           id, actor_type, actor_id, action, entity_type, entity_id, created_at_ms
-         ) VALUES (?, 'AGENT', ?, ?, 'PRINTER_TEST_COMMAND', ?, ?)`,
-      )
-      .bind(
-        crypto.randomUUID(),
-        input.agentId,
-        `TEST_PRINT_${input.status}`,
-        input.commandId,
-        input.nowMs,
-      )
-      .run();
-
+    // The command row is the authoritative diagnostic audit record: it keeps
+    // shop-scoped printer/Agent identity, timestamps, status, failure and exact
+    // spool identity. Avoid duplicating every harmless status transition into
+    // audit_logs; the admin request audit above still records who initiated it.
     return true;
   }
 
