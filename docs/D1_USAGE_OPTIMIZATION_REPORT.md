@@ -9,10 +9,11 @@ Wrangler: `4.138.0`
 
 ## 1. Scope and evidence rules
 
-This pass investigated and locally optimized D1 reads, writes, query executions,
-and polling-driven Worker requests without deploying, applying production
-migrations, mutating production data, creating real payments, deleting production
-files, or physically printing.
+The investigation and implementation pass optimized D1 reads, writes, query
+executions, and polling-driven Worker requests without mutating production. The
+validated release was subsequently deployed as recorded below. No real payment,
+production-file deletion, Agent update, or physical print was triggered by the
+release procedure.
 
 Evidence labels used throughout:
 
@@ -29,6 +30,26 @@ Evidence labels used throughout:
 
 The dirty working tree containing the multi-file, cleanup, and branding work was
 preserved. No reset, checkout, migration rewrite, or unrelated reformat was used.
+
+## 1.1 Deployment record
+
+Deployed on 2026-10-01 from release commit `e253a51`:
+
+- Pre-migration D1 Time Travel bookmark:
+  `000003a8-00000000-000050f7-233f3b1c3791e8fbeb20fec4a28b70ca`.
+- Migration `0013_d1_usage_optimization.sql`: applied successfully; five queries,
+  270 rows read, five rows written, final bookmark
+  `000003a8-00000014-000050f7-89d718d7db95be7d1783034721d723ba`.
+- Worker version: `1b7d6722-17bd-4044-b630-13f5be2c383b`.
+- Post-migration schema verification confirmed `attempt_count`,
+  `next_attempt_at_ms`, and `cleanup_runs_open_scope_idx`.
+- Production `EXPLAIN QUERY PLAN` confirmed the open-run gate uses
+  `cleanup_runs_open_scope_idx`.
+- Public `/health` returned the normal available response.
+
+These checks prove schema/application compatibility and initial service health.
+They do not prove the after-usage reduction; that requires multiple normal
+five-minute cycles followed by a like-for-like Query Insights capture.
 
 Cloudflare references used:
 
@@ -326,7 +347,7 @@ They are not payment-provider, Windows, physical-print, or D1 billing evidence.
 ## 11. Usage projections and headroom
 
 The existing conservative capacity model remains intentionally unchanged because
-the new code has not been deployed and its D1 after-metadata is unavailable.
+the deployment does not yet have a sufficient D1 after-measurement window.
 
 | Scenario           |       Worker requests |                                                         D1 reads |                                                 D1 writes | Free headroom: requests / reads / writes |
 | ------------------ | --------------------: | ---------------------------------------------------------------: | --------------------------------------------------------: | ---------------------------------------- |
@@ -339,9 +360,9 @@ including 221 modeled indexed D1 writes per order. The controlled local workload
 measured 38 changed table rows per one-file order, not 221 D1 rows written. No
 conversion between those values is claimed.
 
-The observed cleanup incident is not subtracted from the model. Once migration
-and Worker changes are separately deployed, repeat Tests A–E and replace these
-projections with deployed `rows_read`/`rows_written` deltas.
+The observed cleanup incident is not subtracted from the model. After multiple
+normal cleanup cycles, repeat the Query Insights capture and replace these
+projections only after deployed `rows_read`/`rows_written` deltas are available.
 
 ## 12. Index decisions
 
@@ -367,8 +388,9 @@ No existing index was removed.
 
 ## 13. Risks and remaining verification
 
-1. **Cloud after-values are NOT VERIFIED.** Nothing was deployed and migration
-   `0013` was not applied remotely.
+1. **Cloud after-values are NOT VERIFIED.** Migration `0013` and the matching
+   Worker are deployed, but the normal post-deployment observation window is not
+   yet complete.
 2. **Printer OFFLINE flapping is NOT VERIFIED.** Query Insights proves the writes,
    not whether Windows discovery, real unplugging, multiple Agent binaries, or
    overlapping reports caused them. Windows Agent logs and binary identity are
