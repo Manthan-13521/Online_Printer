@@ -15,6 +15,9 @@ const migrations = [
   "0007_performance_optimization_indexes.sql",
   "0008_production_printer_reliability.sql",
   "0009_retention_and_pii_purge.sql",
+  "0010_efficiency_and_branding.sql",
+  "0011_retention_retry_schedule.sql",
+  "0012_multi_file_cleanup_and_app_branding.sql",
 ].map((name) =>
   readFileSync(
     new URL(`../../../../../database/migrations/${name}`, import.meta.url),
@@ -152,6 +155,26 @@ function seed(
     now,
   );
   db.prepare(
+    `INSERT INTO order_files
+      (id, order_id, position, original_filename, r2_object_key,
+       expected_size_bytes, size_bytes, mime_type, source_page_count,
+       selected_pages, selected_page_count, copies, paper_size, color_mode, sides,
+       printing_amount_paise, service_charge_paise, upload_status, print_status,
+       uploaded_at_ms, created_at_ms, updated_at_ms)
+     VALUES (?, ?, 1, 'unsafe/name.pdf', 'orders/private.pdf', 100, 100,
+       'application/pdf', 2, '1-2', 2, 10, 'A4', 'COLOR', 'DOUBLE', 5000, 0,
+       ?, 'PENDING', ?, ?, ?)`,
+  ).run(
+    ids.upload,
+    ids.order,
+    options.uploadStatus === "UPLOADED" || options.uploadStatus === undefined
+      ? "UPLOADED"
+      : "PENDING",
+    now,
+    now,
+    now,
+  );
+  db.prepare(
     `INSERT INTO payments (id, order_id, provider_order_id, provider_payment_id,
     amount_paise, status, verified_at_ms, created_at_ms, updated_at_ms)
     VALUES (?, ?, 'order_provider', ?, 5000, ?, ?, ?, ?)`,
@@ -259,7 +282,7 @@ describe("paid-print D1 safety", () => {
       );
       const changed =
         Number(db.prepare("SELECT total_changes() n").get()!.n) - before;
-      expect(changed).toBe(step === 0 ? 3 : 2);
+      expect(changed).toBe(step === 0 ? 5 : 2);
       await repository.recordResult({
         ...ownership,
         nowMs: 2_300 + step * 1000,
@@ -473,6 +496,89 @@ describe("paid-print D1 safety", () => {
       retention_reason: "COMPLETED",
       delete_after_ms: 3_000 + COMPLETED_RETENTION_MS,
     });
+  });
+
+  it("prints child files in position order and never completes a partially failed parent", async () => {
+    seed(db);
+    const secondFileId = "20000000-0000-4000-8000-000000000002";
+    db.prepare(
+      `INSERT INTO order_files
+       (id, order_id, position, original_filename, r2_object_key,
+        expected_size_bytes, size_bytes, mime_type, source_page_count,
+        selected_pages, selected_page_count, copies, paper_size, color_mode, sides,
+        printing_amount_paise, service_charge_paise, upload_status, print_status,
+        uploaded_at_ms, created_at_ms, updated_at_ms)
+       VALUES (?, ?, 2, 'second.pdf', 'uploads/private/second.pdf', 200, 200,
+        'application/pdf', 3, '1-3', 3, 1, 'A4', 'BW', 'SINGLE', 300, 0,
+        'UPLOADED', 'PENDING', 1000, 1000, 1000)`,
+    ).run(secondFileId, ids.order);
+
+    const first = (await repository.claimOrRenew(ids.agent1, 2_000))!;
+    expect(first.filePosition).toBe(1);
+    const firstOwnership = {
+      agentId: ids.agent1,
+      orderId: ids.order,
+      stepId: first.currentStep.stepId,
+      claimId: first.claimId,
+    };
+    await repository.startStep({ ...firstOwnership, nowMs: 2_100 });
+    await repository.recordSubmission({
+      ...firstOwnership,
+      spoolerJobId: "101",
+      nowMs: 2_200,
+    });
+    await repository.recordResult({
+      ...firstOwnership,
+      status: "SUCCEEDED",
+      spoolerJobId: "101",
+      failureCode: null,
+      failureDetail: null,
+      nowMs: 2_300,
+    });
+    expect(
+      db
+        .prepare("SELECT status, purge_at_ms FROM orders WHERE id = ?")
+        .get(ids.order),
+    ).toEqual({ status: "QUEUED", purge_at_ms: null });
+
+    const second = (await repository.claimOrRenew(ids.agent1, 2_400))!;
+    expect(second.filePosition).toBe(2);
+    const secondOwnership = {
+      agentId: ids.agent1,
+      orderId: ids.order,
+      stepId: second.currentStep.stepId,
+      claimId: second.claimId,
+    };
+    await repository.startStep({ ...secondOwnership, nowMs: 2_500 });
+    await repository.recordResult({
+      ...secondOwnership,
+      status: "FAILED",
+      spoolerJobId: null,
+      failureCode: "UNKNOWN",
+      failureDetail: "Safe simulated failure",
+      nowMs: 2_600,
+    });
+    expect(
+      db
+        .prepare(
+          "SELECT status, completed_at_ms, purge_at_ms FROM orders WHERE id = ?",
+        )
+        .get(ids.order),
+    ).toEqual({
+      status: "PRINT_FAILED",
+      completed_at_ms: null,
+      purge_at_ms: null,
+    });
+    expect(
+      db
+        .prepare(
+          "SELECT position, print_status FROM order_files ORDER BY position",
+        )
+        .all(),
+    ).toEqual([
+      { position: 1, print_status: "PRINTED" },
+      { position: 2, print_status: "FAILED" },
+    ]);
   });
 
   it("keeps BLOCKED on the same spool job and treats uncertainty separately", async () => {

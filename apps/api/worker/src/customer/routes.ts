@@ -1,7 +1,9 @@
 import type {
+  AddCustomerFileRequest,
   CancelCustomerPaymentRequest,
   CreateCustomerDraftRequest,
   CreateCustomerPaymentRequest,
+  CustomerOrderQuoteRequest,
   CustomerPrintSettingsRequest,
   VerifyCustomerPaymentRequest,
 } from "@printgo/api-contract";
@@ -39,12 +41,29 @@ export interface CustomerActions {
   ): ReturnType<CustomerService["createDraft"]>;
   authorizeUpload(
     token: string,
+    fileId?: string,
   ): ReturnType<CustomerService["authorizeUpload"]>;
-  completeUpload(token: string): ReturnType<CustomerService["completeUpload"]>;
+  completeUpload(
+    token: string,
+    fileId?: string,
+  ): ReturnType<CustomerService["completeUpload"]>;
+  addFile(
+    token: string,
+    input: AddCustomerFileRequest,
+  ): ReturnType<CustomerService["addFile"]>;
+  removeFile(
+    token: string,
+    fileId: string,
+  ): ReturnType<CustomerService["removeFile"]>;
+  getDraft(token: string): ReturnType<CustomerService["getDraft"]>;
   quote(
     token: string,
     input: CustomerPrintSettingsRequest,
   ): ReturnType<CustomerService["quote"]>;
+  quoteOrder(
+    token: string,
+    input: CustomerOrderQuoteRequest,
+  ): ReturnType<CustomerService["quoteOrder"]>;
   createPayment(
     token: string,
     input: CreateCustomerPaymentRequest,
@@ -92,9 +111,13 @@ function actionsFromEnv(env: WorkerEnv): CustomerActions {
   return {
     getConfig: () => repository.getPublicConfig(),
     createDraft: (input) => service.createDraft(input),
-    authorizeUpload: (token) => service.authorizeUpload(token),
-    completeUpload: (token) => service.completeUpload(token),
+    authorizeUpload: (token, fileId) => service.authorizeUpload(token, fileId),
+    completeUpload: (token, fileId) => service.completeUpload(token, fileId),
+    addFile: (token, input) => service.addFile(token, input),
+    removeFile: (token, fileId) => service.removeFile(token, fileId),
+    getDraft: (token) => service.getDraft(token),
     quote: (token, input) => service.quote(token, input),
+    quoteOrder: (token, input) => service.quoteOrder(token, input),
     createPayment: (token, input) =>
       paymentService.createCheckout(token, input.acknowledgedTotalPaise),
     verifyPayment: (token, input) => paymentService.verify(token, input),
@@ -221,6 +244,46 @@ function validateSettings(value: unknown): CustomerPrintSettingsRequest | null {
     colorMode: value.colorMode,
     sides: value.sides,
   };
+}
+
+function validateFile(value: unknown): AddCustomerFileRequest | null {
+  if (!isPlainRecord(value)) return null;
+  const allowed = new Set([
+    "originalFilename",
+    "expectedSizeBytes",
+    "sourcePageCount",
+  ]);
+  if (
+    Object.keys(value).some((key) => !allowed.has(key)) ||
+    !validString(value.originalFilename, 255) ||
+    !isValidPdfSizeBytes(value.expectedSizeBytes) ||
+    !Number.isSafeInteger(value.sourcePageCount) ||
+    (value.sourcePageCount as number) < 1 ||
+    (value.sourcePageCount as number) > 1_000_000
+  )
+    return null;
+  return {
+    originalFilename: value.originalFilename.trim(),
+    expectedSizeBytes: value.expectedSizeBytes,
+    sourcePageCount: value.sourcePageCount as number,
+  };
+}
+
+function validateOrderSettings(
+  value: unknown,
+): CustomerOrderQuoteRequest | null {
+  if (!isPlainRecord(value) || !Array.isArray(value.files)) return null;
+  if (Object.keys(value).some((key) => key !== "files")) return null;
+  if (value.files.length < 1 || value.files.length > 10) return null;
+  const files: CustomerOrderQuoteRequest["files"] = [];
+  for (const entry of value.files) {
+    if (!isPlainRecord(entry) || typeof entry.fileId !== "string") return null;
+    const { fileId, ...rawSettings } = entry;
+    const settings = validateSettings(rawSettings);
+    if (!settings || !/^[0-9a-f-]{36}$/iu.test(entry.fileId)) return null;
+    files.push({ ...settings, fileId });
+  }
+  return { files };
 }
 
 function validateCreatePayment(
@@ -351,6 +414,11 @@ function mapCustomerError(caught: unknown, env: WorkerEnv): Response {
     UPLOAD_NOT_FOUND: 409,
     UPLOAD_STATE_INVALID: 409,
     UPLOAD_INVALID: 422,
+    FILE_LIMIT_REACHED: 409,
+    AGGREGATE_LIMIT_REACHED: 413,
+    FILE_NOT_FOUND: 404,
+    LAST_FILE_REQUIRED: 409,
+    FILE_DELETE_FAILED: 503,
     QUOTE_STATE_INVALID: 409,
     QUOTE_INVALID: 400,
     PRINT_OPTIONS_UNAVAILABLE: 503,
@@ -378,7 +446,7 @@ export async function handleCustomerRequest(
       status: 204,
       headers: {
         ...corsHeaders(env),
-        "Access-Control-Allow-Methods": "GET, POST, PUT, OPTIONS",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
         "Access-Control-Allow-Headers": "Authorization, Content-Type",
         "Access-Control-Max-Age": "600",
       },
@@ -461,13 +529,35 @@ export async function handleCustomerRequest(
         corsHeaders(env),
       );
     }
+    if (request.method === "GET" && pathname === "/api/customer/draft") {
+      return ok(await actions.getDraft(token), 200, corsHeaders(env));
+    }
+    if (request.method === "POST" && pathname === "/api/customer/draft/files") {
+      const input = validateFile(await readJson(request));
+      return input
+        ? ok(await actions.addFile(token, input), 201, corsHeaders(env))
+        : error(400, "INVALID_FILE", "Choose a valid PDF.", corsHeaders(env));
+    }
+    const removeMatch =
+      /^\/api\/customer\/draft\/files\/([0-9a-f-]{36})$/iu.exec(pathname);
+    if (request.method === "DELETE" && removeMatch) {
+      return ok(
+        await actions.removeFile(token, removeMatch[1] ?? ""),
+        200,
+        corsHeaders(env),
+      );
+    }
     if (
       request.method === "POST" &&
       pathname === "/api/customer/uploads/authorize"
     ) {
-      await readJson(request);
+      const payload = await readJson(request);
+      const fileId =
+        isPlainRecord(payload) && typeof payload.fileId === "string"
+          ? payload.fileId
+          : undefined;
       return ok(
-        { upload: await actions.authorizeUpload(token) },
+        { upload: await actions.authorizeUpload(token, fileId) },
         200,
         corsHeaders(env),
       );
@@ -476,22 +566,34 @@ export async function handleCustomerRequest(
       request.method === "POST" &&
       pathname === "/api/customer/uploads/complete"
     ) {
-      await readJson(request);
-      return ok(await actions.completeUpload(token), 200, corsHeaders(env));
+      const payload = await readJson(request);
+      const fileId =
+        isPlainRecord(payload) && typeof payload.fileId === "string"
+          ? payload.fileId
+          : undefined;
+      return ok(
+        await actions.completeUpload(token, fileId),
+        200,
+        corsHeaders(env),
+      );
     }
     if (
       request.method === "PUT" &&
       pathname === "/api/customer/draft/print-settings"
     ) {
-      const input = validateSettings(await readJson(request));
-      return input
-        ? ok(await actions.quote(token, input), 200, corsHeaders(env))
-        : error(
-            400,
-            "INVALID_PRINT_SETTINGS",
-            "Choose valid print settings.",
-            corsHeaders(env),
-          );
+      const value = await readJson(request);
+      const orderInput = validateOrderSettings(value);
+      const input = validateSettings(value);
+      return orderInput
+        ? ok(await actions.quoteOrder(token, orderInput), 200, corsHeaders(env))
+        : input
+          ? ok(await actions.quote(token, input), 200, corsHeaders(env))
+          : error(
+              400,
+              "INVALID_PRINT_SETTINGS",
+              "Choose valid print settings.",
+              corsHeaders(env),
+            );
     }
     if (
       request.method === "POST" &&

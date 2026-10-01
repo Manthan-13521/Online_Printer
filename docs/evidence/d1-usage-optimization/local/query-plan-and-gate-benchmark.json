@@ -1,0 +1,645 @@
+{
+  "generatedAt": "2026-10-01T08:00:50.621Z",
+  "evidence": "MEASURED LOCAL",
+  "warning": "SQLite timings and plans provide relative/query-plan evidence only; they are not Cloudflare billed rows_read or rows_written.",
+  "fixture": {
+    "orders": 600,
+    "expiredUnpaid": 200,
+    "completedDue": 200,
+    "activeQueued": 200,
+    "files": 600,
+    "openScheduledRuns": 2
+  },
+  "cloudBeforeReference": {
+    "expiredPreview": {
+      "avgRowsRead": 622,
+      "totalRowsRead": 146217,
+      "executions": 235
+    },
+    "completedPreview": {
+      "avgRowsRead": 352,
+      "totalRowsRead": 92933,
+      "executions": 264
+    }
+  },
+  "plans": {
+    "expiredPreview": [
+      {
+        "id": 3,
+        "parent": 0,
+        "notused": 0,
+        "detail": "USE TEMP B-TREE FOR count(DISTINCT)"
+      },
+      {
+        "id": 5,
+        "parent": 0,
+        "notused": 0,
+        "detail": "USE TEMP B-TREE FOR count(DISTINCT)"
+      },
+      {
+        "id": 7,
+        "parent": 0,
+        "notused": 0,
+        "detail": "USE TEMP B-TREE FOR count(DISTINCT)"
+      },
+      {
+        "id": 12,
+        "parent": 0,
+        "notused": 79,
+        "detail": "SEARCH o USING INDEX orders_unpaid_cleanup_due_idx (draft_expires_at_ms<?)"
+      },
+      {
+        "id": 21,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 17"
+      },
+      {
+        "id": 26,
+        "parent": 21,
+        "notused": 61,
+        "detail": "SEARCH p USING INDEX payments_order_created_idx (order_id=?)"
+      },
+      {
+        "id": 53,
+        "parent": 0,
+        "notused": 38,
+        "detail": "SEARCH f USING INDEX order_files_order_print_idx (order_id=?) LEFT-JOIN"
+      },
+      {
+        "id": 106,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 1"
+      },
+      {
+        "id": 110,
+        "parent": 106,
+        "notused": 35,
+        "detail": "SEARCH active_file USING COVERING INDEX order_files_order_print_idx (order_id=? AND print_status=?)"
+      },
+      {
+        "id": 144,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 2"
+      },
+      {
+        "id": 148,
+        "parent": 144,
+        "notused": 35,
+        "detail": "SEARCH printed_file USING COVERING INDEX order_files_order_print_idx (order_id=? AND print_status=?)"
+      },
+      {
+        "id": 160,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 3"
+      },
+      {
+        "id": 164,
+        "parent": 160,
+        "notused": 35,
+        "detail": "SEARCH unfinished_file USING COVERING INDEX order_files_order_print_idx (order_id=?)"
+      },
+      {
+        "id": 177,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 4"
+      },
+      {
+        "id": 182,
+        "parent": 177,
+        "notused": 45,
+        "detail": "SEARCH active_payment USING INDEX payments_one_active_attempt_per_order_idx (order_id=?)"
+      },
+      {
+        "id": 245,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 5"
+      },
+      {
+        "id": 249,
+        "parent": 245,
+        "notused": 35,
+        "detail": "SEARCH active_file USING COVERING INDEX order_files_order_print_idx (order_id=? AND print_status=?)"
+      },
+      {
+        "id": 283,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 6"
+      },
+      {
+        "id": 287,
+        "parent": 283,
+        "notused": 35,
+        "detail": "SEARCH printed_file USING COVERING INDEX order_files_order_print_idx (order_id=? AND print_status=?)"
+      },
+      {
+        "id": 299,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 7"
+      },
+      {
+        "id": 303,
+        "parent": 299,
+        "notused": 35,
+        "detail": "SEARCH unfinished_file USING COVERING INDEX order_files_order_print_idx (order_id=?)"
+      },
+      {
+        "id": 316,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 8"
+      },
+      {
+        "id": 321,
+        "parent": 316,
+        "notused": 45,
+        "detail": "SEARCH active_payment USING INDEX payments_one_active_attempt_per_order_idx (order_id=?)"
+      },
+      {
+        "id": 386,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 9"
+      },
+      {
+        "id": 390,
+        "parent": 386,
+        "notused": 35,
+        "detail": "SEARCH active_file USING COVERING INDEX order_files_order_print_idx (order_id=? AND print_status=?)"
+      },
+      {
+        "id": 424,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 10"
+      },
+      {
+        "id": 428,
+        "parent": 424,
+        "notused": 35,
+        "detail": "SEARCH printed_file USING COVERING INDEX order_files_order_print_idx (order_id=? AND print_status=?)"
+      },
+      {
+        "id": 440,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 11"
+      },
+      {
+        "id": 444,
+        "parent": 440,
+        "notused": 35,
+        "detail": "SEARCH unfinished_file USING COVERING INDEX order_files_order_print_idx (order_id=?)"
+      },
+      {
+        "id": 457,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 12"
+      },
+      {
+        "id": 462,
+        "parent": 457,
+        "notused": 45,
+        "detail": "SEARCH active_payment USING INDEX payments_one_active_attempt_per_order_idx (order_id=?)"
+      },
+      {
+        "id": 514,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 13"
+      },
+      {
+        "id": 518,
+        "parent": 514,
+        "notused": 35,
+        "detail": "SEARCH active_file USING COVERING INDEX order_files_order_print_idx (order_id=? AND print_status=?)"
+      },
+      {
+        "id": 552,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 14"
+      },
+      {
+        "id": 556,
+        "parent": 552,
+        "notused": 35,
+        "detail": "SEARCH printed_file USING COVERING INDEX order_files_order_print_idx (order_id=? AND print_status=?)"
+      },
+      {
+        "id": 568,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 15"
+      },
+      {
+        "id": 572,
+        "parent": 568,
+        "notused": 35,
+        "detail": "SEARCH unfinished_file USING COVERING INDEX order_files_order_print_idx (order_id=?)"
+      },
+      {
+        "id": 585,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 16"
+      },
+      {
+        "id": 590,
+        "parent": 585,
+        "notused": 45,
+        "detail": "SEARCH active_payment USING INDEX payments_one_active_attempt_per_order_idx (order_id=?)"
+      }
+    ],
+    "completedPreview": [
+      {
+        "id": 3,
+        "parent": 0,
+        "notused": 0,
+        "detail": "USE TEMP B-TREE FOR count(DISTINCT)"
+      },
+      {
+        "id": 5,
+        "parent": 0,
+        "notused": 0,
+        "detail": "USE TEMP B-TREE FOR count(DISTINCT)"
+      },
+      {
+        "id": 7,
+        "parent": 0,
+        "notused": 0,
+        "detail": "USE TEMP B-TREE FOR count(DISTINCT)"
+      },
+      {
+        "id": 12,
+        "parent": 0,
+        "notused": 61,
+        "detail": "SEARCH o USING INDEX orders_completed_cleanup_due_idx (purge_at_ms>? AND purge_at_ms<?)"
+      },
+      {
+        "id": 21,
+        "parent": 0,
+        "notused": 38,
+        "detail": "SEARCH f USING INDEX order_files_order_print_idx (order_id=?) LEFT-JOIN"
+      },
+      {
+        "id": 74,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 1"
+      },
+      {
+        "id": 78,
+        "parent": 74,
+        "notused": 35,
+        "detail": "SEARCH active_file USING COVERING INDEX order_files_order_print_idx (order_id=? AND print_status=?)"
+      },
+      {
+        "id": 112,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 2"
+      },
+      {
+        "id": 116,
+        "parent": 112,
+        "notused": 35,
+        "detail": "SEARCH printed_file USING COVERING INDEX order_files_order_print_idx (order_id=? AND print_status=?)"
+      },
+      {
+        "id": 128,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 3"
+      },
+      {
+        "id": 132,
+        "parent": 128,
+        "notused": 35,
+        "detail": "SEARCH unfinished_file USING COVERING INDEX order_files_order_print_idx (order_id=?)"
+      },
+      {
+        "id": 145,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 4"
+      },
+      {
+        "id": 150,
+        "parent": 145,
+        "notused": 45,
+        "detail": "SEARCH active_payment USING INDEX payments_one_active_attempt_per_order_idx (order_id=?)"
+      },
+      {
+        "id": 213,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 5"
+      },
+      {
+        "id": 217,
+        "parent": 213,
+        "notused": 35,
+        "detail": "SEARCH active_file USING COVERING INDEX order_files_order_print_idx (order_id=? AND print_status=?)"
+      },
+      {
+        "id": 251,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 6"
+      },
+      {
+        "id": 255,
+        "parent": 251,
+        "notused": 35,
+        "detail": "SEARCH printed_file USING COVERING INDEX order_files_order_print_idx (order_id=? AND print_status=?)"
+      },
+      {
+        "id": 267,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 7"
+      },
+      {
+        "id": 271,
+        "parent": 267,
+        "notused": 35,
+        "detail": "SEARCH unfinished_file USING COVERING INDEX order_files_order_print_idx (order_id=?)"
+      },
+      {
+        "id": 284,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 8"
+      },
+      {
+        "id": 289,
+        "parent": 284,
+        "notused": 45,
+        "detail": "SEARCH active_payment USING INDEX payments_one_active_attempt_per_order_idx (order_id=?)"
+      },
+      {
+        "id": 354,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 9"
+      },
+      {
+        "id": 358,
+        "parent": 354,
+        "notused": 35,
+        "detail": "SEARCH active_file USING COVERING INDEX order_files_order_print_idx (order_id=? AND print_status=?)"
+      },
+      {
+        "id": 392,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 10"
+      },
+      {
+        "id": 396,
+        "parent": 392,
+        "notused": 35,
+        "detail": "SEARCH printed_file USING COVERING INDEX order_files_order_print_idx (order_id=? AND print_status=?)"
+      },
+      {
+        "id": 408,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 11"
+      },
+      {
+        "id": 412,
+        "parent": 408,
+        "notused": 35,
+        "detail": "SEARCH unfinished_file USING COVERING INDEX order_files_order_print_idx (order_id=?)"
+      },
+      {
+        "id": 425,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 12"
+      },
+      {
+        "id": 430,
+        "parent": 425,
+        "notused": 45,
+        "detail": "SEARCH active_payment USING INDEX payments_one_active_attempt_per_order_idx (order_id=?)"
+      },
+      {
+        "id": 482,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 13"
+      },
+      {
+        "id": 486,
+        "parent": 482,
+        "notused": 35,
+        "detail": "SEARCH active_file USING COVERING INDEX order_files_order_print_idx (order_id=? AND print_status=?)"
+      },
+      {
+        "id": 520,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 14"
+      },
+      {
+        "id": 524,
+        "parent": 520,
+        "notused": 35,
+        "detail": "SEARCH printed_file USING COVERING INDEX order_files_order_print_idx (order_id=? AND print_status=?)"
+      },
+      {
+        "id": 536,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 15"
+      },
+      {
+        "id": 540,
+        "parent": 536,
+        "notused": 35,
+        "detail": "SEARCH unfinished_file USING COVERING INDEX order_files_order_print_idx (order_id=?)"
+      },
+      {
+        "id": 553,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 16"
+      },
+      {
+        "id": 558,
+        "parent": 553,
+        "notused": 45,
+        "detail": "SEARCH active_payment USING INDEX payments_one_active_attempt_per_order_idx (order_id=?)"
+      }
+    ],
+    "openRunGate": [
+      {
+        "id": 4,
+        "parent": 0,
+        "notused": 61,
+        "detail": "SEARCH cleanup_runs USING INDEX cleanup_runs_open_scope_idx (scope=? AND source=?)"
+      }
+    ],
+    "expiredCandidateGate": [
+      {
+        "id": 4,
+        "parent": 0,
+        "notused": 79,
+        "detail": "SEARCH o USING INDEX orders_unpaid_cleanup_due_idx (draft_expires_at_ms<?)"
+      },
+      {
+        "id": 13,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 1"
+      },
+      {
+        "id": 18,
+        "parent": 13,
+        "notused": 61,
+        "detail": "SEARCH p USING INDEX payments_order_created_idx (order_id=?)"
+      },
+      {
+        "id": 87,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 2"
+      },
+      {
+        "id": 91,
+        "parent": 87,
+        "notused": 35,
+        "detail": "SEARCH active_file USING COVERING INDEX order_files_order_print_idx (order_id=? AND print_status=?)"
+      },
+      {
+        "id": 124,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 3"
+      },
+      {
+        "id": 128,
+        "parent": 124,
+        "notused": 35,
+        "detail": "SEARCH printed_file USING COVERING INDEX order_files_order_print_idx (order_id=? AND print_status=?)"
+      },
+      {
+        "id": 139,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 4"
+      },
+      {
+        "id": 143,
+        "parent": 139,
+        "notused": 35,
+        "detail": "SEARCH unfinished_file USING COVERING INDEX order_files_order_print_idx (order_id=?)"
+      },
+      {
+        "id": 155,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 5"
+      },
+      {
+        "id": 160,
+        "parent": 155,
+        "notused": 45,
+        "detail": "SEARCH active_payment USING INDEX payments_one_active_attempt_per_order_idx (order_id=?)"
+      }
+    ],
+    "completedCandidateGate": [
+      {
+        "id": 4,
+        "parent": 0,
+        "notused": 61,
+        "detail": "SEARCH o USING INDEX orders_completed_cleanup_due_idx (purge_at_ms>? AND purge_at_ms<?)"
+      },
+      {
+        "id": 56,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 1"
+      },
+      {
+        "id": 60,
+        "parent": 56,
+        "notused": 35,
+        "detail": "SEARCH active_file USING COVERING INDEX order_files_order_print_idx (order_id=? AND print_status=?)"
+      },
+      {
+        "id": 93,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 2"
+      },
+      {
+        "id": 97,
+        "parent": 93,
+        "notused": 35,
+        "detail": "SEARCH printed_file USING COVERING INDEX order_files_order_print_idx (order_id=? AND print_status=?)"
+      },
+      {
+        "id": 108,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 3"
+      },
+      {
+        "id": 112,
+        "parent": 108,
+        "notused": 35,
+        "detail": "SEARCH unfinished_file USING COVERING INDEX order_files_order_print_idx (order_id=?)"
+      },
+      {
+        "id": 124,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 4"
+      },
+      {
+        "id": 129,
+        "parent": 124,
+        "notused": 45,
+        "detail": "SEARCH active_payment USING INDEX payments_one_active_attempt_per_order_idx (order_id=?)"
+      }
+    ]
+  },
+  "benchmarks": [
+    {
+      "label": "before: repeated expired preview despite open run",
+      "iterations": 200,
+      "durationMs": 246.817584,
+      "averageMs": 1.2340879200000001
+    },
+    {
+      "label": "before: repeated completed preview despite open run",
+      "iterations": 200,
+      "durationMs": 284.56720899999993,
+      "averageMs": 1.4228360449999997
+    },
+    {
+      "label": "after: indexed open-run gate for expired cleanup",
+      "iterations": 200,
+      "durationMs": 1.3957499999999072,
+      "averageMs": 0.0069787499999995365
+    },
+    {
+      "label": "after: indexed open-run gate for completed cleanup",
+      "iterations": 200,
+      "durationMs": 1.3165839999999207,
+      "averageMs": 0.0065829199999996035
+    }
+  ]
+}

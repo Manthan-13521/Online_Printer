@@ -27,6 +27,14 @@ const navigation = [
   { label: "Security", path: "/admin/security" },
 ] as const;
 
+function cachedAppName(): string {
+  try {
+    return window.localStorage.getItem("printgo.appName")?.trim() || "PrintGo";
+  } catch {
+    return "PrintGo";
+  }
+}
+
 function usePathname(): [string, (path: string) => void] {
   const [pathname, setPathname] = useState(window.location.pathname);
   useEffect(() => {
@@ -47,7 +55,7 @@ function LoadingScreen() {
   return (
     <main className="loading-screen" aria-busy="true">
       <span className="spinner" aria-hidden="true" />
-      <p>Opening PrintGo…</p>
+      <p>Opening {cachedAppName()}…</p>
     </main>
   );
 }
@@ -87,7 +95,7 @@ function LoginScreen({
         <div className="login-brand" aria-hidden="true">
           P
         </div>
-        <p className="product-name">PrintGo</p>
+        <p className="product-name">{cachedAppName()}</p>
         <p className="portal-name">Admin Portal</p>
         <h1 id="login-title">Sign in</h1>
         <p className="muted">Manage your shop's online printing workspace.</p>
@@ -376,6 +384,15 @@ function AdminShell({
   const [menuOpen, setMenuOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [shellError, setShellError] = useState<string | null>(null);
+  const [appName, setAppName] = useState(cachedAppName);
+  useEffect(() => {
+    const update = (event: Event) => {
+      const detail = (event as CustomEvent<{ appName?: string }>).detail;
+      if (detail?.appName?.trim()) setAppName(detail.appName.trim());
+    };
+    window.addEventListener("printgo:branding", update);
+    return () => window.removeEventListener("printgo:branding", update);
+  }, []);
   const activePath = navigation.some((item) => item.path === path)
     ? path
     : "/admin";
@@ -413,7 +430,7 @@ function AdminShell({
           href="/admin"
           onClick={(event) => go(event, "/admin")}
         >
-          PrintGo
+          {appName}
         </a>
         <div className="account-actions">
           <span>{admin.loginIdentifier}</span>

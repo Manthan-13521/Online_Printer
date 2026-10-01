@@ -502,7 +502,7 @@ export class D1AgentRepository implements AgentRepository {
                SET status = 'OFFLINE',
                    status_reason = 'Not reported by latest Agent heartbeat',
                    last_status_at_ms = ?, updated_at_ms = ?
-               WHERE id = ?`,
+               WHERE id = ? AND status <> 'OFFLINE'`,
             )
             .bind(input.nowMs, input.nowMs, existing.id),
         );

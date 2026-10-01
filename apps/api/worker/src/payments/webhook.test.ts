@@ -30,6 +30,7 @@ function repository(): PaymentRepository {
     activatePayment: vi.fn(),
     abandonReservation: vi.fn(),
     findPaymentByProviderOrderId: vi.fn(() => Promise.resolve(payment)),
+    findRetainedPaymentByProviderOrderId: vi.fn(() => Promise.resolve(null)),
     finalizePaid: vi.fn(),
     cancelPayment: vi.fn(),
     failPayment: vi.fn(() => Promise.resolve()),
@@ -190,6 +191,36 @@ describe("Razorpay webhook", () => {
       alreadyPaidPayment,
       expect.objectContaining({ status: "captured" }),
     );
+    expect(payments.finishProviderEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "PROCESSED" }),
+    );
+  });
+
+  it("acknowledges a matching paid webhook after operational data was purged", async () => {
+    const payments = repository();
+    vi.mocked(payments.findPaymentByProviderOrderId).mockResolvedValueOnce(
+      null,
+    );
+    vi.mocked(
+      payments.findRetainedPaymentByProviderOrderId,
+    ).mockResolvedValueOnce({
+      id: payment.id,
+      providerOrderId: payment.providerOrderId,
+      providerPaymentId: "pay_server_a",
+      amountPaise: payment.amountPaise,
+      currency: payment.currency,
+      status: "PAID",
+    });
+    const deps = dependencies(payments);
+
+    const response = await handleRazorpayWebhook(
+      await request(webhookBody()),
+      env,
+      deps,
+    );
+
+    expect(response.status).toBe(200);
+    expect(deps.acceptCaptured).not.toHaveBeenCalled();
     expect(payments.finishProviderEvent).toHaveBeenCalledWith(
       expect.objectContaining({ status: "PROCESSED" }),
     );

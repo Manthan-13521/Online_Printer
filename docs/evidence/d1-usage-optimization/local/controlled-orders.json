@@ -1,0 +1,314 @@
+{
+  "generatedAt": "2026-10-01T07:58:35.735Z",
+  "scope": "Controlled local handlers with SQLite, in-memory R2, mocked Razorpay and synthetic spool IDs.",
+  "testD": {
+    "evidence": "MEASURED LOCAL",
+    "warning": "SQLite returned/changed rows are not Cloudflare rows_read/rows_written.",
+    "orderCount": 1,
+    "completed": 1,
+    "duplicateAttempts": 0,
+    "tableWriteProfile": [
+      {
+        "key": "order_files:UPDATE:none -> none",
+        "rows": 5
+      },
+      {
+        "key": "uploads:UPDATE:UPLOADED -> UPLOADED",
+        "rows": 2
+      },
+      {
+        "key": "orders:INSERT:none -> UPLOADING",
+        "rows": 1
+      },
+      {
+        "key": "uploads:INSERT:none -> PENDING",
+        "rows": 1
+      },
+      {
+        "key": "order_files:INSERT:none -> none",
+        "rows": 1
+      },
+      {
+        "key": "uploads:UPDATE:PENDING -> UPLOADED",
+        "rows": 1
+      },
+      {
+        "key": "orders:UPDATE:UPLOADING -> UPLOADED",
+        "rows": 1
+      },
+      {
+        "key": "orders:UPDATE:UPLOADED -> PAYMENT_PENDING",
+        "rows": 1
+      },
+      {
+        "key": "payments:INSERT:none -> CREATED",
+        "rows": 1
+      },
+      {
+        "key": "order_events:INSERT:none -> PAYMENT_ORDER_CREATED",
+        "rows": 1
+      },
+      {
+        "key": "payments:UPDATE:CREATED -> PENDING",
+        "rows": 1
+      },
+      {
+        "key": "orders:UPDATE:PAYMENT_PENDING -> QUEUED",
+        "rows": 1
+      },
+      {
+        "key": "payments:UPDATE:PENDING -> PAID",
+        "rows": 1
+      },
+      {
+        "key": "order_events:INSERT:none -> PAYMENT_VERIFIED",
+        "rows": 1
+      },
+      {
+        "key": "order_events:INSERT:none -> JOB_CODE_ASSIGNED",
+        "rows": 1
+      },
+      {
+        "key": "order_events:INSERT:none -> QUEUED",
+        "rows": 1
+      },
+      {
+        "key": "orders:UPDATE:QUEUED -> QUEUED",
+        "rows": 1
+      },
+      {
+        "key": "orders:UPDATE:QUEUED -> CLAIMED",
+        "rows": 1
+      },
+      {
+        "key": "print_attempts:INSERT:none -> CREATED",
+        "rows": 1
+      },
+      {
+        "key": "print_attempt_steps:INSERT:none -> PENDING",
+        "rows": 1
+      },
+      {
+        "key": "order_events:INSERT:none -> PRINT_JOB_CLAIMED",
+        "rows": 1
+      },
+      {
+        "key": "print_attempt_steps:UPDATE:PENDING -> SUBMISSION_STARTED",
+        "rows": 1
+      },
+      {
+        "key": "print_attempts:UPDATE:CREATED -> SUBMITTING",
+        "rows": 1
+      },
+      {
+        "key": "orders:UPDATE:CLAIMED -> SPOOLING",
+        "rows": 1
+      },
+      {
+        "key": "order_events:INSERT:none -> PRINT_STEP_STARTED",
+        "rows": 1
+      },
+      {
+        "key": "print_attempt_steps:UPDATE:SUBMISSION_STARTED -> SUBMITTED",
+        "rows": 1
+      },
+      {
+        "key": "print_attempts:UPDATE:SUBMITTING -> PRINTING",
+        "rows": 1
+      },
+      {
+        "key": "orders:UPDATE:SPOOLING -> PRINTING",
+        "rows": 1
+      },
+      {
+        "key": "print_attempt_steps:UPDATE:SUBMITTED -> SUCCEEDED",
+        "rows": 1
+      },
+      {
+        "key": "print_attempts:UPDATE:PRINTING -> SUCCEEDED",
+        "rows": 1
+      },
+      {
+        "key": "orders:UPDATE:PRINTING -> COMPLETED",
+        "rows": 1
+      },
+      {
+        "key": "order_events:INSERT:none -> ORDER_PRINTED",
+        "rows": 1
+      },
+      {
+        "key": "order_events:INSERT:none -> ORDER_COMPLETED",
+        "rows": 1
+      }
+    ],
+    "httpRequests": 11,
+    "statements": 106,
+    "returnedRows": 125,
+    "changedTableRows": 38,
+    "r2": {
+      "PUT": 1,
+      "HEAD": 2,
+      "GET": 2,
+      "DELETE": 0
+    },
+    "provider": {
+      "create": 1,
+      "lookup": 1
+    }
+  },
+  "testE": {
+    "evidence": "MEASURED LOCAL",
+    "warning": "SQLite returned/changed rows are not Cloudflare rows_read/rows_written.",
+    "orderCount": 10,
+    "completed": 10,
+    "duplicateAttempts": 0,
+    "tableWriteProfile": [
+      {
+        "key": "order_files:UPDATE:none -> none",
+        "rows": 50
+      },
+      {
+        "key": "uploads:UPDATE:UPLOADED -> UPLOADED",
+        "rows": 20
+      },
+      {
+        "key": "orders:INSERT:none -> UPLOADING",
+        "rows": 10
+      },
+      {
+        "key": "uploads:INSERT:none -> PENDING",
+        "rows": 10
+      },
+      {
+        "key": "order_files:INSERT:none -> none",
+        "rows": 10
+      },
+      {
+        "key": "uploads:UPDATE:PENDING -> UPLOADED",
+        "rows": 10
+      },
+      {
+        "key": "orders:UPDATE:UPLOADING -> UPLOADED",
+        "rows": 10
+      },
+      {
+        "key": "orders:UPDATE:UPLOADED -> PAYMENT_PENDING",
+        "rows": 10
+      },
+      {
+        "key": "payments:INSERT:none -> CREATED",
+        "rows": 10
+      },
+      {
+        "key": "order_events:INSERT:none -> PAYMENT_ORDER_CREATED",
+        "rows": 10
+      },
+      {
+        "key": "payments:UPDATE:CREATED -> PENDING",
+        "rows": 10
+      },
+      {
+        "key": "orders:UPDATE:PAYMENT_PENDING -> QUEUED",
+        "rows": 10
+      },
+      {
+        "key": "payments:UPDATE:PENDING -> PAID",
+        "rows": 10
+      },
+      {
+        "key": "order_events:INSERT:none -> PAYMENT_VERIFIED",
+        "rows": 10
+      },
+      {
+        "key": "order_events:INSERT:none -> JOB_CODE_ASSIGNED",
+        "rows": 10
+      },
+      {
+        "key": "order_events:INSERT:none -> QUEUED",
+        "rows": 10
+      },
+      {
+        "key": "orders:UPDATE:QUEUED -> QUEUED",
+        "rows": 10
+      },
+      {
+        "key": "orders:UPDATE:QUEUED -> CLAIMED",
+        "rows": 10
+      },
+      {
+        "key": "print_attempts:INSERT:none -> CREATED",
+        "rows": 10
+      },
+      {
+        "key": "print_attempt_steps:INSERT:none -> PENDING",
+        "rows": 10
+      },
+      {
+        "key": "order_events:INSERT:none -> PRINT_JOB_CLAIMED",
+        "rows": 10
+      },
+      {
+        "key": "print_attempt_steps:UPDATE:PENDING -> SUBMISSION_STARTED",
+        "rows": 10
+      },
+      {
+        "key": "print_attempts:UPDATE:CREATED -> SUBMITTING",
+        "rows": 10
+      },
+      {
+        "key": "orders:UPDATE:CLAIMED -> SPOOLING",
+        "rows": 10
+      },
+      {
+        "key": "order_events:INSERT:none -> PRINT_STEP_STARTED",
+        "rows": 10
+      },
+      {
+        "key": "print_attempt_steps:UPDATE:SUBMISSION_STARTED -> SUBMITTED",
+        "rows": 10
+      },
+      {
+        "key": "print_attempts:UPDATE:SUBMITTING -> PRINTING",
+        "rows": 10
+      },
+      {
+        "key": "orders:UPDATE:SPOOLING -> PRINTING",
+        "rows": 10
+      },
+      {
+        "key": "print_attempt_steps:UPDATE:SUBMITTED -> SUCCEEDED",
+        "rows": 10
+      },
+      {
+        "key": "print_attempts:UPDATE:PRINTING -> SUCCEEDED",
+        "rows": 10
+      },
+      {
+        "key": "orders:UPDATE:PRINTING -> COMPLETED",
+        "rows": 10
+      },
+      {
+        "key": "order_events:INSERT:none -> ORDER_PRINTED",
+        "rows": 10
+      },
+      {
+        "key": "order_events:INSERT:none -> ORDER_COMPLETED",
+        "rows": 10
+      }
+    ],
+    "httpRequests": 110,
+    "statements": 1060,
+    "returnedRows": 1250,
+    "changedTableRows": 380,
+    "r2": {
+      "PUT": 10,
+      "HEAD": 20,
+      "GET": 20,
+      "DELETE": 0
+    },
+    "provider": {
+      "create": 10,
+      "lookup": 10
+    }
+  }
+}

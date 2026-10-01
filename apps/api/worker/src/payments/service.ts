@@ -1,5 +1,6 @@
 import type {
   CreateCustomerPaymentData,
+  CustomerFileQuoteData,
   CustomerPaymentSuccessData,
   CustomerQuoteData,
   VerifyCustomerPaymentRequest,
@@ -17,6 +18,7 @@ import type { TrackingService } from "../tracking/service";
 import { generateJobCode } from "./job-code";
 import type {
   PayableDraftRecord,
+  PayableFileRecord,
   PaymentRecord,
   PaymentRepository,
 } from "./repository";
@@ -100,39 +102,99 @@ export class PaymentService {
     return draft;
   }
 
+  private files(draft: PayableDraftRecord): PayableFileRecord[] {
+    return draft.files && draft.files.length > 0
+      ? draft.files
+      : [
+          {
+            id: draft.uploadId,
+            position: 1,
+            objectKey: draft.objectKey,
+            originalFilename: draft.originalFilename,
+            sourcePageCount: draft.sourcePageCount,
+            selectedPages: draft.selectedPages,
+            selectedPageCount: null,
+            copies: draft.copies,
+            paperSize: draft.paperSize,
+            colorMode: draft.colorMode,
+            sides: draft.sides,
+            expectedSizeBytes: draft.expectedSizeBytes,
+            actualSizeBytes: draft.actualSizeBytes,
+            uploadStatus: draft.storageStatus,
+          },
+        ];
+  }
+
   private async reprice(draft: PayableDraftRecord): Promise<CustomerQuoteData> {
     const config = await this.customer.getPublicConfig();
     if (!config?.onlinePrintingEnabled)
       throw new PaymentError("ONLINE_PRINTING_DISABLED");
-    const object = await this.objects.head(draft.objectKey);
-    if (!object) throw new PaymentError("UPLOAD_NOT_FOUND");
-    if (object.size !== draft.actualSizeBytes)
-      throw new PaymentError("UPLOAD_INVALID");
+    const draftFiles = this.files(draft);
+    if (draftFiles.length < 1 || draftFiles.length > 10)
+      throw new PaymentError("PAYMENT_STATE_INVALID");
     try {
-      const pages = parsePageRange(draft.selectedPages, draft.sourcePageCount);
-      const price = calculatePrintPrice(
-        {
-          pageCount: pages.selectedPageCount,
-          copies: draft.copies,
-          fileSizeBytes: object.size,
-          paperSize: draft.paperSize,
-          colorMode: draft.colorMode,
-          sides: draft.sides,
-        },
-        await this.customer.getPricingConfiguration(),
+      const configuration = await this.customer.getPricingConfiguration();
+      const files: CustomerFileQuoteData[] = [];
+      for (const file of draftFiles) {
+        if (file.uploadStatus !== "UPLOADED" || !file.actualSizeBytes)
+          throw new PaymentError("UPLOAD_INVALID");
+        const object = await this.objects.head(file.objectKey);
+        if (!object) throw new PaymentError("UPLOAD_NOT_FOUND");
+        if (object.size !== file.actualSizeBytes)
+          throw new PaymentError("UPLOAD_INVALID");
+        const pages = parsePageRange(file.selectedPages, file.sourcePageCount);
+        const price = calculatePrintPrice(
+          {
+            pageCount: pages.selectedPageCount,
+            copies: file.copies,
+            fileSizeBytes: object.size,
+            paperSize: file.paperSize,
+            colorMode: file.colorMode,
+            sides: file.sides,
+          },
+          configuration,
+        );
+        files.push({
+          fileId: file.id,
+          position: file.position,
+          originalFilename: file.originalFilename,
+          sizeBytes: file.actualSizeBytes,
+          sourcePageCount: file.sourcePageCount,
+          selectedPages: pages.normalized,
+          selectedPageCount: pages.selectedPageCount,
+          copies: file.copies,
+          paperSize: file.paperSize,
+          colorMode: file.colorMode,
+          sides: file.sides,
+          printingAmountPaise: price.printingAmountPaise,
+          serviceChargePaise: price.serviceChargePaise,
+          uploadStatus: file.uploadStatus,
+          printStatus: "PENDING",
+        });
+      }
+      const first = files[0];
+      if (!first) throw new PaymentError("PAYMENT_STATE_INVALID");
+      const printingAmountPaise = files.reduce(
+        (total, file) => total + file.printingAmountPaise,
+        0,
+      );
+      const serviceChargePaise = files.reduce(
+        (total, file) => total + file.serviceChargePaise,
+        0,
       );
       return {
-        normalizedSelectedPages: pages.normalized,
-        selectedPageCount: pages.selectedPageCount,
-        copies: draft.copies,
-        paperSize: draft.paperSize,
-        colorMode: draft.colorMode,
-        sides: draft.sides,
-        printingAmountPaise: price.printingAmountPaise,
-        serviceChargePaise: price.serviceChargePaise,
-        totalAmountPaise: price.totalAmountPaise,
+        normalizedSelectedPages: first.selectedPages,
+        selectedPageCount: first.selectedPageCount,
+        copies: first.copies,
+        paperSize: first.paperSize,
+        colorMode: first.colorMode,
+        sides: first.sides,
+        printingAmountPaise,
+        serviceChargePaise,
+        totalAmountPaise: printingAmountPaise + serviceChargePaise,
         currency: "INR",
         expiresAt: new Date(draft.expiresAtMs).toISOString(),
+        files,
       };
     } catch (caught) {
       if (
@@ -168,6 +230,7 @@ export class PaymentService {
       throw new PaymentError("PAYMENT_CONFIGURATION_MISSING");
     }
     const draft = await this.requireDraft(rawToken);
+    const draftFiles = this.files(draft);
     const quote = await this.reprice(draft);
     const active = await this.payments.findActivePayment(draft.orderId);
     if (active && active.amountPaise !== quote.totalAmountPaise) {
@@ -182,12 +245,18 @@ export class PaymentService {
     if (quote.totalAmountPaise !== acknowledgedTotalPaise) {
       return { status: "PRICE_CHANGED", quote };
     }
-    const readiness = await this.readiness.check({
-      paperSize: draft.paperSize,
-      colorMode: draft.colorMode,
-      sides: draft.sides,
-    });
-    if (!readiness.ready) throw new PaymentError("PRINTER_NOT_READY");
+    const checked = new Set<string>();
+    for (const file of draftFiles) {
+      const key = `${file.paperSize}:${file.colorMode}:${file.sides}`;
+      if (checked.has(key)) continue;
+      checked.add(key);
+      const readiness = await this.readiness.check({
+        paperSize: file.paperSize,
+        colorMode: file.colorMode,
+        sides: file.sides,
+      });
+      if (!readiness.ready) throw new PaymentError("PRINTER_NOT_READY");
+    }
 
     if (active) {
       if (

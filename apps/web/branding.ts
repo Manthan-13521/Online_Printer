@@ -2,6 +2,14 @@
 export function applyShopBranding(shopName: string, admin = false): () => void {
   const title = admin ? `${shopName} — Admin` : shopName;
   document.title = title;
+  try {
+    window.localStorage.setItem("printgo.appName", shopName);
+  } catch {
+    // Branding remains functional when browser storage is unavailable.
+  }
+  window.dispatchEvent(
+    new CustomEvent("printgo:branding", { detail: { appName: shopName } }),
+  );
   const link = document.querySelector<HTMLLinkElement>('link[rel="manifest"]');
   if (!link || typeof URL.createObjectURL !== "function")
     return () => undefined;

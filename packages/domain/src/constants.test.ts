@@ -44,8 +44,8 @@ describe("retention constants", () => {
   it("matches the finalized retention and agent durations exactly", () => {
     expect(UNPAID_RETENTION_MS).toBe(10 * 60 * 1_000);
     expect(FAILED_OR_CANCELLED_PAYMENT_RETENTION_MS).toBe(30 * 60 * 1_000);
-    expect(COMPLETED_RETENTION_MS).toBe(1 * 60 * 60 * 1_000);
-    expect(COMPLETED_PDF_RETENTION_MS).toBe(1 * 60 * 60 * 1_000);
+    expect(COMPLETED_RETENTION_MS).toBe(2 * 60 * 60 * 1_000);
+    expect(COMPLETED_PDF_RETENTION_MS).toBe(2 * 60 * 60 * 1_000);
     expect(COMPLETED_CUSTOMER_PII_PURGE_MS).toBe(5 * 60 * 60 * 1_000);
     expect(UNRESOLVED_PAID_FAILURE_RETENTION_MS).toBe(24 * 60 * 60 * 1_000);
     expect(CUSTOMER_TRACKING_LIFETIME_MS).toBe(14 * 24 * 60 * 60 * 1_000);

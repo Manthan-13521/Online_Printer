@@ -45,6 +45,16 @@ export class PrintingService {
       claimId: record.claimId,
       leaseExpiresAtMs: record.leaseExpiresAtMs,
       jobCode: record.jobCode,
+      ...(record.fileId ? { fileId: record.fileId } : {}),
+      ...(record.filePosition !== undefined
+        ? { filePosition: record.filePosition }
+        : {}),
+      ...(record.fileCount !== undefined
+        ? { fileCount: record.fileCount }
+        : {}),
+      ...(record.originalFilename
+        ? { originalFilename: record.originalFilename }
+        : {}),
       printerId: record.printerId,
       windowsPrinterName: record.windowsPrinterName,
       download: {

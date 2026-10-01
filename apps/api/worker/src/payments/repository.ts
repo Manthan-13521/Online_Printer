@@ -27,6 +27,24 @@ export interface PayableDraftRecord {
   storageStatus: string;
   expiresAtMs: number;
   deleteAfterMs: number | null;
+  files?: PayableFileRecord[];
+}
+
+export interface PayableFileRecord {
+  id: string;
+  position: number;
+  objectKey: string;
+  originalFilename: string;
+  sourcePageCount: number;
+  selectedPages: string;
+  selectedPageCount: number | null;
+  copies: number;
+  paperSize: "A4" | "A3";
+  colorMode: "BW" | "COLOR";
+  sides: "SINGLE" | "DOUBLE";
+  expectedSizeBytes: number;
+  actualSizeBytes: number | null;
+  uploadStatus: string;
 }
 
 export interface PaymentRecord {
@@ -40,6 +58,15 @@ export interface PaymentRecord {
   status: "CREATED" | "PENDING" | "PAID" | "FAILED" | "CANCELLED" | "REFUNDED";
   publicJobCode: string | null;
   orderStatus: string;
+}
+
+export interface RetainedPaymentRecord {
+  id: string;
+  providerOrderId: string;
+  providerPaymentId: string | null;
+  amountPaise: number;
+  currency: string;
+  status: string;
 }
 
 interface DraftRow {
@@ -125,6 +152,9 @@ export interface PaymentRepository {
   findPaymentByProviderOrderId(
     providerOrderId: string,
   ): Promise<PaymentRecord | null>;
+  findRetainedPaymentByProviderOrderId(
+    providerOrderId: string,
+  ): Promise<RetainedPaymentRecord | null>;
   finalizePaid(input: {
     paymentId: string;
     providerPaymentId: string;
@@ -174,37 +204,77 @@ export class D1PaymentRepository implements PaymentRepository {
           u.expected_size_bytes, u.size_bytes, u.storage_status,
           o.draft_expires_at_ms, u.delete_after_ms
         FROM orders o JOIN uploads u ON u.order_id = o.id
-        WHERE o.draft_token_hash = ?`,
+        WHERE o.draft_token_hash = ? AND o.cleanup_state = 'ACTIVE'`,
       )
       .bind(tokenHash)
       .first<DraftRow>();
-    return row
-      ? {
-          orderId: row.order_id,
-          uploadId: row.upload_id,
-          objectKey: row.r2_object_key,
-          customerName: row.customer_name,
-          customerPhone: row.customer_phone,
-          originalFilename: row.original_filename,
-          sourcePageCount: row.source_page_count,
-          selectedPages: row.selected_pages,
-          copies: row.copies,
-          paperSize: row.paper_size,
-          colorMode: row.color_mode,
-          sides: row.sides,
-          printingAmountPaise: row.printing_amount_paise,
-          serviceChargePaise: row.service_charge_paise,
-          totalAmountPaise: row.total_amount_paise,
-          currency: row.currency,
-          orderStatus: row.order_status,
-          publicJobCode: row.public_job_code,
-          expectedSizeBytes: row.expected_size_bytes,
-          actualSizeBytes: row.size_bytes,
-          storageStatus: row.storage_status,
-          expiresAtMs: row.draft_expires_at_ms,
-          deleteAfterMs: row.delete_after_ms,
-        }
-      : null;
+    if (!row) return null;
+    const files = await this.db
+      .prepare(
+        `SELECT id, position, r2_object_key, original_filename,
+          source_page_count, selected_pages, selected_page_count, copies,
+          paper_size, color_mode, sides, expected_size_bytes, size_bytes,
+          upload_status
+         FROM order_files WHERE order_id = ? ORDER BY position`,
+      )
+      .bind(row.order_id)
+      .all<{
+        id: string;
+        position: number;
+        r2_object_key: string;
+        original_filename: string;
+        source_page_count: number;
+        selected_pages: string;
+        selected_page_count: number | null;
+        copies: number;
+        paper_size: "A4" | "A3";
+        color_mode: "BW" | "COLOR";
+        sides: "SINGLE" | "DOUBLE";
+        expected_size_bytes: number;
+        size_bytes: number | null;
+        upload_status: string;
+      }>();
+    return {
+      orderId: row.order_id,
+      uploadId: row.upload_id,
+      objectKey: row.r2_object_key,
+      customerName: row.customer_name,
+      customerPhone: row.customer_phone,
+      originalFilename: row.original_filename,
+      sourcePageCount: row.source_page_count,
+      selectedPages: row.selected_pages,
+      copies: row.copies,
+      paperSize: row.paper_size,
+      colorMode: row.color_mode,
+      sides: row.sides,
+      printingAmountPaise: row.printing_amount_paise,
+      serviceChargePaise: row.service_charge_paise,
+      totalAmountPaise: row.total_amount_paise,
+      currency: row.currency,
+      orderStatus: row.order_status,
+      publicJobCode: row.public_job_code,
+      expectedSizeBytes: row.expected_size_bytes,
+      actualSizeBytes: row.size_bytes,
+      storageStatus: row.storage_status,
+      expiresAtMs: row.draft_expires_at_ms,
+      deleteAfterMs: row.delete_after_ms,
+      files: files.results.map((file) => ({
+        id: file.id,
+        position: file.position,
+        objectKey: file.r2_object_key,
+        originalFilename: file.original_filename,
+        sourcePageCount: file.source_page_count,
+        selectedPages: file.selected_pages,
+        selectedPageCount: file.selected_page_count,
+        copies: file.copies,
+        paperSize: file.paper_size,
+        colorMode: file.color_mode,
+        sides: file.sides,
+        expectedSizeBytes: file.expected_size_bytes,
+        actualSizeBytes: file.size_bytes,
+        uploadStatus: file.upload_status,
+      })),
+    };
   }
 
   async saveRecalculatedQuote(
@@ -217,6 +287,7 @@ export class D1PaymentRepository implements PaymentRepository {
           status = 'PAYMENT_PENDING', updated_at_ms = ?
         WHERE id = ? AND status IN
           ('UPLOADED', 'PAYMENT_PENDING', 'PAYMENT_FAILED', 'PAYMENT_CANCELLED')
+          AND cleanup_state = 'ACTIVE'
           AND (status <> 'PAYMENT_PENDING' OR selected_pages IS NOT ? OR printing_amount_paise IS NOT ?
             OR service_charge_paise IS NOT ? OR total_amount_paise IS NOT ?)`,
       )
@@ -239,6 +310,7 @@ export class D1PaymentRepository implements PaymentRepository {
       await this.db
         .prepare(
           `SELECT 1 FROM orders WHERE id = ? AND status = 'PAYMENT_PENDING'
+      AND cleanup_state = 'ACTIVE'
       AND selected_pages IS ? AND printing_amount_paise IS ? AND service_charge_paise IS ? AND total_amount_paise IS ?`,
         )
         .bind(
@@ -292,15 +364,20 @@ export class D1PaymentRepository implements PaymentRepository {
           `INSERT INTO payments
             (id, order_id, provider_order_id, amount_paise, currency, status,
              created_at_ms, updated_at_ms)
-          VALUES (?, ?, ?, ?, 'INR', 'CREATED', ?, ?)`,
+          SELECT ?, o.id, ?, ?, 'INR', 'CREATED', ?, ? FROM orders o
+          WHERE o.id = ? AND o.cleanup_state = 'ACTIVE'
+            AND o.status IN ('PAYMENT_PENDING','PAYMENT_FAILED','PAYMENT_CANCELLED')
+            AND EXISTS (SELECT 1 FROM order_files f WHERE f.order_id = o.id)
+            AND NOT EXISTS (SELECT 1 FROM order_files f WHERE f.order_id = o.id
+              AND f.upload_status <> 'UPLOADED')`,
         )
         .bind(
           input.paymentId,
-          input.orderId,
           input.temporaryProviderOrderId,
           input.amountPaise,
           input.nowMs,
           input.nowMs,
+          input.orderId,
         ),
       this.db
         .prepare(
@@ -361,12 +438,63 @@ export class D1PaymentRepository implements PaymentRepository {
     return this.findPayment("p.provider_order_id", providerOrderId);
   }
 
+  async findRetainedPaymentByProviderOrderId(
+    providerOrderId: string,
+  ): Promise<RetainedPaymentRecord | null> {
+    const row = await this.db
+      .prepare(
+        `SELECT id, provider_order_id, provider_payment_id, amount_paise,
+          currency, status FROM retained_payment_records
+         WHERE provider = 'RAZORPAY' AND provider_order_id = ?`,
+      )
+      .bind(providerOrderId)
+      .first<{
+        id: string;
+        provider_order_id: string;
+        provider_payment_id: string | null;
+        amount_paise: number;
+        currency: string;
+        status: string;
+      }>();
+    return row
+      ? {
+          id: row.id,
+          providerOrderId: row.provider_order_id,
+          providerPaymentId: row.provider_payment_id,
+          amountPaise: row.amount_paise,
+          currency: row.currency,
+          status: row.status,
+        }
+      : null;
+  }
+
   async finalizePaid(
     input: Parameters<PaymentRepository["finalizePaid"]>[0],
   ): Promise<PaymentRecord> {
     const before = await this.findPayment("p.id", input.paymentId);
     if (!before) throw new Error("Payment record missing.");
     if (before.status === "PAID" && before.publicJobCode) return before;
+    const orderUpdate = await this.db
+      .prepare(
+        `UPDATE orders SET public_job_code = COALESCE(public_job_code, ?),
+          status = 'QUEUED', paid_at_ms = COALESCE(paid_at_ms, ?),
+          queued_at_ms = COALESCE(queued_at_ms, ?), updated_at_ms = ?
+         WHERE id = ? AND cleanup_state = 'ACTIVE' AND (
+           status IN ('PAYMENT_PENDING', 'PAYMENT_FAILED', 'PAYMENT_CANCELLED', 'PAID')
+           OR (status = 'QUEUED' AND public_job_code = ?)
+         )`,
+      )
+      .bind(
+        input.jobCode,
+        input.nowMs,
+        input.nowMs,
+        input.nowMs,
+        before.orderId,
+        input.jobCode,
+      )
+      .run();
+    if (orderUpdate.meta.changes !== 1)
+      throw new Error("Payment order is no longer eligible for finalization.");
     await this.db.batch([
       this.db
         .prepare(
@@ -379,21 +507,6 @@ export class D1PaymentRepository implements PaymentRepository {
           input.nowMs,
           input.nowMs,
           input.paymentId,
-        ),
-      this.db
-        .prepare(
-          `UPDATE orders SET public_job_code = COALESCE(public_job_code, ?),
-            status = 'QUEUED', paid_at_ms = COALESCE(paid_at_ms, ?),
-            queued_at_ms = COALESCE(queued_at_ms, ?), updated_at_ms = ?
-          WHERE id = ? AND status IN
-            ('PAYMENT_PENDING', 'PAYMENT_FAILED', 'PAYMENT_CANCELLED', 'PAID')`,
-        )
-        .bind(
-          input.jobCode,
-          input.nowMs,
-          input.nowMs,
-          input.nowMs,
-          before.orderId,
         ),
       this.db
         .prepare(
@@ -553,6 +666,14 @@ export class D1PaymentRepository implements PaymentRepository {
   ): Promise<boolean> {
     const staleThresholdMs =
       input.staleTimeoutMs ?? WEBHOOK_PROCESSING_STALE_TIMEOUT_MS;
+    const retained = await this.db
+      .prepare(
+        `SELECT 1 FROM retained_provider_events
+         WHERE provider = 'RAZORPAY' AND provider_event_id = ?`,
+      )
+      .bind(input.providerEventId)
+      .first();
+    if (retained) return false;
     try {
       await this.db
         .prepare(

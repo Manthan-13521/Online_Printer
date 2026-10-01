@@ -1,7 +1,7 @@
 import type { WorkerEnv } from "./env";
 import { error } from "./http";
-import { D1RetentionRepository } from "./retention/repository";
-import { RetentionService } from "./retention/service";
+import { D1CleanupRepository } from "./cleanup/repository";
+import { CleanupService } from "./cleanup/service";
 import { routeRequest } from "./router";
 
 export { routeRequest } from "./router";
@@ -28,17 +28,20 @@ export default {
     env: WorkerEnv,
   ): Promise<void> {
     try {
-      const repository = new D1RetentionRepository(env.DB);
-      const service = new RetentionService(repository, env.PDF_BUCKET);
-      const result = await service.runCleanup();
-      console.log("Retention cleanup scheduled execution complete", {
-        processedUploads: result.processedUploads,
-        deletedUploads: result.deletedUploads,
-        failedUploads: result.failedUploads,
-        purgedPiiCount: result.purgedPiiCount,
+      const service = new CleanupService(
+        new D1CleanupRepository(env.DB),
+        env.PDF_BUCKET,
+      );
+      const result = await service.runScheduled();
+      console.log("Cleanup scheduled execution complete", {
+        runId: result?.runId ?? null,
+        status: result?.status ?? "IDLE",
+        deletedOrders: result?.deletedOrders ?? 0,
+        deletedFiles: result?.deletedFiles ?? 0,
+        failures: result?.failures ?? 0,
       });
     } catch (err) {
-      console.error("Retention cleanup scheduled execution failed", {
+      console.error("Cleanup scheduled execution failed", {
         error: err instanceof Error ? err.name : "UnknownError",
       });
     }

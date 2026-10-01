@@ -296,9 +296,14 @@ Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $printer } | Select-O
         break;
     }
 
-    // PrinterStatus: 3 = Idle, 4 = Printing, 5 = Warmup, 7 = Offline
-    if (p.PrinterStatus === 7) {
-      return { availability: "OFFLINE", message: "Printer is offline" };
+    // PrinterStatus: 2 = Unknown, 3 = Idle, 4 = Printing, 5 = Warmup,
+    // 6 = Stopped Printing, 7 = Offline. Unknown is only accepted when the
+    // independent error state explicitly reports no error.
+    if (p.PrinterStatus === 7 || p.PrinterStatus === 6) {
+      return {
+        availability: "OFFLINE",
+        message: "Printer is offline or stopped",
+      };
     }
     if (
       p.PrinterStatus === 3 ||
@@ -453,9 +458,10 @@ if (-not $sumatra -or -not (Test-Path $sumatra)) {
 
 # Fresh readiness in this same process, before any physical side effect. Never trust the idle snapshot here.
 $ready = Get-CimInstance Win32_Printer -ErrorAction Stop | Where-Object { $_.Name -eq $printer }
-if (-not $ready -or $ready.WorkOffline -or $ready.PrinterStatus -eq 7 -or
+if (-not $ready -or $ready.WorkOffline -or $ready.PrinterStatus -in @(6,7) -or
     $ready.DetectedErrorState -in @(4,6,7,8,9,10,11) -or
-    ($ready.PrinterStatus -notin @(3,4,5) -and $ready.DetectedErrorState -ne 2)) {
+    ($ready.PrinterStatus -notin @(3,4,5) -and
+      -not ($ready.PrinterStatus -eq 2 -and $ready.DetectedErrorState -eq 2))) {
     throw "Printer readiness could not be confirmed before submission."
 }
 
@@ -616,6 +622,8 @@ if (-not $job) {
     JobStatus = [string]$job.JobStatus
     Status = [string]$job.Status
     StatusMask = [int]$job.StatusMask
+    TotalPages = [int]$job.TotalPages
+    PagesPrinted = [int]$job.PagesPrinted
   } | ConvertTo-Json -Compress
 }
     `.trim();
@@ -635,11 +643,30 @@ if (-not $job) {
         JobStatus?: string;
         Status?: string;
         StatusMask?: number;
+        TotalPages?: number;
+        PagesPrinted?: number;
       };
 
       const mask = parsed.StatusMask ?? 0;
       const jobStatus = (parsed.JobStatus ?? "").toLowerCase();
       const status = (parsed.Status ?? "").toLowerCase();
+      const totalPages = parsed.TotalPages ?? 0;
+      const pagesPrinted = parsed.PagesPrinted ?? 0;
+
+      // Check for completion states (including Windows retained completed jobs)
+      if (
+        (mask & 0x1000) !== 0 ||
+        (mask & 0x0080) !== 0 ||
+        jobStatus.includes("complete") ||
+        jobStatus.includes("printed") ||
+        (totalPages > 0 && pagesPrinted >= totalPages)
+      ) {
+        return {
+          state: "COMPLETED_OR_REMOVED",
+          spoolJobId,
+          message: "Spool job completed and handed off to printer.",
+        };
+      }
 
       // Check for blocked states (CRITICAL RULE: BLOCKED != FAILED)
       if (

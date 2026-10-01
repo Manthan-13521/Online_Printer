@@ -1,4 +1,10 @@
-import type { ShopSettings } from "@printgo/api-contract";
+import { applyShopBranding } from "../../branding";
+import type {
+  AdminCleanupPreviewData,
+  AdminCleanupRunData,
+  CleanupScope,
+  ShopSettings,
+} from "@printgo/api-contract";
 import {
   FILE_SIZE_5_MIB,
   FILE_SIZE_10_MIB,
@@ -7,6 +13,7 @@ import {
 } from "@printgo/domain";
 import {
   ADDRESS_MAX_LENGTH,
+  APP_NAME_MAX_LENGTH,
   CONTACT_PHONE_MAX_LENGTH,
   CUSTOMER_NOTICE_MAX_LENGTH,
   SHOP_NAME_MAX_LENGTH,
@@ -42,6 +49,16 @@ export function ShopSettingsPage({
   const [message, setMessage] = useState<string | null>(null);
   const [logoBusy, setLogoBusy] = useState(false);
   const [confirmPause, setConfirmPause] = useState(false);
+  const [cleanupScope, setCleanupScope] = useState<Extract<
+    CleanupScope,
+    "ALL_COMPLETED" | "ALL_PRINT_DATA"
+  > | null>(null);
+  const [cleanupPreview, setCleanupPreview] =
+    useState<AdminCleanupPreviewData | null>(null);
+  const [cleanupResult, setCleanupResult] =
+    useState<AdminCleanupRunData | null>(null);
+  const [cleanupConfirmation, setCleanupConfirmation] = useState("");
+  const [cleanupBusy, setCleanupBusy] = useState(false);
 
   const dirty =
     settings !== null && JSON.stringify(settings) !== JSON.stringify(saved);
@@ -69,6 +86,11 @@ export function ShopSettingsPage({
   useEffect(() => {
     void load();
   }, []);
+
+  useEffect(() => {
+    if (saved?.appName) return applyShopBranding(saved.appName, true);
+    return undefined;
+  }, [saved?.appName]);
 
   function patch(update: Partial<ShopSettings>) {
     setSettings((current) => (current ? { ...current, ...update } : current));
@@ -123,6 +145,54 @@ export function ShopSettingsPage({
     }
   }
 
+  async function previewCleanup(
+    scope: Extract<CleanupScope, "ALL_COMPLETED" | "ALL_PRINT_DATA">,
+  ) {
+    setCleanupBusy(true);
+    setError(null);
+    try {
+      const response = await adminApi.cleanupPreview(scope);
+      if (response.ok) {
+        setCleanupScope(scope);
+        setCleanupPreview(response.data);
+        setCleanupConfirmation("");
+      }
+    } catch (caught) {
+      if (caught instanceof AdminApiError && caught.status === 401)
+        onSessionExpired(caught.message);
+      else setError(friendlyAdminError(caught));
+    } finally {
+      setCleanupBusy(false);
+    }
+  }
+
+  async function executeCleanup() {
+    if (!cleanupScope || cleanupBusy) return;
+    setCleanupBusy(true);
+    setError(null);
+    try {
+      const response = await adminApi.startCleanup(
+        cleanupScope,
+        cleanupConfirmation,
+      );
+      if (response.ok) {
+        setCleanupResult(response.data);
+        setCleanupPreview(null);
+        setCleanupScope(null);
+        setCleanupConfirmation("");
+        setMessage(
+          "Cleanup run started. Remaining batches continue automatically.",
+        );
+      }
+    } catch (caught) {
+      if (caught instanceof AdminApiError && caught.status === 401)
+        onSessionExpired(caught.message);
+      else setError(friendlyAdminError(caught));
+    } finally {
+      setCleanupBusy(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="panel page-loading" aria-busy="true">
@@ -169,7 +239,15 @@ export function ShopSettingsPage({
       ) : null}
       <form onSubmit={(event) => void save(event)}>
         <section className="panel form-section">
-          <h2>Shop details</h2>
+          <h2>Branding &amp; shop details</h2>
+          <label htmlFor="app-name">App name *</label>
+          <input
+            id="app-name"
+            maxLength={APP_NAME_MAX_LENGTH}
+            required
+            value={settings.appName ?? "PrintGo"}
+            onChange={(event) => patch({ appName: event.target.value })}
+          />
           <label htmlFor="shop-name">Shop name *</label>
           <input
             id="shop-name"
@@ -198,7 +276,7 @@ export function ShopSettingsPage({
             }}
           />
           <p className="field-help">
-            PNG, JPEG or WebP, up to 256 KB. Choosing a file saves the logo
+            PNG, JPEG or WebP, up to 1 MB. Choosing a file saves the logo
             immediately.
           </p>
           {settings.logoUrl ? (
@@ -284,6 +362,20 @@ export function ShopSettingsPage({
           <p className="field-help">
             Stored and enforced as binary MiB. The maximum is 25 MB.
           </p>
+          <label htmlFor="order-upload-limit">Maximum total per order</label>
+          <select
+            id="order-upload-limit"
+            value={settings.maxOrderUploadBytes ?? 100 * MIB}
+            onChange={(event) =>
+              patch({ maxOrderUploadBytes: Number(event.target.value) })
+            }
+          >
+            {[25, 50, 75, 100].map((megabytes) => (
+              <option key={megabytes} value={megabytes * MIB}>
+                {megabytes} MB
+              </option>
+            ))}
+          </select>
         </section>
 
         <section className="panel form-section">
@@ -325,6 +417,133 @@ export function ShopSettingsPage({
               <span>Print after document</span>
             </label>
           </fieldset>
+        </section>
+
+        <section className="panel form-section">
+          <h2>Storage &amp; Privacy</h2>
+          <p className="field-help">
+            Completed orders are automatically purged after 2 hours. Abandoned
+            unpaid uploads are purged after 10 minutes.
+          </p>
+          <label className="checkbox-row">
+            <input
+              checked={settings.automaticDailyCleanupEnabled ?? false}
+              onChange={(event) =>
+                patch({ automaticDailyCleanupEnabled: event.target.checked })
+              }
+              type="checkbox"
+            />
+            <span>Automatic Daily Cleanup</span>
+          </label>
+          <label htmlFor="cleanup-time">Cleanup Time</label>
+          <input
+            id="cleanup-time"
+            type="time"
+            value={settings.dailyCleanupTime ?? "23:30"}
+            onChange={(event) =>
+              patch({ dailyCleanupTime: event.target.value })
+            }
+          />
+          <label htmlFor="cleanup-timezone">Timezone (IANA)</label>
+          <input
+            id="cleanup-timezone"
+            value={settings.timezone ?? "Asia/Kolkata"}
+            onChange={(event) => patch({ timezone: event.target.value })}
+          />
+          <dl>
+            <div>
+              <dt>Last Cleanup</dt>
+              <dd>{settings.lastCleanupAt ?? "Not yet run"}</dd>
+            </div>
+            <div>
+              <dt>Next Cleanup</dt>
+              <dd>{settings.nextCleanupAt ?? "Calculated after save"}</dd>
+            </div>
+            <div>
+              <dt>Last Result</dt>
+              <dd>{settings.lastCleanupResult ?? "—"}</dd>
+            </div>
+          </dl>
+          <div className="dialog-actions">
+            <button
+              className="danger-button"
+              disabled={cleanupBusy}
+              onClick={() => void previewCleanup("ALL_COMPLETED")}
+              type="button"
+            >
+              Free Printed Data
+            </button>
+            <button
+              className="danger-button"
+              disabled={cleanupBusy}
+              onClick={() => void previewCleanup("ALL_PRINT_DATA")}
+              type="button"
+            >
+              Free All Print Data
+            </button>
+          </div>
+          {cleanupPreview && cleanupScope ? (
+            <div
+              className="confirm-dialog"
+              role="alertdialog"
+              aria-modal="false"
+            >
+              <h3>
+                {cleanupScope === "ALL_COMPLETED"
+                  ? "Free Printed Data"
+                  : "Free All Print Data"}
+              </h3>
+              <p>
+                This permanently deletes customer print files and related
+                operational data. This cannot be undone.
+              </p>
+              <p>
+                {cleanupPreview.orders} orders · {cleanupPreview.files} PDFs ·{" "}
+                {Math.ceil(cleanupPreview.bytes / MIB)} MB.{" "}
+                {cleanupPreview.active} active orders will be skipped.
+              </p>
+              <label htmlFor="cleanup-confirmation">
+                Type{" "}
+                {cleanupScope === "ALL_COMPLETED" ? "FREE PRINTED" : "FREE ALL"}{" "}
+                to confirm
+              </label>
+              <input
+                id="cleanup-confirmation"
+                value={cleanupConfirmation}
+                onChange={(event) => setCleanupConfirmation(event.target.value)}
+              />
+              <div className="dialog-actions">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => setCleanupPreview(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="danger-button"
+                  disabled={
+                    cleanupConfirmation !==
+                      (cleanupScope === "ALL_COMPLETED"
+                        ? "FREE PRINTED"
+                        : "FREE ALL") || cleanupBusy
+                  }
+                  onClick={() => void executeCleanup()}
+                >
+                  Permanently delete
+                </button>
+              </div>
+            </div>
+          ) : null}
+          {cleanupResult ? (
+            <p role="status">
+              Deleted: {cleanupResult.deletedOrders} orders /{" "}
+              {cleanupResult.deletedFiles} PDFs. Active skipped:{" "}
+              {cleanupResult.activeSkipped}. Failed: {cleanupResult.failures}.
+              Status: {cleanupResult.status}.
+            </p>
+          ) : null}
         </section>
 
         <div className="save-bar">

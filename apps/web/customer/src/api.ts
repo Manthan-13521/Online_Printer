@@ -8,11 +8,15 @@ import type {
   CreateCustomerPaymentData,
   CreateCustomerPaymentRequest,
   CustomerConfigData,
+  CustomerDraftData,
+  CustomerOrderQuoteRequest,
   CustomerPaymentSuccessData,
   CustomerTrackingData,
   CustomerPrintSettingsRequest,
   CustomerQuoteData,
   UploadAuthorization,
+  AddCustomerFileData,
+  AddCustomerFileRequest,
   VerifyCustomerPaymentRequest,
 } from "@printgo/api-contract";
 
@@ -61,17 +65,40 @@ export const customerApi = {
       method: "POST",
       body: JSON.stringify(input),
     }),
-  complete: (token: string) =>
+  complete: (token: string, fileId?: string) =>
     jsonRequest<CompleteCustomerUploadData>(
       "/api/customer/uploads/complete",
-      authorized(token, { method: "POST", body: "{}" }),
+      authorized(token, {
+        method: "POST",
+        body: JSON.stringify(fileId ? { fileId } : {}),
+      }),
     ),
-  authorize: (token: string) =>
+  authorize: (token: string, fileId?: string) =>
     jsonRequest<{ upload: UploadAuthorization }>(
       "/api/customer/uploads/authorize",
-      authorized(token, { method: "POST", body: "{}" }),
+      authorized(token, {
+        method: "POST",
+        body: JSON.stringify(fileId ? { fileId } : {}),
+      }),
+    ),
+  getDraft: (token: string) =>
+    jsonRequest<CustomerDraftData>("/api/customer/draft", authorized(token)),
+  addFile: (token: string, input: AddCustomerFileRequest) =>
+    jsonRequest<AddCustomerFileData>(
+      "/api/customer/draft/files",
+      authorized(token, { method: "POST", body: JSON.stringify(input) }),
+    ),
+  removeFile: (token: string, fileId: string) =>
+    jsonRequest<CustomerDraftData>(
+      `/api/customer/draft/files/${encodeURIComponent(fileId)}`,
+      authorized(token, { method: "DELETE" }),
     ),
   quote: (token: string, input: CustomerPrintSettingsRequest) =>
+    jsonRequest<CustomerQuoteData>(
+      "/api/customer/draft/print-settings",
+      authorized(token, { method: "PUT", body: JSON.stringify(input) }),
+    ),
+  quoteOrder: (token: string, input: CustomerOrderQuoteRequest) =>
     jsonRequest<CustomerQuoteData>(
       "/api/customer/draft/print-settings",
       authorized(token, { method: "PUT", body: JSON.stringify(input) }),

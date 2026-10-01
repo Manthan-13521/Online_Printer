@@ -38,14 +38,22 @@ export interface ConfigurationRepository {
 
 interface SettingsRow {
   logo_key: string | null;
+  app_name: string;
   shop_name: string;
   contact_phone: string | null;
   address: string | null;
   customer_notice: string | null;
   online_printing_enabled: number;
   max_pdf_size_bytes: number;
+  max_order_upload_bytes: number;
   identification_sheet_enabled: number;
   identification_sheet_placement: "FIRST" | "LAST";
+  automatic_daily_cleanup_enabled: number;
+  daily_cleanup_time: string;
+  timezone: string;
+  last_cleanup_at_ms: number | null;
+  next_daily_cleanup_at_ms: number | null;
+  last_cleanup_result: string | null;
 }
 
 interface PrintRateRow {
@@ -98,14 +106,17 @@ export class D1ConfigurationRepository implements ConfigurationRepository {
   async getSettings(): Promise<ShopSettings | null> {
     const row = await this.db
       .prepare(
-        `SELECT logo_key, shop_name, contact_phone, address, customer_notice,
-                online_printing_enabled, max_pdf_size_bytes,
-                identification_sheet_enabled, identification_sheet_placement
+        `SELECT logo_key, app_name, shop_name, contact_phone, address, customer_notice,
+                online_printing_enabled, max_pdf_size_bytes, max_order_upload_bytes,
+                identification_sheet_enabled, identification_sheet_placement,
+                automatic_daily_cleanup_enabled, daily_cleanup_time, timezone,
+                last_cleanup_at_ms, next_daily_cleanup_at_ms, last_cleanup_result
          FROM installation WHERE id = 1`,
       )
       .first<SettingsRow>();
     return row
       ? {
+          appName: row.app_name,
           shopName: row.shop_name,
           logoUrl: row.logo_key
             ? `/api/branding/logo/${row.logo_key.slice("branding/".length)}`
@@ -115,8 +126,20 @@ export class D1ConfigurationRepository implements ConfigurationRepository {
           customerNotice: row.customer_notice,
           onlinePrintingEnabled: row.online_printing_enabled === 1,
           maxPdfSizeBytes: row.max_pdf_size_bytes,
+          maxOrderUploadBytes: row.max_order_upload_bytes,
           identificationSheetEnabled: row.identification_sheet_enabled === 1,
           identificationSheetPlacement: row.identification_sheet_placement,
+          automaticDailyCleanupEnabled:
+            row.automatic_daily_cleanup_enabled === 1,
+          dailyCleanupTime: row.daily_cleanup_time,
+          timezone: row.timezone,
+          lastCleanupAt: row.last_cleanup_at_ms
+            ? new Date(row.last_cleanup_at_ms).toISOString()
+            : null,
+          nextCleanupAt: row.next_daily_cleanup_at_ms
+            ? new Date(row.next_daily_cleanup_at_ms).toISOString()
+            : null,
+          lastCleanupResult: row.last_cleanup_result,
         }
       : null;
   }
@@ -131,21 +154,33 @@ export class D1ConfigurationRepository implements ConfigurationRepository {
       this.db
         .prepare(
           `UPDATE installation
-           SET shop_name = ?, contact_phone = ?, address = ?, customer_notice = ?,
-               online_printing_enabled = ?, max_pdf_size_bytes = ?,
+           SET app_name = ?, shop_name = ?, contact_phone = ?, address = ?, customer_notice = ?,
+               online_printing_enabled = ?, max_pdf_size_bytes = ?, max_order_upload_bytes = ?,
                identification_sheet_enabled = ?, identification_sheet_placement = ?,
+               next_daily_cleanup_at_ms = CASE
+                 WHEN automatic_daily_cleanup_enabled = ? AND daily_cleanup_time = ? AND timezone = ?
+                 THEN next_daily_cleanup_at_ms ELSE NULL END,
+               automatic_daily_cleanup_enabled = ?, daily_cleanup_time = ?, timezone = ?,
                updated_at_ms = ?
            WHERE id = 1`,
         )
         .bind(
+          input.settings.appName ?? "PrintGo",
           input.settings.shopName,
           input.settings.contactPhone,
           input.settings.address,
           input.settings.customerNotice,
           input.settings.onlinePrintingEnabled ? 1 : 0,
           input.settings.maxPdfSizeBytes,
+          input.settings.maxOrderUploadBytes ?? input.settings.maxPdfSizeBytes,
           input.settings.identificationSheetEnabled ? 1 : 0,
           input.settings.identificationSheetPlacement,
+          input.settings.automaticDailyCleanupEnabled ? 1 : 0,
+          input.settings.dailyCleanupTime ?? "23:30",
+          input.settings.timezone ?? "Asia/Kolkata",
+          input.settings.automaticDailyCleanupEnabled ? 1 : 0,
+          input.settings.dailyCleanupTime ?? "23:30",
+          input.settings.timezone ?? "Asia/Kolkata",
           input.nowMs,
         ),
       auditStatement(this.db, {

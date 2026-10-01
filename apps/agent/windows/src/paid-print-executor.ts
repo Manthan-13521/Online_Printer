@@ -306,20 +306,50 @@ export class PaidPrintExecutor {
       job.windowsPrinterName,
       spoolerJobId,
     );
+    if (observed.state === "BLOCKED") {
+      await this.client.reportPrintStep(
+        credentials.serverUrl,
+        credentials.agentId,
+        credentials.agentSecret,
+        job,
+        {
+          status: "BLOCKED",
+          spoolerJobId,
+          failureCode: observed.failureCode ?? "UNKNOWN",
+          failureDetail:
+            observed.message ?? "Printer is blocked and requires attention.",
+        },
+      );
+      return;
+    }
+    if (observed.state === "FAILED") {
+      await this.client.reportPrintStep(
+        credentials.serverUrl,
+        credentials.agentId,
+        credentials.agentSecret,
+        job,
+        {
+          status: "FAILED",
+          spoolerJobId,
+          failureCode: observed.failureCode ?? "PRINTER_ERROR",
+          failureDetail: observed.message ?? "Spooler rejected the print job.",
+        },
+      );
+      await this.journal.clear();
+      return;
+    }
+
     if (
       observed.state === "PRINTING" ||
-      observed.state === "QUEUED" ||
-      observed.state === "SPOOLING"
-    )
+      observed.state === "SPOOLING" ||
+      observed.state === "QUEUED"
+    ) {
       return;
+    }
+
     const status =
-      observed.state === "BLOCKED"
-        ? "BLOCKED"
-        : observed.state === "FAILED"
-          ? "FAILED"
-          : observed.state === "COMPLETED_OR_REMOVED"
-            ? "SUCCEEDED"
-            : "UNCERTAIN";
+      observed.state === "COMPLETED_OR_REMOVED" ? "SUCCEEDED" : "UNCERTAIN";
+
     await this.client.reportPrintStep(
       credentials.serverUrl,
       credentials.agentId,
@@ -333,7 +363,7 @@ export class PaidPrintExecutor {
         failureDetail: observed.message ?? null,
       },
     );
-    if (status !== "BLOCKED") await this.journal.clear();
+    await this.journal.clear();
     if (status === "SUCCEEDED") {
       this.log(
         `PRINT_TIMING step=${job.currentStep.stepId} event=step_acknowledged atMs=${Date.now()}`,

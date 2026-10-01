@@ -67,7 +67,7 @@ function fakeDatabase(rows: Array<Record<string, unknown>>) {
           return Promise.resolve((rows.shift() as T | undefined) ?? null);
         },
         run() {
-          return Promise.resolve({ success: true });
+          return Promise.resolve({ success: true, meta: { changes: 1 } });
         },
       };
       statements.push(statement);
@@ -158,14 +158,30 @@ describe("D1PaymentRepository payment lifecycle", () => {
 describe("D1PaymentRepository webhook claim & stale event recovery", () => {
   function createRealDb(): D1Database {
     const database = new DatabaseSync(":memory:");
-    const initialSchema = readFileSync(
-      new URL(
-        "../../../../../database/migrations/0001_initial_schema.sql",
-        import.meta.url,
-      ),
-      "utf8",
-    );
-    database.exec(initialSchema);
+    for (const name of [
+      "0001_initial_schema.sql",
+      "0002_customer_draft_upload.sql",
+      "0003_payment_idempotency.sql",
+      "0004_customer_tracking.sql",
+      "0005_printer_test_commands.sql",
+      "0006_paid_print_execution.sql",
+      "0007_performance_optimization_indexes.sql",
+      "0008_production_printer_reliability.sql",
+      "0009_retention_and_pii_purge.sql",
+      "0010_efficiency_and_branding.sql",
+      "0011_retention_retry_schedule.sql",
+      "0012_multi_file_cleanup_and_app_branding.sql",
+    ]) {
+      database.exec(
+        readFileSync(
+          new URL(
+            `../../../../../database/migrations/${name}`,
+            import.meta.url,
+          ),
+          "utf8",
+        ),
+      );
+    }
     return {
       prepare(sql: string) {
         return new SqliteD1Statement(database, sql);

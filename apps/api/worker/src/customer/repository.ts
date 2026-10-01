@@ -13,6 +13,37 @@ export interface CustomerDraftRecord {
   expiresAtMs: number;
 }
 
+export interface CustomerFileRecord {
+  id: string;
+  orderId: string;
+  position: number;
+  originalFilename: string;
+  objectKey: string;
+  expectedSizeBytes: number;
+  actualSizeBytes: number | null;
+  sourcePageCount: number;
+  selectedPages: string;
+  selectedPageCount: number | null;
+  copies: number;
+  paperSize: "A4" | "A3";
+  colorMode: "BW" | "COLOR";
+  sides: "SINGLE" | "DOUBLE";
+  printingAmountPaise: number;
+  serviceChargePaise: number;
+  uploadStatus: string;
+  printStatus: string;
+  expiresAtMs: number;
+}
+
+export interface CustomerDraftSummary {
+  orderId: string;
+  customerName: string;
+  customerPhone: string;
+  instructions: string | null;
+  status: string;
+  expiresAtMs: number;
+}
+
 export interface CustomerRepository {
   getPublicConfig(): Promise<CustomerConfigData | null>;
   getPricingConfiguration(): Promise<PricingConfiguration>;
@@ -39,6 +70,36 @@ export interface CustomerRepository {
     expiresAtMs: number;
   }): Promise<void>;
   findDraft(tokenHash: string): Promise<CustomerDraftRecord | null>;
+  findDraftSummary(tokenHash: string): Promise<CustomerDraftSummary | null>;
+  listFiles(tokenHash: string): Promise<CustomerFileRecord[]>;
+  findFile(
+    tokenHash: string,
+    fileId?: string,
+  ): Promise<CustomerFileRecord | null>;
+  claimFileRemoval(
+    tokenHash: string,
+    fileId: string,
+    nowMs: number,
+  ): Promise<boolean>;
+  markFileRemovalFailed(fileId: string, nowMs: number): Promise<void>;
+  addFile(input: {
+    tokenHash: string;
+    fileId: string;
+    objectKey: string;
+    originalFilename: string;
+    expectedSizeBytes: number;
+    sourcePageCount: number;
+    paperSize: "A4" | "A3";
+    colorMode: "BW" | "COLOR";
+    sides: "SINGLE" | "DOUBLE";
+    nowMs: number;
+    expiresAtMs: number;
+  }): Promise<CustomerFileRecord | null>;
+  deleteFile(
+    tokenHash: string,
+    fileId: string,
+    nowMs: number,
+  ): Promise<boolean>;
   markUploadValidated(input: {
     orderId: string;
     uploadId: string;
@@ -63,6 +124,25 @@ export interface CustomerRepository {
     totalAmountPaise: number;
     nowMs: number;
   }): Promise<void>;
+  saveOrderQuote(input: {
+    tokenHash: string;
+    files: Array<{
+      fileId: string;
+      selectedPages: string;
+      selectedPageCount: number;
+      copies: number;
+      paperSize: "A4" | "A3";
+      colorMode: "BW" | "COLOR";
+      sides: "SINGLE" | "DOUBLE";
+      printingAmountPaise: number;
+      serviceChargePaise: number;
+    }>;
+    printingAmountPaise: number;
+    serviceChargePaise: number;
+    totalAmountPaise: number;
+    nowMs: number;
+    expiresAtMs: number;
+  }): Promise<boolean>;
 }
 
 interface DraftRow {
@@ -77,23 +157,78 @@ interface DraftRow {
   draft_expires_at_ms: number;
 }
 
+interface FileRow {
+  id: string;
+  order_id: string;
+  position: number;
+  original_filename: string;
+  r2_object_key: string;
+  expected_size_bytes: number;
+  size_bytes: number | null;
+  source_page_count: number;
+  selected_pages: string;
+  selected_page_count: number | null;
+  copies: number;
+  paper_size: "A4" | "A3";
+  color_mode: "BW" | "COLOR";
+  sides: "SINGLE" | "DOUBLE";
+  printing_amount_paise: number;
+  service_charge_paise: number;
+  upload_status: string;
+  print_status: string;
+  draft_expires_at_ms: number;
+}
+
+function mapFile(row: FileRow): CustomerFileRecord {
+  return {
+    id: row.id,
+    orderId: row.order_id,
+    position: row.position,
+    originalFilename: row.original_filename,
+    objectKey: row.r2_object_key,
+    expectedSizeBytes: row.expected_size_bytes,
+    actualSizeBytes: row.size_bytes,
+    sourcePageCount: row.source_page_count,
+    selectedPages: row.selected_pages,
+    selectedPageCount: row.selected_page_count,
+    copies: row.copies,
+    paperSize: row.paper_size,
+    colorMode: row.color_mode,
+    sides: row.sides,
+    printingAmountPaise: row.printing_amount_paise,
+    serviceChargePaise: row.service_charge_paise,
+    uploadStatus: row.upload_status,
+    printStatus: row.print_status,
+    expiresAtMs: row.draft_expires_at_ms,
+  };
+}
+
+const FILE_SELECT = `SELECT f.id, f.order_id, f.position, f.original_filename,
+  f.r2_object_key, f.expected_size_bytes, f.size_bytes, f.source_page_count,
+  f.selected_pages, f.selected_page_count, f.copies, f.paper_size,
+  f.color_mode, f.sides, f.printing_amount_paise, f.service_charge_paise,
+  f.upload_status, f.print_status, o.draft_expires_at_ms
+  FROM order_files f JOIN orders o ON o.id = f.order_id`;
+
 export class D1CustomerRepository implements CustomerRepository {
   constructor(private readonly db: D1Database) {}
 
   async getPublicConfig(): Promise<CustomerConfigData | null> {
     const installation = await this.db
       .prepare(
-        `SELECT logo_key, shop_name, contact_phone, customer_notice,
-                       online_printing_enabled, max_pdf_size_bytes
+        `SELECT logo_key, app_name, shop_name, contact_phone, customer_notice,
+                       online_printing_enabled, max_pdf_size_bytes, max_order_upload_bytes
                 FROM installation WHERE id = 1`,
       )
       .first<{
         logo_key: string | null;
+        app_name: string;
         shop_name: string;
         contact_phone: string | null;
         customer_notice: string | null;
         online_printing_enabled: number;
         max_pdf_size_bytes: number;
+        max_order_upload_bytes: number;
       }>();
     if (!installation) return null;
     const rates = await this.db
@@ -107,6 +242,7 @@ export class D1CustomerRepository implements CustomerRepository {
         sides: "SINGLE" | "DOUBLE";
       }>();
     return {
+      appName: installation.app_name,
       shopName: installation.shop_name,
       logoUrl: installation.logo_key
         ? `/api/branding/logo/${installation.logo_key.slice("branding/".length)}`
@@ -115,6 +251,8 @@ export class D1CustomerRepository implements CustomerRepository {
       customerNotice: installation.customer_notice,
       onlinePrintingEnabled: installation.online_printing_enabled === 1,
       maxPdfSizeBytes: installation.max_pdf_size_bytes,
+      maxOrderUploadBytes: installation.max_order_upload_bytes,
+      maxOrderFiles: 10,
       availablePrintOptions: rates.results.map((rate) => ({
         paperSize: rate.paper_size,
         colorMode: rate.color_mode,
@@ -230,6 +368,27 @@ export class D1CustomerRepository implements CustomerRepository {
           input.nowMs,
           input.expectedSizeBytes,
         ),
+      this.db
+        .prepare(
+          `INSERT INTO order_files
+          (id, order_id, position, original_filename, r2_object_key,
+           expected_size_bytes, source_page_count, paper_size, color_mode, sides,
+           created_at_ms, updated_at_ms)
+          VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .bind(
+          input.uploadId,
+          input.orderId,
+          input.originalFilename,
+          input.objectKey,
+          input.expectedSizeBytes,
+          input.sourcePageCount,
+          input.paperSize,
+          input.colorMode,
+          input.sides,
+          input.nowMs,
+          input.nowMs,
+        ),
     ]);
   }
 
@@ -259,6 +418,241 @@ export class D1CustomerRepository implements CustomerRepository {
       : null;
   }
 
+  async findDraftSummary(
+    tokenHash: string,
+  ): Promise<CustomerDraftSummary | null> {
+    const row = await this.db
+      .prepare(
+        `SELECT id, customer_name, customer_phone, instructions, status,
+                draft_expires_at_ms
+         FROM orders WHERE draft_token_hash = ? AND cleanup_state = 'ACTIVE'`,
+      )
+      .bind(tokenHash)
+      .first<{
+        id: string;
+        customer_name: string;
+        customer_phone: string;
+        instructions: string | null;
+        status: string;
+        draft_expires_at_ms: number;
+      }>();
+    return row
+      ? {
+          orderId: row.id,
+          customerName: row.customer_name,
+          customerPhone: row.customer_phone,
+          instructions: row.instructions,
+          status: row.status,
+          expiresAtMs: row.draft_expires_at_ms,
+        }
+      : null;
+  }
+
+  async listFiles(tokenHash: string): Promise<CustomerFileRecord[]> {
+    const result = await this.db
+      .prepare(
+        `${FILE_SELECT}
+         WHERE o.draft_token_hash = ? AND o.cleanup_state = 'ACTIVE'
+         ORDER BY f.position`,
+      )
+      .bind(tokenHash)
+      .all<FileRow>();
+    return result.results.map(mapFile);
+  }
+
+  async findFile(
+    tokenHash: string,
+    fileId?: string,
+  ): Promise<CustomerFileRecord | null> {
+    const row = await this.db
+      .prepare(
+        `${FILE_SELECT}
+         WHERE o.draft_token_hash = ? AND o.cleanup_state = 'ACTIVE'
+           AND f.id = COALESCE(?, f.id)
+         ORDER BY f.position LIMIT 1`,
+      )
+      .bind(tokenHash, fileId ?? null)
+      .first<FileRow>();
+    return row ? mapFile(row) : null;
+  }
+
+  async addFile(
+    input: Parameters<CustomerRepository["addFile"]>[0],
+  ): Promise<CustomerFileRecord | null> {
+    const result = await this.db
+      .prepare(
+        `INSERT INTO order_files
+          (id, order_id, position, original_filename, r2_object_key,
+           expected_size_bytes, source_page_count, paper_size, color_mode, sides,
+           created_at_ms, updated_at_ms)
+         SELECT ?, o.id, COALESCE(MAX(f.position), 0) + 1, ?, ?, ?, ?, ?, ?, ?, ?, ?
+         FROM orders o LEFT JOIN order_files f ON f.order_id = o.id
+         WHERE o.draft_token_hash = ? AND o.cleanup_state = 'ACTIVE'
+           AND o.status IN ('UPLOADING','UPLOADED','PAYMENT_PENDING')
+           AND o.draft_expires_at_ms > ?
+           AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.order_id = o.id
+             AND p.status IN ('CREATED','PENDING','PAID'))
+         GROUP BY o.id
+         HAVING COUNT(f.id) < 10
+           AND COALESCE(SUM(f.expected_size_bytes), 0) + ? <=
+             (SELECT max_order_upload_bytes FROM installation WHERE id = 1)`,
+      )
+      .bind(
+        input.fileId,
+        input.originalFilename,
+        input.objectKey,
+        input.expectedSizeBytes,
+        input.sourcePageCount,
+        input.paperSize,
+        input.colorMode,
+        input.sides,
+        input.nowMs,
+        input.nowMs,
+        input.tokenHash,
+        input.nowMs,
+        input.expectedSizeBytes,
+      )
+      .run();
+    if (result.meta.changes !== 1) return null;
+    await this.db
+      .prepare(
+        `UPDATE orders SET status = 'UPLOADING', draft_expires_at_ms = ?,
+          updated_at_ms = ? WHERE draft_token_hash = ? AND cleanup_state = 'ACTIVE'`,
+      )
+      .bind(input.expiresAtMs, input.nowMs, input.tokenHash)
+      .run();
+    return this.findFile(input.tokenHash, input.fileId);
+  }
+
+  async claimFileRemoval(
+    tokenHash: string,
+    fileId: string,
+    nowMs: number,
+  ): Promise<boolean> {
+    const result = await this.db
+      .prepare(
+        `UPDATE order_files SET upload_status = 'DELETE_PENDING', updated_at_ms = ?
+         WHERE id = ? AND upload_status IN ('PENDING','UPLOADED','VALIDATION_FAILED','DELETE_FAILED')
+           AND order_id = (SELECT o.id FROM orders o
+             WHERE o.draft_token_hash = ? AND o.cleanup_state = 'ACTIVE'
+               AND o.status IN ('UPLOADING','UPLOADED','PAYMENT_PENDING','PAYMENT_FAILED','PAYMENT_CANCELLED')
+               AND (SELECT COUNT(*) FROM order_files WHERE order_id = o.id) > 1
+               AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.order_id = o.id
+                 AND p.status IN ('CREATED','PENDING','PAID')))`,
+      )
+      .bind(nowMs, fileId, tokenHash)
+      .run();
+    return result.meta.changes === 1;
+  }
+
+  async markFileRemovalFailed(fileId: string, nowMs: number): Promise<void> {
+    await this.db
+      .prepare(
+        `UPDATE order_files SET upload_status = 'DELETE_FAILED', updated_at_ms = ?
+         WHERE id = ? AND upload_status = 'DELETE_PENDING'`,
+      )
+      .bind(nowMs, fileId)
+      .run();
+  }
+
+  async deleteFile(
+    tokenHash: string,
+    fileId: string,
+    nowMs: number,
+  ): Promise<boolean> {
+    const files = await this.listFiles(tokenHash);
+    const selected = files.find((file) => file.id === fileId);
+    if (
+      !selected ||
+      files.length <= 1 ||
+      selected.uploadStatus !== "DELETE_PENDING"
+    )
+      return false;
+    const statements: D1PreparedStatement[] = [];
+    if (selected.position === 1) {
+      const next = files.find((file) => file.position === 2);
+      if (!next) return false;
+      statements.push(
+        this.db
+          .prepare(
+            `UPDATE uploads SET id = ?, original_filename = ?, r2_object_key = ?,
+             expected_size_bytes = ?, size_bytes = ?, mime_type = ?,
+             storage_status = ?, uploaded_at_ms = ?, validation_error_code = NULL,
+             updated_at_ms = ? WHERE order_id = ? AND id = ?`,
+          )
+          .bind(
+            next.id,
+            next.originalFilename,
+            next.objectKey,
+            next.expectedSizeBytes,
+            next.actualSizeBytes,
+            next.actualSizeBytes === null ? null : "application/pdf",
+            next.uploadStatus === "UPLOADED" ? "UPLOADED" : "PENDING",
+            next.actualSizeBytes === null ? null : nowMs,
+            nowMs,
+            selected.orderId,
+            selected.id,
+          ),
+      );
+    }
+    statements.push(
+      this.db
+        .prepare(
+          `DELETE FROM order_files WHERE id = ? AND order_id = ?
+           AND EXISTS (SELECT 1 FROM orders WHERE id = ? AND draft_token_hash = ?
+             AND cleanup_state = 'ACTIVE'
+             AND status IN ('UPLOADING','UPLOADED','PAYMENT_PENDING','PAYMENT_FAILED','PAYMENT_CANCELLED')
+             AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.order_id = orders.id
+               AND p.status IN ('CREATED','PENDING','PAID')))`,
+        )
+        .bind(fileId, selected.orderId, selected.orderId, tokenHash),
+    );
+    for (const file of files.filter(
+      (file) => file.position > selected.position,
+    )) {
+      statements.push(
+        this.db
+          .prepare(
+            `UPDATE order_files SET position = ?, updated_at_ms = ?
+             WHERE id = ? AND order_id = ? AND position = ?`,
+          )
+          .bind(
+            file.position - 1,
+            nowMs,
+            file.id,
+            selected.orderId,
+            file.position,
+          ),
+      );
+    }
+    statements.push(
+      this.db
+        .prepare(
+          `UPDATE orders SET status = CASE
+             WHEN EXISTS (SELECT 1 FROM order_files WHERE order_id = ? AND upload_status <> 'UPLOADED')
+             THEN 'UPLOADING' ELSE 'UPLOADED' END,
+           original_filename = COALESCE((SELECT original_filename FROM order_files
+             WHERE order_id = ? ORDER BY position LIMIT 1), original_filename),
+           source_page_count = COALESCE((SELECT source_page_count FROM order_files
+             WHERE order_id = ? ORDER BY position LIMIT 1), source_page_count),
+           printing_amount_paise = 0, service_charge_paise = 0,
+           total_amount_paise = 0, updated_at_ms = ?
+           WHERE id = ? AND draft_token_hash = ?`,
+        )
+        .bind(
+          selected.orderId,
+          selected.orderId,
+          selected.orderId,
+          nowMs,
+          selected.orderId,
+          tokenHash,
+        ),
+    );
+    const results = await this.db.batch(statements);
+    const deletionIndex = selected.position === 1 ? 1 : 0;
+    return results[deletionIndex]?.meta.changes === 1;
+  }
+
   async markUploadValidated(
     input: Parameters<CustomerRepository["markUploadValidated"]>[0],
   ): Promise<void> {
@@ -278,10 +672,27 @@ export class D1CustomerRepository implements CustomerRepository {
         ),
       this.db
         .prepare(
-          `UPDATE orders SET status = 'UPLOADED', updated_at_ms = ?,
-        draft_expires_at_ms = ? WHERE id = ? AND status = 'UPLOADING'`,
+          `UPDATE order_files SET size_bytes = ?, mime_type = 'application/pdf',
+           upload_status = 'UPLOADED', uploaded_at_ms = ?, updated_at_ms = ?,
+           validation_error_code = NULL
+           WHERE id = ? AND order_id = ? AND upload_status = 'PENDING'`,
         )
-        .bind(input.nowMs, input.expiresAtMs, input.orderId),
+        .bind(
+          input.actualSizeBytes,
+          input.nowMs,
+          input.nowMs,
+          input.uploadId,
+          input.orderId,
+        ),
+      this.db
+        .prepare(
+          `UPDATE orders SET status = CASE
+             WHEN NOT EXISTS (SELECT 1 FROM order_files WHERE order_id = ? AND upload_status <> 'UPLOADED')
+             THEN 'UPLOADED' ELSE 'UPLOADING' END,
+           updated_at_ms = ?, draft_expires_at_ms = ?
+           WHERE id = ? AND status IN ('UPLOADING','UPLOADED','PAYMENT_PENDING')`,
+        )
+        .bind(input.orderId, input.nowMs, input.expiresAtMs, input.orderId),
     ]);
   }
 
@@ -292,8 +703,15 @@ export class D1CustomerRepository implements CustomerRepository {
   ): Promise<void> {
     await this.db
       .prepare(
+        `UPDATE order_files SET validation_error_code = ?, upload_status = 'VALIDATION_FAILED',
+         updated_at_ms = ? WHERE id = ? AND upload_status = 'PENDING'`,
+      )
+      .bind(code, nowMs, uploadId)
+      .run();
+    await this.db
+      .prepare(
         `UPDATE uploads SET validation_error_code = ?, updated_at_ms = ?
-      WHERE id = ? AND storage_status = 'PENDING'`,
+         WHERE id = ? AND storage_status = 'PENDING'`,
       )
       .bind(code, nowMs, uploadId)
       .run();
@@ -333,5 +751,76 @@ export class D1CustomerRepository implements CustomerRepository {
         input.totalAmountPaise,
       )
       .run();
+  }
+
+  async saveOrderQuote(
+    input: Parameters<CustomerRepository["saveOrderQuote"]>[0],
+  ): Promise<boolean> {
+    const first = input.files[0];
+    if (!first) return false;
+    const statements: D1PreparedStatement[] = [];
+    for (const file of input.files) {
+      statements.push(
+        this.db
+          .prepare(
+            `UPDATE order_files SET selected_pages = ?, selected_page_count = ?,
+             copies = ?, paper_size = ?, color_mode = ?, sides = ?,
+             printing_amount_paise = ?, service_charge_paise = ?, updated_at_ms = ?
+             WHERE id = ? AND order_id = (
+               SELECT id FROM orders WHERE draft_token_hash = ?
+                 AND cleanup_state = 'ACTIVE'
+                 AND status IN ('UPLOADED','PAYMENT_PENDING','PAYMENT_FAILED','PAYMENT_CANCELLED')
+                 AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.order_id = orders.id
+                   AND p.status IN ('CREATED','PENDING','PAID'))
+             ) AND upload_status = 'UPLOADED'`,
+          )
+          .bind(
+            file.selectedPages,
+            file.selectedPageCount,
+            file.copies,
+            file.paperSize,
+            file.colorMode,
+            file.sides,
+            file.printingAmountPaise,
+            file.serviceChargePaise,
+            input.nowMs,
+            file.fileId,
+            input.tokenHash,
+          ),
+      );
+    }
+    statements.push(
+      this.db
+        .prepare(
+          `UPDATE orders SET selected_pages = ?, copies = ?, paper_size = ?,
+           color_mode = ?, sides = ?, printing_amount_paise = ?,
+           service_charge_paise = ?, total_amount_paise = ?,
+           status = 'PAYMENT_PENDING', draft_expires_at_ms = ?, updated_at_ms = ?
+           WHERE draft_token_hash = ? AND cleanup_state = 'ACTIVE'
+             AND status IN ('UPLOADED','PAYMENT_PENDING','PAYMENT_FAILED','PAYMENT_CANCELLED')
+             AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.order_id = orders.id
+               AND p.status IN ('CREATED','PENDING','PAID'))
+             AND (SELECT COUNT(*) FROM order_files WHERE order_id = orders.id
+                    AND upload_status = 'UPLOADED') = ?
+             AND (SELECT COUNT(*) FROM order_files WHERE order_id = orders.id) = ?`,
+        )
+        .bind(
+          first.selectedPages,
+          first.copies,
+          first.paperSize,
+          first.colorMode,
+          first.sides,
+          input.printingAmountPaise,
+          input.serviceChargePaise,
+          input.totalAmountPaise,
+          input.expiresAtMs,
+          input.nowMs,
+          input.tokenHash,
+          input.files.length,
+          input.files.length,
+        ),
+    );
+    const results = await this.db.batch(statements);
+    return results.at(-1)?.meta.changes === 1;
   }
 }

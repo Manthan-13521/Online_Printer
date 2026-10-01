@@ -4,7 +4,11 @@ import { describe, expect, it, vi } from "vitest";
 
 import { FILE_SIZE_SERVICE_CHARGE_BANDS } from "@printgo/domain";
 
-import type { CustomerRepository, CustomerDraftRecord } from "./repository";
+import type {
+  CustomerDraftRecord,
+  CustomerFileRecord,
+  CustomerRepository,
+} from "./repository";
 import { CustomerService } from "./service";
 
 const now = Date.UTC(2026, 8, 26);
@@ -70,9 +74,17 @@ function repository(
     ),
     createDraft: vi.fn(() => Promise.resolve()),
     findDraft: vi.fn(() => Promise.resolve(found)),
+    findDraftSummary: vi.fn(() => Promise.resolve(null)),
+    listFiles: vi.fn(() => Promise.resolve([])),
+    findFile: vi.fn(() => Promise.resolve(null)),
+    addFile: vi.fn(() => Promise.resolve(null)),
+    claimFileRemoval: vi.fn(() => Promise.resolve(false)),
+    markFileRemovalFailed: vi.fn(() => Promise.resolve()),
+    deleteFile: vi.fn(() => Promise.resolve(false)),
     markUploadValidated: vi.fn(() => Promise.resolve()),
     markValidationFailure: vi.fn(() => Promise.resolve()),
     saveQuote: vi.fn(() => Promise.resolve()),
+    saveOrderQuote: vi.fn(() => Promise.resolve(false)),
   };
 }
 
@@ -135,6 +147,39 @@ describe("CustomerService", () => {
       expect.objectContaining({ code: "ONLINE_PRINTING_DISABLED" }),
     );
     expect(repo.createDraft).not.toHaveBeenCalled();
+  });
+
+  it("does not delete R2 when file removal cannot be claimed before payment", async () => {
+    const repo = repository();
+    vi.mocked(repo.findDraftSummary).mockResolvedValue({
+      orderId: "order-a",
+      customerName: "Rahul",
+      customerPhone: "9876543210",
+      instructions: null,
+      status: "PAYMENT_PENDING",
+      expiresAtMs: now + 60_000,
+    });
+    vi.mocked(repo.listFiles).mockResolvedValue([
+      { id: "file-a", objectKey: "uploads/order-a/file-a.pdf" },
+      { id: "file-b", objectKey: "uploads/order-a/file-b.pdf" },
+    ] as CustomerFileRecord[]);
+    vi.mocked(repo.claimFileRemoval).mockResolvedValue(false);
+    const objects = {
+      head: vi.fn(),
+      readPrefix: vi.fn(),
+      delete: vi.fn(() => Promise.resolve()),
+    };
+    const customer = new CustomerService(
+      repo,
+      { createUploadAuthorization: vi.fn() },
+      objects,
+      () => now,
+    );
+
+    await expect(customer.removeFile("token", "file-a")).rejects.toMatchObject({
+      code: "UPLOAD_STATE_INVALID",
+    });
+    expect(objects.delete).not.toHaveBeenCalled();
   });
 
   it("rejects metadata larger than the shop maximum before signing", async () => {

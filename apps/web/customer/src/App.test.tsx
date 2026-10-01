@@ -5,6 +5,7 @@ import {
   fireEvent,
   render,
   screen,
+  within,
   waitFor,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -20,7 +21,11 @@ vi.mock("./api", () => ({
     createDraft: vi.fn(),
     authorize: vi.fn(),
     complete: vi.fn(),
+    getDraft: vi.fn(),
+    addFile: vi.fn(),
+    removeFile: vi.fn(),
     quote: vi.fn(),
+    quoteOrder: vi.fn(),
     createPayment: vi.fn(),
     verifyPayment: vi.fn(),
     cancelPayment: vi.fn(),
@@ -54,6 +59,8 @@ beforeEach(() => {
   vi.mocked(customerApi.createDraft).mockResolvedValue({
     draftToken: "A".repeat(43),
     draftExpiresAt: "2026-09-26T00:10:00.000Z",
+    fileId: "10000000-0000-4000-8000-000000000001",
+    position: 1,
     upload: {
       uploadUrl: "https://r2.test/signed",
       expiresAt: "2026-09-26T00:05:00.000Z",
@@ -78,7 +85,34 @@ beforeEach(() => {
       requiredHeaders: { "Content-Type": "application/pdf" },
     },
   });
+  let addedPosition = 1;
+  vi.mocked(customerApi.addFile).mockImplementation(() => {
+    addedPosition += 1;
+    return Promise.resolve({
+      fileId: `20000000-0000-4000-8000-00000000000${addedPosition}`,
+      position: addedPosition,
+      draftExpiresAt: "later",
+      upload: {
+        uploadUrl: `https://r2.test/file-${addedPosition}`,
+        expiresAt: "soon",
+        requiredHeaders: { "Content-Type": "application/pdf" },
+      },
+    });
+  });
   vi.mocked(customerApi.quote).mockResolvedValue({
+    normalizedSelectedPages: "1-10",
+    selectedPageCount: 10,
+    copies: 1,
+    paperSize: "A4",
+    colorMode: "BW",
+    sides: "SINGLE",
+    printingAmountPaise: 2000,
+    serviceChargePaise: 100,
+    totalAmountPaise: 2100,
+    currency: "INR",
+    expiresAt: "later",
+  });
+  vi.mocked(customerApi.quoteOrder).mockResolvedValue({
     normalizedSelectedPages: "1-10",
     selectedPageCount: 10,
     copies: 1,
@@ -125,6 +159,47 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("customer upload app", () => {
+  it("numbers three PDFs, applies settings to all, and keeps 3+ review filename-free", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText("ABC Xerox");
+    await user.type(screen.getByLabelText("Name"), "Rahul");
+    await user.type(screen.getByLabelText("Phone"), "9876543210");
+    await user.upload(screen.getByLabelText("Choose PDF"), [
+      new File(["%PDF"], "one.pdf", { type: "application/pdf" }),
+      new File(["%PDF"], "two.pdf", { type: "application/pdf" }),
+      new File(["%PDF"], "three.pdf", { type: "application/pdf" }),
+    ]);
+    expect(
+      await screen.findByText("File 1", { selector: "strong" }),
+    ).toBeTruthy();
+    expect(screen.getByText("File 2", { selector: "strong" })).toBeTruthy();
+    expect(screen.getByText("File 3", { selector: "strong" })).toBeTruthy();
+
+    await user.clear(screen.getByLabelText("Copies"));
+    await user.type(screen.getByLabelText("Copies"), "3");
+    await user.click(
+      screen.getByRole("button", { name: "Apply these settings to all files" }),
+    );
+    await user.selectOptions(screen.getByLabelText("Settings for"), "1");
+    expect(screen.getByLabelText<HTMLInputElement>("Copies").value).toBe("3");
+    await user.clear(screen.getByLabelText("Copies"));
+    await user.type(screen.getByLabelText("Copies"), "2");
+    await user.selectOptions(screen.getByLabelText("Settings for"), "0");
+    expect(screen.getByLabelText<HTMLInputElement>("Copies").value).toBe("3");
+
+    fireEvent.submit(
+      screen
+        .getByRole("button", { name: "Upload PDF and review" })
+        .closest("form")!,
+    );
+    const review = (await screen.findByText("3 files")).closest("section")!;
+    expect(within(review).queryByText("one.pdf")).toBeNull();
+    expect(within(review).queryByText("two.pdf")).toBeNull();
+    expect(within(review).queryByText("three.pdf")).toBeNull();
+    expect(within(review).queryByText(/View files/i)).toBeNull();
+  });
+
   it("shows the service-paused screen without an upload form", async () => {
     vi.mocked(customerApi.config).mockResolvedValueOnce({
       ...enabledConfig,
@@ -186,13 +261,17 @@ describe("customer upload app", () => {
         .closest("form")!,
     );
     await waitFor(() =>
-      expect(customerApi.quote).toHaveBeenCalledWith(
+      expect(customerApi.quoteOrder).toHaveBeenCalledWith(
         "A".repeat(43),
-        expect.objectContaining({ selectedPages: "1-10", copies: 1 }),
+        expect.objectContaining({
+          files: [
+            expect.objectContaining({ selectedPages: "1-10", copies: 1 }),
+          ],
+        }),
       ),
     );
     expect(await screen.findByText("₹21.00")).toBeTruthy();
-    expect(screen.getByText("notes.pdf")).toBeTruthy();
+    expect(screen.getAllByText("notes.pdf")).toHaveLength(2);
     expect(sessionStorage.getItem("printgo.customerDraftToken")).toBe(
       "A".repeat(43),
     );
@@ -235,9 +314,12 @@ describe("customer upload app", () => {
     const retry = screen.getByRole("button", { name: "Try upload again" });
     fireEvent.submit(retry.closest("form")!);
     await waitFor(() =>
-      expect(customerApi.authorize).toHaveBeenCalledWith("A".repeat(43)),
+      expect(customerApi.authorize).toHaveBeenCalledWith(
+        "A".repeat(43),
+        "10000000-0000-4000-8000-000000000001",
+      ),
     );
-    await waitFor(() => expect(customerApi.quote).toHaveBeenCalled());
+    await waitFor(() => expect(customerApi.quoteOrder).toHaveBeenCalled());
   });
 
   it("requires a second explicit click after a server-side price change", async () => {

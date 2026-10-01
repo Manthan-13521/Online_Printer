@@ -5,7 +5,7 @@ import { readAdminCookie } from "../auth/cookies";
 import { AdminAuthService, AuthError } from "../auth/service";
 import { D1AdminAuthRepository } from "../auth/repository";
 
-export const MAX_LOGO_BYTES = 256 * 1024;
+export const MAX_LOGO_BYTES = 1024 * 1024;
 
 export function validLogo(bytes: Uint8Array, mime: string): boolean {
   if (bytes.length === 0 || bytes.length > MAX_LOGO_BYTES) return false;
@@ -141,7 +141,7 @@ export async function handleBrandingRequest(
         const bytes = await readLogo(request);
         if (!bytes)
           return withAdminCors(
-            error(413, "LOGO_TOO_LARGE", "Choose an image up to 256 KB."),
+            error(413, "LOGO_TOO_LARGE", "Choose an image up to 1 MB."),
             env.ADMIN_ALLOWED_ORIGIN,
           );
         if (!validLogo(bytes, mime))

@@ -1,6 +1,7 @@
 import { applyShopBranding } from "../../branding";
 import { useEffect, useMemo, useState } from "react";
 
+import type { ColorMode, PaperSize, SidesMode } from "@printgo/domain";
 import type {
   CustomerConfigData,
   CustomerPaymentCheckoutData,
@@ -28,6 +29,22 @@ const DRAFT_TOKEN_KEY = "printgo.customerDraftToken";
 const PENDING_TRACKING_TOKEN_PREFIX = "printgo.pendingTracking.";
 const humanFileSize = (bytes: number) =>
   `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+
+interface LocalOrderFile {
+  clientId: string;
+  fileId?: string;
+  file: File | null;
+  name: string;
+  size: number;
+  pageCount: number;
+  uploaded: boolean;
+  pageMode: "ALL" | "CUSTOM";
+  customPages: string;
+  copies: number;
+  paperSize: PaperSize;
+  colorMode: ColorMode;
+  sides: SidesMode;
+}
 
 function trackingCodeFromPath(): string | null {
   const match = /^\/track\/([^/]+)\/?$/u.exec(window.location.pathname);
@@ -106,21 +123,14 @@ export function App() {
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [instructions, setInstructions] = useState("");
-  const [file, setFile] = useState<File | null>(null);
-  const [pageCount, setPageCount] = useState<number | null>(null);
+  const [files, setFiles] = useState<LocalOrderFile[]>([]);
+  const [selectedFileIndex, setSelectedFileIndex] = useState(0);
   const [fileError, setFileError] = useState<string | null>(null);
-  const [pageMode, setPageMode] = useState<"ALL" | "CUSTOM">("ALL");
-  const [customPages, setCustomPages] = useState("");
-  const [copies, setCopies] = useState(1);
-  const [paperSize, setPaperSize] = useState<"A4" | "A3">("A4");
-  const [colorMode, setColorMode] = useState<"BW" | "COLOR">("BW");
-  const [sides, setSides] = useState<"SINGLE" | "DOUBLE">("SINGLE");
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState<string | null>(null);
   const [quote, setQuote] = useState<CustomerQuoteData | null>(null);
   const [draftToken, setDraftToken] = useState<string | null>(null);
-  const [uploadFinalized, setUploadFinalized] = useState(false);
   const [paymentBusy, setPaymentBusy] = useState(false);
   const [paymentSuccess, setPaymentSuccess] =
     useState<CustomerPaymentSuccessData | null>(null);
@@ -137,12 +147,6 @@ export function App() {
       .config()
       .then((loaded) => {
         setConfig(loaded);
-        const first = loaded.availablePrintOptions[0];
-        if (first) {
-          setPaperSize(first.paperSize);
-          setColorMode(first.colorMode);
-          setSides(first.sides);
-        }
       })
       .catch(() => {
         setStatus("Shop configuration could not be loaded. Please retry.");
@@ -151,117 +155,223 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (config?.shopName) return applyShopBranding(config.shopName);
+    if (config?.appName || config?.shopName)
+      return applyShopBranding(config.appName ?? config.shopName);
     return undefined;
-  }, [config?.shopName]);
+  }, [config?.appName, config?.shopName]);
+
+  useEffect(() => {
+    if (!config) return;
+    const savedToken = sessionStorage.getItem(DRAFT_TOKEN_KEY);
+    if (!savedToken) return;
+    void customerApi
+      .getDraft(savedToken)
+      .then((draft) => {
+        setCustomerName(draft.customerName);
+        setCustomerPhone(draft.customerPhone);
+        setInstructions(draft.instructions ?? "");
+        setFiles(
+          draft.files.map((remote) => ({
+            clientId: remote.fileId,
+            fileId: remote.fileId,
+            file: null,
+            name: remote.originalFilename,
+            size: remote.sizeBytes ?? 0,
+            pageCount: remote.sourcePageCount,
+            uploaded: remote.uploadStatus === "UPLOADED",
+            pageMode: remote.selectedPages === "ALL" ? "ALL" : "CUSTOM",
+            customPages:
+              remote.selectedPages === "ALL"
+                ? `1-${remote.sourcePageCount}`
+                : remote.selectedPages,
+            copies: remote.copies,
+            paperSize: remote.paperSize,
+            colorMode: remote.colorMode,
+            sides: remote.sides,
+          })),
+        );
+        setDraftToken(savedToken);
+        setStatus("Your secure upload session was restored.");
+      })
+      .catch(() => sessionStorage.removeItem(DRAFT_TOKEN_KEY));
+  }, [config]);
+
+  const selectedFile = files[selectedFileIndex] ?? null;
 
   const optionAvailable = useMemo(
     () =>
       (config?.availablePrintOptions ?? []).some(
         (option) =>
-          option.paperSize === paperSize &&
-          option.colorMode === colorMode &&
-          option.sides === sides,
+          option.paperSize === selectedFile?.paperSize &&
+          option.colorMode === selectedFile?.colorMode &&
+          option.sides === selectedFile?.sides,
       ),
-    [config, paperSize, colorMode, sides],
+    [config, selectedFile],
   );
 
-  async function chooseFile(selected: File | null) {
+  function patchSelected(update: Partial<LocalOrderFile>) {
     setQuote(null);
-    setDraftToken(null);
-    setUploadFinalized(false);
+    setFiles((current) =>
+      current.map((item, index) =>
+        index === selectedFileIndex ? { ...item, ...update } : item,
+      ),
+    );
+  }
+
+  async function chooseFiles(selected: FileList | null) {
+    setQuote(null);
     setPaymentSuccess(null);
-    sessionStorage.removeItem(DRAFT_TOKEN_KEY);
     setFileError(null);
-    setPageCount(null);
-    setFile(selected);
     if (!selected || !config) return;
-    if (
-      !selected.name.toLocaleLowerCase().endsWith(".pdf") ||
-      (selected.type && selected.type !== "application/pdf")
-    ) {
-      setFileError("Choose a PDF file.");
+    const incoming = [...selected];
+    if (files.length + incoming.length > (config.maxOrderFiles ?? 10)) {
+      setFileError("You can add up to 10 PDFs in one order.");
       return;
     }
-    if (selected.size <= 0 || selected.size > config.maxPdfSizeBytes) {
-      setFileError(
-        `PDFs must be between 1 byte and ${humanFileSize(config.maxPdfSizeBytes)}.`,
-      );
+    const aggregate =
+      files.reduce((total, item) => total + item.size, 0) +
+      incoming.reduce((total, item) => total + item.size, 0);
+    if (aggregate > (config.maxOrderUploadBytes ?? 100 * 1024 * 1024)) {
+      setFileError("These PDFs exceed the 100 MB order limit.");
       return;
     }
-    try {
-      const pages = await inspectPdf(selected);
-      setPageCount(pages);
-      setCustomPages(`1-${pages}`);
-    } catch (caught) {
-      setFileError(
-        caught instanceof Error && caught.message === "PASSWORD_PROTECTED"
-          ? "Password-protected PDFs are not supported. Remove the password and try again."
-          : "This PDF is corrupted or cannot be read.",
-      );
+    const firstOption = config.availablePrintOptions[0];
+    if (!firstOption) return;
+    const added: LocalOrderFile[] = [];
+    for (const selectedFile of incoming) {
+      if (
+        !selectedFile.name.toLocaleLowerCase().endsWith(".pdf") ||
+        (selectedFile.type && selectedFile.type !== "application/pdf")
+      ) {
+        setFileError("Choose PDF files only.");
+        return;
+      }
+      if (
+        selectedFile.size <= 0 ||
+        selectedFile.size > config.maxPdfSizeBytes
+      ) {
+        setFileError(
+          `PDFs must be between 1 byte and ${humanFileSize(config.maxPdfSizeBytes)}.`,
+        );
+        return;
+      }
+      try {
+        const pages = await inspectPdf(selectedFile);
+        added.push({
+          clientId: crypto.randomUUID(),
+          file: selectedFile,
+          name: selectedFile.name,
+          size: selectedFile.size,
+          pageCount: pages,
+          uploaded: false,
+          pageMode: "ALL",
+          customPages: `1-${pages}`,
+          copies: 1,
+          paperSize: firstOption.paperSize,
+          colorMode: firstOption.colorMode,
+          sides: firstOption.sides,
+        });
+      } catch (caught) {
+        setFileError(
+          caught instanceof Error && caught.message === "PASSWORD_PROTECTED"
+            ? "Password-protected PDFs are not supported. Remove the password and try again."
+            : "This PDF is corrupted or cannot be read.",
+        );
+        return;
+      }
     }
+    setFiles((current) => [...current, ...added]);
+    setSelectedFileIndex(files.length);
   }
 
   async function prepareReview(event: React.FormEvent) {
     event.preventDefault();
     if (
       !config?.onlinePrintingEnabled ||
-      !file ||
-      !pageCount ||
+      files.length === 0 ||
       fileError ||
       !optionAvailable
     )
       return;
-    const selectedPages = pageMode === "ALL" ? `1-${pageCount}` : customPages;
-    try {
-      parsePageRange(selectedPages, pageCount);
-    } catch {
-      setStatus(`Enter pages between 1 and ${pageCount}, such as 1,3,7-10.`);
-      return;
+    for (const item of files) {
+      const selectedPages =
+        item.pageMode === "ALL" ? `1-${item.pageCount}` : item.customPages;
+      try {
+        parsePageRange(selectedPages, item.pageCount);
+      } catch {
+        setStatus(
+          `Enter pages between 1 and ${item.pageCount} for File ${files.indexOf(item) + 1}.`,
+        );
+        return;
+      }
     }
     setBusy(true);
     setStatus("Creating a secure upload…");
     setQuote(null);
     try {
       let token = draftToken;
-      if (!uploadFinalized) {
+      const working = [...files];
+      for (let index = 0; index < working.length; index++) {
+        let item = working[index]!;
+        if (item.uploaded) continue;
+        if (!item.file) throw new Error("UPLOAD_FILE_REQUIRED");
+        const uploadFile = item.file;
         let upload;
-        if (token) {
-          upload = (await customerApi.authorize(token)).upload;
-        } else {
+        if (!token) {
           const draft = await customerApi.createDraft({
             customerName,
             customerPhone,
             instructions: instructions.trim() || null,
-            originalFilename: file.name,
-            expectedSizeBytes: file.size,
-            sourcePageCount: pageCount,
+            originalFilename: item.name,
+            expectedSizeBytes: item.size,
+            sourcePageCount: item.pageCount,
           });
           token = draft.draftToken;
           upload = draft.upload;
+          if (!draft.fileId) throw new Error("DRAFT_INVALID");
+          item = { ...item, fileId: draft.fileId };
           setDraftToken(token);
           sessionStorage.setItem(DRAFT_TOKEN_KEY, token);
+        } else if (!item.fileId) {
+          const created = await customerApi.addFile(token, {
+            originalFilename: item.name,
+            expectedSizeBytes: item.size,
+            sourcePageCount: item.pageCount,
+          });
+          item = { ...item, fileId: created.fileId };
+          upload = created.upload;
+        } else {
+          upload = (await customerApi.authorize(token, item.fileId)).upload;
         }
-        setStatus("Uploading directly to private storage…");
+        working[index] = item;
+        setFiles([...working]);
+        setStatus(`Uploading File ${index + 1} of ${working.length}…`);
         await uploadDirectly(
-          file,
+          uploadFile,
           upload.uploadUrl,
           upload.requiredHeaders,
           setProgress,
         );
-        setStatus("Verifying the uploaded PDF…");
-        await customerApi.complete(token);
-        setUploadFinalized(true);
+        setStatus(`Verifying File ${index + 1}…`);
+        await customerApi.complete(token, item.fileId);
+        working[index] = { ...item, uploaded: true };
+        setFiles([...working]);
       }
       if (!token) throw new Error("DRAFT_INVALID");
       setStatus("Calculating your review total…");
       setQuote(
-        await customerApi.quote(token, {
-          selectedPages,
-          copies,
-          paperSize,
-          colorMode,
-          sides,
+        await customerApi.quoteOrder(token, {
+          files: working.map((item) => ({
+            fileId: item.fileId!,
+            selectedPages:
+              item.pageMode === "ALL"
+                ? `1-${item.pageCount}`
+                : item.customPages,
+            copies: item.copies,
+            paperSize: item.paperSize,
+            colorMode: item.colorMode,
+            sides: item.sides,
+          })),
         }),
       );
       setPaymentSuccess(null);
@@ -274,13 +384,61 @@ export function App() {
         ["DRAFT_EXPIRED", "DRAFT_INVALID"].includes(caught.message)
       ) {
         setDraftToken(null);
-        setUploadFinalized(false);
         sessionStorage.removeItem(DRAFT_TOKEN_KEY);
       }
       setStatus(customerErrorMessage(caught));
     } finally {
       setBusy(false);
     }
+  }
+
+  async function removeFile(index: number) {
+    if (files.length <= 1 || busy || paymentBusy) return;
+    const item = files[index];
+    if (!item) return;
+    setBusy(true);
+    setStatus(`Removing File ${index + 1}…`);
+    try {
+      if (draftToken && item.fileId) {
+        await customerApi.removeFile(draftToken, item.fileId);
+      }
+      setFiles((current) =>
+        current.filter((_, position) => position !== index),
+      );
+      setSelectedFileIndex((current) =>
+        Math.max(
+          0,
+          Math.min(current > index ? current - 1 : current, files.length - 2),
+        ),
+      );
+      setQuote(null);
+      setStatus(
+        "PDF removed. File numbers and pricing will update automatically.",
+      );
+    } catch (caught) {
+      setStatus(customerErrorMessage(caught));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function applySettingsToAll() {
+    if (!selectedFile) return;
+    setFiles((current) =>
+      current.map((item) => ({
+        ...item,
+        pageMode: selectedFile.pageMode,
+        customPages: selectedFile.customPages,
+        copies: selectedFile.copies,
+        paperSize: selectedFile.paperSize,
+        colorMode: selectedFile.colorMode,
+        sides: selectedFile.sides,
+      })),
+    );
+    setQuote(null);
+    setStatus(
+      "These settings now apply to every file. You can still override one file.",
+    );
   }
 
   async function verifyCheckoutPayment(
@@ -500,24 +658,54 @@ export function App() {
           </section>
           <section className="step">
             <span className="step-number">2</span>
-            <h2>PDF</h2>
+            <h2>PDFs</h2>
+            <div className="file-list">
+              {files.map((item, index) => (
+                <div className="file-sequence" key={item.clientId}>
+                  <strong className="file-number">File {index + 1}</strong>
+                  <div className="file-card">
+                    <button
+                      type="button"
+                      className="file-card-main"
+                      aria-label={`Edit settings for File ${index + 1}, ${item.name}`}
+                      onClick={() => setSelectedFileIndex(index)}
+                    >
+                      <span>{item.name}</span>
+                      <small>
+                        {item.pageCount} pages · {humanFileSize(item.size)}
+                      </small>
+                    </button>
+                    <button
+                      type="button"
+                      className="remove-file"
+                      aria-label={`Remove File ${index + 1}`}
+                      disabled={files.length === 1 || busy || paymentBusy}
+                      onClick={() => void removeFile(index)}
+                    >
+                      ×
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
             <label className="file-picker">
-              Choose PDF
+              <span className="add-file-plus">+</span>
+              {files.length === 0 ? "Choose PDF" : "Add another PDF"}
               <input
-                required
+                aria-label="Choose PDF"
+                multiple
                 type="file"
                 accept="application/pdf,.pdf"
-                onChange={(event) =>
-                  void chooseFile(event.target.files?.[0] ?? null)
-                }
+                disabled={files.length >= (config.maxOrderFiles ?? 10)}
+                onChange={(event) => {
+                  void chooseFiles(event.target.files);
+                  event.target.value = "";
+                }}
               />
             </label>
-            {file && (
-              <p className="muted">
-                {file.name} · {humanFileSize(file.size)}
-                {pageCount ? ` · ${pageCount} pages` : ""}
-              </p>
-            )}
+            <p className="file-count">
+              {files.length} of {config.maxOrderFiles ?? 10} files
+            </p>
             {fileError && (
               <p className="error" role="alert">
                 {fileError}
@@ -542,147 +730,184 @@ export function App() {
           <section className="step">
             <span className="step-number">3</span>
             <h2>Settings</h2>
-            <fieldset>
-              <legend>Pages</legend>
-              <label className="inline">
-                <input
-                  type="radio"
-                  checked={pageMode === "ALL"}
-                  onChange={() => setPageMode("ALL")}
-                />
-                All pages
-              </label>
-              <label className="inline">
-                <input
-                  type="radio"
-                  checked={pageMode === "CUSTOM"}
-                  onChange={() => setPageMode("CUSTOM")}
-                />
-                Custom range
-              </label>
-              {pageMode === "CUSTOM" && (
-                <input
-                  aria-label="Custom pages"
-                  placeholder="1,3,7-10"
-                  value={customPages}
-                  onChange={(event) => setCustomPages(event.target.value)}
-                />
-              )}
-            </fieldset>
-            <div className="settings-grid">
-              <label>
-                Copies
-                <input
-                  type="number"
-                  min={MIN_PRINT_COPIES}
-                  max={MAX_PRINT_COPIES}
-                  value={copies}
-                  onChange={(event) => setCopies(Number(event.target.value))}
-                />
-              </label>
-              <label>
-                Paper
+            {selectedFile ? (
+              <>
+                <label htmlFor="settings-file">Settings for</label>
                 <select
-                  value={paperSize}
+                  id="settings-file"
+                  value={selectedFileIndex}
                   onChange={(event) =>
-                    setPaperSize(event.target.value as "A4" | "A3")
+                    setSelectedFileIndex(Number(event.target.value))
                   }
                 >
-                  <option
-                    disabled={
-                      !config.availablePrintOptions.some(
-                        (option) => option.paperSize === "A4",
-                      )
-                    }
-                  >
-                    A4
-                  </option>
-                  <option
-                    disabled={
-                      !config.availablePrintOptions.some(
-                        (option) => option.paperSize === "A3",
-                      )
-                    }
-                  >
-                    A3
-                  </option>
+                  {files.map((item, index) => (
+                    <option key={item.clientId} value={index}>
+                      File {index + 1} — {item.name}
+                    </option>
+                  ))}
                 </select>
-              </label>
-              <label>
-                Colour
-                <select
-                  value={colorMode}
-                  onChange={(event) =>
-                    setColorMode(event.target.value as "BW" | "COLOR")
-                  }
-                >
-                  <option
-                    value="BW"
-                    disabled={
-                      !config.availablePrintOptions.some(
-                        (option) =>
-                          option.paperSize === paperSize &&
-                          option.colorMode === "BW",
-                      )
-                    }
-                  >
-                    Black &amp; white
-                  </option>
-                  <option
-                    value="COLOR"
-                    disabled={
-                      !config.availablePrintOptions.some(
-                        (option) =>
-                          option.paperSize === paperSize &&
-                          option.colorMode === "COLOR",
-                      )
-                    }
-                  >
+                <fieldset>
+                  <legend>Pages</legend>
+                  <label className="inline">
+                    <input
+                      type="radio"
+                      checked={selectedFile.pageMode === "ALL"}
+                      onChange={() => patchSelected({ pageMode: "ALL" })}
+                    />
+                    All pages
+                  </label>
+                  <label className="inline">
+                    <input
+                      type="radio"
+                      checked={selectedFile.pageMode === "CUSTOM"}
+                      onChange={() => patchSelected({ pageMode: "CUSTOM" })}
+                    />
+                    Custom range
+                  </label>
+                  {selectedFile.pageMode === "CUSTOM" && (
+                    <input
+                      aria-label="Custom pages"
+                      placeholder="1,3,7-10"
+                      value={selectedFile.customPages}
+                      onChange={(event) =>
+                        patchSelected({ customPages: event.target.value })
+                      }
+                    />
+                  )}
+                </fieldset>
+                <div className="settings-grid">
+                  <label>
+                    Copies
+                    <input
+                      type="number"
+                      min={MIN_PRINT_COPIES}
+                      max={MAX_PRINT_COPIES}
+                      value={selectedFile.copies}
+                      onChange={(event) =>
+                        patchSelected({ copies: Number(event.target.value) })
+                      }
+                    />
+                  </label>
+                  <label>
+                    Paper
+                    <select
+                      value={selectedFile.paperSize}
+                      onChange={(event) =>
+                        patchSelected({
+                          paperSize: event.target.value as "A4" | "A3",
+                        })
+                      }
+                    >
+                      <option
+                        disabled={
+                          !config.availablePrintOptions.some(
+                            (option) => option.paperSize === "A4",
+                          )
+                        }
+                      >
+                        A4
+                      </option>
+                      <option
+                        disabled={
+                          !config.availablePrintOptions.some(
+                            (option) => option.paperSize === "A3",
+                          )
+                        }
+                      >
+                        A3
+                      </option>
+                    </select>
+                  </label>
+                  <label>
                     Colour
-                  </option>
-                </select>
-              </label>
-              <label>
-                Sides
-                <select
-                  value={sides}
-                  onChange={(event) =>
-                    setSides(event.target.value as "SINGLE" | "DOUBLE")
-                  }
+                    <select
+                      value={selectedFile.colorMode}
+                      onChange={(event) =>
+                        patchSelected({
+                          colorMode: event.target.value as "BW" | "COLOR",
+                        })
+                      }
+                    >
+                      <option
+                        value="BW"
+                        disabled={
+                          !config.availablePrintOptions.some(
+                            (option) =>
+                              option.paperSize === selectedFile.paperSize &&
+                              option.colorMode === "BW",
+                          )
+                        }
+                      >
+                        Black &amp; white
+                      </option>
+                      <option
+                        value="COLOR"
+                        disabled={
+                          !config.availablePrintOptions.some(
+                            (option) =>
+                              option.paperSize === selectedFile.paperSize &&
+                              option.colorMode === "COLOR",
+                          )
+                        }
+                      >
+                        Colour
+                      </option>
+                    </select>
+                  </label>
+                  <label>
+                    Sides
+                    <select
+                      value={selectedFile.sides}
+                      onChange={(event) =>
+                        patchSelected({
+                          sides: event.target.value as "SINGLE" | "DOUBLE",
+                        })
+                      }
+                    >
+                      <option
+                        value="SINGLE"
+                        disabled={
+                          !config.availablePrintOptions.some(
+                            (option) =>
+                              option.paperSize === selectedFile.paperSize &&
+                              option.colorMode === selectedFile.colorMode &&
+                              option.sides === "SINGLE",
+                          )
+                        }
+                      >
+                        Single-sided
+                      </option>
+                      <option
+                        value="DOUBLE"
+                        disabled={
+                          !config.availablePrintOptions.some(
+                            (option) =>
+                              option.paperSize === selectedFile.paperSize &&
+                              option.colorMode === selectedFile.colorMode &&
+                              option.sides === "DOUBLE",
+                          )
+                        }
+                      >
+                        Double-sided
+                      </option>
+                    </select>
+                  </label>
+                </div>
+                {!optionAvailable && (
+                  <p className="error">
+                    That print combination is not currently available.
+                  </p>
+                )}
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={applySettingsToAll}
                 >
-                  <option
-                    value="SINGLE"
-                    disabled={
-                      !config.availablePrintOptions.some(
-                        (option) =>
-                          option.paperSize === paperSize &&
-                          option.colorMode === colorMode &&
-                          option.sides === "SINGLE",
-                      )
-                    }
-                  >
-                    Single-sided
-                  </option>
-                  <option
-                    value="DOUBLE"
-                    disabled={
-                      !config.availablePrintOptions.some(
-                        (option) =>
-                          option.paperSize === paperSize &&
-                          option.colorMode === colorMode &&
-                          option.sides === "DOUBLE",
-                      )
-                    }
-                  >
-                    Double-sided
-                  </option>
-                </select>
-              </label>
-            </div>
-            {!optionAvailable && (
-              <p className="error">
-                That print combination is not currently available.
-              </p>
+                  Apply these settings to all files
+                </button>
+              </>
+            ) : (
+              <p className="muted">Add a PDF to configure print settings.</p>
             )}
           </section>
           <section className="step review">
@@ -704,20 +929,20 @@ export function App() {
                 </div>
                 <div>
                   <dt>PDF</dt>
-                  <dd>{file?.name}</dd>
-                </div>
-                {instructions.trim() && (
-                  <div>
-                    <dt>Instructions</dt>
-                    <dd>{instructions.trim()}</dd>
-                  </div>
-                )}
-                <div>
-                  <dt>Pages</dt>
                   <dd>
-                    {quote.normalizedSelectedPages} ({quote.selectedPageCount})
+                    {files.length === 1
+                      ? files[0]?.name
+                      : files.length === 2
+                        ? `${files[0]?.name}, ${files[1]?.name}`
+                        : `${files.length} files`}
                   </dd>
                 </div>
+                {quote.files?.map((quoted, index) => (
+                  <div key={quoted.fileId}>
+                    <dt>File {index + 1}</dt>
+                    <dd>{formatInr(quoted.printingAmountPaise)}</dd>
+                  </div>
+                ))}
                 <div>
                   <dt>Printing</dt>
                   <dd>{formatInr(quote.printingAmountPaise)}</dd>
@@ -762,8 +987,7 @@ export function App() {
               type="submit"
               disabled={
                 busy ||
-                !file ||
-                !pageCount ||
+                files.length === 0 ||
                 Boolean(fileError) ||
                 !optionAvailable ||
                 Boolean(paymentSuccess)
@@ -816,13 +1040,13 @@ export function App() {
             lineHeight: "1.5",
           }}
         >
-          🔒 <strong>Privacy & Automatic Cleanup:</strong> Your document is
-          securely stored in private shop storage and automatically deleted
-          after printing. All customer information is erased from the shop
-          database after 5 hours.
+          🔒 <strong>Privacy &amp; Automatic Cleanup:</strong> Unpaid uploads
+          are purged after 10 minutes. Completed print data is purged two hours
+          after the entire order finishes.
         </p>
         <p className="muted" style={{ fontSize: "0.8rem", margin: 0 }}>
-          Powered by <strong>PrintGo</strong> · Secure Single-Shop Printing
+          Powered by <strong>{config?.appName ?? "PrintGo"}</strong> · Secure
+          Single-Shop Printing
         </p>
       </footer>
     </main>

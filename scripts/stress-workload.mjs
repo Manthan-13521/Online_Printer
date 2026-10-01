@@ -78,7 +78,7 @@ export function workload(runtime, request) {
     await request("upload-complete", "/api/customer/uploads/complete", {
       method: "POST",
       token,
-      body: {},
+      body: draft.data.fileId ? { fileId: draft.data.fileId } : {},
     });
     const settings = {
       selectedPages: "1",
@@ -90,7 +90,9 @@ export function workload(runtime, request) {
     const quote = await request("quote", "/api/customer/draft/print-settings", {
       method: "PUT",
       token,
-      body: settings,
+      body: draft.data.fileId
+        ? { files: [{ fileId: draft.data.fileId, ...settings }] }
+        : settings,
     });
     if (kind === "abandon") return;
     if (!quote.data) throw new Error("Quote fixture failed");

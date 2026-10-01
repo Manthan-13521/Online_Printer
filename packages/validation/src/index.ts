@@ -242,19 +242,28 @@ export function validateAdminPasswordChangeInput(
 }
 
 export const SHOP_NAME_MAX_LENGTH = 100;
+export const APP_NAME_MAX_LENGTH = 50;
 export const CONTACT_PHONE_MAX_LENGTH = 30;
 export const ADDRESS_MAX_LENGTH = 500;
 export const CUSTOMER_NOTICE_MAX_LENGTH = 300;
 
 export interface ValidatedShopSettings {
+  appName?: string;
   shopName: string;
   contactPhone: string | null;
   address: string | null;
   customerNotice: string | null;
   onlinePrintingEnabled: boolean;
   maxPdfSizeBytes: number;
+  maxOrderUploadBytes?: number;
   identificationSheetEnabled: boolean;
   identificationSheetPlacement: IdentificationSheetPlacement;
+  automaticDailyCleanupEnabled?: boolean;
+  dailyCleanupTime?: string;
+  timezone?: string;
+  lastCleanupAt?: string | null;
+  nextCleanupAt?: string | null;
+  lastCleanupResult?: string | null;
 }
 
 function optionalPlainText(
@@ -296,6 +305,19 @@ export function validateShopSettingsInput(
   }
   const record = value as Record<string, unknown>;
   const issues: ValidationIssue[] = [];
+  const hasExtendedSettings = "appName" in record;
+  const appName =
+    typeof record.appName === "string" ? record.appName.trim() : "";
+  if (
+    hasExtendedSettings &&
+    (!appName || appName.length > APP_NAME_MAX_LENGTH)
+  ) {
+    issues.push({
+      path: ["appName"],
+      code: "INVALID_APP_NAME",
+      message: `App name must contain 1 to ${APP_NAME_MAX_LENGTH} characters.`,
+    });
+  }
   const shopName =
     typeof record.shopName === "string" ? record.shopName.trim() : "";
   if (!shopName || shopName.length > SHOP_NAME_MAX_LENGTH) {
@@ -344,6 +366,21 @@ export function validateShopSettingsInput(
       message: "Choose a PDF limit up to 25 MB.",
     });
   }
+  if (
+    (hasExtendedSettings &&
+      !Number.isSafeInteger(record.maxOrderUploadBytes)) ||
+    (hasExtendedSettings &&
+      ((record.maxOrderUploadBytes as number) <
+        (record.maxPdfSizeBytes as number) ||
+        (record.maxOrderUploadBytes as number) > 100 * 1024 * 1024))
+  ) {
+    issues.push({
+      path: ["maxOrderUploadBytes"],
+      code: "INVALID_ORDER_UPLOAD_LIMIT",
+      message:
+        "Choose an order upload limit between the per-PDF limit and 100 MB.",
+    });
+  }
   if (typeof record.identificationSheetEnabled !== "boolean") {
     issues.push({
       path: ["identificationSheetEnabled"],
@@ -358,11 +395,61 @@ export function validateShopSettingsInput(
       message: "Choose before or after the document.",
     });
   }
+  if (
+    hasExtendedSettings &&
+    typeof record.automaticDailyCleanupEnabled !== "boolean"
+  ) {
+    issues.push({
+      path: ["automaticDailyCleanupEnabled"],
+      code: "INVALID_BOOLEAN",
+      message: "Choose whether automatic daily cleanup is on or off.",
+    });
+  }
+  const dailyCleanupTime =
+    typeof record.dailyCleanupTime === "string" ? record.dailyCleanupTime : "";
+  if (
+    hasExtendedSettings &&
+    !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(dailyCleanupTime)
+  ) {
+    issues.push({
+      path: ["dailyCleanupTime"],
+      code: "INVALID_CLEANUP_TIME",
+      message: "Choose a valid 24-hour cleanup time.",
+    });
+  }
+  const timezone =
+    typeof record.timezone === "string" ? record.timezone.trim() : "";
+  if (hasExtendedSettings) {
+    try {
+      if (!timezone || timezone.length > 100)
+        throw new RangeError("Invalid timezone");
+      new Intl.DateTimeFormat("en", { timeZone: timezone }).format(0);
+    } catch {
+      issues.push({
+        path: ["timezone"],
+        code: "INVALID_TIMEZONE",
+        message: "Choose a valid IANA timezone.",
+      });
+    }
+  }
   return issues.length > 0
     ? { ok: false, issues }
     : {
         ok: true,
         value: {
+          ...(hasExtendedSettings
+            ? {
+                appName,
+                maxOrderUploadBytes: record.maxOrderUploadBytes as number,
+                automaticDailyCleanupEnabled:
+                  record.automaticDailyCleanupEnabled as boolean,
+                dailyCleanupTime,
+                timezone,
+                lastCleanupAt: null,
+                nextCleanupAt: null,
+                lastCleanupResult: null,
+              }
+            : {}),
           shopName,
           contactPhone,
           address,

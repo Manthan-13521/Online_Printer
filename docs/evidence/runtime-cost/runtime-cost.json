@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-29T17:26:08.712Z",
+  "generatedAt": "2026-10-01T07:58:46.702Z",
   "scope": "Local actual Worker routes with SQLite and mocked providers. No Cloudflare telemetry, Windows, physical printer, R2 network or payment provider.",
   "idle": [
     {
@@ -25,7 +25,7 @@
           "statements": 130,
           "returnedRows": 120,
           "changedRows": 10,
-          "queryMs": 11.550963999999937
+          "queryMs": 10.955789000000266
         }
       }
     },
@@ -52,7 +52,7 @@
           "statements": 780,
           "returnedRows": 720,
           "changedRows": 60,
-          "queryMs": 57.08629200000098
+          "queryMs": 54.26513799999975
         }
       }
     },
@@ -79,14 +79,14 @@
           "statements": 11700,
           "returnedRows": 10800,
           "changedRows": 900,
-          "queryMs": 860.4793360000177
+          "queryMs": 757.6678060000129
         }
       }
     }
   ],
   "testPrint": {
     "label": "MEASURED local current handlers; excludes the already-scheduled Agent poll and optional repeated Admin status polls",
-    "commandId": "31c0fc03-9712-4f5d-ab6b-75358b0c2a07",
+    "commandId": "762aaf99-38ee-48a4-a9cb-1a6eac52d23f",
     "additionalHttpRequestsBeyondNormalAgentPolling": 4,
     "normalPollUsedToClaim": 1,
     "statements": 20,
@@ -106,7 +106,7 @@
         "statements": 6,
         "returnedRows": 3,
         "changedRows": 2,
-        "queryMs": 0.41024900000047637
+        "queryMs": 0.44387500000038926
       },
       "test-print-claim-with-next-poll": {
         "endpoint": "test-print-claim-with-next-poll",
@@ -114,7 +114,7 @@
         "statements": 5,
         "returnedRows": 3,
         "changedRows": 1,
-        "queryMs": 0.616168000000016
+        "queryMs": 0.5920000000000982
       },
       "test-print-submitted": {
         "endpoint": "test-print-submitted",
@@ -122,7 +122,7 @@
         "statements": 3,
         "returnedRows": 2,
         "changedRows": 1,
-        "queryMs": 0.4819990000000871
+        "queryMs": 0.6208750000000691
       },
       "test-print-result": {
         "endpoint": "test-print-result",
@@ -130,7 +130,7 @@
         "statements": 3,
         "returnedRows": 2,
         "changedRows": 1,
-        "queryMs": 0.5067920000001322
+        "queryMs": 0.5575840000001335
       },
       "test-print-admin-status": {
         "endpoint": "test-print-admin-status",
@@ -138,7 +138,7 @@
         "statements": 3,
         "returnedRows": 3,
         "changedRows": 0,
-        "queryMs": 0.13358300000027157
+        "queryMs": 0.11370900000019901
       }
     }
   },
@@ -161,7 +161,7 @@
         "statements": 10,
         "returnedRows": 17,
         "changedRows": 0,
-        "queryMs": 0.2984580000011192
+        "queryMs": 0.3074989999995523
       },
       "admin-printer-page-poll": {
         "endpoint": "admin-printer-page-poll",
@@ -169,7 +169,7 @@
         "statements": 6,
         "returnedRows": 13,
         "changedRows": 0,
-        "queryMs": 0.1775840000000244
+        "queryMs": 0.16995900000028996
       },
       "admin-live-orders-poll": {
         "endpoint": "admin-live-orders-poll",
@@ -177,7 +177,7 @@
         "statements": 2,
         "returnedRows": 1,
         "changedRows": 0,
-        "queryMs": 0.20895800000016607
+        "queryMs": 0.22708300000022064
       }
     }
   },
@@ -200,7 +200,7 @@
         "statements": 4,
         "returnedRows": 2,
         "changedRows": 1,
-        "queryMs": 0.3129159999998592
+        "queryMs": 0.3347090000006574
       }
     }
   }

@@ -11,6 +11,7 @@ import { handleRazorpayWebhook } from "./payments/webhook";
 import { handleAgentPrintingRequest } from "./printing/routes";
 import { handleAdminLiveOrdersRequest } from "./printing/admin-routes";
 import { handleAdminRetentionRequest } from "./retention/admin-routes";
+import { handleAdminCleanupRequest } from "./cleanup/admin-routes";
 
 export async function routeRequest(
   request: Request,
@@ -55,6 +56,10 @@ export async function routeRequest(
 
   if (url.pathname.startsWith("/api/admin/retention")) {
     return handleAdminRetentionRequest(request, env);
+  }
+
+  if (url.pathname.startsWith("/api/admin/cleanup")) {
+    return handleAdminCleanupRequest(request, env);
   }
 
   if (url.pathname.startsWith("/api/agent/")) {

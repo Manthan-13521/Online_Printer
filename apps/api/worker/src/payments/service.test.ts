@@ -63,6 +63,7 @@ function paymentRepository(): PaymentRepository {
     activatePayment: vi.fn(() => Promise.resolve()),
     abandonReservation: vi.fn(() => Promise.resolve()),
     findPaymentByProviderOrderId: vi.fn(() => Promise.resolve(payment)),
+    findRetainedPaymentByProviderOrderId: vi.fn(() => Promise.resolve(null)),
     finalizePaid: vi.fn(
       (input: Parameters<PaymentRepository["finalizePaid"]>[0]) =>
         Promise.resolve({

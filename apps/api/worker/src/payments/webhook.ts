@@ -176,7 +176,28 @@ export async function handleRazorpayWebhook(
     const payment = await dependencies.payments.findPaymentByProviderOrderId(
       entity.orderId,
     );
-    if (!payment) throw new Error("Webhook payment order is unknown.");
+    if (!payment) {
+      const retained =
+        await dependencies.payments.findRetainedPaymentByProviderOrderId(
+          entity.orderId,
+        );
+      if (
+        !retained ||
+        !["PAID", "REFUNDED"].includes(retained.status) ||
+        retained.amountPaise !== entity.amount ||
+        retained.currency !== entity.currency ||
+        (retained.providerPaymentId !== null &&
+          retained.providerPaymentId !== entity.id)
+      ) {
+        throw new Error("Webhook payment order is unknown.");
+      }
+      await dependencies.payments.finishProviderEvent({
+        providerEventId,
+        status: "PROCESSED",
+        nowMs: dependencies.now(),
+      });
+      return ok({ received: true, duplicate: true }, 200, NO_STORE);
+    }
     paymentId = payment.id;
     orderId = payment.orderId;
     if (

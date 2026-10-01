@@ -22,6 +22,9 @@ import type {
   ApiFailure,
   ApiResponse,
   AdminDashboardData,
+  AdminCleanupPreviewData,
+  AdminCleanupRunData,
+  CleanupScope,
 } from "@printgo/api-contract";
 
 const API_BASE_URL =
@@ -135,6 +138,22 @@ export const adminApi = {
     return request("/api/admin/settings", {
       method: "PUT",
       body: JSON.stringify(input),
+    });
+  },
+  cleanupPreview(
+    scope: Extract<CleanupScope, "ALL_COMPLETED" | "ALL_PRINT_DATA">,
+  ): Promise<ApiResponse<AdminCleanupPreviewData>> {
+    return request(
+      `/api/admin/cleanup/preview?scope=${encodeURIComponent(scope)}`,
+    );
+  },
+  startCleanup(
+    scope: Extract<CleanupScope, "ALL_COMPLETED" | "ALL_PRINT_DATA">,
+    confirmation: string,
+  ): Promise<ApiResponse<AdminCleanupRunData>> {
+    return request("/api/admin/cleanup/runs", {
+      method: "POST",
+      body: JSON.stringify({ scope, confirmation }),
     });
   },
   getPricing(): Promise<AdminPricingResponse> {

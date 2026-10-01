@@ -567,6 +567,25 @@ describe("WindowsPrinterAdapter with mock executor", () => {
     expect(status.spoolJobId).toBe("42");
   });
 
+  it("does not treat a retained but unfinished spool job as completed", async () => {
+    const mockExecutor = vi.fn(() =>
+      Promise.resolve(
+        JSON.stringify({
+          JobId: "42",
+          JobStatus: "Retained",
+          Status: "OK",
+          StatusMask: 0x2000,
+          TotalPages: 2,
+          PagesPrinted: 0,
+        }),
+      ),
+    );
+    const adapter = new WindowsPrinterAdapter(mockExecutor);
+
+    const status = await adapter.getJobStatus("Canon MF4700", "42");
+    expect(status.state).toBe("QUEUED");
+  });
+
   it("CRITICAL RULE: distinguishes BLOCKED status (paper out) from FAILED", async () => {
     const mockExecutor = vi.fn(() =>
       Promise.resolve(

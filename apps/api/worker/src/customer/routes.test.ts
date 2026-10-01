@@ -54,6 +54,27 @@ function actions(): CustomerActions {
         draftExpiresAt: "later",
       }),
     ),
+    addFile: vi.fn(() => Promise.reject(new Error("not used"))),
+    removeFile: vi.fn(() =>
+      Promise.resolve({
+        customerName: "Rahul",
+        customerPhone: "9876543210",
+        instructions: null,
+        status: "UPLOADED",
+        draftExpiresAt: "later",
+        files: [],
+      }),
+    ),
+    getDraft: vi.fn(() =>
+      Promise.resolve({
+        customerName: "Rahul",
+        customerPhone: "9876543210",
+        instructions: null,
+        status: "UPLOADED",
+        draftExpiresAt: "later",
+        files: [],
+      }),
+    ),
     quote: vi.fn(() =>
       Promise.resolve({
         normalizedSelectedPages: "1-3",
@@ -69,6 +90,7 @@ function actions(): CustomerActions {
         expiresAt: "later",
       }),
     ),
+    quoteOrder: vi.fn(() => Promise.reject(new Error("not used"))),
     createPayment: vi.fn(() =>
       Promise.resolve({
         status: "CHECKOUT_READY" as const,

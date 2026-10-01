@@ -70,14 +70,22 @@ export type AdminLogoutResponse = ApiResponse<AdminLogoutData>;
 
 export interface ShopSettings {
   logoUrl?: string | null;
+  appName?: string;
   shopName: string;
   contactPhone: string | null;
   address: string | null;
   customerNotice: string | null;
   onlinePrintingEnabled: boolean;
   maxPdfSizeBytes: number;
+  maxOrderUploadBytes?: number;
   identificationSheetEnabled: boolean;
   identificationSheetPlacement: IdentificationSheetPlacement;
+  automaticDailyCleanupEnabled?: boolean;
+  dailyCleanupTime?: string;
+  timezone?: string;
+  lastCleanupAt?: string | null;
+  nextCleanupAt?: string | null;
+  lastCleanupResult?: string | null;
 }
 
 export interface AdminSettingsData {
@@ -129,11 +137,14 @@ export interface CustomerPrintOption {
 
 export interface CustomerConfigData {
   logoUrl?: string | null;
+  appName?: string;
   shopName: string;
   contactPhone: string | null;
   customerNotice: string | null;
   onlinePrintingEnabled: boolean;
   maxPdfSizeBytes: number;
+  maxOrderUploadBytes?: number;
+  maxOrderFiles?: number;
   availablePrintOptions: CustomerPrintOption[];
 }
 
@@ -157,12 +168,15 @@ export interface UploadAuthorization {
 export interface CreateCustomerDraftData {
   draftToken: string;
   draftExpiresAt: string;
+  fileId?: string;
+  position?: number;
   upload: UploadAuthorization;
 }
 
 export type CreateCustomerDraftResponse = ApiResponse<CreateCustomerDraftData>;
 
 export interface CompleteCustomerUploadData {
+  fileId?: string;
   sizeBytes: number;
   uploadedAt: string;
   draftExpiresAt: string;
@@ -172,11 +186,60 @@ export type CompleteCustomerUploadResponse =
   ApiResponse<CompleteCustomerUploadData>;
 
 export interface CustomerPrintSettingsRequest {
+  fileId?: string;
   selectedPages: string;
   copies: number;
   paperSize: PaperSize;
   colorMode: ColorMode;
   sides: SidesMode;
+}
+
+export interface AddCustomerFileRequest {
+  originalFilename: string;
+  expectedSizeBytes: number;
+  sourcePageCount: number;
+}
+
+export interface AddCustomerFileData {
+  fileId: string;
+  position: number;
+  draftExpiresAt: string;
+  upload: UploadAuthorization;
+}
+
+export interface CustomerOrderFileData {
+  fileId: string;
+  position: number;
+  originalFilename: string;
+  sizeBytes: number | null;
+  sourcePageCount: number;
+  selectedPages: string;
+  selectedPageCount: number | null;
+  copies: number;
+  paperSize: PaperSize;
+  colorMode: ColorMode;
+  sides: SidesMode;
+  printingAmountPaise: number;
+  serviceChargePaise: number;
+  uploadStatus: string;
+  printStatus: string;
+}
+
+export interface CustomerDraftData {
+  customerName: string;
+  customerPhone: string;
+  instructions: string | null;
+  status: string;
+  draftExpiresAt: string;
+  files: CustomerOrderFileData[];
+}
+
+export interface CustomerOrderQuoteRequest {
+  files: Array<CustomerPrintSettingsRequest & { fileId: string }>;
+}
+
+export interface CustomerFileQuoteData extends CustomerOrderFileData {
+  selectedPageCount: number;
 }
 
 export interface CustomerQuoteData {
@@ -191,6 +254,7 @@ export interface CustomerQuoteData {
   totalAmountPaise: number;
   currency: "INR";
   expiresAt: string;
+  files?: CustomerFileQuoteData[];
 }
 
 export type CustomerQuoteResponse = ApiResponse<CustomerQuoteData>;
@@ -400,6 +464,10 @@ export interface AgentPrintJob {
   claimId: string;
   leaseExpiresAtMs: number;
   jobCode: string;
+  fileId?: string;
+  filePosition?: number;
+  fileCount?: number;
+  originalFilename?: string;
   printerId: string;
   windowsPrinterName: string;
   download: { url: string; expiresAtMs: number; expectedSizeBytes: number };
@@ -598,3 +666,30 @@ export interface AdminDashboardData {
   attention: number;
   completedToday: number;
 }
+
+export type CleanupScope =
+  "EXPIRED_UNPAID" | "COMPLETED_DUE" | "ALL_COMPLETED" | "ALL_PRINT_DATA";
+
+export interface AdminCleanupPreviewData {
+  scope: CleanupScope;
+  orders: number;
+  files: number;
+  bytes: number;
+  active: number;
+}
+
+export interface AdminCleanupRunData extends AdminCleanupPreviewData {
+  runId: string;
+  status: "PENDING" | "RUNNING" | "COMPLETED" | "PARTIAL" | "FAILED";
+  deletedOrders: number;
+  deletedFiles: number;
+  deletedBytes: number;
+  activeSkipped: number;
+  failures: number;
+  lastError: string | null;
+  createdAt: string;
+  completedAt: string | null;
+}
+
+export type AdminCleanupPreviewResponse = ApiResponse<AdminCleanupPreviewData>;
+export type AdminCleanupRunResponse = ApiResponse<AdminCleanupRunData>;

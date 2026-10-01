@@ -13,6 +13,7 @@ import { ExecutionJournalStore } from "./storage/execution-journal.js";
 
 const temporary: string[] = [];
 afterEach(async () => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   await Promise.all(
     temporary
@@ -250,6 +251,41 @@ describe("PaidPrintExecutor duplicate prevention", () => {
       expect.objectContaining({ status: "SUCCEEDED" }),
     );
   });
+
+  it.each(["QUEUED", "SPOOLING", "PRINTING"] as const)(
+    "keeps an active %s spool job pending after restart",
+    async (state) => {
+      vi.useFakeTimers();
+      const api = client();
+      const printer = adapter();
+      const store = await journal();
+      await store.save({
+        orderId: "order",
+        attemptId: "attempt",
+        stepId: "step",
+        spoolerJobId: "42",
+        updatedAtMs: 1,
+      });
+      vi.mocked(printer.getJobStatus).mockResolvedValue({
+        state,
+        spoolJobId: "42",
+      });
+
+      const handling = new PaidPrintExecutor(api, printer, store).handle(
+        credentials,
+        job("CUSTOMER_DOCUMENT", "SUBMISSION_STARTED"),
+      );
+      await vi.waitFor(() => {
+        expect(printer.getJobStatus).toHaveBeenCalled();
+      });
+      await vi.advanceTimersByTimeAsync(16_000);
+      await handling;
+
+      expect(printer.submitPdfJob).not.toHaveBeenCalled();
+      expect(api.reportPrintStep).not.toHaveBeenCalled();
+      expect(await store.load()).toMatchObject({ spoolerJobId: "42" });
+    },
+  );
 
   it("marks a restart uncertain when submission started but no spool identity survived", async () => {
     const api = client();

@@ -1,0 +1,9 @@
+{
+  "capturedAt": "2026-10-01T07:52:27.486Z",
+  "evidence": "MEASURED CLOUD",
+  "accountId": "ba188f82338d7a85fc6f79913fb6a653",
+  "databaseName": "printgo-production",
+  "databaseId": "81bc9e6b-6e65-4a8a-85dd-4440484482ff",
+  "timePeriod": "1d",
+  "note": "Read-only Query Insights. Query parameters are omitted by Cloudflare."
+}

@@ -1,4 +1,4 @@
-import { guardAdminOrigin, readAdminJson, withAdminCors } from "../admin/http";
+import { guardAdminOrigin, withAdminCors } from "../admin/http";
 import { clearAdminCookie, readAdminCookie } from "../auth/cookies";
 import { D1AdminAuthRepository } from "../auth/repository";
 import { AdminAuthService, AuthError } from "../auth/service";
@@ -6,8 +6,6 @@ import type { WorkerEnv } from "../env";
 import { error, ok } from "../http";
 import { D1RetentionRepository } from "./repository";
 import { RetentionService } from "./service";
-
-const MAX_JSON_BYTES = 16 * 1024;
 
 export async function handleAdminRetentionRequest(
   request: Request,
@@ -65,27 +63,14 @@ export async function handleAdminRetentionRequest(
     url.pathname === "/api/admin/retention/cleanup" &&
     request.method === "POST"
   ) {
-    const urlParams = url.searchParams;
-    let dryRun = urlParams.get("dryRun") === "true";
-    let batchLimit: number | undefined;
-
-    try {
-      const rawBody = await readAdminJson(request, MAX_JSON_BYTES);
-      if (rawBody && typeof rawBody === "object") {
-        const body = rawBody as { dryRun?: unknown; batchLimit?: unknown };
-        if (typeof body.dryRun === "boolean") dryRun = body.dryRun;
-        if (typeof body.batchLimit === "number") batchLimit = body.batchLimit;
-      }
-    } catch {
-      // Body is optional
-    }
-
-    const result = await service.runCleanup({
-      dryRun,
-      includeStats: true,
-      ...(batchLimit !== undefined ? { batchLimit } : {}),
-    });
-    return withAdminCors(ok(result), env.ADMIN_ALLOWED_ORIGIN);
+    return withAdminCors(
+      error(
+        410,
+        "RETENTION_CLEANUP_REPLACED",
+        "Use the resumable Storage & Privacy cleanup controls.",
+      ),
+      env.ADMIN_ALLOWED_ORIGIN,
+    );
   }
 
   return withAdminCors(

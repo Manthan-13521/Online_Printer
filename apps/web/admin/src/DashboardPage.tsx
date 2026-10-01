@@ -72,9 +72,10 @@ export function DashboardPage({
   }, [onSessionExpired]);
 
   useEffect(() => {
+    if (settings?.appName) return applyShopBranding(settings.appName, true);
     if (settings?.shopName) return applyShopBranding(settings.shopName, true);
     return undefined;
-  }, [settings?.shopName]);
+  }, [settings?.appName, settings?.shopName]);
 
   if (loading) {
     return (
@@ -128,7 +129,7 @@ export function DashboardPage({
             Workspace ready
           </p>
           <h1 style={{ margin: "0.25rem 0 0 0", fontSize: "1.75rem" }}>
-            {settings?.shopName ?? "PrintGo"}
+            {settings?.appName ?? settings?.shopName ?? "PrintGo"}
           </h1>
           <p className="muted" style={{ margin: "0.25rem 0 0 0" }}>
             {settings?.shopName

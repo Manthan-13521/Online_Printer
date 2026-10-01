@@ -424,3 +424,56 @@ a {
     justify-content: flex-end;
   }
 }
+
+.file-list {
+  display: grid;
+  gap: 0.9rem;
+  margin-bottom: 1rem;
+}
+.file-sequence {
+  display: grid;
+  gap: 0.35rem;
+}
+.file-number {
+  color: #0e7490;
+  font-size: 1rem;
+}
+.file-card {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid #b9d3d7;
+  border-radius: 0.75rem;
+  background: #f8fcfc;
+  overflow: hidden;
+}
+.file-card-main {
+  display: grid;
+  flex: 1;
+  gap: 0.25rem;
+  padding: 0.85rem;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+.file-card-main small {
+  color: #526d7b;
+}
+.remove-file {
+  min-width: 3rem;
+  border: 0;
+  border-left: 1px solid #d8e7e9;
+  background: #fff;
+  color: #9f1239;
+  font-size: 1.5rem;
+}
+.add-file-plus {
+  display: block;
+  font-size: 1.6rem;
+  line-height: 1;
+}
+.file-count {
+  margin: 0.6rem 0;
+  color: #526d7b;
+  font-weight: 650;
+}
