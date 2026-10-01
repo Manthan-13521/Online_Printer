@@ -1,0 +1,123 @@
+{
+  "generatedAt": "2026-10-01T09:28:09.019Z",
+  "evidence": "MEASURED LOCAL with SIMULATED in-memory R2",
+  "scope": "Current cleanup service/repository, all migrations, fake clock, synthetic D1/R2/payment/print fixtures; no external side effects.",
+  "policyBoundary": {
+    "unpaid": {
+      "tMinus1": false,
+      "t": true,
+      "tPlus1": true
+    },
+    "completed": {
+      "tMinus1": false,
+      "t": true,
+      "tPlus1": true
+    }
+  },
+  "tests": {
+    "U1": {
+      "orderDeleted": true,
+      "fileRowsDeleted": true,
+      "uploadRowDeleted": true,
+      "allR2ObjectsDeleted": true,
+      "unrelatedOrderRetained": true,
+      "unrelatedR2Retained": true,
+      "retainedPayments": 0,
+      "retainedProviderEvents": 0,
+      "retainedAuditLogs": 0,
+      "retainedPrintAttempts": 0,
+      "retainedPrintSteps": 0,
+      "retainedOrderEvents": 0,
+      "cleanupAuditItems": 1
+    },
+    "U2": {
+      "orderDeleted": true,
+      "fileRowsDeleted": true,
+      "uploadRowDeleted": true,
+      "allR2ObjectsDeleted": true,
+      "unrelatedOrderRetained": true,
+      "unrelatedR2Retained": true,
+      "retainedPayments": 0,
+      "retainedProviderEvents": 0,
+      "retainedAuditLogs": 0,
+      "retainedPrintAttempts": 0,
+      "retainedPrintSteps": 0,
+      "retainedOrderEvents": 0,
+      "cleanupAuditItems": 1
+    },
+    "P1": {
+      "orderDeleted": true,
+      "fileRowsDeleted": true,
+      "uploadRowDeleted": true,
+      "allR2ObjectsDeleted": true,
+      "unrelatedOrderRetained": true,
+      "unrelatedR2Retained": true,
+      "retainedPayments": 1,
+      "retainedProviderEvents": 1,
+      "retainedAuditLogs": 1,
+      "retainedPrintAttempts": 0,
+      "retainedPrintSteps": 0,
+      "retainedOrderEvents": 0,
+      "cleanupAuditItems": 1
+    },
+    "P2": {
+      "orderDeleted": true,
+      "fileRowsDeleted": true,
+      "uploadRowDeleted": true,
+      "allR2ObjectsDeleted": true,
+      "unrelatedOrderRetained": true,
+      "unrelatedR2Retained": true,
+      "retainedPayments": 1,
+      "retainedProviderEvents": 1,
+      "retainedAuditLogs": 1,
+      "retainedPrintAttempts": 0,
+      "retainedPrintSteps": 0,
+      "retainedOrderEvents": 0,
+      "cleanupAuditItems": 1
+    },
+    "negative": {
+      "paidNotPrintedProtected": true,
+      "activePrintProtected": true,
+      "uncertainPrintProtected": true,
+      "stalePendingPaymentStillPresent": true,
+      "stalePendingPaymentEligible": false
+    },
+    "retry": {
+      "failureKeptR2Object": true,
+      "writesBeforeRetryDue": 0,
+      "recoveredOrderDeleted": true,
+      "recoveredR2Deleted": true,
+      "recoveredRun": {
+        "status": "PARTIAL",
+        "failures": 1,
+        "completed_at_ms": 1790813700000
+      },
+      "writesOnNextEmptyCycle": 1
+    }
+  },
+  "optimizer": {
+    "emptyCron": {
+      "statements": 6,
+      "returnedRows": 1,
+      "changedRows": 0,
+      "r2Deletes": 0
+    }
+  },
+  "acceptance": {
+    "unpaidSingleAndMultiDeletion": true,
+    "completedSingleAndMultiDeletion": true,
+    "requiredPaymentProviderEvidenceRetained": true,
+    "auditLogRetained": true,
+    "printForensicsRetained": false,
+    "stalePendingPaymentBecomesEligibleAfterTenMinutes": false,
+    "failedDeleteBackoffIsWriteFreeBeforeDue": true,
+    "recoveredRunBecomesTerminalAndWriteFree": false,
+    "overall": "FAIL"
+  },
+  "notVerified": [
+    "Cloudflare R2 deletion for a controlled production object",
+    "Natural two-hour production completion window",
+    "Windows physical printing",
+    "Live Razorpay payment flow"
+  ]
+}

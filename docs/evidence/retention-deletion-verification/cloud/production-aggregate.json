@@ -1,0 +1,98 @@
+{
+  "capturedAtUtc": "2026-10-01T09:13:56Z",
+  "evidence": "MEASURED CLOUD",
+  "method": "Read-only aggregate D1 queries and one-hour D1 Query Insights; no customer values, order identifiers, object keys, or credentials retained.",
+  "limitations": [
+    "The snapshot is not a controlled end-to-end production retention test.",
+    "Query Insights can lag and the one-hour sample includes the read-only verification queries.",
+    "One discarded read-only diagnostic referenced a nonexistent column and failed without mutation.",
+    "No production records, timestamps, files, settings, or cleanup state were changed."
+  ],
+  "currentOrderCounts": {
+    "COMPLETED": 16,
+    "PAYMENT_CANCELLED": 4,
+    "PAYMENT_PENDING": 22,
+    "QUEUED": 1,
+    "UPLOADING": 4
+  },
+  "completedDeadlineShape": {
+    "completedRows": 16,
+    "withCompletedAndPurgeTimestamp": 11,
+    "exactlyTwoHours": 8,
+    "shorterThanTwoHours": 3,
+    "longerThanTwoHours": 0,
+    "missingPurgeTimestamp": 5,
+    "minimumObservedDeltaMs": 6883176,
+    "maximumObservedDeltaMs": 7200000
+  },
+  "unpaidDeadlineShape": {
+    "PAYMENT_CANCELLED": {
+      "count": 4,
+      "observedDeadlineFromUpdatedAtMs": 1800000
+    },
+    "PAYMENT_PENDING": {
+      "count": 22,
+      "minimumObservedDeadlineFromUpdatedAtMs": 307676,
+      "maximumObservedDeadlineFromUpdatedAtMs": 1792356,
+      "note": "An active CREATED or PENDING payment excludes these rows from cleanup regardless of draft expiry."
+    },
+    "UPLOADING": {
+      "count": 4,
+      "observedDeadlineFromUpdatedAtMs": 600000
+    }
+  },
+  "cleanupRuns": {
+    "EXPIRED_UNPAID": {
+      "source": "SCHEDULED",
+      "status": "RUNNING",
+      "ordersSelected": 28,
+      "ordersDeleted": 5,
+      "filesSelected": 28,
+      "filesDeleted": 5,
+      "failures": 1060,
+      "lastErrorClass": "Cleanup candidate contains an invalid object key"
+    },
+    "COMPLETED_DUE": {
+      "source": "SCHEDULED",
+      "status": "PENDING",
+      "ordersSelected": 2,
+      "ordersDeleted": 0
+    }
+  },
+  "retainedEvidenceCounts": {
+    "retainedPaymentRecords": 0,
+    "retainedProviderEvents": 0,
+    "failedCleanupItems": 0
+  },
+  "currentObjectKeyShape": {
+    "currentFormatCount": 19,
+    "legacyDateFormatCount": 30,
+    "allUseUploadsPrefix": true,
+    "allContainOwningOrderId": true,
+    "allEndInPdf": true,
+    "note": "This structural aggregate did not identify a currently stored key that explains the historical cleanup error."
+  },
+  "oneHourQueryInsights": {
+    "openRunProbe": {
+      "executions": 6,
+      "averageRowsRead": 1,
+      "totalRowsRead": 6,
+      "rowsWritten": 0
+    },
+    "dailySettings": {
+      "executions": 3,
+      "averageRowsRead": 1
+    },
+    "nextRunnableRun": {
+      "executions": 3,
+      "averageRowsRead": 9,
+      "totalRowsRead": 27
+    },
+    "completedDueClaim": {
+      "executions": 5,
+      "returnedRows": 0,
+      "rowsWritten": 0
+    },
+    "topThirtyObservedWrites": 0
+  }
+}

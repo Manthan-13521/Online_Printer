@@ -11,7 +11,7 @@ export async function createRuntime(directory, { profileWrites = false } = {}) {
   const bundle = resolve(directory, "runtime.mjs");
   await build({
     stdin: {
-      contents: `export { routeRequest } from './apps/api/worker/src/router.ts'; export { hashPassword, hashSessionToken } from './packages/auth/src/index.ts'; export { RetentionService } from './apps/api/worker/src/retention/service.ts'; export { D1RetentionRepository } from './apps/api/worker/src/retention/repository.ts';`,
+      contents: `export { routeRequest } from './apps/api/worker/src/router.ts'; export { hashPassword, hashSessionToken } from './packages/auth/src/index.ts'; export { RetentionService } from './apps/api/worker/src/retention/service.ts'; export { D1RetentionRepository } from './apps/api/worker/src/retention/repository.ts'; export { CleanupService } from './apps/api/worker/src/cleanup/service.ts'; export { D1CleanupRepository } from './apps/api/worker/src/cleanup/repository.ts';`,
       resolveDir: process.cwd(),
     },
     outfile: bundle,
@@ -274,10 +274,13 @@ export async function createRuntime(directory, { profileWrites = false } = {}) {
       totals.r2.PUT++;
       objects.set(key, Buffer.from(bytes));
     },
-    async delete(key) {
-      totals.r2.DELETE++;
-      objects.delete(key);
-      metadata.delete(key);
+    async delete(keyOrKeys) {
+      const keys = Array.isArray(keyOrKeys) ? keyOrKeys : [keyOrKeys];
+      totals.r2.DELETE += keys.length;
+      for (const key of keys) {
+        objects.delete(key);
+        metadata.delete(key);
+      }
     },
   };
   const providerOrders = new Map();
