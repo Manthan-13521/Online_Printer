@@ -209,12 +209,10 @@ export interface AddCustomerFileData {
 
 export interface CustomerOrderFileData {
   fileId: string;
-  position: number;
   originalFilename: string;
   sizeBytes: number | null;
   sourcePageCount: number;
   selectedPages: string;
-  selectedPageCount: number | null;
   copies: number;
   paperSize: PaperSize;
   colorMode: ColorMode;
@@ -222,7 +220,6 @@ export interface CustomerOrderFileData {
   printingAmountPaise: number;
   serviceChargePaise: number;
   uploadStatus: string;
-  printStatus: string;
 }
 
 export interface CustomerDraftData {
@@ -230,7 +227,6 @@ export interface CustomerDraftData {
   customerPhone: string;
   instructions: string | null;
   status: string;
-  draftExpiresAt: string;
   files: CustomerOrderFileData[];
 }
 

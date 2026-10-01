@@ -305,11 +305,13 @@ export class D1AgentRepository implements AgentRepository {
         `SELECT id, display_name, is_active, last_heartbeat_at_ms,
           (SELECT online_printing_enabled FROM installation WHERE id = 1) online_printing_enabled,
           EXISTS(SELECT 1 FROM printer_test_commands c WHERE c.agent_id = agents.id AND c.status = 'PENDING') has_pending_command,
-          EXISTS(
+          (EXISTS(
             SELECT 1 FROM orders
             WHERE status IN ('QUEUED','CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED')
-               OR (status = 'PRINT_FAILED' AND cleanup_state = 'ACTIVE' AND updated_at_ms <= (? - 60000))
-          ) has_print_work
+          ) OR EXISTS(
+            SELECT 1 FROM orders
+            WHERE status = 'PRINT_FAILED' AND cleanup_state = 'ACTIVE' AND updated_at_ms <= (? - 60000)
+          )) has_print_work
          FROM agents WHERE credential_hash = ?`,
       )
       .bind(nowMs, credentialHash)

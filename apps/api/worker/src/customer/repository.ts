@@ -607,21 +607,20 @@ export class D1CustomerRepository implements CustomerRepository {
         )
         .bind(fileId, selected.orderId, selected.orderId, tokenHash),
     );
-    for (const file of files.filter(
+    const filesToShift = files.filter(
       (file) => file.position > selected.position,
-    )) {
+    );
+    if (filesToShift.length > 0) {
       statements.push(
         this.db
           .prepare(
-            `UPDATE order_files SET position = ?, updated_at_ms = ?
-             WHERE id = ? AND order_id = ? AND position = ?`,
+            `UPDATE order_files SET position = position - 1, updated_at_ms = ?
+             WHERE order_id = ? AND position > ?`,
           )
           .bind(
-            file.position - 1,
             nowMs,
-            file.id,
             selected.orderId,
-            file.position,
+            selected.position,
           ),
       );
     }

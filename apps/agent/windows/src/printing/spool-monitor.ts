@@ -19,7 +19,7 @@ export async function monitorSpoolJob(
   spoolJobId: string,
   options?: SpoolMonitorOptions,
 ): Promise<PrintJobStatus> {
-  const pollIntervalMs = options?.pollIntervalMs ?? 1000;
+  const pollIntervalMs = options?.pollIntervalMs ?? 2000;
   const maxWaitMs = options?.maxWaitMs ?? 15000;
   const deadline = Date.now() + maxWaitMs;
 

@@ -313,15 +313,12 @@ export class CustomerService {
       customerPhone: draft.customerPhone,
       instructions: draft.instructions,
       status: draft.status,
-      draftExpiresAt: new Date(draft.expiresAtMs).toISOString(),
       files: files.map((file) => ({
         fileId: file.id,
-        position: file.position,
         originalFilename: file.originalFilename,
         sizeBytes: file.actualSizeBytes,
         sourcePageCount: file.sourcePageCount,
         selectedPages: file.selectedPages,
-        selectedPageCount: file.selectedPageCount,
         copies: file.copies,
         paperSize: file.paperSize,
         colorMode: file.colorMode,
@@ -329,7 +326,6 @@ export class CustomerService {
         printingAmountPaise: file.printingAmountPaise,
         serviceChargePaise: file.serviceChargePaise,
         uploadStatus: file.uploadStatus,
-        printStatus: file.printStatus,
       })),
     };
   }
@@ -439,7 +435,6 @@ export class CustomerService {
         );
         quoted.push({
           fileId: file.id,
-          position: file.position,
           originalFilename: file.originalFilename,
           sizeBytes: file.actualSizeBytes,
           sourcePageCount: file.sourcePageCount,
@@ -452,7 +447,6 @@ export class CustomerService {
           printingAmountPaise: price.printingAmountPaise,
           serviceChargePaise: price.serviceChargePaise,
           uploadStatus: file.uploadStatus,
-          printStatus: file.printStatus,
         });
       }
     } catch (error) {

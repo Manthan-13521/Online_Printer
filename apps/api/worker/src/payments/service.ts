@@ -156,12 +156,10 @@ export class PaymentService {
         );
         files.push({
           fileId: file.id,
-          position: file.position,
           originalFilename: file.originalFilename,
           sizeBytes: file.actualSizeBytes,
           sourcePageCount: file.sourcePageCount,
           selectedPages: pages.normalized,
-          selectedPageCount: pages.selectedPageCount,
           copies: file.copies,
           paperSize: file.paperSize,
           colorMode: file.colorMode,
@@ -169,7 +167,6 @@ export class PaymentService {
           printingAmountPaise: price.printingAmountPaise,
           serviceChargePaise: price.serviceChargePaise,
           uploadStatus: file.uploadStatus,
-          printStatus: "PENDING",
         });
       }
       const first = files[0];
