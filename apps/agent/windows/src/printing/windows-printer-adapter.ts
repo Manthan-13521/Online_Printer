@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import * as net from "node:net";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -23,6 +24,68 @@ const execFileAsync = promisify(execFile);
 
 export interface PowerShellExecutor {
   (command: string): Promise<string>;
+}
+
+export interface SocketProbe {
+  (host: string, port: number, timeoutMs: number): Promise<boolean>;
+}
+
+export const defaultSocketProbe: SocketProbe = async (
+  host: string,
+  port: number,
+  timeoutMs: number,
+): Promise<boolean> => {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    let resolved = false;
+
+    const cleanup = () => {
+      if (!resolved) {
+        resolved = true;
+        socket.destroy();
+      }
+    };
+
+    socket.setTimeout(timeoutMs);
+    socket.once("connect", () => {
+      cleanup();
+      resolve(true);
+    });
+    socket.once("timeout", () => {
+      cleanup();
+      resolve(false);
+    });
+    socket.once("error", () => {
+      cleanup();
+      resolve(false);
+    });
+
+    try {
+      socket.connect(port, host);
+    } catch {
+      cleanup();
+      resolve(false);
+    }
+  });
+};
+
+export function extractHostFromPortName(
+  portName: string | null | undefined,
+): string | null {
+  if (!portName) return null;
+  const trimmed = portName.trim();
+  const ipPrefix =
+    /^IP_([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})$/i.exec(trimmed);
+  if (ipPrefix?.[1]) return ipPrefix[1];
+  const directIp =
+    /^([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})(?::\d+)?$/i.exec(
+      trimmed,
+    );
+  if (directIp?.[1]) return directIp[1];
+  const tcpPrefix =
+    /^TCP_([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})$/i.exec(trimmed);
+  if (tcpPrefix?.[1]) return tcpPrefix[1];
+  return null;
 }
 
 const defaultPowerShellExecutor: PowerShellExecutor = async (
@@ -52,6 +115,7 @@ interface CimPrinterOutput {
 
 export class WindowsPrinterAdapter implements PrinterAdapter {
   private readonly executor: PowerShellExecutor;
+  private readonly socketProbe: SocketProbe;
   private inventory: readonly PrinterSummary[] = [];
   private inventoryAtMs = -Infinity;
 
@@ -64,8 +128,20 @@ export class WindowsPrinterAdapter implements PrinterAdapter {
     { status: PrinterStatus; cachedAtMs: number }
   >();
 
-  constructor(executor: PowerShellExecutor = defaultPowerShellExecutor) {
+  constructor(
+    executor: PowerShellExecutor = defaultPowerShellExecutor,
+    socketProbe: SocketProbe = defaultSocketProbe,
+  ) {
     this.executor = executor;
+    this.socketProbe = socketProbe;
+  }
+
+  private async probeNetworkPrinter(
+    portName?: string | null,
+  ): Promise<boolean | undefined> {
+    const host = extractHostFromPortName(portName);
+    if (!host) return undefined;
+    return this.socketProbe(host, 9100, 800);
   }
 
   private ensureWindows(): void {
@@ -112,11 +188,17 @@ export class WindowsPrinterAdapter implements PrinterAdapter {
         if (!names.has(name)) this.capabilitiesCache.delete(name);
       for (const name of this.statusCache.keys())
         if (!names.has(name)) this.statusCache.delete(name);
-      for (const p of valid)
+
+      const reachability = await Promise.all(
+        valid.map((p) => this.probeNetworkPrinter(p.PortName)),
+      );
+      for (let i = 0; i < valid.length; i++) {
+        const p = valid[i]!;
         this.statusCache.set(p.Name, {
-          status: this.parsePrinterStatus(p),
+          status: this.parsePrinterStatus(p, reachability[i]),
           cachedAtMs: Date.now(),
         });
+      }
       if (!full) {
         const changed =
           valid.some((p) => {
@@ -130,7 +212,9 @@ export class WindowsPrinterAdapter implements PrinterAdapter {
         if (changed) return this.listPrinters(true);
         if (
           valid.some(
-            (p) => this.parsePrinterStatus(p).availability !== "ONLINE",
+            (p, i) =>
+              this.parsePrinterStatus(p, reachability[i]).availability !==
+              "ONLINE",
           )
         )
           this.inventoryAtMs = -Infinity;
@@ -141,7 +225,7 @@ export class WindowsPrinterAdapter implements PrinterAdapter {
         .filter(
           (p) => p && typeof p.Name === "string" && p.Name.trim().length > 0,
         )
-        .map((p) => {
+        .map((p, i) => {
           const classification = classifyPrinter({
             name: p.Name,
             portName: p.PortName ?? null,
@@ -152,7 +236,7 @@ export class WindowsPrinterAdapter implements PrinterAdapter {
             caps: this.parseCapabilities(p),
             cachedAtMs: Date.now(),
           });
-          const status = this.parsePrinterStatus(p);
+          const status = this.parsePrinterStatus(p, reachability[i]);
           this.statusCache.set(p.Name, {
             status,
             cachedAtMs: Date.now(),
@@ -269,7 +353,10 @@ Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $printer } | Select-O
     };
   }
 
-  private parsePrinterStatus(p: CimPrinterOutput): PrinterStatus {
+  private parsePrinterStatus(
+    p: CimPrinterOutput,
+    isNetworkReachable?: boolean,
+  ): PrinterStatus {
     if (p.WorkOffline) {
       return {
         availability: "OFFLINE",
@@ -297,14 +384,27 @@ Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $printer } | Select-O
     }
 
     // PrinterStatus: 2 = Unknown, 3 = Idle, 4 = Printing, 5 = Warmup,
-    // 6 = Stopped Printing, 7 = Offline. Unknown is only accepted when the
-    // independent error state explicitly reports no error.
+    // 6 = Stopped Printing, 7 = Offline.
     if (p.PrinterStatus === 7 || p.PrinterStatus === 6) {
       return {
         availability: "OFFLINE",
         message: "Printer is offline or stopped",
       };
     }
+
+    const host = extractHostFromPortName(p.PortName);
+    if (host !== null) {
+      if (isNetworkReachable === false) {
+        return {
+          availability: "OFFLINE",
+          message: `Network printer unreachable at ${host}`,
+        };
+      }
+      if (isNetworkReachable === true) {
+        return { availability: "ONLINE" };
+      }
+    }
+
     if (
       p.PrinterStatus === 3 ||
       p.PrinterStatus === 4 ||
@@ -334,7 +434,7 @@ Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $printer } | Select-O
     const escapedName = printerId.replace(/'/g, "''");
     const psCommand = `
 $printer = '${escapedName}'
-Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $printer } | Select-Object Name, WorkOffline, PrinterStatus, DetectedErrorState | ConvertTo-Json -Compress
+Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $printer } | Select-Object Name, WorkOffline, PrinterStatus, DetectedErrorState, PortName | ConvertTo-Json -Compress
     `.trim();
 
     try {
@@ -344,7 +444,8 @@ Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $printer } | Select-O
       }
 
       const p = JSON.parse(output) as CimPrinterOutput;
-      const status = this.parsePrinterStatus(p);
+      const isReachable = await this.probeNetworkPrinter(p.PortName);
+      const status = this.parsePrinterStatus(p, isReachable);
       this.statusCache.set(printerId, {
         status,
         cachedAtMs: Date.now(),

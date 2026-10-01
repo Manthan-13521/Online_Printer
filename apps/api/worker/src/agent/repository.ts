@@ -89,6 +89,7 @@ export interface AgentRepository {
   }): Promise<boolean>;
   findAgentByCredentialHash(
     credentialHash: string,
+    nowMs?: number,
   ): Promise<StoredAgent | null>;
   findAgentById(agentId: string): Promise<StoredAgent | null>;
   updateHeartbeat(input: {
@@ -297,16 +298,21 @@ export class D1AgentRepository implements AgentRepository {
 
   async findAgentByCredentialHash(
     credentialHash: string,
+    nowMs: number = Date.now(),
   ): Promise<StoredAgent | null> {
     const row = await this.db
       .prepare(
         `SELECT id, display_name, is_active, last_heartbeat_at_ms,
           (SELECT online_printing_enabled FROM installation WHERE id = 1) online_printing_enabled,
           EXISTS(SELECT 1 FROM printer_test_commands c WHERE c.agent_id = agents.id AND c.status = 'PENDING') has_pending_command,
-          EXISTS(SELECT 1 FROM orders WHERE status IN ('QUEUED','CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED')) has_print_work
+          EXISTS(
+            SELECT 1 FROM orders
+            WHERE status IN ('QUEUED','CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED')
+               OR (status = 'PRINT_FAILED' AND cleanup_state = 'ACTIVE' AND updated_at_ms <= (? - 60000))
+          ) has_print_work
          FROM agents WHERE credential_hash = ?`,
       )
-      .bind(credentialHash)
+      .bind(nowMs, credentialHash)
       .first<{
         id: string;
         display_name: string;

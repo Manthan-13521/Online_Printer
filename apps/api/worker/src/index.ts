@@ -2,6 +2,7 @@ import type { WorkerEnv } from "./env";
 import { error } from "./http";
 import { D1CleanupRepository } from "./cleanup/repository";
 import { CleanupService } from "./cleanup/service";
+import { D1PrintingRepository } from "./printing/repository";
 import { routeRequest } from "./router";
 
 export { routeRequest } from "./router";
@@ -42,6 +43,22 @@ export default {
       });
     } catch (err) {
       console.error("Cleanup scheduled execution failed", {
+        error: err instanceof Error ? err.name : "UnknownError",
+      });
+    }
+
+    try {
+      const printingRepo = new D1PrintingRepository(env.DB);
+      const retryResult = await printingRepo.autoRetryEligibleOrders(
+        Date.now(),
+      );
+      if (retryResult.retriedCount > 0) {
+        console.log("Auto-retry scheduled execution complete", {
+          retriedCount: retryResult.retriedCount,
+        });
+      }
+    } catch (err) {
+      console.error("Auto-retry scheduled execution failed", {
         error: err instanceof Error ? err.name : "UnknownError",
       });
     }

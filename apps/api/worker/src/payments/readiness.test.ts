@@ -181,6 +181,29 @@ describe("D1PaymentReadiness", () => {
     });
   });
 
+  it("fails closed when printer status is UNKNOWN (not confirmed ONLINE)", async () => {
+    const mockDb = createMockDb({
+      installation: () => Promise.resolve({ online_printing_enabled: 1 }),
+      agents: () => Promise.resolve([{ id: "agent_1" }]),
+      printers: () =>
+        Promise.resolve([
+          {
+            id: "printer_1",
+            status: "UNKNOWN",
+            capabilities_json: null,
+          },
+        ]),
+    });
+    const readiness = new D1PaymentReadiness(mockDb, { APP_ENV: "production" });
+
+    await expect(readiness.check()).resolves.toEqual({
+      ready: false,
+      reason: "PRINTER_UNAVAILABLE",
+      message:
+        "The shop printer is currently offline, blocked, or in an error state.",
+    });
+  });
+
   it("checks capability matching for colour, duplex, and paper size", async () => {
     const mockDb = createMockDb({
       installation: () => Promise.resolve({ online_printing_enabled: 1 }),

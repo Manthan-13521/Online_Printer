@@ -132,7 +132,7 @@ export class D1PaymentReadiness implements PaymentReadiness {
     }
 
     const availablePrinters = printersResult.results.filter(
-      (p) => p.status === "ONLINE" || p.status === "UNKNOWN",
+      (p) => p.status === "ONLINE",
     );
 
     if (availablePrinters.length === 0) {

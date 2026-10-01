@@ -100,6 +100,31 @@ export class PaidPrintExecutor {
 
     if (job.currentStep.status !== "PENDING") return;
 
+    if (typeof this.printer.getStatus === "function") {
+      const printerStatus = await this.printer.getStatus(
+        job.windowsPrinterName,
+      );
+      if (printerStatus && printerStatus.availability !== "ONLINE") {
+        this.log(
+          `Printer ${job.windowsPrinterName} is not online (${printerStatus.availability}: ${printerStatus.message ?? "Not ready"}). Reporting step as BLOCKED.`,
+        );
+        await this.client.reportPrintStep(
+          credentials.serverUrl,
+          credentials.agentId,
+          credentials.agentSecret,
+          job,
+          {
+            status: "BLOCKED",
+            failureCode: "PRINTER_UNAVAILABLE",
+            failureDetail:
+              printerStatus.message ??
+              `Printer is currently ${printerStatus.availability}.`,
+          },
+        );
+        return;
+      }
+    }
+
     let localPath: string;
     let cleanup: () => Promise<void>;
     try {

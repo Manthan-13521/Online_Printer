@@ -198,6 +198,7 @@ export interface PrintingRepository {
     forceUncertain?: boolean;
     nowMs: number;
   }): Promise<{ orderId: string; status: "QUEUED" }>;
+  autoRetryEligibleOrders(nowMs: number): Promise<{ retriedCount: number }>;
   findUploadByOrderId(orderId: string): Promise<{
     r2_object_key: string;
     storage_status: string;
@@ -336,11 +337,16 @@ export class D1PrintingRepository implements PrintingRepository {
     // Empty queues must not run the recovery/claim write chain on every pulse.
     const work = await this.db
       .prepare(
-        `SELECT 1 FROM orders WHERE status IN ('QUEUED','CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED') LIMIT 1`,
+        `SELECT 1 FROM orders
+         WHERE status IN ('QUEUED','CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED')
+            OR (status = 'PRINT_FAILED' AND cleanup_state = 'ACTIVE' AND updated_at_ms <= ?)
+         LIMIT 1`,
       )
+      .bind(nowMs - 60_000)
       .first();
     if (!work) return null;
     await this.recoverExpiredClaims(nowMs);
+    await this.autoRetryEligibleOrders(nowMs);
     await this.finishOrphanedSuccess(agentId, nowMs);
     const existing = await this.findCurrent(agentId);
     if (existing && existing.leaseExpiresAtMs > nowMs) {
@@ -821,8 +827,8 @@ export class D1PrintingRepository implements PrintingRepository {
     if (
       input.status !== "UNCERTAIN" &&
       !(
-        input.status === "FAILED" &&
-        current.step_status === "SUBMISSION_STARTED"
+        (input.status === "FAILED" || input.status === "BLOCKED") &&
+        ["PENDING", "SUBMISSION_STARTED"].includes(current.step_status)
       ) &&
       !["SUBMITTED", "BLOCKED"].includes(current.step_status)
     )
@@ -1358,6 +1364,13 @@ export class D1PrintingRepository implements PrintingRepository {
         .bind(input.nowMs, input.nowMs, input.orderId, input.orderId),
       this.db
         .prepare(
+          `UPDATE order_files
+           SET print_status = 'PENDING', spooler_job_id = NULL, updated_at_ms = ?
+           WHERE order_id = ? AND print_status <> 'PRINTED'`,
+        )
+        .bind(input.nowMs, input.orderId),
+      this.db
+        .prepare(
           `INSERT INTO order_events (
              id, order_id, event_type, from_status, to_status,
              actor_type, actor_id, created_at_ms
@@ -1388,5 +1401,83 @@ export class D1PrintingRepository implements PrintingRepository {
     if (results[0]?.meta.changes !== 1)
       throw new Error("ORDER_CANNOT_BE_RETRIED");
     return { orderId: input.orderId, status: "QUEUED" };
+  }
+
+  async autoRetryEligibleOrders(
+    nowMs: number,
+  ): Promise<{ retriedCount: number }> {
+    const candidates = await this.db
+      .prepare(
+        `SELECT id, status FROM orders
+         WHERE cleanup_state = 'ACTIVE'
+           AND status = 'PRINT_FAILED'
+           AND updated_at_ms <= ?
+           AND (SELECT COUNT(*) FROM print_attempts WHERE order_id = orders.id) < 5
+         ORDER BY updated_at_ms ASC LIMIT 5`,
+      )
+      .bind(nowMs - 60_000)
+      .all<{ id: string; status: string }>();
+
+    if (!candidates.results || candidates.results.length === 0) {
+      return { retriedCount: 0 };
+    }
+
+    let retriedCount = 0;
+    for (const order of candidates.results) {
+      const statements: D1PreparedStatement[] = [
+        this.db
+          .prepare(
+            `UPDATE orders
+             SET status = 'QUEUED', claimed_by_agent_id = NULL, claim_id = NULL,
+                 claim_expires_at_ms = NULL, printer_id = NULL, claimed_at_ms = NULL,
+                 queued_at_ms = ?, updated_at_ms = ?
+             WHERE id = ? AND cleanup_state = 'ACTIVE' AND status = 'PRINT_FAILED'`,
+          )
+          .bind(nowMs, nowMs, order.id),
+        this.db
+          .prepare(
+            `UPDATE print_attempts
+             SET status = 'CANCELLED', finished_at_ms = COALESCE(finished_at_ms, ?),
+                 updated_at_ms = ?
+             WHERE order_id = ? AND status NOT IN ('SUCCEEDED', 'CANCELLED')
+               AND EXISTS (SELECT 1 FROM orders WHERE id = ?
+                 AND cleanup_state = 'ACTIVE' AND status = 'QUEUED')`,
+          )
+          .bind(nowMs, nowMs, order.id, order.id),
+        this.db
+          .prepare(
+            `UPDATE order_files
+             SET print_status = 'PENDING', spooler_job_id = NULL, updated_at_ms = ?
+             WHERE order_id = ? AND print_status <> 'PRINTED'`,
+          )
+          .bind(nowMs, order.id),
+        this.db
+          .prepare(
+            `INSERT INTO order_events (
+               id, order_id, event_type, from_status, to_status,
+               actor_type, actor_id, created_at_ms
+             ) SELECT ?, o.id, 'ORDER_PRINT_AUTO_RETRY', ?, 'QUEUED', 'SYSTEM', 'AUTO_RETRY', ?
+               FROM orders o WHERE o.id = ? AND o.cleanup_state = 'ACTIVE'
+                 AND o.status = 'QUEUED'`,
+          )
+          .bind(crypto.randomUUID(), order.status, nowMs, order.id),
+        this.db
+          .prepare(
+            `INSERT INTO audit_logs (
+               id, actor_type, actor_id, action, entity_type, entity_id, created_at_ms
+             ) SELECT ?, 'SYSTEM', 'AUTO_RETRY', 'ORDER_PRINT_AUTO_RETRY', 'ORDER', o.id, ?
+               FROM orders o WHERE o.id = ? AND o.cleanup_state = 'ACTIVE'
+                 AND o.status = 'QUEUED'`,
+          )
+          .bind(crypto.randomUUID(), nowMs, order.id),
+      ];
+
+      const res = await this.db.batch(statements);
+      if (res[0]?.meta.changes === 1) {
+        retriedCount++;
+      }
+    }
+
+    return { retriedCount };
   }
 }

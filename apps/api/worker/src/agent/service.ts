@@ -123,14 +123,15 @@ export class AgentService {
     reportPrinters = true,
   ): Promise<AgentHeartbeatData> {
     const credentialHash = await hashSessionToken(rawSecret);
-    const agent =
-      await this.repository.findAgentByCredentialHash(credentialHash);
+    const nowMs = this.now();
+    const agent = await this.repository.findAgentByCredentialHash(
+      credentialHash,
+      nowMs,
+    );
 
     if (!agent || !agent.isActive) {
       throw new AgentError("AGENT_UNAUTHORIZED");
     }
-
-    const nowMs = this.now();
     if (
       reportPrinters ||
       agent.lastHeartbeatAtMs === null ||
