@@ -644,3 +644,175 @@ legend {
     transition: none;
   }
 }
+
+/* ── Add-on Services ──────────────────────────────────────────────────────── */
+.addon-service-form {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+  margin-bottom: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.addon-service-form h3 {
+  margin: 0;
+  font-size: 1rem;
+  color: #1e293b;
+}
+.radio-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+.radio-label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+.addon-service-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.addon-service-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 1rem;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
+}
+.addon-service-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.addon-service-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+.danger-button {
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fca5a5;
+  border-radius: 0.375rem;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+.danger-button:hover {
+  background: #fecaca;
+}
+
+/* ── Manual Orders ────────────────────────────────────────────────────────── */
+.manual-orders-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.manual-order-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+.manual-order-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+.job-code {
+  font-family: monospace;
+  font-size: 1.15rem;
+  letter-spacing: 0.05em;
+  color: #1e3a8a;
+  margin-right: 0.75rem;
+}
+.status-badge {
+  display: inline-block;
+  padding: 0.2rem 0.55rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.status-manual-print {
+  background: #fef3c7;
+  color: #92400e;
+}
+.status-awaiting-finishing {
+  background: #e0e7ff;
+  color: #3730a3;
+}
+.manual-order-meta {
+  display: flex;
+  gap: 0.75rem;
+  font-size: 0.9rem;
+}
+.manual-order-services {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.addon-badge {
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  padding: 0.2rem 0.5rem;
+  border-radius: 0.35rem;
+  font-size: 0.825rem;
+  color: #334155;
+}
+.manual-order-instructions {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  background: #fffbeb;
+  border-left: 3px solid #f59e0b;
+  border-radius: 0.25rem;
+  font-size: 0.875rem;
+  color: #78350f;
+}
+.manual-order-amounts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  padding: 0.65rem 0;
+  border-top: 1px solid #f1f5f9;
+  border-bottom: 1px solid #f1f5f9;
+  font-size: 0.875rem;
+}
+.manual-order-amounts > div {
+  display: flex;
+  flex-direction: column;
+}
+.manual-order-amounts strong {
+  font-size: 1.05rem;
+  color: #0f172a;
+}
+.pickup-charge-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  background: #f8fafc;
+  border-radius: 0.5rem;
+}
+.manual-order-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}

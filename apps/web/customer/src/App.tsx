@@ -134,6 +134,8 @@ export function App() {
   const [paymentBusy, setPaymentBusy] = useState(false);
   const [paymentSuccess, setPaymentSuccess] =
     useState<CustomerPaymentSuccessData | null>(null);
+  const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>([]);
+  const [showPricingInfo, setShowPricingInfo] = useState(false);
   const [copyMessage, setCopyMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -325,6 +327,9 @@ export function App() {
             originalFilename: item.name,
             expectedSizeBytes: item.size,
             sourcePageCount: item.pageCount,
+            ...(selectedAddonIds.length > 0
+              ? { addonServiceIds: selectedAddonIds }
+              : {}),
           });
           token = draft.draftToken;
           upload = draft.upload;
@@ -580,13 +585,24 @@ export function App() {
 
   const shopHeader = (
     <header className="hero">
-      {config?.logoUrl ? (
-        <img
-          src={resolveCustomerApiUrl(config.logoUrl)}
-          alt="Shop logo"
-          style={{ maxWidth: 144, maxHeight: 80, objectFit: "contain" }}
-        />
-      ) : null}
+      <div className="hero-top-row">
+        <div className="hero-branding">
+          {config?.logoUrl ? (
+            <img
+              src={resolveCustomerApiUrl(config.logoUrl)}
+              alt="Shop logo"
+              style={{ maxWidth: 144, maxHeight: 80, objectFit: "contain" }}
+            />
+          ) : null}
+        </div>
+        <button
+          type="button"
+          className="pricing-info-button"
+          onClick={() => setShowPricingInfo(true)}
+        >
+          Pricing & Info
+        </button>
+      </div>
       <h1>{config?.shopName ?? "Online printing"}</h1>
       <p>
         {config?.customerNotice ??
@@ -614,6 +630,126 @@ export function App() {
       {shopHeader}
       {!busy && !paymentBusy && !quote && !paymentSuccess ? (
         <PwaInstallBanner />
+      ) : null}
+      {showPricingInfo && config ? (
+        <div
+          className="pricing-modal-backdrop"
+          onClick={() => setShowPricingInfo(false)}
+        >
+          <div
+            className="pricing-modal-content"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="pricing-info-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="pricing-modal-header">
+              <h2 id="pricing-info-title">Pricing &amp; Info</h2>
+              <button
+                type="button"
+                className="close-button"
+                aria-label="Close"
+                onClick={() => setShowPricingInfo(false)}
+              >
+                &times;
+              </button>
+            </div>
+
+            <div className="pricing-info-notice">
+              <p>
+                Most standard orders are automatically sent to the printer after
+                successful payment. Orders requiring special/manual services are
+                handled by shop staff and kept ready for collection.
+              </p>
+            </div>
+
+            {config.availablePrintOptions &&
+            config.availablePrintOptions.length > 0 ? (
+              <section className="pricing-info-section">
+                <h3>Printing Rates</h3>
+                <table className="pricing-table">
+                  <thead>
+                    <tr>
+                      <th>Option</th>
+                      <th>Sides</th>
+                      <th>Rate</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {config.availablePrintOptions.map((opt) => (
+                      <tr
+                        key={`${opt.paperSize}-${opt.colorMode}-${opt.sides}`}
+                      >
+                        <td>
+                          {opt.paperSize}{" "}
+                          {opt.colorMode === "BW" ? "B&W" : "Colour"}
+                        </td>
+                        <td>
+                          {opt.sides === "SINGLE"
+                            ? "Single-sided"
+                            : "Double-sided"}
+                        </td>
+                        <td>
+                          {opt.pricePerPagePaise !== undefined
+                            ? `₹${(opt.pricePerPagePaise / 100).toFixed(2)} / page`
+                            : "Standard"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </section>
+            ) : null}
+
+            {config.addonServices && config.addonServices.length > 0 ? (
+              <section className="pricing-info-section">
+                <h3>Add-on Services</h3>
+                <ul className="pricing-addon-list">
+                  {config.addonServices.map((svc) => (
+                    <li key={svc.id}>
+                      <strong>{svc.name}</strong>
+                      <span>
+                        {svc.pricingType === "STAFF_PRICED"
+                          ? "Price decided by staff"
+                          : svc.fixedPricePaise === 0
+                            ? "FREE"
+                            : `₹${(svc.fixedPricePaise / 100).toFixed(2)}`}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ) : null}
+
+            {config.shopName || config.contactPhone || config.address ? (
+              <section className="pricing-info-section">
+                <h3>Shop Details</h3>
+                <p>
+                  <strong>{config.shopName}</strong>
+                </p>
+                {config.address ? <p>{config.address}</p> : null}
+                {config.contactPhone ? (
+                  <p>
+                    Phone:{" "}
+                    <a href={`tel:${config.contactPhone}`}>
+                      {config.contactPhone}
+                    </a>
+                  </p>
+                ) : null}
+              </section>
+            ) : null}
+
+            <div className="pricing-modal-footer">
+              <button
+                type="button"
+                className="primary-button fit"
+                onClick={() => setShowPricingInfo(false)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       ) : null}
       {!config?.onlinePrintingEnabled ? (
         <section className="notice" role="status">
@@ -647,6 +783,47 @@ export function App() {
                 onChange={(event) => setCustomerPhone(event.target.value)}
               />
             </label>
+            {config?.addonServices && config.addonServices.length > 0 ? (
+              <div className="addon-selection-group">
+                <span className="addon-group-label">Add-on Services</span>
+                <div className="addon-checkbox-list">
+                  {config.addonServices.map((service) => {
+                    const isSelected = selectedAddonIds.includes(service.id);
+                    return (
+                      <label key={service.id} className="addon-checkbox-item">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          disabled={busy || paymentBusy || Boolean(draftToken)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedAddonIds([
+                                ...selectedAddonIds,
+                                service.id,
+                              ]);
+                            } else {
+                              setSelectedAddonIds(
+                                selectedAddonIds.filter(
+                                  (id) => id !== service.id,
+                                ),
+                              );
+                            }
+                          }}
+                        />
+                        <span className="addon-name">{service.name}</span>
+                        <span className="addon-price-tag">
+                          {service.pricingType === "STAFF_PRICED"
+                            ? "Price decided by staff"
+                            : service.fixedPricePaise === 0
+                              ? "FREE"
+                              : `+₹${(service.fixedPricePaise / 100).toFixed(2)}`}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
             <label>
               Instructions (optional)
               <textarea
@@ -951,6 +1128,23 @@ export function App() {
                   <dt>File service</dt>
                   <dd>{formatInr(quote.serviceChargePaise)}</dd>
                 </div>
+                {quote.addonServices && quote.addonServices.length > 0 ? (
+                  <div>
+                    <dt>Add-ons</dt>
+                    <dd>
+                      {quote.addonServices.map((s) => (
+                        <div key={s.serviceId}>
+                          {s.serviceName}
+                          {s.pricingType === "STAFF_PRICED"
+                            ? " (Price decided by staff)"
+                            : s.onlinePricePaise === 0
+                              ? " (FREE)"
+                              : ` (${formatInr(s.onlinePricePaise)})`}
+                        </div>
+                      ))}
+                    </dd>
+                  </div>
+                ) : null}
                 <div className="total">
                   <dt>Total</dt>
                   <dd>{formatInr(quote.totalAmountPaise)}</dd>

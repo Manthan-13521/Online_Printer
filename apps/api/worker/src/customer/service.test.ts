@@ -85,6 +85,9 @@ function repository(
     markValidationFailure: vi.fn(() => Promise.resolve()),
     saveQuote: vi.fn(() => Promise.resolve()),
     saveOrderQuote: vi.fn(() => Promise.resolve(false)),
+    snapshotAddonServices: vi.fn(() => Promise.resolve()),
+    getOrderAddonAmountPaise: vi.fn(() => Promise.resolve(0)),
+    getOrderAddonSnapshots: vi.fn(() => Promise.resolve([])),
   };
 }
 

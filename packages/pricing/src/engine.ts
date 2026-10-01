@@ -218,3 +218,28 @@ export function calculatePrintPrice(
     appliedFileSizeBand: { ...band },
   };
 }
+
+export interface AddonPricingInput {
+  pricingType: "FIXED_PRICE" | "STAFF_PRICED";
+  fixedPricePaise?: number | null;
+}
+
+/**
+ * Calculates the total online charge in paise for a list of selected add-on services.
+ * FIXED_PRICE services contribute their fixedPricePaise (or 0 if free).
+ * STAFF_PRICED services always contribute 0 to the online payment.
+ */
+export function calculateAddonOnlinePrice(
+  services: readonly AddonPricingInput[],
+): number {
+  return services.reduce((total, svc) => {
+    if (svc.pricingType === "FIXED_PRICE") {
+      const price = svc.fixedPricePaise ?? 0;
+      if (price < 0 || !Number.isSafeInteger(price)) {
+        throw new PricingError("PRICE_OVERFLOW");
+      }
+      return total + price;
+    }
+    return total;
+  }, 0);
+}

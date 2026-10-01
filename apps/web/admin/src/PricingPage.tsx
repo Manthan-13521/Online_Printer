@@ -1,4 +1,5 @@
 import type {
+  AdminAddonService,
   AdminFileSizeServiceCharge,
   AdminPrintRate,
   AdminPricingConfiguration,
@@ -8,6 +9,7 @@ import { formatPaiseAsRupeesInput, parseRupeesToPaise } from "@printgo/pricing";
 import { useEffect, useState, type FormEvent } from "react";
 
 import { adminApi, AdminApiError, friendlyAdminError } from "./api";
+import { AddonServicesSection } from "./AddonServicesSection";
 
 interface RateDraft extends Omit<AdminPrintRate, "pricePerPagePaise"> {
   rupees: string;
@@ -58,6 +60,7 @@ export function PricingPage({
 }) {
   const [draft, setDraft] = useState<PricingDraft | null>(null);
   const [saved, setSaved] = useState<PricingDraft | null>(null);
+  const [addonServices, setAddonServices] = useState<AdminAddonService[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -74,6 +77,7 @@ export function PricingPage({
         const next = toDraft(response.data.pricing);
         setDraft(next);
         setSaved(next);
+        setAddonServices(response.data.pricing.addonServices ?? []);
       }
     } catch (caught: unknown) {
       if (caught instanceof AdminApiError && caught.status === 401) {
@@ -320,6 +324,11 @@ export function PricingPage({
           </button>
         </div>
       </form>
+
+      <AddonServicesSection
+        services={addonServices}
+        onSessionExpired={onSessionExpired}
+      />
     </div>
   );
 }

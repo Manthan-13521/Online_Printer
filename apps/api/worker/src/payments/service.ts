@@ -61,7 +61,9 @@ export class PaymentService {
     private readonly customer: Pick<
       CustomerRepository,
       "getPublicConfig" | "getPricingConfiguration"
-    >,
+    > & {
+      getOrderAddonAmountPaise?: (orderId: string) => Promise<number>;
+    },
     private readonly objects: Pick<PrivateObjectStore, "head">,
     private readonly readiness: PaymentReadiness,
     private readonly razorpay: RazorpayClient,
@@ -160,6 +162,7 @@ export class PaymentService {
           sizeBytes: file.actualSizeBytes,
           sourcePageCount: file.sourcePageCount,
           selectedPages: pages.normalized,
+          selectedPageCount: pages.selectedPageCount,
           copies: file.copies,
           paperSize: file.paperSize,
           colorMode: file.colorMode,
@@ -179,6 +182,11 @@ export class PaymentService {
         (total, file) => total + file.serviceChargePaise,
         0,
       );
+      const addonAmountPaise = this.customer.getOrderAddonAmountPaise
+        ? await this.customer.getOrderAddonAmountPaise(draft.orderId)
+        : 0;
+      const totalAmountPaise =
+        printingAmountPaise + serviceChargePaise + addonAmountPaise;
       return {
         normalizedSelectedPages: first.selectedPages,
         selectedPageCount: first.selectedPageCount,
@@ -188,10 +196,11 @@ export class PaymentService {
         sides: first.sides,
         printingAmountPaise,
         serviceChargePaise,
-        totalAmountPaise: printingAmountPaise + serviceChargePaise,
+        totalAmountPaise,
         currency: "INR",
         expiresAt: new Date(draft.expiresAtMs).toISOString(),
         files,
+        addonAmountPaise,
       };
     } catch (caught) {
       if (
@@ -432,13 +441,18 @@ export class PaymentService {
   ): Promise<PaymentRecord> {
     for (let attempt = 0; attempt < 8; attempt += 1) {
       try {
-        return await this.payments.finalizePaid({
+        const nowMs = this.now();
+        const finalized = await this.payments.finalizePaid({
           paymentId: payment.id,
           providerPaymentId,
           jobCode: generateJobCode(),
-          nowMs: this.now(),
+          nowMs,
           actorType,
         });
+        // Route to MANUAL_PRINT if any addon service requires manual handling.
+        // No-op for orders without addon services (preserves existing behavior).
+        await this.payments.routeOrderAfterPayment(finalized.orderId, nowMs);
+        return finalized;
       } catch (caught) {
         if (
           !(caught instanceof Error) ||

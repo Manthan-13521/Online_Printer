@@ -187,6 +187,12 @@ export interface PaymentRepository {
     orderId?: string;
     nowMs: number;
   }): Promise<void>;
+  /**
+   * After finalizePaid sets an order to QUEUED, call this to route it to
+   * MANUAL_PRINT if any of its addon services require manual handling.
+   * Safe to call even when no addons are present (no-op in that case).
+   */
+  routeOrderAfterPayment(orderId: string, nowMs: number): Promise<void>;
 }
 
 export class D1PaymentRepository implements PaymentRepository {
@@ -722,6 +728,28 @@ export class D1PaymentRepository implements PaymentRepository {
         input.orderId ?? null,
         input.providerEventId,
       )
+      .run();
+  }
+
+  async routeOrderAfterPayment(orderId: string, nowMs: number): Promise<void> {
+    // Check if any selected addon service requires manual printing
+    const manualCheck = await this.db
+      .prepare(
+        `SELECT 1 FROM order_addon_services
+         WHERE order_id = ? AND snapshot_handling_mode = 'MANUAL_PRINT'
+         LIMIT 1`,
+      )
+      .bind(orderId)
+      .first<{ 1: number }>();
+    if (manualCheck === null) return; // No manual addons — stay QUEUED
+    // Transition QUEUED → MANUAL_PRINT
+    await this.db
+      .prepare(
+        `UPDATE orders
+         SET status = 'MANUAL_PRINT', updated_at_ms = ?
+         WHERE id = ? AND status = 'QUEUED' AND cleanup_state = 'ACTIVE'`,
+      )
+      .bind(nowMs, orderId)
       .run();
   }
 }

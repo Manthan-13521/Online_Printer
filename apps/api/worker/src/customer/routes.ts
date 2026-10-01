@@ -187,6 +187,7 @@ function validateDraft(value: unknown): CreateCustomerDraftRequest | null {
     "originalFilename",
     "expectedSizeBytes",
     "sourcePageCount",
+    "addonServiceIds",
   ]);
   if (Object.keys(value).some((key) => !allowed.has(key))) return null;
   if (
@@ -202,6 +203,14 @@ function validateDraft(value: unknown): CreateCustomerDraftRequest | null {
       value.instructions === null ||
       (typeof value.instructions === "string" &&
         value.instructions.length <= 1000)
+    ) ||
+    !(
+      value.addonServiceIds === undefined ||
+      (Array.isArray(value.addonServiceIds) &&
+        value.addonServiceIds.length <= 10 &&
+        value.addonServiceIds.every(
+          (id) => typeof id === "string" && id.length > 0 && id.length <= 50,
+        ))
     )
   )
     return null;
@@ -213,6 +222,9 @@ function validateDraft(value: unknown): CreateCustomerDraftRequest | null {
     sourcePageCount: value.sourcePageCount as number,
     instructions:
       value.instructions === null ? null : value.instructions.trim() || null,
+    ...(Array.isArray(value.addonServiceIds)
+      ? { addonServiceIds: value.addonServiceIds as string[] }
+      : {}),
   };
 }
 

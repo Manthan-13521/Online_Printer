@@ -171,6 +171,8 @@ describe("D1PaymentRepository webhook claim & stale event recovery", () => {
       "0010_efficiency_and_branding.sql",
       "0011_retention_retry_schedule.sql",
       "0012_multi_file_cleanup_and_app_branding.sql",
+      "0013_d1_usage_optimization.sql",
+      "0014_addon_services.sql",
     ]) {
       database.exec(
         readFileSync(

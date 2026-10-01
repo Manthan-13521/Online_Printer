@@ -1028,58 +1028,104 @@ export class D1PrintingRepository implements PrintingRepository {
       ]);
       return true;
     }
-    await this.db.batch([
-      this.db
-        .prepare(
-          "UPDATE print_attempts SET status = 'SUCCEEDED', finished_at_ms = COALESCE(finished_at_ms, ?), updated_at_ms = ? WHERE id = ? AND status <> 'SUCCEEDED'",
-        )
-        .bind(input.nowMs, input.nowMs, current.attempt_id),
-      this.db
-        .prepare(
-          // PRINTED and COMPLETED already shared one atomic batch. Keep both forensic events below.
-          "UPDATE orders SET status = 'COMPLETED', printed_at_ms = COALESCE(printed_at_ms, ?), completed_at_ms = COALESCE(completed_at_ms, ?), purge_at_ms = COALESCE(purge_at_ms, ?), updated_at_ms = ? WHERE id = ? AND claim_id = ? AND status <> 'COMPLETED'",
-        )
-        .bind(
-          input.nowMs,
-          input.nowMs,
-          input.nowMs + COMPLETED_RETENTION_MS,
-          input.nowMs,
-          input.orderId,
-          input.claimId,
-        ),
-      this.db
-        .prepare(
-          "UPDATE uploads SET retention_reason = 'COMPLETED', delete_after_ms = ?, updated_at_ms = ? WHERE order_id = ? AND storage_status = 'UPLOADED' AND retention_reason IS NOT 'COMPLETED'",
-        )
-        .bind(input.nowMs + COMPLETED_RETENTION_MS, input.nowMs, input.orderId),
-      this.db
-        .prepare(
-          `INSERT OR IGNORE INTO order_events (id, order_id, event_type, from_status,
-            to_status, actor_type, actor_id, idempotency_key, created_at_ms)
-          VALUES (?, ?, 'ORDER_PRINTED', ?, 'PRINTED', 'AGENT', ?, ?, ?)`,
-        )
-        .bind(
-          crypto.randomUUID(),
-          input.orderId,
-          current.order_status,
-          input.agentId,
-          `print-attempt:${current.attempt_id}:printed`,
-          input.nowMs,
-        ),
-      this.db
-        .prepare(
-          `INSERT OR IGNORE INTO order_events (id, order_id, event_type, from_status,
-            to_status, actor_type, actor_id, idempotency_key, created_at_ms)
-          VALUES (?, ?, 'ORDER_COMPLETED', 'PRINTED', 'COMPLETED', 'AGENT', ?, ?, ?)`,
-        )
-        .bind(
-          crypto.randomUUID(),
-          input.orderId,
-          input.agentId,
-          `print-attempt:${current.attempt_id}:completed`,
-          input.nowMs,
-        ),
-    ]);
+    // Check if any POST_PRINT addon services require staff finishing before completion
+    const postPrintCheck = await this.db
+      .prepare(
+        `SELECT 1 FROM order_addon_services
+         WHERE order_id = ? AND snapshot_handling_mode = 'POST_PRINT'
+         LIMIT 1`,
+      )
+      .bind(input.orderId)
+      .first<{ 1: number }>();
+    const hasPostPrint = postPrintCheck !== null;
+
+    if (hasPostPrint) {
+      // POST_PRINT: go to AWAITING_FINISHING; admin must Mark Finished to complete
+      await this.db.batch([
+        this.db
+          .prepare(
+            "UPDATE print_attempts SET status = 'SUCCEEDED', finished_at_ms = COALESCE(finished_at_ms, ?), updated_at_ms = ? WHERE id = ? AND status <> 'SUCCEEDED'",
+          )
+          .bind(input.nowMs, input.nowMs, current.attempt_id),
+        this.db
+          .prepare(
+            "UPDATE orders SET status = 'AWAITING_FINISHING', printed_at_ms = COALESCE(printed_at_ms, ?), claimed_by_agent_id = NULL, claim_id = NULL, claim_expires_at_ms = NULL, updated_at_ms = ? WHERE id = ? AND claim_id = ? AND status <> 'AWAITING_FINISHING'",
+          )
+          .bind(input.nowMs, input.nowMs, input.orderId, input.claimId),
+        this.db
+          .prepare(
+            `INSERT OR IGNORE INTO order_events (id, order_id, event_type, from_status,
+              to_status, actor_type, actor_id, idempotency_key, created_at_ms)
+            VALUES (?, ?, 'ORDER_PRINTED', ?, 'AWAITING_FINISHING', 'AGENT', ?, ?, ?)`,
+          )
+          .bind(
+            crypto.randomUUID(),
+            input.orderId,
+            current.order_status,
+            input.agentId,
+            `print-attempt:${current.attempt_id}:printed`,
+            input.nowMs,
+          ),
+      ]);
+    } else {
+      // AUTO: transition directly to COMPLETED
+      await this.db.batch([
+        this.db
+          .prepare(
+            "UPDATE print_attempts SET status = 'SUCCEEDED', finished_at_ms = COALESCE(finished_at_ms, ?), updated_at_ms = ? WHERE id = ? AND status <> 'SUCCEEDED'",
+          )
+          .bind(input.nowMs, input.nowMs, current.attempt_id),
+        this.db
+          .prepare(
+            // PRINTED and COMPLETED already shared one atomic batch. Keep both forensic events below.
+            "UPDATE orders SET status = 'COMPLETED', printed_at_ms = COALESCE(printed_at_ms, ?), completed_at_ms = COALESCE(completed_at_ms, ?), purge_at_ms = COALESCE(purge_at_ms, ?), updated_at_ms = ? WHERE id = ? AND claim_id = ? AND status <> 'COMPLETED'",
+          )
+          .bind(
+            input.nowMs,
+            input.nowMs,
+            input.nowMs + COMPLETED_RETENTION_MS,
+            input.nowMs,
+            input.orderId,
+            input.claimId,
+          ),
+        this.db
+          .prepare(
+            "UPDATE uploads SET retention_reason = 'COMPLETED', delete_after_ms = ?, updated_at_ms = ? WHERE order_id = ? AND storage_status = 'UPLOADED' AND retention_reason IS NOT 'COMPLETED'",
+          )
+          .bind(
+            input.nowMs + COMPLETED_RETENTION_MS,
+            input.nowMs,
+            input.orderId,
+          ),
+        this.db
+          .prepare(
+            `INSERT OR IGNORE INTO order_events (id, order_id, event_type, from_status,
+              to_status, actor_type, actor_id, idempotency_key, created_at_ms)
+            VALUES (?, ?, 'ORDER_PRINTED', ?, 'PRINTED', 'AGENT', ?, ?, ?)`,
+          )
+          .bind(
+            crypto.randomUUID(),
+            input.orderId,
+            current.order_status,
+            input.agentId,
+            `print-attempt:${current.attempt_id}:printed`,
+            input.nowMs,
+          ),
+        this.db
+          .prepare(
+            `INSERT OR IGNORE INTO order_events (id, order_id, event_type, from_status,
+              to_status, actor_type, actor_id, idempotency_key, created_at_ms)
+            VALUES (?, ?, 'ORDER_COMPLETED', 'PRINTED', 'COMPLETED', 'AGENT', ?, ?, ?)`,
+          )
+          .bind(
+            crypto.randomUUID(),
+            input.orderId,
+            input.agentId,
+            `print-attempt:${current.attempt_id}:completed`,
+            input.nowMs,
+          ),
+      ]);
+    }
     return true;
   }
 

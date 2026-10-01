@@ -14,10 +14,12 @@ import { PrinterPage } from "./PrinterPage";
 import { ShopSettingsPage } from "./ShopSettingsPage";
 import { LiveOrdersPage } from "./LiveOrdersPage";
 import { DashboardPage } from "./DashboardPage";
+import { ManualOrdersPage } from "./ManualOrdersPage";
 
 const navigation = [
   { label: "Dashboard", path: "/admin" },
   { label: "Live Orders", path: "/admin/live-orders" },
+  { label: "Manual Orders", path: "/admin/manual-orders" },
   { label: "Order History", path: "/admin/order-history" },
   { label: "Failed Jobs", path: "/admin/failed-jobs" },
   { label: "Printer", path: "/admin/printer" },
@@ -351,6 +353,8 @@ function PageContent({
     return <SecurityPage admin={admin} onSignedOut={onSignedOut} />;
   if (item.path === "/admin/pricing")
     return <PricingPage onSessionExpired={onSignedOut} />;
+  if (item.path === "/admin/manual-orders")
+    return <ManualOrdersPage onSessionExpired={onSignedOut} />;
   if (item.path === "/admin/printer")
     return <PrinterPage onSessionExpired={onSignedOut} />;
   if (item.path === "/admin/shop-settings")

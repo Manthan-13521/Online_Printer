@@ -110,13 +110,52 @@ export interface AdminFileSizeServiceCharge {
   chargePaise: number;
 }
 
+export type HandlingMode = "AUTO" | "POST_PRINT" | "MANUAL_PRINT";
+export type PricingType = "FIXED_PRICE" | "STAFF_PRICED";
+
+/** Stored add-on service record (admin view). */
+export interface AdminAddonService {
+  id: string;
+  name: string;
+  pricingType: PricingType;
+  /** Price in paise. Only charged online when pricingType = FIXED_PRICE. Null for STAFF_PRICED. */
+  fixedPricePaise: number | null;
+  handlingMode: HandlingMode;
+  enabled: boolean;
+  displayOrder: number;
+}
+
+/** Payload for creating / updating an add-on service. */
+export interface AdminAddonServiceRequest {
+  name: string;
+  pricingType: PricingType;
+  fixedPricePaise: number | null;
+  handlingMode: HandlingMode;
+  enabled: boolean;
+  displayOrder: number;
+}
+
+export interface AdminAddonServicesData {
+  addonServices: AdminAddonService[];
+}
+export type AdminAddonServicesResponse = ApiResponse<AdminAddonServicesData>;
+export type AdminAddonServiceResponse = ApiResponse<{
+  addonService: AdminAddonService;
+}>;
+
 export interface AdminPricingConfiguration {
   /** Read-only context from Shop Settings. Updated through the settings API. */
   maxPdfSizeBytes: number;
   printRates: AdminPrintRate[];
   fileSizeServiceCharges: AdminFileSizeServiceCharge[];
+  /** Included for convenience on GET /api/admin/pricing. Managed via /api/admin/addon-services. */
+  addonServices?: AdminAddonService[];
 }
 
+/**
+ * Pricing update request — covers print rates and file-size charges only.
+ * Add-on services are managed via dedicated /api/admin/addon-services endpoints.
+ */
 export interface AdminPricingUpdateRequest {
   printRates: AdminPrintRate[];
   fileSizeServiceCharges: AdminFileSizeServiceCharge[];
@@ -133,6 +172,16 @@ export interface CustomerPrintOption {
   paperSize: PaperSize;
   colorMode: ColorMode;
   sides: SidesMode;
+  pricePerPagePaise?: number;
+}
+
+/** Add-on service as shown to the customer. */
+export interface CustomerAddonService {
+  id: string;
+  name: string;
+  pricingType: PricingType;
+  /** Price in paise for FIXED_PRICE; 0 for STAFF_PRICED (priced at pickup). */
+  fixedPricePaise: number;
 }
 
 export interface CustomerConfigData {
@@ -140,15 +189,59 @@ export interface CustomerConfigData {
   appName?: string;
   shopName: string;
   contactPhone: string | null;
+  address?: string | null;
   customerNotice: string | null;
   onlinePrintingEnabled: boolean;
   maxPdfSizeBytes: number;
   maxOrderUploadBytes?: number;
   maxOrderFiles?: number;
   availablePrintOptions: CustomerPrintOption[];
+  /** Add-on services available for customer selection. */
+  addonServices?: CustomerAddonService[];
 }
 
 export type CustomerConfigResponse = ApiResponse<CustomerConfigData>;
+
+/** Snapshot of a single add-on service as recorded at order time. */
+export interface OrderAddonServiceSnapshot {
+  serviceId: string;
+  serviceName: string;
+  pricingType: PricingType;
+  /** Amount charged online in paise. 0 for STAFF_PRICED. */
+  onlinePricePaise: number;
+  handlingMode: HandlingMode;
+}
+
+/** Admin view of a manual-print order. */
+export interface AdminManualOrder {
+  orderId: string;
+  jobCode: string;
+  customerName: string;
+  customerPhone: string;
+  status: string;
+  instructions: string | null;
+  fileCount: number;
+  onlineAmountPaise: number;
+  dueAtPickupPaise: number;
+  currency: "INR";
+  paidAt: string;
+  addonServices: OrderAddonServiceSnapshot[];
+  hasStaffPriced: boolean;
+  hasPostPrint: boolean;
+}
+
+export type AdminManualOrdersResponse = ApiResponse<{
+  orders: AdminManualOrder[];
+}>;
+
+export interface AdminSetPickupChargeRequest {
+  dueAtPickupPaise: number;
+}
+
+export type AdminSetPickupChargeResponse = ApiResponse<{
+  orderId: string;
+  dueAtPickupPaise: number;
+}>;
 
 export interface CreateCustomerDraftRequest {
   customerName: string;
@@ -157,6 +250,7 @@ export interface CreateCustomerDraftRequest {
   originalFilename: string;
   expectedSizeBytes: number;
   sourcePageCount: number;
+  addonServiceIds?: string[];
 }
 
 export interface UploadAuthorization {
@@ -251,6 +345,8 @@ export interface CustomerQuoteData {
   currency: "INR";
   expiresAt: string;
   files?: CustomerFileQuoteData[];
+  addonAmountPaise?: number;
+  addonServices?: OrderAddonServiceSnapshot[];
 }
 
 export type CustomerQuoteResponse = ApiResponse<CustomerQuoteData>;

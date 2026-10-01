@@ -1,4 +1,9 @@
-import type { CustomerConfigData } from "@printgo/api-contract";
+import type {
+  CustomerConfigData,
+  HandlingMode,
+  OrderAddonServiceSnapshot,
+  PricingType,
+} from "@printgo/api-contract";
 import type { PricingConfiguration } from "@printgo/pricing";
 
 export interface CustomerDraftRecord {
@@ -143,6 +148,12 @@ export interface CustomerRepository {
     nowMs: number;
     expiresAtMs: number;
   }): Promise<boolean>;
+  snapshotAddonServices(
+    orderId: string,
+    serviceIds: readonly string[],
+  ): Promise<void>;
+  getOrderAddonAmountPaise(orderId: string): Promise<number>;
+  getOrderAddonSnapshots(orderId: string): Promise<OrderAddonServiceSnapshot[]>;
 }
 
 interface DraftRow {
@@ -214,33 +225,40 @@ export class D1CustomerRepository implements CustomerRepository {
   constructor(private readonly db: D1Database) {}
 
   async getPublicConfig(): Promise<CustomerConfigData | null> {
-    const installation = await this.db
-      .prepare(
-        `SELECT logo_key, app_name, shop_name, contact_phone, customer_notice,
-                       online_printing_enabled, max_pdf_size_bytes, max_order_upload_bytes
-                FROM installation WHERE id = 1`,
-      )
-      .first<{
-        logo_key: string | null;
-        app_name: string;
-        shop_name: string;
-        contact_phone: string | null;
-        customer_notice: string | null;
-        online_printing_enabled: number;
-        max_pdf_size_bytes: number;
-        max_order_upload_bytes: number;
-      }>();
+    const [installationResult, ratesResult, addonsResult] = await this.db.batch(
+      [
+        this.db.prepare(
+          `SELECT logo_key, app_name, shop_name, contact_phone, address, customer_notice,
+                online_printing_enabled, max_pdf_size_bytes, max_order_upload_bytes
+         FROM installation WHERE id = 1`,
+        ),
+        this.db.prepare(
+          `SELECT paper_size, color_mode, sides, price_per_page_paise FROM print_rates
+         WHERE enabled = 1 ORDER BY paper_size, color_mode, sides`,
+        ),
+        this.db.prepare(
+          `SELECT id, name, pricing_type, fixed_price_paise
+         FROM addon_services WHERE enabled = 1
+         ORDER BY display_order, name`,
+        ),
+      ],
+    );
+
+    const installation = installationResult?.results[0] as
+      | {
+          logo_key: string | null;
+          app_name: string;
+          shop_name: string;
+          contact_phone: string | null;
+          address: string | null;
+          customer_notice: string | null;
+          online_printing_enabled: number;
+          max_pdf_size_bytes: number;
+          max_order_upload_bytes: number;
+        }
+      | undefined;
     if (!installation) return null;
-    const rates = await this.db
-      .prepare(
-        `SELECT paper_size, color_mode, sides FROM print_rates
-                WHERE enabled = 1 ORDER BY paper_size, color_mode, sides`,
-      )
-      .all<{
-        paper_size: "A4" | "A3";
-        color_mode: "BW" | "COLOR";
-        sides: "SINGLE" | "DOUBLE";
-      }>();
+
     return {
       appName: installation.app_name,
       shopName: installation.shop_name,
@@ -248,15 +266,37 @@ export class D1CustomerRepository implements CustomerRepository {
         ? `/api/branding/logo/${installation.logo_key.slice("branding/".length)}`
         : null,
       contactPhone: installation.contact_phone,
+      address: installation.address,
       customerNotice: installation.customer_notice,
       onlinePrintingEnabled: installation.online_printing_enabled === 1,
       maxPdfSizeBytes: installation.max_pdf_size_bytes,
       maxOrderUploadBytes: installation.max_order_upload_bytes,
       maxOrderFiles: 10,
-      availablePrintOptions: rates.results.map((rate) => ({
+      availablePrintOptions: (
+        (ratesResult?.results ?? []) as Array<{
+          paper_size: "A4" | "A3";
+          color_mode: "BW" | "COLOR";
+          sides: "SINGLE" | "DOUBLE";
+          price_per_page_paise: number;
+        }>
+      ).map((rate) => ({
         paperSize: rate.paper_size,
         colorMode: rate.color_mode,
         sides: rate.sides,
+        pricePerPagePaise: rate.price_per_page_paise,
+      })),
+      addonServices: (
+        (addonsResult?.results ?? []) as Array<{
+          id: string;
+          name: string;
+          pricing_type: string;
+          fixed_price_paise: number;
+        }>
+      ).map((row) => ({
+        id: row.id,
+        name: row.name,
+        pricingType: row.pricing_type as "FIXED_PRICE" | "STAFF_PRICED",
+        fixedPricePaise: row.fixed_price_paise,
       })),
     };
   }
@@ -617,11 +657,7 @@ export class D1CustomerRepository implements CustomerRepository {
             `UPDATE order_files SET position = position - 1, updated_at_ms = ?
              WHERE order_id = ? AND position > ?`,
           )
-          .bind(
-            nowMs,
-            selected.orderId,
-            selected.position,
-          ),
+          .bind(nowMs, selected.orderId, selected.position),
       );
     }
     statements.push(
@@ -821,5 +857,90 @@ export class D1CustomerRepository implements CustomerRepository {
     );
     const results = await this.db.batch(statements);
     return results.at(-1)?.meta.changes === 1;
+  }
+
+  async snapshotAddonServices(
+    orderId: string,
+    serviceIds: readonly string[],
+  ): Promise<void> {
+    if (serviceIds.length === 0) return;
+    const placeholders = serviceIds.map(() => "?").join(", ");
+    const services = await this.db
+      .prepare(
+        `SELECT id, name, pricing_type, fixed_price_paise, handling_mode, enabled
+         FROM addon_services WHERE id IN (${placeholders})`,
+      )
+      .bind(...serviceIds)
+      .all<{
+        id: string;
+        name: string;
+        pricing_type: string;
+        fixed_price_paise: number | null;
+        handling_mode: string;
+        enabled: number;
+      }>();
+    if (services.results.length !== serviceIds.length) {
+      throw new Error("ADDON_SERVICE_NOT_FOUND");
+    }
+    const disabled = services.results.find((s) => s.enabled === 0);
+    if (disabled) {
+      throw new Error("ADDON_SERVICE_DISABLED");
+    }
+    const statements = services.results.map((svc) =>
+      this.db
+        .prepare(
+          `INSERT OR IGNORE INTO order_addon_services
+             (order_id, service_id, snapshot_name, snapshot_pricing_type,
+              snapshot_price_charged_online_paise, snapshot_handling_mode)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+        )
+        .bind(
+          orderId,
+          svc.id,
+          svc.name,
+          svc.pricing_type,
+          svc.pricing_type === "FIXED_PRICE" ? (svc.fixed_price_paise ?? 0) : 0,
+          svc.handling_mode,
+        ),
+    );
+    await this.db.batch(statements);
+  }
+
+  async getOrderAddonAmountPaise(orderId: string): Promise<number> {
+    const result = await this.db
+      .prepare(
+        `SELECT COALESCE(SUM(snapshot_price_charged_online_paise), 0) as total
+         FROM order_addon_services WHERE order_id = ?`,
+      )
+      .bind(orderId)
+      .first<{ total: number }>();
+    return result?.total ?? 0;
+  }
+
+  async getOrderAddonSnapshots(
+    orderId: string,
+  ): Promise<OrderAddonServiceSnapshot[]> {
+    const result = await this.db
+      .prepare(
+        `SELECT service_id, snapshot_name, snapshot_pricing_type,
+                snapshot_price_charged_online_paise, snapshot_handling_mode
+         FROM order_addon_services WHERE order_id = ?
+         ORDER BY rowid`,
+      )
+      .bind(orderId)
+      .all<{
+        service_id: string;
+        snapshot_name: string;
+        snapshot_pricing_type: string;
+        snapshot_price_charged_online_paise: number;
+        snapshot_handling_mode: string;
+      }>();
+    return result.results.map((r) => ({
+      serviceId: r.service_id,
+      serviceName: r.snapshot_name,
+      pricingType: r.snapshot_pricing_type as PricingType,
+      onlinePricePaise: r.snapshot_price_charged_online_paise,
+      handlingMode: r.snapshot_handling_mode as HandlingMode,
+    }));
   }
 }

@@ -477,3 +477,189 @@ a {
   color: #526d7b;
   font-weight: 650;
 }
+
+/* ── Hero Top Row & Pricing & Info ────────────────────────────────────────── */
+.hero-top-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+.pricing-info-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.5rem 0.9rem;
+  border: 1.5px solid #0e7490;
+  border-radius: 9999px;
+  background: #fff;
+  color: #0e7490;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+.pricing-info-button:hover {
+  background: #0e7490;
+  color: #fff;
+}
+
+/* ── Pricing & Info Modal ─────────────────────────────────────────────────── */
+.pricing-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(15, 23, 42, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+.pricing-modal-content {
+  background: #fff;
+  border-radius: 1rem;
+  max-width: 36rem;
+  width: 100%;
+  max-height: 85vh;
+  overflow-y: auto;
+  padding: 1.5rem;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.15);
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+.pricing-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.pricing-modal-header h2 {
+  margin: 0;
+  font-size: 1.35rem;
+  color: #12334a;
+}
+.close-button {
+  background: transparent;
+  border: 0;
+  font-size: 1.75rem;
+  color: #64748b;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0.25rem;
+}
+.close-button:hover {
+  color: #0f172a;
+}
+.pricing-info-notice {
+  background: #f0fdfa;
+  border-left: 3px solid #0e7490;
+  border-radius: 0.375rem;
+  padding: 0.75rem 1rem;
+  font-size: 0.9rem;
+  color: #134e4a;
+}
+.pricing-info-notice p {
+  margin: 0;
+  line-height: 1.5;
+}
+.pricing-info-section h3 {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+  color: #1e293b;
+}
+.pricing-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+.pricing-table th,
+.pricing-table td {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid #e2e8f0;
+  text-align: left;
+}
+.pricing-table th {
+  color: #64748b;
+  font-weight: 600;
+}
+.pricing-addon-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.pricing-addon-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0.75rem;
+  background: #f8fafc;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+}
+.pricing-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 0.5rem;
+  border-top: 1px solid #f1f5f9;
+}
+
+/* ── Add-on Services Customer Selection ───────────────────────────────────── */
+.addon-selection-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0.25rem 0;
+}
+.addon-group-label {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #12334a;
+}
+.addon-checkbox-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.addon-checkbox-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 0.75rem;
+  background: #f8fcfc;
+  border: 1px solid #b9d3d7;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+.addon-checkbox-item:hover {
+  background: #eef8f9;
+  border-color: #0e7490;
+}
+.addon-checkbox-item input[type="checkbox"] {
+  width: 1.1rem;
+  height: 1.1rem;
+  accent-color: #0e7490;
+}
+.addon-name {
+  flex: 1;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #17324d;
+}
+.addon-price-tag {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #0e7490;
+  background: #e0f2fe;
+  padding: 0.15rem 0.45rem;
+  border-radius: 0.25rem;
+}

@@ -46,7 +46,9 @@ export type CustomerErrorCode =
   | "LAST_FILE_REQUIRED"
   | "FILE_DELETE_FAILED"
   | "QUOTE_STATE_INVALID"
-  | "QUOTE_INVALID";
+  | "QUOTE_INVALID"
+  | "ADDON_SERVICE_NOT_FOUND"
+  | "ADDON_SERVICE_DISABLED";
 
 export class CustomerError extends Error {
   constructor(readonly code: CustomerErrorCode) {
@@ -159,6 +161,22 @@ export class CustomerService {
       nowMs,
       expiresAtMs,
     });
+    if (input.addonServiceIds && input.addonServiceIds.length > 0) {
+      try {
+        await this.repository.snapshotAddonServices(
+          orderId,
+          input.addonServiceIds,
+        );
+      } catch (err: unknown) {
+        if (err instanceof Error && err.message === "ADDON_SERVICE_NOT_FOUND") {
+          throw new CustomerError("ADDON_SERVICE_NOT_FOUND");
+        }
+        if (err instanceof Error && err.message === "ADDON_SERVICE_DISABLED") {
+          throw new CustomerError("ADDON_SERVICE_DISABLED");
+        }
+        throw err;
+      }
+    }
     return {
       draftToken: token.rawToken,
       draftExpiresAt: new Date(expiresAtMs).toISOString(),
@@ -359,6 +377,13 @@ export class CustomerService {
         },
         await this.repository.getPricingConfiguration(),
       );
+      const addonAmountPaise = await this.repository.getOrderAddonAmountPaise(
+        draft.orderId,
+      );
+      const addonSnapshots = await this.repository.getOrderAddonSnapshots(
+        draft.orderId,
+      );
+      const totalAmountPaise = price.totalAmountPaise + addonAmountPaise;
       await this.repository.saveQuote({
         orderId: draft.orderId,
         selectedPages: selection.normalized,
@@ -368,7 +393,7 @@ export class CustomerService {
         sides: input.sides,
         printingAmountPaise: price.printingAmountPaise,
         serviceChargePaise: price.serviceChargePaise,
-        totalAmountPaise: price.totalAmountPaise,
+        totalAmountPaise,
         nowMs: this.now(),
       });
       return {
@@ -380,9 +405,11 @@ export class CustomerService {
         sides: input.sides,
         printingAmountPaise: price.printingAmountPaise,
         serviceChargePaise: price.serviceChargePaise,
-        totalAmountPaise: price.totalAmountPaise,
+        totalAmountPaise,
         currency: "INR",
         expiresAt: new Date(draft.expiresAtMs).toISOString(),
+        addonAmountPaise,
+        addonServices: addonSnapshots,
       };
     } catch (error) {
       if (error instanceof PricingError || error instanceof RangeError) {
@@ -468,7 +495,15 @@ export class CustomerService {
       (total, file) => total + file.serviceChargePaise,
       0,
     );
-    const totalAmountPaise = printingAmountPaise + serviceChargePaise;
+    const orderId = stored[0]?.orderId;
+    const addonAmountPaise = orderId
+      ? await this.repository.getOrderAddonAmountPaise(orderId)
+      : 0;
+    const addonSnapshots = orderId
+      ? await this.repository.getOrderAddonSnapshots(orderId)
+      : [];
+    const totalAmountPaise =
+      printingAmountPaise + serviceChargePaise + addonAmountPaise;
     const expiresAtMs = this.now() + UNPAID_RETENTION_MS;
     if (
       !(await this.repository.saveOrderQuote({
@@ -507,6 +542,8 @@ export class CustomerService {
       currency: "INR",
       expiresAt: new Date(expiresAtMs).toISOString(),
       files: quoted,
+      addonAmountPaise,
+      addonServices: addonSnapshots,
     };
   }
 }

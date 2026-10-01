@@ -25,6 +25,11 @@ import type {
   AdminCleanupPreviewData,
   AdminCleanupRunData,
   CleanupScope,
+  AdminAddonServiceRequest,
+  AdminAddonServicesResponse,
+  AdminAddonServiceResponse,
+  AdminManualOrdersResponse,
+  AdminSetPickupChargeResponse,
 } from "@printgo/api-contract";
 
 const API_BASE_URL =
@@ -245,5 +250,69 @@ export const adminApi = {
   },
   getOrderPdfUrl(orderId: string): Promise<AdminOrderPdfUrlResponse> {
     return request(`/api/admin/orders/${encodeURIComponent(orderId)}/pdf-url`);
+  },
+  // ── Add-on Services ──────────────────────────────────────────────
+  listAddonServices(): Promise<AdminAddonServicesResponse> {
+    return request("/api/admin/addon-services");
+  },
+  createAddonService(
+    input: AdminAddonServiceRequest,
+  ): Promise<AdminAddonServiceResponse> {
+    return request("/api/admin/addon-services", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+  updateAddonService(
+    id: string,
+    input: AdminAddonServiceRequest,
+  ): Promise<AdminAddonServiceResponse> {
+    return request(`/api/admin/addon-services/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: JSON.stringify(input),
+    });
+  },
+  deleteAddonService(id: string): Promise<ApiResponse<{ deleted: boolean }>> {
+    return request(`/api/admin/addon-services/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
+  },
+  toggleAddonService(
+    id: string,
+    enabled: boolean,
+  ): Promise<AdminAddonServiceResponse> {
+    return request(
+      `/api/admin/addon-services/${encodeURIComponent(id)}/toggle`,
+      { method: "POST", body: JSON.stringify({ enabled }) },
+    );
+  },
+  // ── Manual Orders ─────────────────────────────────────────────────
+  getManualOrders(): Promise<AdminManualOrdersResponse> {
+    return request("/api/admin/orders/manual");
+  },
+  markOrderPrinted(
+    orderId: string,
+  ): Promise<ApiResponse<{ orderId: string; status: string }>> {
+    return request(
+      `/api/admin/orders/${encodeURIComponent(orderId)}/mark-printed`,
+      { method: "POST", body: "{}" },
+    );
+  },
+  markOrderFinished(
+    orderId: string,
+  ): Promise<ApiResponse<{ orderId: string; status: string }>> {
+    return request(
+      `/api/admin/orders/${encodeURIComponent(orderId)}/mark-finished`,
+      { method: "POST", body: "{}" },
+    );
+  },
+  setPickupCharge(
+    orderId: string,
+    dueAtPickupPaise: number,
+  ): Promise<AdminSetPickupChargeResponse> {
+    return request(
+      `/api/admin/orders/${encodeURIComponent(orderId)}/set-pickup-charge`,
+      { method: "POST", body: JSON.stringify({ dueAtPickupPaise }) },
+    );
   },
 };

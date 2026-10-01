@@ -12,6 +12,10 @@ import { handleAgentPrintingRequest } from "./printing/routes";
 import { handleAdminLiveOrdersRequest } from "./printing/admin-routes";
 import { handleAdminRetentionRequest } from "./retention/admin-routes";
 import { handleAdminCleanupRequest } from "./cleanup/admin-routes";
+import {
+  handleAdminAddonServicesRequest,
+  handleAdminManualOrdersRequest,
+} from "./addon-services/routes";
 
 export async function routeRequest(
   request: Request,
@@ -50,7 +54,20 @@ export async function routeRequest(
     return handleAdminPrinterRequest(request, env);
   }
 
+  if (url.pathname.startsWith("/api/admin/addon-services")) {
+    return handleAdminAddonServicesRequest(request, env);
+  }
+
   if (url.pathname.startsWith("/api/admin/orders")) {
+    // Manual orders management (mark-printed, mark-finished, set-pickup-charge, list manual)
+    const isManualPath =
+      url.pathname === "/api/admin/orders/manual" ||
+      /^\/api\/admin\/orders\/[^/]+\/(mark-printed|mark-finished|set-pickup-charge)$/.test(
+        url.pathname,
+      );
+    if (isManualPath) {
+      return handleAdminManualOrdersRequest(request, env);
+    }
     return handleAdminLiveOrdersRequest(request, env);
   }
 
