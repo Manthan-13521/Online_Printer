@@ -1,8 +1,10 @@
 import type {
+  AdminDiscountRule,
   AdminFileSizeServiceCharge,
   AdminPrintRate,
   ShopSettings,
 } from "@printgo/api-contract";
+import { indexToPickupCode } from "@printgo/domain";
 
 export interface StoredPrintRate extends AdminPrintRate {
   id: string;
@@ -17,6 +19,11 @@ export interface StoredFileSizeServiceCharge extends AdminFileSizeServiceCharge 
 export interface StoredPricingConfiguration {
   printRates: StoredPrintRate[];
   fileSizeServiceCharges: StoredFileSizeServiceCharge[];
+  priorityPrinting?: {
+    enabled: boolean;
+    feePaise: number;
+  };
+  discountRules?: AdminDiscountRule[];
 }
 
 export interface ConfigurationRepository {
@@ -27,10 +34,15 @@ export interface ConfigurationRepository {
     adminId: string;
     nowMs: number;
   }): Promise<void>;
+  resetPickupCode(adminId: string, nowMs: number): Promise<string>;
   getPricing(): Promise<StoredPricingConfiguration>;
   updatePricing(input: {
     printRates: AdminPrintRate[];
     fileSizeServiceCharges: AdminFileSizeServiceCharge[];
+    priorityPrinting?: {
+      enabled: boolean;
+      feePaise: number;
+    };
     adminId: string;
     nowMs: number;
   }): Promise<void>;
@@ -54,6 +66,11 @@ interface SettingsRow {
   last_cleanup_at_ms: number | null;
   next_daily_cleanup_at_ms: number | null;
   last_cleanup_result: string | null;
+  priority_printing_enabled?: number;
+  priority_fee_paise?: number;
+  id_requirement_mode?: "OFF" | "ALWAYS" | "ABOVE_THRESHOLD";
+  id_threshold_paise?: number;
+  next_pickup_code_index?: number;
 }
 
 interface PrintRateRow {
@@ -110,7 +127,9 @@ export class D1ConfigurationRepository implements ConfigurationRepository {
                 online_printing_enabled, max_pdf_size_bytes, max_order_upload_bytes,
                 identification_sheet_enabled, identification_sheet_placement,
                 automatic_daily_cleanup_enabled, daily_cleanup_time, timezone,
-                last_cleanup_at_ms, next_daily_cleanup_at_ms, last_cleanup_result
+                last_cleanup_at_ms, next_daily_cleanup_at_ms, last_cleanup_result,
+                priority_printing_enabled, priority_fee_paise,
+                id_requirement_mode, id_threshold_paise, next_pickup_code_index
          FROM installation WHERE id = 1`,
       )
       .first<SettingsRow>();
@@ -140,6 +159,11 @@ export class D1ConfigurationRepository implements ConfigurationRepository {
             ? new Date(row.next_daily_cleanup_at_ms).toISOString()
             : null,
           lastCleanupResult: row.last_cleanup_result,
+          priorityPrintingEnabled: row.priority_printing_enabled === 1,
+          priorityFeePaise: row.priority_fee_paise ?? 0,
+          idRequirementMode: row.id_requirement_mode ?? "OFF",
+          idThresholdPaise: row.id_threshold_paise ?? 0,
+          nextPickupCode: indexToPickupCode(row.next_pickup_code_index ?? 0),
         }
       : null;
   }
@@ -161,6 +185,10 @@ export class D1ConfigurationRepository implements ConfigurationRepository {
                  WHEN automatic_daily_cleanup_enabled = ? AND daily_cleanup_time = ? AND timezone = ?
                  THEN next_daily_cleanup_at_ms ELSE NULL END,
                automatic_daily_cleanup_enabled = ?, daily_cleanup_time = ?, timezone = ?,
+               priority_printing_enabled = COALESCE(?, priority_printing_enabled),
+               priority_fee_paise = COALESCE(?, priority_fee_paise),
+               id_requirement_mode = COALESCE(?, id_requirement_mode),
+               id_threshold_paise = COALESCE(?, id_threshold_paise),
                updated_at_ms = ?
            WHERE id = 1`,
         )
@@ -181,6 +209,20 @@ export class D1ConfigurationRepository implements ConfigurationRepository {
           input.settings.automaticDailyCleanupEnabled ? 1 : 0,
           input.settings.dailyCleanupTime ?? "23:30",
           input.settings.timezone ?? "Asia/Kolkata",
+          input.settings.priorityPrintingEnabled !== undefined
+            ? input.settings.priorityPrintingEnabled
+              ? 1
+              : 0
+            : null,
+          input.settings.priorityFeePaise !== undefined
+            ? input.settings.priorityFeePaise
+            : null,
+          input.settings.idRequirementMode !== undefined
+            ? input.settings.idRequirementMode
+            : null,
+          input.settings.idThresholdPaise !== undefined
+            ? input.settings.idThresholdPaise
+            : null,
           input.nowMs,
         ),
       auditStatement(this.db, {
@@ -210,23 +252,63 @@ export class D1ConfigurationRepository implements ConfigurationRepository {
     await this.db.batch(statements);
   }
 
-  async getPricing(): Promise<StoredPricingConfiguration> {
-    const [rateResult, chargeResult] = await this.db.batch([
-      this.db.prepare(
-        `SELECT id, paper_size, color_mode, sides, price_per_page_paise, enabled
-         FROM print_rates
-         ORDER BY paper_size DESC, color_mode, sides DESC`,
-      ),
-      this.db.prepare(
-        `SELECT id, min_bytes_exclusive, max_bytes_inclusive, charge_paise,
-                enabled, sort_order
-         FROM file_size_service_charges
-         ORDER BY sort_order`,
-      ),
+  async resetPickupCode(adminId: string, nowMs: number): Promise<string> {
+    await this.db.batch([
+      this.db
+        .prepare(
+          `UPDATE installation SET next_pickup_code_index = 0, updated_at_ms = ? WHERE id = 1`,
+        )
+        .bind(nowMs),
+      auditStatement(this.db, {
+        adminId,
+        action: "RESET_PICKUP_CODE_SEQUENCE",
+        entityType: "INSTALLATION",
+        entityId: "1",
+        nowMs,
+      }),
     ]);
+    return "PA-001";
+  }
+
+  async getPricing(): Promise<StoredPricingConfiguration> {
+    const [rateResult, chargeResult, installResult, discountResult] =
+      await this.db.batch([
+        this.db.prepare(
+          `SELECT id, paper_size, color_mode, sides, price_per_page_paise, enabled
+           FROM print_rates
+           ORDER BY paper_size DESC, color_mode, sides DESC`,
+        ),
+        this.db.prepare(
+          `SELECT id, min_bytes_exclusive, max_bytes_inclusive, charge_paise,
+                  enabled, sort_order
+           FROM file_size_service_charges
+           ORDER BY sort_order`,
+        ),
+        this.db.prepare(
+          `SELECT priority_printing_enabled, priority_fee_paise
+           FROM installation WHERE id = 1`,
+        ),
+        this.db.prepare(
+          `SELECT id, min_subtotal_paise, discount_percent, enabled, created_at_ms, updated_at_ms
+           FROM discount_rules
+           ORDER BY min_subtotal_paise ASC`,
+        ),
+      ]);
     if (!rateResult || !chargeResult) {
       throw new Error("Pricing configuration could not be loaded.");
     }
+    const installRow = installResult?.results?.[0] as
+      | { priority_printing_enabled: number; priority_fee_paise: number }
+      | undefined;
+    const discountRows = (discountResult?.results ?? []) as Array<{
+      id: string;
+      min_subtotal_paise: number;
+      discount_percent: number;
+      enabled: number;
+      created_at_ms: number;
+      updated_at_ms: number;
+    }>;
+
     return {
       printRates: (rateResult.results as unknown as PrintRateRow[]).map(
         (row) => ({
@@ -248,12 +330,28 @@ export class D1ConfigurationRepository implements ConfigurationRepository {
         enabled: row.enabled === 1,
         sortOrder: row.sort_order,
       })),
+      priorityPrinting: {
+        enabled: (installRow?.priority_printing_enabled ?? 0) === 1,
+        feePaise: installRow?.priority_fee_paise ?? 0,
+      },
+      discountRules: discountRows.map((r) => ({
+        id: r.id,
+        minSubtotalPaise: r.min_subtotal_paise,
+        discountPercent: r.discount_percent,
+        enabled: r.enabled === 1,
+        createdAt: new Date(r.created_at_ms).toISOString(),
+        updatedAt: new Date(r.updated_at_ms).toISOString(),
+      })),
     };
   }
 
   async updatePricing(input: {
     printRates: AdminPrintRate[];
     fileSizeServiceCharges: AdminFileSizeServiceCharge[];
+    priorityPrinting?: {
+      enabled: boolean;
+      feePaise: number;
+    };
     adminId: string;
     nowMs: number;
   }): Promise<void> {
@@ -289,6 +387,21 @@ export class D1ConfigurationRepository implements ConfigurationRepository {
             input.nowMs,
             charge.minBytesExclusive,
             charge.maxBytesInclusive,
+          ),
+      );
+    }
+    if (input.priorityPrinting) {
+      statements.push(
+        this.db
+          .prepare(
+            `UPDATE installation
+             SET priority_printing_enabled = ?, priority_fee_paise = ?, updated_at_ms = ?
+             WHERE id = 1`,
+          )
+          .bind(
+            input.priorityPrinting.enabled ? 1 : 0,
+            input.priorityPrinting.feePaise,
+            input.nowMs,
           ),
       );
     }

@@ -409,7 +409,7 @@ export class D1PrintingRepository implements PrintingRepository {
           WHERE upper(value) = f.paper_size)
         AND NOT EXISTS (SELECT 1 FROM orders busy WHERE busy.claimed_by_agent_id = a.id
           AND busy.status IN ('CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED'))
-      ORDER BY o.queued_at_ms, o.id, p.id LIMIT 1`,
+      ORDER BY o.is_priority DESC, o.queued_at_ms ASC, o.id, p.id LIMIT 1`,
       )
       .bind(agentId, nowMs - 90_000)
       .first<CandidateRow>();
@@ -1152,7 +1152,8 @@ export class D1PrintingRepository implements PrintingRepository {
       .prepare(
         `WITH live_candidates AS (
           SELECT * FROM (
-            SELECT id, public_job_code, customer_name, customer_phone,
+            SELECT id, public_job_code, pickup_code, is_priority, identification_required,
+              customer_name, customer_phone,
               selected_pages, copies, paper_size, color_mode, sides,
               total_amount_paise, currency, status, claimed_by_agent_id, printer_id,
               paid_at_ms, updated_at_ms
@@ -1160,7 +1161,8 @@ export class D1PrintingRepository implements PrintingRepository {
             WHERE status IN ('QUEUED','CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED',
               'PRINT_FAILED','ADMIN_ACTION_REQUIRED')
             UNION ALL
-            SELECT id, public_job_code, customer_name, customer_phone,
+            SELECT id, public_job_code, pickup_code, is_priority, identification_required,
+              customer_name, customer_phone,
               selected_pages, copies, paper_size, color_mode, sides,
               total_amount_paise, currency, status, claimed_by_agent_id, printer_id,
               paid_at_ms, updated_at_ms
@@ -1170,7 +1172,8 @@ export class D1PrintingRepository implements PrintingRepository {
           ORDER BY updated_at_ms DESC
           LIMIT 100
         )
-        SELECT o.id order_id, o.public_job_code, o.customer_name, o.customer_phone,
+        SELECT o.id order_id, o.public_job_code, o.pickup_code, o.is_priority, o.identification_required,
+          o.customer_name, o.customer_phone,
           o.selected_pages, o.copies, o.paper_size, o.color_mode, o.sides,
           o.total_amount_paise, o.currency, o.status, a.display_name agent_name,
           p.display_name printer_name, pa.failure_detail, o.paid_at_ms, o.updated_at_ms
@@ -1185,6 +1188,9 @@ export class D1PrintingRepository implements PrintingRepository {
       .all<{
         order_id: string;
         public_job_code: string;
+        pickup_code: string | null;
+        is_priority: number;
+        identification_required: number;
         customer_name: string;
         customer_phone: string;
         selected_pages: string;
@@ -1204,6 +1210,9 @@ export class D1PrintingRepository implements PrintingRepository {
     return result.results.map((row) => ({
       orderId: row.order_id,
       jobCode: row.public_job_code,
+      pickupCode: row.pickup_code ?? null,
+      isPriority: row.is_priority === 1,
+      identificationRequired: row.identification_required === 1,
       customerName: row.customer_name,
       customerPhone: row.customer_phone,
       printSummary: {

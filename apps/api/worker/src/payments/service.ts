@@ -508,12 +508,23 @@ export class PaymentService {
     );
     return {
       jobCode: payment.publicJobCode,
+      pickupCode: payment.pickupCode ?? null,
       amountPaidPaise: payment.amountPaise,
       currency: payment.currency,
-      status: "QUEUED",
-      message: "Payment verified. Your print job is queued.",
+      status:
+        payment.orderStatus === "MANUAL_PRINT" ? "MANUAL_PRINT" : "QUEUED",
+      message:
+        payment.orderStatus === "MANUAL_PRINT"
+          ? "Payment verified. Your order requires manual handling and is waiting for shop staff."
+          : "Payment verified. Your print job is queued.",
       trackingToken: tracking.rawToken,
       trackingExpiresAt: tracking.expiresAt,
+      ...(payment.isPriority !== undefined
+        ? { isPriority: payment.isPriority }
+        : {}),
+      ...(payment.identificationRequired !== undefined
+        ? { identificationRequired: payment.identificationRequired }
+        : {}),
     };
   }
 }

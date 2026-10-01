@@ -19,6 +19,7 @@ import { customerApi, uploadDirectly, resolveCustomerApiUrl } from "./api";
 import { inspectPdf } from "./pdf";
 import { PwaInstallBanner } from "./PwaInstallBanner";
 import { TrackingPage } from "./TrackingPage";
+import { PublicTrackingPage } from "./PublicTrackingPage";
 import {
   createTrackingToken,
   privateTrackingUrl,
@@ -135,6 +136,8 @@ export function App() {
   const [paymentSuccess, setPaymentSuccess] =
     useState<CustomerPaymentSuccessData | null>(null);
   const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>([]);
+  const [isPriority, setIsPriority] = useState(false);
+  const [trackBoxCode, setTrackBoxCode] = useState("");
   const [showPricingInfo, setShowPricingInfo] = useState(false);
   const [copyMessage, setCopyMessage] = useState<string | null>(null);
 
@@ -377,6 +380,7 @@ export function App() {
             colorMode: item.colorMode,
             sides: item.sides,
           })),
+          isPriority,
         }),
       );
       setPaymentSuccess(null);
@@ -444,6 +448,43 @@ export function App() {
     setStatus(
       "These settings now apply to every file. You can still override one file.",
     );
+  }
+
+  async function togglePriority(nextPriority: boolean) {
+    setIsPriority(nextPriority);
+    if (
+      draftToken &&
+      files.length > 0 &&
+      files.every((f) => f.uploaded && f.fileId)
+    ) {
+      setBusy(true);
+      setStatus("Updating priority review…");
+      try {
+        setQuote(
+          await customerApi.quoteOrder(draftToken, {
+            files: files.map((item) => ({
+              fileId: item.fileId!,
+              selectedPages:
+                item.pageMode === "ALL"
+                  ? `1-${item.pageCount}`
+                  : item.customPages,
+              copies: item.copies,
+              paperSize: item.paperSize,
+              colorMode: item.colorMode,
+              sides: item.sides,
+            })),
+            isPriority: nextPriority,
+          }),
+        );
+        setStatus("Priority updated. Review your new total.");
+      } catch (caught) {
+        setStatus(customerErrorMessage(caught));
+      } finally {
+        setBusy(false);
+      }
+    } else {
+      setQuote(null);
+    }
   }
 
   async function verifyCheckoutPayment(
@@ -556,16 +597,13 @@ export function App() {
 
   function openTracking() {
     if (!paymentSuccess) return;
+    const code = paymentSuccess.pickupCode ?? paymentSuccess.jobCode;
     sessionStorage.setItem(
       trackingStorageKey(paymentSuccess.jobCode),
       paymentSuccess.trackingToken,
     );
-    window.history.pushState(
-      null,
-      "",
-      `/track/${encodeURIComponent(paymentSuccess.jobCode)}#${paymentSuccess.trackingToken}`,
-    );
-    setTrackingJobCode(paymentSuccess.jobCode);
+    window.history.pushState(null, "", `/track/${encodeURIComponent(code)}`);
+    setTrackingJobCode(code);
   }
 
   async function copyTrackingLink() {
@@ -600,7 +638,7 @@ export function App() {
           className="pricing-info-button"
           onClick={() => setShowPricingInfo(true)}
         >
-          Pricing & Info
+          Pricing &amp; Info
         </button>
       </div>
       <h1>{config?.shopName ?? "Online printing"}</h1>
@@ -608,15 +646,87 @@ export function App() {
         {config?.customerNotice ??
           "Upload a PDF and review your print settings."}
       </p>
+      <form
+        className="track-printing-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const trimmed = trackBoxCode.trim().toUpperCase();
+          if (trimmed) {
+            window.history.pushState(
+              null,
+              "",
+              `/track/${encodeURIComponent(trimmed)}`,
+            );
+            setTrackingJobCode(trimmed);
+          }
+        }}
+        style={{
+          marginTop: "0.75rem",
+          display: "flex",
+          gap: "0.5rem",
+          maxWidth: "380px",
+          alignItems: "center",
+        }}
+      >
+        <input
+          type="text"
+          placeholder="Track code (e.g. PA-001)"
+          value={trackBoxCode}
+          onChange={(e) => setTrackBoxCode(e.target.value.toUpperCase())}
+          style={{
+            padding: "0.45rem 0.75rem",
+            fontSize: "0.85rem",
+            letterSpacing: "1px",
+            fontWeight: 600,
+            textTransform: "uppercase",
+            borderRadius: "6px",
+            border: "1px solid #94a3b8",
+          }}
+        />
+        <button
+          type="submit"
+          className="secondary-button"
+          style={{
+            whiteSpace: "nowrap",
+            padding: "0.45rem 0.85rem",
+            fontSize: "0.85rem",
+            fontWeight: 700,
+          }}
+        >
+          Track
+        </button>
+      </form>
     </header>
   );
-  if (trackingJobCode)
+  if (trackingJobCode) {
+    const isPickupPattern = /^[A-Za-z]{2}-\d{3}$/i.test(trackingJobCode);
+    const hasPrivateToken =
+      typeof window !== "undefined" &&
+      (/^[A-Za-z0-9_-]{43}$/.test(window.location.hash.slice(1)) ||
+        Boolean(sessionStorage.getItem(`printgo.tracking.${trackingJobCode}`)));
+
+    if (isPickupPattern || !hasPrivateToken) {
+      return (
+        <>
+          {shopHeader}
+          <PublicTrackingPage
+            pickupCode={trackingJobCode}
+            onBack={() => {
+              setTrackingJobCode(null);
+              window.history.pushState(null, "", "/");
+            }}
+          />
+        </>
+      );
+    }
+
     return (
       <>
         {shopHeader}
         <TrackingPage jobCode={trackingJobCode} />
       </>
     );
+  }
 
   if (loading)
     return (
@@ -715,6 +825,37 @@ export function App() {
                             ? "FREE"
                             : `₹${(svc.fixedPricePaise / 100).toFixed(2)}`}
                       </span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ) : null}
+
+            {config.priorityPrinting?.enabled ? (
+              <section className="pricing-info-section">
+                <h3>Priority Printing</h3>
+                <p>
+                  ⚡ Fast-track your print in the queue for an additional{" "}
+                  <strong>
+                    ₹{(config.priorityPrinting.feePaise / 100).toFixed(2)}
+                  </strong>
+                  .
+                </p>
+              </section>
+            ) : null}
+
+            {config.discountRules && config.discountRules.length > 0 ? (
+              <section className="pricing-info-section">
+                <h3>Volume Discounts</h3>
+                <ul className="pricing-addon-list">
+                  {config.discountRules.map((rule) => (
+                    <li key={rule.id}>
+                      <span>
+                        Orders above ₹{(rule.minSubtotalPaise / 100).toFixed(0)}
+                      </span>
+                      <strong style={{ color: "#16a34a" }}>
+                        {rule.discountPercent}% OFF
+                      </strong>
                     </li>
                   ))}
                 </ul>
@@ -1096,6 +1237,56 @@ export function App() {
               </progress>
             )}
             {status && <p role="status">{status}</p>}
+            {config?.priorityPrinting?.enabled ? (
+              <div
+                className="priority-selector"
+                style={{
+                  margin: "1rem 0",
+                  padding: "0.85rem 1rem",
+                  backgroundColor: isPriority ? "#fffbeb" : "#f8fafc",
+                  border: isPriority
+                    ? "1.5px solid #f59e0b"
+                    : "1px solid #cbd5e1",
+                  borderRadius: "8px",
+                  transition: "all 0.2s ease",
+                }}
+              >
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.6rem",
+                    cursor: "pointer",
+                    margin: 0,
+                    fontWeight: 700,
+                    color: "#1e293b",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isPriority}
+                    disabled={busy || paymentBusy}
+                    onChange={(e) => void togglePriority(e.target.checked)}
+                    style={{
+                      width: "1.2rem",
+                      height: "1.2rem",
+                      accentColor: "#d97706",
+                    }}
+                  />
+                  <span>
+                    ⚡ Priority Printing (+
+                    {formatInr(config.priorityPrinting.feePaise)})
+                  </span>
+                </label>
+                <p
+                  className="muted"
+                  style={{ margin: "0.35rem 0 0 1.8rem", fontSize: "0.85rem" }}
+                >
+                  Fast-track your job in the print queue. Prints ahead of
+                  standard queue jobs.
+                </p>
+              </div>
+            ) : null}
             {quote && (
               <dl>
                 <div>
@@ -1145,35 +1336,147 @@ export function App() {
                     </dd>
                   </div>
                 ) : null}
+                {quote.priorityFeePaise && quote.priorityFeePaise > 0 ? (
+                  <div>
+                    <dt>⚡ Priority queue</dt>
+                    <dd>{formatInr(quote.priorityFeePaise)}</dd>
+                  </div>
+                ) : null}
+                {quote.discountAmountPaise && quote.discountAmountPaise > 0 ? (
+                  <div style={{ color: "#15803d" }}>
+                    <dt>
+                      Discount ({quote.appliedDiscount?.discountPercent}% off)
+                    </dt>
+                    <dd>-{formatInr(quote.discountAmountPaise)}</dd>
+                  </div>
+                ) : null}
                 <div className="total">
                   <dt>Total</dt>
                   <dd>{formatInr(quote.totalAmountPaise)}</dd>
                 </div>
               </dl>
             )}
+            {quote?.identificationRequired ? (
+              <div
+                style={{
+                  margin: "0.75rem 0",
+                  padding: "0.75rem 1rem",
+                  backgroundColor: "#fef2f2",
+                  border: "1px solid #fecaca",
+                  borderRadius: "8px",
+                  color: "#991b1b",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.5rem",
+                  }}
+                >
+                  <span>🪪</span>
+                  <strong>Identification will be required at pickup</strong>
+                </div>
+                <p
+                  style={{
+                    margin: "0.25rem 0 0 1.6rem",
+                    fontSize: "0.85rem",
+                    color: "#7f1d1d",
+                  }}
+                >
+                  Please carry valid ID when collecting your printed documents.
+                </p>
+              </div>
+            ) : null}
             {paymentSuccess && (
               <div className="payment-success" role="status">
                 <h3>Payment successful</h3>
-                <p>Your Print Code</p>
+                {paymentSuccess.pickupCode ? (
+                  <div
+                    style={{
+                      margin: "1rem 0",
+                      padding: "1.25rem",
+                      backgroundColor: "#e0f2fe",
+                      border: "2px solid #0284c7",
+                      borderRadius: "10px",
+                      textAlign: "center",
+                    }}
+                  >
+                    <p
+                      style={{
+                        margin: 0,
+                        fontSize: "0.85rem",
+                        textTransform: "uppercase",
+                        letterSpacing: "1px",
+                        color: "#0369a1",
+                        fontWeight: 700,
+                      }}
+                    >
+                      Pickup Code
+                    </p>
+                    <strong
+                      style={{
+                        display: "block",
+                        fontSize: "2.75rem",
+                        letterSpacing: "3px",
+                        color: "#0c4a6e",
+                        margin: "0.25rem 0",
+                      }}
+                    >
+                      {paymentSuccess.pickupCode}
+                    </strong>
+                    <p
+                      style={{
+                        margin: 0,
+                        fontSize: "0.85rem",
+                        color: "#0284c7",
+                      }}
+                    >
+                      Show this code to shop staff to collect your order
+                    </p>
+                  </div>
+                ) : null}
+                <p>Your Job Reference</p>
                 <strong>{paymentSuccess.jobCode}</strong>
-                <p>Keep this code until you collect your print.</p>
+                {paymentSuccess.identificationRequired ? (
+                  <div
+                    style={{
+                      margin: "0.75rem 0",
+                      padding: "0.6rem 0.85rem",
+                      backgroundColor: "#fef2f2",
+                      border: "1px solid #fecaca",
+                      borderRadius: "6px",
+                      color: "#991b1b",
+                      fontSize: "0.85rem",
+                    }}
+                  >
+                    🪪 <strong>ID Required:</strong> Please show valid
+                    identification at the counter.
+                  </div>
+                ) : null}
                 <p>Amount paid: {formatInr(paymentSuccess.amountPaidPaise)}</p>
                 <p className="muted">
-                  This reference code is not an authentication token.
+                  Keep your pickup code handy until you collect your prints.
                 </p>
-                <button type="button" onClick={openTracking}>
-                  Track My Print
-                </button>
-                <button
-                  className="secondary-button"
-                  type="button"
-                  onClick={() => void copyTrackingLink()}
+                <div
+                  style={{
+                    display: "flex",
+                    gap: "0.5rem",
+                    flexWrap: "wrap",
+                    marginTop: "1rem",
+                  }}
                 >
-                  Copy private tracking link
-                </button>
-                <p className="private-link-warning">
-                  Anyone with this link can view this print-job status.
-                </p>
+                  <button type="button" onClick={openTracking}>
+                    Track My Print
+                  </button>
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    onClick={() => void copyTrackingLink()}
+                  >
+                    Copy private tracking link
+                  </button>
+                </div>
                 {copyMessage && <p role="status">{copyMessage}</p>}
               </div>
             )}

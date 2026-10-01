@@ -1,4 +1,6 @@
 import {
+  indexToPickupCode,
+  TOTAL_PICKUP_CODES,
   UNRESOLVED_PAID_FAILURE_RETENTION_MS,
   WEBHOOK_PROCESSING_STALE_TIMEOUT_MS,
 } from "@printgo/domain";
@@ -58,6 +60,9 @@ export interface PaymentRecord {
   status: "CREATED" | "PENDING" | "PAID" | "FAILED" | "CANCELLED" | "REFUNDED";
   publicJobCode: string | null;
   orderStatus: string;
+  pickupCode?: string | null;
+  isPriority?: boolean;
+  identificationRequired?: boolean;
 }
 
 export interface RetainedPaymentRecord {
@@ -106,6 +111,9 @@ interface PaymentRow {
   status: PaymentRecord["status"];
   public_job_code: string | null;
   order_status: string;
+  pickup_code?: string | null;
+  is_priority?: number;
+  identification_required?: number;
 }
 
 function mapPayment(row: PaymentRow | null): PaymentRecord | null {
@@ -121,6 +129,9 @@ function mapPayment(row: PaymentRow | null): PaymentRecord | null {
         status: row.status,
         publicJobCode: row.public_job_code,
         orderStatus: row.order_status,
+        pickupCode: row.pickup_code ?? null,
+        isPriority: row.is_priority === 1,
+        identificationRequired: row.identification_required === 1,
       }
     : null;
 }
@@ -336,7 +347,7 @@ export class D1PaymentRepository implements PaymentRepository {
         `SELECT p.id, p.order_id, p.provider_order_id, p.provider_payment_id,
           p.amount_paise, o.total_amount_paise AS order_amount_paise,
           p.currency, p.status, o.public_job_code,
-          o.status AS order_status
+          o.status AS order_status, o.pickup_code, o.is_priority, o.identification_required
         FROM payments p JOIN orders o ON o.id = p.order_id
         WHERE p.provider = 'RAZORPAY' AND ${where} = ? ORDER BY p.created_at_ms DESC LIMIT 1`,
       )
@@ -351,7 +362,7 @@ export class D1PaymentRepository implements PaymentRepository {
         `SELECT p.id, p.order_id, p.provider_order_id, p.provider_payment_id,
           p.amount_paise, o.total_amount_paise AS order_amount_paise,
           p.currency, p.status, o.public_job_code,
-          o.status AS order_status
+          o.status AS order_status, o.pickup_code, o.is_priority, o.identification_required
         FROM payments p JOIN orders o ON o.id = p.order_id
         WHERE p.order_id = ? AND p.status IN ('CREATED', 'PENDING')
         ORDER BY p.created_at_ms DESC LIMIT 1`,
@@ -474,15 +485,59 @@ export class D1PaymentRepository implements PaymentRepository {
       : null;
   }
 
+  private async allocatePickupCode(nowMs: number): Promise<string> {
+    const row = await this.db
+      .prepare(`SELECT next_pickup_code_index FROM installation WHERE id = 1`)
+      .first<{ next_pickup_code_index: number }>();
+    const startIndex = row?.next_pickup_code_index ?? 0;
+
+    for (let offset = 0; offset < TOTAL_PICKUP_CODES; offset++) {
+      const candidateIndex = (startIndex + offset) % TOTAL_PICKUP_CODES;
+      const candidateCode = indexToPickupCode(candidateIndex);
+
+      const active = await this.db
+        .prepare(
+          `SELECT 1 FROM orders
+           WHERE pickup_code = ?
+             AND cleanup_state = 'ACTIVE'
+             AND (status NOT IN ('COMPLETED', 'CANCELLED') OR (purge_at_ms IS NOT NULL AND purge_at_ms > ?))
+           LIMIT 1`,
+        )
+        .bind(candidateCode, nowMs)
+        .first();
+
+      if (!active) {
+        const nextIndex = (candidateIndex + 1) % TOTAL_PICKUP_CODES;
+        await this.db
+          .prepare(
+            `UPDATE installation SET next_pickup_code_index = ?, updated_at_ms = ? WHERE id = 1`,
+          )
+          .bind(nextIndex, nowMs)
+          .run();
+        return candidateCode;
+      }
+    }
+    return indexToPickupCode(startIndex);
+  }
+
   async finalizePaid(
     input: Parameters<PaymentRepository["finalizePaid"]>[0],
   ): Promise<PaymentRecord> {
     const before = await this.findPayment("p.id", input.paymentId);
     if (!before) throw new Error("Payment record missing.");
     if (before.status === "PAID" && before.publicJobCode) return before;
+
+    const orderRow = await this.db
+      .prepare(`SELECT pickup_code FROM orders WHERE id = ?`)
+      .bind(before.orderId)
+      .first<{ pickup_code: string | null }>();
+    const pickupCode =
+      orderRow?.pickup_code || (await this.allocatePickupCode(input.nowMs));
+
     const orderUpdate = await this.db
       .prepare(
         `UPDATE orders SET public_job_code = COALESCE(public_job_code, ?),
+          pickup_code = COALESCE(pickup_code, ?),
           status = 'QUEUED', paid_at_ms = COALESCE(paid_at_ms, ?),
           queued_at_ms = COALESCE(queued_at_ms, ?), updated_at_ms = ?
          WHERE id = ? AND cleanup_state = 'ACTIVE' AND (
@@ -492,6 +547,7 @@ export class D1PaymentRepository implements PaymentRepository {
       )
       .bind(
         input.jobCode,
+        pickupCode,
         input.nowMs,
         input.nowMs,
         input.nowMs,

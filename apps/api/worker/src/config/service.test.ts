@@ -81,6 +81,7 @@ function repository(): ConfigurationRepository {
       };
       return Promise.resolve();
     }),
+    resetPickupCode: vi.fn(() => Promise.resolve("PA-001")),
   };
 }
 

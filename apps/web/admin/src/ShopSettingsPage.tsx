@@ -11,6 +11,7 @@ import {
   FILE_SIZE_25_MIB,
   MIB,
 } from "@printgo/domain";
+import { formatPaiseAsRupeesInput, parseRupeesToPaise } from "@printgo/pricing";
 import {
   ADDRESS_MAX_LENGTH,
   APP_NAME_MAX_LENGTH,
@@ -59,6 +60,7 @@ export function ShopSettingsPage({
     useState<AdminCleanupRunData | null>(null);
   const [cleanupConfirmation, setCleanupConfirmation] = useState("");
   const [cleanupBusy, setCleanupBusy] = useState(false);
+  const [resettingCode, setResettingCode] = useState(false);
 
   const dirty =
     settings !== null && JSON.stringify(settings) !== JSON.stringify(saved);
@@ -190,6 +192,34 @@ export function ShopSettingsPage({
       else setError(friendlyAdminError(caught));
     } finally {
       setCleanupBusy(false);
+    }
+  }
+
+  async function handleResetPickupCode() {
+    if (
+      !window.confirm(
+        "Reset next pickup code sequence back to PA-001? This only affects future orders.",
+      )
+    ) {
+      return;
+    }
+    setResettingCode(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const res = await adminApi.resetPickupCode();
+      if (res.ok) {
+        patch({ nextPickupCode: res.data.nextPickupCode });
+        setMessage(res.data.message);
+      }
+    } catch (caught: unknown) {
+      if (caught instanceof AdminApiError && caught.status === 401) {
+        onSessionExpired("Your session has expired. Please sign in again.");
+        return;
+      }
+      setError(friendlyAdminError(caught));
+    } finally {
+      setResettingCode(false);
     }
   }
 
@@ -417,6 +447,102 @@ export function ShopSettingsPage({
               <span>Print after document</span>
             </label>
           </fieldset>
+        </section>
+
+        <section className="panel form-section">
+          <h2>Customer Identification at Pickup</h2>
+          <p className="field-help">
+            Require customer identification when collecting their orders. No
+            sensitive identity documents, Aadhaar numbers, or photos are ever
+            collected or stored.
+          </p>
+          <label htmlFor="id-requirement-mode">Identification policy</label>
+          <select
+            id="id-requirement-mode"
+            value={settings.idRequirementMode ?? "OFF"}
+            onChange={(event) =>
+              patch({
+                idRequirementMode: event.target.value as
+                  "OFF" | "ALWAYS" | "ABOVE_THRESHOLD",
+              })
+            }
+          >
+            <option value="OFF">Off (Never required)</option>
+            <option value="ALWAYS">Always required</option>
+            <option value="ABOVE_THRESHOLD">
+              Required only above order amount
+            </option>
+          </select>
+
+          {settings.idRequirementMode === "ABOVE_THRESHOLD" ? (
+            <div style={{ marginTop: "0.75rem" }}>
+              <label htmlFor="id-threshold-amount">
+                Minimum order amount (₹)
+              </label>
+              <input
+                id="id-threshold-amount"
+                type="number"
+                min="1"
+                step="1"
+                value={
+                  settings.idThresholdPaise !== undefined
+                    ? formatPaiseAsRupeesInput(settings.idThresholdPaise)
+                    : "500"
+                }
+                onChange={(event) =>
+                  patch({
+                    idThresholdPaise:
+                      parseRupeesToPaise(event.target.value || "0") ?? 0,
+                  })
+                }
+              />
+              <p className="field-help">
+                Orders with online printing total equal to or above this amount
+                will require customer ID at pickup.
+              </p>
+            </div>
+          ) : null}
+        </section>
+
+        <section className="panel form-section">
+          <h2>Pickup Codes</h2>
+          <p className="field-help">
+            Sequential codes (PA-001 through PZ-999) assigned to paid orders for
+            safe, collision-free customer identification.
+          </p>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "1rem",
+              flexWrap: "wrap",
+              marginTop: "0.5rem",
+            }}
+          >
+            <div>
+              <span
+                className="muted"
+                style={{ display: "block", fontSize: "0.85rem" }}
+              >
+                Next code to be assigned:
+              </span>
+              <strong style={{ fontSize: "1.25rem", letterSpacing: "1px" }}>
+                {settings.nextPickupCode ?? "PA-001"}
+              </strong>
+            </div>
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={resettingCode}
+              onClick={() => void handleResetPickupCode()}
+            >
+              {resettingCode ? "Resetting…" : "Reset next code to PA-001"}
+            </button>
+          </div>
+          <p className="field-help">
+            Resetting takes effect only on future orders and will never
+            overwrite or conflict with currently active codes.
+          </p>
         </section>
 
         <section className="panel form-section">

@@ -66,6 +66,7 @@ function configuration(): ConfigurationActions {
     updateSettings: vi.fn((input: ShopSettings) => Promise.resolve(input)),
     getPricing: vi.fn(() => Promise.resolve(pricing)),
     updatePricing: vi.fn(() => Promise.resolve(pricing)),
+    resetPickupCode: vi.fn(() => Promise.resolve("PA-001")),
   };
 }
 

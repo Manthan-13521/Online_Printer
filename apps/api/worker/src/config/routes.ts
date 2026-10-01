@@ -29,6 +29,7 @@ export interface ConfigurationActions {
   updateSettings: ConfigurationService["updateSettings"];
   getPricing(): ReturnType<ConfigurationService["getPricing"]>;
   updatePricing: ConfigurationService["updatePricing"];
+  resetPickupCode(adminId: string): Promise<string>;
 }
 
 export interface SessionActions {
@@ -106,6 +107,17 @@ export async function handleAdminConfigurationRequest(
           message: "Shop settings saved.",
         });
       }
+    } else if (
+      request.method === "POST" &&
+      url.pathname === "/api/admin/settings/reset-pickup-code"
+    ) {
+      const nextPickupCode = await configuration.resetPickupCode(
+        session.admin.id,
+      );
+      response = ok({
+        nextPickupCode,
+        message: "Next pickup code reset to PA-001.",
+      });
     } else if (
       request.method === "GET" &&
       url.pathname === "/api/admin/pricing"

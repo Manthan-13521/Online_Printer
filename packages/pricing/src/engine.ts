@@ -243,3 +243,102 @@ export function calculateAddonOnlinePrice(
     return total;
   }, 0);
 }
+
+export interface PriorityPricingInput {
+  isPriorityRequested: boolean;
+  priorityPrintingEnabled: boolean;
+  priorityFeePaise: number;
+}
+
+export function calculatePriorityFee(input: PriorityPricingInput): number {
+  if (!input.isPriorityRequested || !input.priorityPrintingEnabled) {
+    return 0;
+  }
+  if (
+    !Number.isSafeInteger(input.priorityFeePaise) ||
+    input.priorityFeePaise < 0
+  ) {
+    throw new PricingError("PRICE_OVERFLOW");
+  }
+  return input.priorityFeePaise;
+}
+
+export interface DiscountRuleInput {
+  id?: string;
+  minSubtotalPaise: number;
+  discountPercent: number;
+  enabled: boolean;
+}
+
+export interface AppliedDiscountResult {
+  discountAmountPaise: number;
+  discountThresholdPaise: number | null;
+  discountPercent: number | null;
+}
+
+/**
+ * Calculates discount based on online subtotal.
+ * - Filters for enabled rules where subtotalPaise >= minSubtotalPaise
+ * - Highest qualifying minSubtotalPaise wins
+ * - NEVER stacks discounts
+ * - Returns 0 discount if no qualifying rule
+ */
+export function calculateDiscount(
+  subtotalPaise: number,
+  rules: readonly DiscountRuleInput[],
+): AppliedDiscountResult {
+  if (subtotalPaise <= 0 || !Number.isSafeInteger(subtotalPaise)) {
+    return {
+      discountAmountPaise: 0,
+      discountThresholdPaise: null,
+      discountPercent: null,
+    };
+  }
+  const qualifying = rules
+    .filter((r) => r.enabled && subtotalPaise >= r.minSubtotalPaise)
+    .sort((a, b) => b.minSubtotalPaise - a.minSubtotalPaise);
+
+  if (qualifying.length === 0 || !qualifying[0]) {
+    return {
+      discountAmountPaise: 0,
+      discountThresholdPaise: null,
+      discountPercent: null,
+    };
+  }
+
+  const best = qualifying[0];
+  const discountAmountPaise = Math.min(
+    subtotalPaise,
+    Math.round((subtotalPaise * best.discountPercent) / 100),
+  );
+
+  return {
+    discountAmountPaise,
+    discountThresholdPaise: best.minSubtotalPaise,
+    discountPercent: best.discountPercent,
+  };
+}
+
+export type IdentificationRequirementMode =
+  "OFF" | "ALWAYS" | "ABOVE_THRESHOLD";
+
+export interface IdentificationRequirementInput {
+  mode: IdentificationRequirementMode;
+  thresholdPaise: number;
+  onlineAmountPaise: number;
+}
+
+export function isIdentificationRequired(
+  input: IdentificationRequirementInput,
+): boolean {
+  switch (input.mode) {
+    case "OFF":
+      return false;
+    case "ALWAYS":
+      return true;
+    case "ABOVE_THRESHOLD":
+      return input.onlineAmountPaise >= input.thresholdPaise;
+    default:
+      return false;
+  }
+}

@@ -116,12 +116,64 @@ function ManualOrderCard({
     <div className="manual-order-card">
       <div className="manual-order-header">
         <div>
-          <strong className="job-code">{order.jobCode}</strong>
-          <span
-            className={`status-badge status-${order.status.toLowerCase().replace(/_/g, "-")}`}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "0.5rem",
+              flexWrap: "wrap",
+              marginBottom: "0.25rem",
+            }}
           >
-            {isManualPrint ? "Manual Printing" : "Awaiting Finishing"}
-          </span>
+            <strong className="job-code">{order.jobCode}</strong>
+            {order.pickupCode ? (
+              <span
+                style={{
+                  fontWeight: 700,
+                  padding: "0.1rem 0.5rem",
+                  borderRadius: "4px",
+                  backgroundColor: "#e0e7ff",
+                  color: "#3730a3",
+                  fontSize: "0.85rem",
+                }}
+              >
+                Pickup: {order.pickupCode}
+              </span>
+            ) : null}
+            {order.isPriority ? (
+              <span
+                style={{
+                  fontWeight: 700,
+                  padding: "0.1rem 0.5rem",
+                  borderRadius: "4px",
+                  backgroundColor: "#fef3c7",
+                  color: "#92400e",
+                  fontSize: "0.85rem",
+                }}
+              >
+                ⚡ Priority
+              </span>
+            ) : null}
+            {order.identificationRequired ? (
+              <span
+                style={{
+                  fontWeight: 600,
+                  padding: "0.1rem 0.5rem",
+                  borderRadius: "4px",
+                  backgroundColor: "#fee2e2",
+                  color: "#991b1b",
+                  fontSize: "0.85rem",
+                }}
+              >
+                🪪 ID Required
+              </span>
+            ) : null}
+            <span
+              className={`status-badge status-${order.status.toLowerCase().replace(/_/g, "-")}`}
+            >
+              {isManualPrint ? "Manual Printing" : "Awaiting Finishing"}
+            </span>
+          </div>
         </div>
         <div className="manual-order-meta">
           <span>{order.customerName}</span>
@@ -144,6 +196,12 @@ function ManualOrderCard({
       ) : null}
 
       <div className="manual-order-amounts">
+        {order.pickupCode ? (
+          <div>
+            <span className="muted">Pickup code</span>
+            <strong>{order.pickupCode}</strong>
+          </div>
+        ) : null}
         <div>
           <span className="muted">Online paid</span>
           <strong>{formatPaise(order.onlineAmountPaise)}</strong>

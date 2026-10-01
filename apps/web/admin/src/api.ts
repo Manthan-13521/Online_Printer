@@ -30,6 +30,10 @@ import type {
   AdminAddonServiceResponse,
   AdminManualOrdersResponse,
   AdminSetPickupChargeResponse,
+  AdminDiscountRuleRequest,
+  AdminDiscountRulesResponse,
+  AdminDiscountRuleResponse,
+  AdminResetPickupCodeResponse,
 } from "@printgo/api-contract";
 
 const API_BASE_URL =
@@ -314,5 +318,47 @@ export const adminApi = {
       `/api/admin/orders/${encodeURIComponent(orderId)}/set-pickup-charge`,
       { method: "POST", body: JSON.stringify({ dueAtPickupPaise }) },
     );
+  },
+  // ── Discount Rules ───────────────────────────────────────────────
+  getDiscountRules(): Promise<AdminDiscountRulesResponse> {
+    return request("/api/admin/discount-rules");
+  },
+  createDiscountRule(
+    input: AdminDiscountRuleRequest,
+  ): Promise<AdminDiscountRuleResponse> {
+    return request("/api/admin/discount-rules", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+  updateDiscountRule(
+    id: string,
+    input: AdminDiscountRuleRequest,
+  ): Promise<AdminDiscountRuleResponse> {
+    return request(`/api/admin/discount-rules/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: JSON.stringify(input),
+    });
+  },
+  deleteDiscountRule(id: string): Promise<ApiResponse<{ deleted: true }>> {
+    return request(`/api/admin/discount-rules/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
+  },
+  toggleDiscountRule(
+    id: string,
+    enabled: boolean,
+  ): Promise<AdminDiscountRuleResponse> {
+    return request(
+      `/api/admin/discount-rules/${encodeURIComponent(id)}/toggle`,
+      { method: "PATCH", body: JSON.stringify({ enabled }) },
+    );
+  },
+  // ── Pickup Code Sequence ─────────────────────────────────────────
+  resetPickupCode(): Promise<AdminResetPickupCodeResponse> {
+    return request("/api/admin/settings/reset-pickup-code", {
+      method: "POST",
+      body: "{}",
+    });
   },
 };

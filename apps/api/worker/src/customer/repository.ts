@@ -3,6 +3,8 @@ import type {
   HandlingMode,
   OrderAddonServiceSnapshot,
   PricingType,
+  PublicOrderTrackingData,
+  PublicTrackingStatus,
 } from "@printgo/api-contract";
 import type { PricingConfiguration } from "@printgo/pricing";
 
@@ -145,9 +147,27 @@ export interface CustomerRepository {
     printingAmountPaise: number;
     serviceChargePaise: number;
     totalAmountPaise: number;
+    isPriority: boolean;
+    priorityFeePaise: number;
+    discountAmountPaise: number;
+    snapshotDiscountThresholdPaise: number | null;
+    snapshotDiscountPercent: number | null;
+    identificationRequired: boolean;
     nowMs: number;
     expiresAtMs: number;
   }): Promise<boolean>;
+  getPricingRulesAndPolicy(): Promise<{
+    priorityPrinting: { enabled: boolean; feePaise: number };
+    identificationPolicy: {
+      mode: "OFF" | "ALWAYS" | "ABOVE_THRESHOLD";
+      thresholdPaise: number;
+    };
+    discountRules: Array<{ minSubtotalPaise: number; discountPercent: number }>;
+  }>;
+  findPublicTrackingByPickupCode(
+    pickupCode: string,
+    nowMs: number,
+  ): Promise<PublicOrderTrackingData | null>;
   snapshotAddonServices(
     orderId: string,
     serviceIds: readonly string[],
@@ -225,11 +245,13 @@ export class D1CustomerRepository implements CustomerRepository {
   constructor(private readonly db: D1Database) {}
 
   async getPublicConfig(): Promise<CustomerConfigData | null> {
-    const [installationResult, ratesResult, addonsResult] = await this.db.batch(
-      [
+    const [installationResult, ratesResult, addonsResult, discountsResult] =
+      await this.db.batch([
         this.db.prepare(
           `SELECT logo_key, app_name, shop_name, contact_phone, address, customer_notice,
-                online_printing_enabled, max_pdf_size_bytes, max_order_upload_bytes
+                online_printing_enabled, max_pdf_size_bytes, max_order_upload_bytes,
+                priority_printing_enabled, priority_fee_paise,
+                id_requirement_mode, id_threshold_paise
          FROM installation WHERE id = 1`,
         ),
         this.db.prepare(
@@ -241,8 +263,12 @@ export class D1CustomerRepository implements CustomerRepository {
          FROM addon_services WHERE enabled = 1
          ORDER BY display_order, name`,
         ),
-      ],
-    );
+        this.db.prepare(
+          `SELECT id, min_subtotal_paise, discount_percent
+         FROM discount_rules WHERE enabled = 1
+         ORDER BY min_subtotal_paise ASC`,
+        ),
+      ]);
 
     const installation = installationResult?.results[0] as
       | {
@@ -255,6 +281,10 @@ export class D1CustomerRepository implements CustomerRepository {
           online_printing_enabled: number;
           max_pdf_size_bytes: number;
           max_order_upload_bytes: number;
+          priority_printing_enabled?: number;
+          priority_fee_paise?: number;
+          id_requirement_mode?: "OFF" | "ALWAYS" | "ABOVE_THRESHOLD";
+          id_threshold_paise?: number;
         }
       | undefined;
     if (!installation) return null;
@@ -298,6 +328,184 @@ export class D1CustomerRepository implements CustomerRepository {
         pricingType: row.pricing_type as "FIXED_PRICE" | "STAFF_PRICED",
         fixedPricePaise: row.fixed_price_paise,
       })),
+      priorityPrinting: {
+        enabled: (installation.priority_printing_enabled ?? 0) === 1,
+        feePaise: installation.priority_fee_paise ?? 0,
+      },
+      identificationPolicy: {
+        mode: installation.id_requirement_mode ?? "OFF",
+        thresholdPaise: installation.id_threshold_paise ?? 0,
+      },
+      discountRules: (
+        (discountsResult?.results ?? []) as Array<{
+          id: string;
+          min_subtotal_paise: number;
+          discount_percent: number;
+        }>
+      ).map((rule) => ({
+        id: rule.id,
+        minSubtotalPaise: rule.min_subtotal_paise,
+        discountPercent: rule.discount_percent,
+      })),
+    };
+  }
+
+  async getPricingRulesAndPolicy(): Promise<{
+    priorityPrinting: { enabled: boolean; feePaise: number };
+    identificationPolicy: {
+      mode: "OFF" | "ALWAYS" | "ABOVE_THRESHOLD";
+      thresholdPaise: number;
+    };
+    discountRules: Array<{ minSubtotalPaise: number; discountPercent: number }>;
+  }> {
+    const [installResult, discountResult] = await this.db.batch([
+      this.db.prepare(
+        `SELECT priority_printing_enabled, priority_fee_paise,
+                id_requirement_mode, id_threshold_paise
+         FROM installation WHERE id = 1`,
+      ),
+      this.db.prepare(
+        `SELECT min_subtotal_paise, discount_percent
+         FROM discount_rules WHERE enabled = 1
+         ORDER BY min_subtotal_paise DESC`,
+      ),
+    ]);
+    const install = (installResult?.results?.[0] ?? {}) as {
+      priority_printing_enabled?: number;
+      priority_fee_paise?: number;
+      id_requirement_mode?: "OFF" | "ALWAYS" | "ABOVE_THRESHOLD";
+      id_threshold_paise?: number;
+    };
+    const discountRows = (discountResult?.results ?? []) as Array<{
+      min_subtotal_paise: number;
+      discount_percent: number;
+    }>;
+    return {
+      priorityPrinting: {
+        enabled: (install.priority_printing_enabled ?? 0) === 1,
+        feePaise: install.priority_fee_paise ?? 0,
+      },
+      identificationPolicy: {
+        mode: install.id_requirement_mode ?? "OFF",
+        thresholdPaise: install.id_threshold_paise ?? 0,
+      },
+      discountRules: discountRows.map((r) => ({
+        minSubtotalPaise: r.min_subtotal_paise,
+        discountPercent: r.discount_percent,
+      })),
+    };
+  }
+
+  async findPublicTrackingByPickupCode(
+    pickupCode: string,
+    nowMs: number,
+  ): Promise<PublicOrderTrackingData | null> {
+    const normalized = pickupCode.trim().toUpperCase();
+    const row = await this.db
+      .prepare(
+        `SELECT o.id, o.pickup_code, o.status, o.is_priority, o.identification_required,
+                o.created_at_ms, o.completed_at_ms, o.purge_at_ms, o.cleanup_state,
+                COUNT(f.id) AS total_files,
+                COUNT(CASE WHEN f.print_status = 'PRINTED' THEN 1 END) AS completed_files
+         FROM orders o
+         LEFT JOIN order_files f ON f.order_id = o.id
+         WHERE o.pickup_code = ?
+           AND o.cleanup_state = 'ACTIVE'
+           AND (o.status NOT IN ('COMPLETED', 'CANCELLED') OR (o.purge_at_ms IS NOT NULL AND o.purge_at_ms > ?))
+         GROUP BY o.id
+         LIMIT 1`,
+      )
+      .bind(normalized, nowMs)
+      .first<{
+        id: string;
+        pickup_code: string;
+        status: string;
+        is_priority: number;
+        identification_required: number;
+        created_at_ms: number;
+        completed_at_ms: number | null;
+        total_files: number;
+        completed_files: number;
+      }>();
+
+    if (!row) return null;
+
+    let status: PublicTrackingStatus;
+    let statusLabel: string;
+    let statusMessage: string;
+
+    switch (row.status) {
+      case "PAID":
+      case "QUEUED":
+      case "CLAIMED":
+        if (row.is_priority === 1) {
+          status = "PRIORITY_QUEUE";
+          statusLabel = "Priority Queue";
+          statusMessage = "Your order is in the priority queue.";
+        } else {
+          status = "QUEUED";
+          statusLabel = "Queued";
+          statusMessage = "Your order is queued for printing.";
+        }
+        break;
+      case "SPOOLING":
+      case "PRINTING":
+        status = "PRINTING";
+        statusLabel = "Printing";
+        statusMessage = "Your document is currently being printed.";
+        break;
+      case "PRINT_BLOCKED":
+        status = "PRINTER_ISSUE";
+        statusLabel = "Printer Issue";
+        statusMessage =
+          "The printer needs attention. The shop is attending to it.";
+        break;
+      case "PRINT_FAILED":
+      case "ADMIN_ACTION_REQUIRED":
+        status = "RETRYING";
+        statusLabel = "Retrying";
+        statusMessage = "The shop is resolving a print issue and retrying.";
+        break;
+      case "MANUAL_PRINT":
+        status = "WAITING_FOR_STAFF";
+        statusLabel = "Waiting for Staff";
+        statusMessage =
+          "Your order requires manual handling and is waiting for shop staff.";
+        break;
+      case "AWAITING_FINISHING":
+        status = "FINISHING";
+        statusLabel = "Finishing";
+        statusMessage = "Your order has printed and is undergoing finishing.";
+        break;
+      case "PRINTED":
+      case "COMPLETED":
+        status = "READY_FOR_PICKUP";
+        statusLabel = "Ready for Pickup";
+        statusMessage = "Your order is ready for pickup at the counter.";
+        break;
+      default:
+        return null;
+    }
+
+    const totalFiles = Math.max(1, row.total_files ?? 1);
+    const completedFiles =
+      status === "READY_FOR_PICKUP"
+        ? totalFiles
+        : Math.min(row.completed_files ?? 0, totalFiles);
+
+    return {
+      pickupCode: row.pickup_code,
+      status,
+      statusLabel,
+      statusMessage,
+      isPriority: row.is_priority === 1,
+      totalFiles,
+      completedFiles,
+      identificationRequired: row.identification_required === 1,
+      createdAt: new Date(row.created_at_ms).toISOString(),
+      completedAt: row.completed_at_ms
+        ? new Date(row.completed_at_ms).toISOString()
+        : null,
     };
   }
 
@@ -830,6 +1038,9 @@ export class D1CustomerRepository implements CustomerRepository {
           `UPDATE orders SET selected_pages = ?, copies = ?, paper_size = ?,
            color_mode = ?, sides = ?, printing_amount_paise = ?,
            service_charge_paise = ?, total_amount_paise = ?,
+           is_priority = ?, priority_fee_paise = ?,
+           discount_amount_paise = ?, snapshot_discount_threshold_paise = ?,
+           snapshot_discount_percent = ?, identification_required = ?,
            status = 'PAYMENT_PENDING', draft_expires_at_ms = ?, updated_at_ms = ?
            WHERE draft_token_hash = ? AND cleanup_state = 'ACTIVE'
              AND status IN ('UPLOADED','PAYMENT_PENDING','PAYMENT_FAILED','PAYMENT_CANCELLED')
@@ -848,6 +1059,12 @@ export class D1CustomerRepository implements CustomerRepository {
           input.printingAmountPaise,
           input.serviceChargePaise,
           input.totalAmountPaise,
+          input.isPriority ? 1 : 0,
+          input.priorityFeePaise,
+          input.discountAmountPaise,
+          input.snapshotDiscountThresholdPaise,
+          input.snapshotDiscountPercent,
+          input.identificationRequired ? 1 : 0,
           input.expiresAtMs,
           input.nowMs,
           input.tokenHash,

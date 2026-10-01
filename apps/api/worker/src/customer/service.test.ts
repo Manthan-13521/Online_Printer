@@ -85,6 +85,14 @@ function repository(
     markValidationFailure: vi.fn(() => Promise.resolve()),
     saveQuote: vi.fn(() => Promise.resolve()),
     saveOrderQuote: vi.fn(() => Promise.resolve(false)),
+    getPricingRulesAndPolicy: vi.fn(() =>
+      Promise.resolve({
+        priorityPrinting: { enabled: false, feePaise: 0 },
+        identificationPolicy: { mode: "OFF" as const, thresholdPaise: 0 },
+        discountRules: [],
+      }),
+    ),
+    findPublicTrackingByPickupCode: vi.fn(() => Promise.resolve(null)),
     snapshotAddonServices: vi.fn(() => Promise.resolve()),
     getOrderAddonAmountPaise: vi.fn(() => Promise.resolve(0)),
     getOrderAddonSnapshots: vi.fn(() => Promise.resolve([])),

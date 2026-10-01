@@ -14,6 +14,7 @@ import type {
   CustomerTrackingData,
   CustomerPrintSettingsRequest,
   CustomerQuoteData,
+  PublicOrderTrackingData,
   UploadAuthorization,
   AddCustomerFileData,
   AddCustomerFileRequest,
@@ -122,6 +123,10 @@ export const customerApi = {
     jsonRequest<CustomerTrackingData>(
       `/api/customer/tracking/${encodeURIComponent(jobCode)}`,
       authorized(token),
+    ),
+  trackPublic: (pickupCode: string) =>
+    jsonRequest<PublicOrderTrackingData>(
+      `/api/customer/track/${encodeURIComponent(pickupCode)}`,
     ),
 };
 

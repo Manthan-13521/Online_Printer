@@ -77,6 +77,9 @@ export interface CustomerActions {
     input: CancelCustomerPaymentRequest,
   ): ReturnType<PaymentService["cancel"]>;
   tracking(jobCode: string, token: string): ReturnType<TrackingService["get"]>;
+  trackPublicOrder(
+    pickupCode: string,
+  ): ReturnType<CustomerService["trackPublicOrder"]>;
 }
 
 function actionsFromEnv(env: WorkerEnv): CustomerActions {
@@ -124,6 +127,7 @@ function actionsFromEnv(env: WorkerEnv): CustomerActions {
     cancelPayment: (token, input) =>
       paymentService.cancel(token, input.razorpayOrderId),
     tracking: (jobCode, token) => trackingService.get(jobCode, token),
+    trackPublicOrder: (pickupCode) => service.trackPublicOrder(pickupCode),
   };
 }
 
@@ -281,11 +285,35 @@ function validateFile(value: unknown): AddCustomerFileRequest | null {
   };
 }
 
+const trackingRateLimits = new Map<
+  string,
+  { count: number; resetAtMs: number }
+>();
+
+function checkTrackingRateLimit(
+  ip: string,
+  nowMs: number = Date.now(),
+): boolean {
+  const current = trackingRateLimits.get(ip);
+  if (!current || current.resetAtMs <= nowMs) {
+    trackingRateLimits.set(ip, { count: 1, resetAtMs: nowMs + 60_000 });
+    return true;
+  }
+  if (current.count >= 60) {
+    return false;
+  }
+  current.count++;
+  return true;
+}
+
 function validateOrderSettings(
   value: unknown,
 ): CustomerOrderQuoteRequest | null {
   if (!isPlainRecord(value) || !Array.isArray(value.files)) return null;
-  if (Object.keys(value).some((key) => key !== "files")) return null;
+  const allowed = new Set(["files", "isPriority"]);
+  if (Object.keys(value).some((key) => !allowed.has(key))) return null;
+  if (value.isPriority !== undefined && typeof value.isPriority !== "boolean")
+    return null;
   if (value.files.length < 1 || value.files.length > 10) return null;
   const files: CustomerOrderQuoteRequest["files"] = [];
   for (const entry of value.files) {
@@ -295,7 +323,9 @@ function validateOrderSettings(
     if (!settings || !/^[0-9a-f-]{36}$/iu.test(entry.fileId)) return null;
     files.push({ ...settings, fileId });
   }
-  return { files };
+  return value.isPriority !== undefined
+    ? { files, isPriority: value.isPriority }
+    : { files };
 }
 
 function validateCreatePayment(
@@ -434,13 +464,16 @@ function mapCustomerError(caught: unknown, env: WorkerEnv): Response {
     QUOTE_STATE_INVALID: 409,
     QUOTE_INVALID: 400,
     PRINT_OPTIONS_UNAVAILABLE: 503,
+    TRACKING_NOT_FOUND: 404,
   };
   return error(
     statuses[caught.code] ?? 400,
     caught.code,
-    caught.code === "ONLINE_PRINTING_DISABLED"
-      ? "Online printing is currently unavailable."
-      : "The customer draft request could not be completed.",
+    caught.code === "TRACKING_NOT_FOUND"
+      ? "No active order found for that pickup code."
+      : caught.code === "ONLINE_PRINTING_DISABLED"
+        ? "Online printing is currently unavailable."
+        : "The customer draft request could not be completed.",
     corsHeaders(env),
   );
 }
@@ -478,6 +511,28 @@ export async function handleCustomerRequest(
           "Shop configuration is unavailable.",
           corsHeaders(env),
         );
+  }
+
+  const publicTrackMatch = /^\/api\/customer\/track\/([A-Za-z0-9_-]+)$/u.exec(
+    pathname,
+  );
+  if (request.method === "GET" && publicTrackMatch) {
+    const clientIp = request.headers.get("cf-connecting-ip") ?? "unknown";
+    if (!checkTrackingRateLimit(clientIp)) {
+      return error(
+        429,
+        "RATE_LIMITED",
+        "Too many tracking requests. Please try again shortly.",
+        corsHeaders(env),
+      );
+    }
+    const rawCode = decodeURIComponent(publicTrackMatch[1] ?? "");
+    try {
+      const tracking = await actions.trackPublicOrder(rawCode);
+      return ok(tracking, 200, corsHeaders(env));
+    } catch (caught) {
+      return mapCustomerError(caught, env);
+    }
   }
 
   const rejected = rejectUntrustedOrigin(request, env);

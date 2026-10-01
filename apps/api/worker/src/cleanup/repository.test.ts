@@ -68,6 +68,8 @@ const migrations = [
   "0011_retention_retry_schedule.sql",
   "0012_multi_file_cleanup_and_app_branding.sql",
   "0013_d1_usage_optimization.sql",
+  "0014_addon_services.sql",
+  "0015_phase3_priority_tracking_discounts.sql",
 ].map((name) =>
   readFileSync(
     new URL(`../../../../../database/migrations/${name}`, import.meta.url),

@@ -1,5 +1,6 @@
 import type {
   AdminAddonService,
+  AdminDiscountRule,
   AdminFileSizeServiceCharge,
   AdminPrintRate,
   AdminPricingConfiguration,
@@ -10,6 +11,7 @@ import { useEffect, useState, type FormEvent } from "react";
 
 import { adminApi, AdminApiError, friendlyAdminError } from "./api";
 import { AddonServicesSection } from "./AddonServicesSection";
+import { DiscountRulesSection } from "./DiscountRulesSection";
 
 interface RateDraft extends Omit<AdminPrintRate, "pricePerPagePaise"> {
   rupees: string;
@@ -19,10 +21,16 @@ interface ChargeDraft extends Omit<AdminFileSizeServiceCharge, "chargePaise"> {
   rupees: string;
 }
 
+interface PriorityDraft {
+  enabled: boolean;
+  rupees: string;
+}
+
 interface PricingDraft {
   maxPdfSizeBytes: number;
   printRates: RateDraft[];
   fileSizeServiceCharges: ChargeDraft[];
+  priorityPrinting: PriorityDraft;
 }
 
 const PAPER_LABELS: Record<PaperSize, string> = { A4: "A4", A3: "A3" };
@@ -44,6 +52,10 @@ function toDraft(pricing: AdminPricingConfiguration): PricingDraft {
         rupees: formatPaiseAsRupeesInput(chargePaise),
       }),
     ),
+    priorityPrinting: {
+      enabled: pricing.priorityPrinting?.enabled ?? false,
+      rupees: formatPaiseAsRupeesInput(pricing.priorityPrinting?.feePaise ?? 0),
+    },
   };
 }
 
@@ -61,6 +73,7 @@ export function PricingPage({
   const [draft, setDraft] = useState<PricingDraft | null>(null);
   const [saved, setSaved] = useState<PricingDraft | null>(null);
   const [addonServices, setAddonServices] = useState<AdminAddonService[]>([]);
+  const [discountRules, setDiscountRules] = useState<AdminDiscountRule[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -78,6 +91,7 @@ export function PricingPage({
         setDraft(next);
         setSaved(next);
         setAddonServices(response.data.pricing.addonServices ?? []);
+        setDiscountRules(response.data.pricing.discountRules ?? []);
       }
     } catch (caught: unknown) {
       if (caught instanceof AdminApiError && caught.status === 401) {
@@ -136,9 +150,12 @@ export function PricingPage({
         chargePaise: parseRupeesToPaise(rupees),
       }),
     );
+    const priorityFeePaise = parseRupeesToPaise(draft.priorityPrinting.rupees);
     if (
       printRates.some((rate) => rate.pricePerPagePaise === null) ||
-      fileSizeServiceCharges.some((charge) => charge.chargePaise === null)
+      fileSizeServiceCharges.some((charge) => charge.chargePaise === null) ||
+      (draft.priorityPrinting.enabled &&
+        (priorityFeePaise === null || priorityFeePaise < 0))
     ) {
       setError("Enter prices in rupees with no more than two decimal places.");
       return;
@@ -151,6 +168,10 @@ export function PricingPage({
         printRates: printRates as AdminPrintRate[],
         fileSizeServiceCharges:
           fileSizeServiceCharges as AdminFileSizeServiceCharge[],
+        priorityPrinting: {
+          enabled: draft.priorityPrinting.enabled,
+          feePaise: priorityFeePaise ?? 0,
+        },
       });
       if (response.ok) {
         const next = toDraft(response.data.pricing);
@@ -276,6 +297,84 @@ export function PricingPage({
         <section className="panel pricing-section">
           <div className="section-heading">
             <div>
+              <h2>Priority Printing</h2>
+              <p className="muted">
+                Allow customers to pay an additional fee to move ahead in the
+                print queue.
+              </p>
+            </div>
+          </div>
+          <div
+            className="rate-row"
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+            }}
+          >
+            <div>
+              <label htmlFor="priority-fee">Priority Queue Fee</label>
+              <p className="field-help">
+                Fixed fee added per order when priority is chosen.
+              </p>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+              <div className="money-input">
+                <span aria-hidden="true">₹</span>
+                <input
+                  id="priority-fee"
+                  inputMode="decimal"
+                  value={draft.priorityPrinting.rupees}
+                  onChange={(event) => {
+                    const rupees = event.target.value;
+                    setDraft((current) =>
+                      current
+                        ? {
+                            ...current,
+                            priorityPrinting: {
+                              ...current.priorityPrinting,
+                              rupees,
+                            },
+                          }
+                        : current,
+                    );
+                    setMessage(null);
+                  }}
+                  disabled={!draft.priorityPrinting.enabled}
+                />
+              </div>
+              <label className="compact-toggle">
+                <input
+                  aria-label="Enable Priority Printing"
+                  checked={draft.priorityPrinting.enabled}
+                  onChange={(event) => {
+                    const enabled = event.target.checked;
+                    setDraft((current) =>
+                      current
+                        ? {
+                            ...current,
+                            priorityPrinting: {
+                              ...current.priorityPrinting,
+                              enabled,
+                            },
+                          }
+                        : current,
+                    );
+                    setMessage(null);
+                  }}
+                  type="checkbox"
+                />
+                <span>
+                  {draft.priorityPrinting.enabled ? "Enabled" : "Disabled"}
+                </span>
+              </label>
+            </div>
+          </div>
+        </section>
+
+        <section className="panel pricing-section">
+          <div className="section-heading">
+            <div>
               <h2>PDF File Service Charge</h2>
               <p className="muted">
                 The size ranges are fixed to prevent gaps or overlaps.
@@ -327,6 +426,11 @@ export function PricingPage({
 
       <AddonServicesSection
         services={addonServices}
+        onSessionExpired={onSessionExpired}
+      />
+
+      <DiscountRulesSection
+        rules={discountRules}
         onSessionExpired={onSessionExpired}
       />
     </div>

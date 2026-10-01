@@ -235,6 +235,9 @@ export async function handleAdminManualOrdersRequest(
       interface ManualOrderRow {
         id: string;
         public_job_code: string;
+        pickup_code: string | null;
+        is_priority: number;
+        identification_required: number;
         customer_name: string;
         customer_phone: string;
         status: string;
@@ -246,7 +249,8 @@ export async function handleAdminManualOrdersRequest(
       }
       const result = await db
         .prepare(
-          `SELECT o.id, o.public_job_code, o.customer_name, o.customer_phone,
+          `SELECT o.id, o.public_job_code, o.pickup_code, o.is_priority, o.identification_required,
+                  o.customer_name, o.customer_phone,
                   o.status, o.instructions, o.total_amount_paise, o.due_at_pickup_paise,
                   o.paid_at_ms,
                   (SELECT COUNT(*) FROM order_files f WHERE f.order_id = o.id) file_count
@@ -272,6 +276,9 @@ export async function handleAdminManualOrdersRequest(
         return {
           orderId: row.id,
           jobCode: row.public_job_code,
+          pickupCode: row.pickup_code,
+          isPriority: row.is_priority === 1,
+          identificationRequired: row.identification_required === 1,
           customerName: row.customer_name,
           customerPhone: row.customer_phone,
           status: row.status,

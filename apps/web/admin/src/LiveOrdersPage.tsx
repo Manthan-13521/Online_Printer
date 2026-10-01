@@ -164,7 +164,60 @@ export function LiveOrdersPage({
             <article className="panel live-order" key={order.orderId}>
               <div className="live-order-heading">
                 <div>
-                  <p className="eyebrow">{order.jobCode}</p>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.5rem",
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <p className="eyebrow" style={{ margin: 0 }}>
+                      {order.jobCode}
+                    </p>
+                    {order.pickupCode ? (
+                      <span
+                        style={{
+                          fontWeight: 700,
+                          padding: "0.1rem 0.5rem",
+                          borderRadius: "4px",
+                          backgroundColor: "#e0e7ff",
+                          color: "#3730a3",
+                          fontSize: "0.85rem",
+                        }}
+                      >
+                        Pickup: {order.pickupCode}
+                      </span>
+                    ) : null}
+                    {order.isPriority ? (
+                      <span
+                        style={{
+                          fontWeight: 700,
+                          padding: "0.1rem 0.5rem",
+                          borderRadius: "4px",
+                          backgroundColor: "#fef3c7",
+                          color: "#92400e",
+                          fontSize: "0.85rem",
+                        }}
+                      >
+                        ⚡ Priority
+                      </span>
+                    ) : null}
+                    {order.identificationRequired ? (
+                      <span
+                        style={{
+                          fontWeight: 600,
+                          padding: "0.1rem 0.5rem",
+                          borderRadius: "4px",
+                          backgroundColor: "#fee2e2",
+                          color: "#991b1b",
+                          fontSize: "0.85rem",
+                        }}
+                      >
+                        🪪 ID Required
+                      </span>
+                    ) : null}
+                  </div>
                   <h2>{order.customerName}</h2>
                 </div>
                 <strong className="status-pill">
@@ -173,6 +226,26 @@ export function LiveOrdersPage({
               </div>
               <p>{summary(order)}</p>
               <dl className="live-order-details">
+                {order.pickupCode ? (
+                  <div>
+                    <dt>Pickup Code</dt>
+                    <dd>
+                      <strong>{order.pickupCode}</strong>
+                    </dd>
+                  </div>
+                ) : null}
+                <div>
+                  <dt>Priority</dt>
+                  <dd>{order.isPriority ? "Priority Queue" : "Normal"}</dd>
+                </div>
+                <div>
+                  <dt>ID Check</dt>
+                  <dd>
+                    {order.identificationRequired
+                      ? "Required at pickup"
+                      : "Not required"}
+                  </dd>
+                </div>
                 <div>
                   <dt>Phone</dt>
                   <dd>{order.customerPhone}</dd>

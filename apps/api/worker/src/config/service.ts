@@ -73,6 +73,10 @@ export class ConfigurationService {
         maxBytesInclusive: charge.maxBytesInclusive,
         chargePaise: charge.chargePaise,
       })),
+      ...(stored.priorityPrinting
+        ? { priorityPrinting: stored.priorityPrinting }
+        : {}),
+      ...(stored.discountRules ? { discountRules: stored.discountRules } : {}),
     };
   }
 
@@ -95,5 +99,9 @@ export class ConfigurationService {
       nowMs: this.now(),
     });
     return this.getPricing();
+  }
+
+  async resetPickupCode(adminId: string): Promise<string> {
+    return this.repository.resetPickupCode(adminId, this.now());
   }
 }

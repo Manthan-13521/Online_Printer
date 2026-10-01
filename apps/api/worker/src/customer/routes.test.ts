@@ -152,6 +152,7 @@ function actions(): CustomerActions {
         trackingExpiresAt: "2026-10-10T00:01:00.000Z",
       }),
     ),
+    trackPublicOrder: vi.fn(() => Promise.reject(new Error("not used"))),
   };
 }
 

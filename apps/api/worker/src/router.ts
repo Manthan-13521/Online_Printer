@@ -16,6 +16,7 @@ import {
   handleAdminAddonServicesRequest,
   handleAdminManualOrdersRequest,
 } from "./addon-services/routes";
+import { handleAdminDiscountRulesRequest } from "./discount-rules/routes";
 
 export async function routeRequest(
   request: Request,
@@ -42,6 +43,7 @@ export async function routeRequest(
 
   if (
     url.pathname === "/api/admin/settings" ||
+    url.pathname === "/api/admin/settings/reset-pickup-code" ||
     url.pathname === "/api/admin/pricing"
   ) {
     return handleAdminConfigurationRequest(request, env);
@@ -56,6 +58,10 @@ export async function routeRequest(
 
   if (url.pathname.startsWith("/api/admin/addon-services")) {
     return handleAdminAddonServicesRequest(request, env);
+  }
+
+  if (url.pathname.startsWith("/api/admin/discount-rules")) {
+    return handleAdminDiscountRulesRequest(request, env);
   }
 
   if (url.pathname.startsWith("/api/admin/orders")) {

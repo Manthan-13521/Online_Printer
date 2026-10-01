@@ -64,6 +64,15 @@ function fakeDatabase(rows: Array<Record<string, unknown>>) {
           return this;
         },
         first<T>() {
+          if (sql.includes("SELECT pickup_code FROM orders")) {
+            return Promise.resolve({ pickup_code: "PA-001" } as T);
+          }
+          if (sql.includes("SELECT next_pickup_code_index")) {
+            return Promise.resolve({ next_pickup_code_index: 0 } as T);
+          }
+          if (sql.includes("WHERE pickup_code = ?")) {
+            return Promise.resolve(null as T);
+          }
           return Promise.resolve((rows.shift() as T | undefined) ?? null);
         },
         run() {
@@ -173,6 +182,7 @@ describe("D1PaymentRepository webhook claim & stale event recovery", () => {
       "0012_multi_file_cleanup_and_app_branding.sql",
       "0013_d1_usage_optimization.sql",
       "0014_addon_services.sql",
+      "0015_phase3_priority_tracking_discounts.sql",
     ]) {
       database.exec(
         readFileSync(

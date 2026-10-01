@@ -12,6 +12,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   calculatePrintPrice,
+  calculatePriorityFee,
+  calculateDiscount,
+  isIdentificationRequired,
   PricingError,
   type PricingConfiguration,
 } from "./index";
@@ -330,5 +333,136 @@ describe("authoritative print pricing", () => {
         ),
       "PRICE_OVERFLOW",
     );
+  });
+
+  describe("priority fee calculation", () => {
+    it("returns 0 if priority is not requested or disabled", () => {
+      expect(
+        calculatePriorityFee({
+          isPriorityRequested: false,
+          priorityPrintingEnabled: true,
+          priorityFeePaise: 5000,
+        }),
+      ).toBe(0);
+      expect(
+        calculatePriorityFee({
+          isPriorityRequested: true,
+          priorityPrintingEnabled: false,
+          priorityFeePaise: 5000,
+        }),
+      ).toBe(0);
+    });
+
+    it("returns priority fee when requested and enabled", () => {
+      expect(
+        calculatePriorityFee({
+          isPriorityRequested: true,
+          priorityPrintingEnabled: true,
+          priorityFeePaise: 5000,
+        }),
+      ).toBe(5000);
+    });
+
+    it("throws on invalid fee", () => {
+      expect(() =>
+        calculatePriorityFee({
+          isPriorityRequested: true,
+          priorityPrintingEnabled: true,
+          priorityFeePaise: -10,
+        }),
+      ).toThrow();
+    });
+  });
+
+  describe("discount rules calculation", () => {
+    const rules = [
+      { minSubtotalPaise: 50000, discountPercent: 5, enabled: true }, // Above ₹500 -> 5%
+      { minSubtotalPaise: 100000, discountPercent: 10, enabled: true }, // Above ₹1000 -> 10%
+      { minSubtotalPaise: 200000, discountPercent: 15, enabled: true }, // Above ₹2000 -> 15%
+    ];
+
+    it("returns 0 discount if below all thresholds", () => {
+      const res = calculateDiscount(40000, rules); // ₹400
+      expect(res.discountAmountPaise).toBe(0);
+      expect(res.discountThresholdPaise).toBeNull();
+      expect(res.discountPercent).toBeNull();
+    });
+
+    it("applies 5% when above ₹500 but below ₹1000", () => {
+      const res = calculateDiscount(60000, rules); // ₹600 -> 5% is ₹30
+      expect(res.discountAmountPaise).toBe(3000);
+      expect(res.discountThresholdPaise).toBe(50000);
+      expect(res.discountPercent).toBe(5);
+    });
+
+    it("applies highest qualifying threshold (10%) and does NOT stack", () => {
+      const res = calculateDiscount(120000, rules); // ₹1200 -> 10% is ₹120 (not 15%)
+      expect(res.discountAmountPaise).toBe(12000);
+      expect(res.discountThresholdPaise).toBe(100000);
+      expect(res.discountPercent).toBe(10);
+    });
+
+    it("applies highest tier (15%) above ₹2000", () => {
+      const res = calculateDiscount(250000, rules); // ₹2500 -> 15% is ₹375
+      expect(res.discountAmountPaise).toBe(37500);
+      expect(res.discountThresholdPaise).toBe(200000);
+      expect(res.discountPercent).toBe(15);
+    });
+
+    it("ignores disabled rules", () => {
+      const withDisabled = [
+        { minSubtotalPaise: 50000, discountPercent: 5, enabled: true },
+        { minSubtotalPaise: 100000, discountPercent: 10, enabled: false }, // Disabled
+      ];
+      const res = calculateDiscount(150000, withDisabled);
+      expect(res.discountPercent).toBe(5);
+      expect(res.discountAmountPaise).toBe(7500);
+    });
+  });
+
+  describe("identification requirements", () => {
+    it("returns false when mode is OFF", () => {
+      expect(
+        isIdentificationRequired({
+          mode: "OFF",
+          thresholdPaise: 50000,
+          onlineAmountPaise: 100000,
+        }),
+      ).toBe(false);
+    });
+
+    it("returns true when mode is ALWAYS", () => {
+      expect(
+        isIdentificationRequired({
+          mode: "ALWAYS",
+          thresholdPaise: 50000,
+          onlineAmountPaise: 100,
+        }),
+      ).toBe(true);
+    });
+
+    it("evaluates threshold when mode is ABOVE_THRESHOLD", () => {
+      expect(
+        isIdentificationRequired({
+          mode: "ABOVE_THRESHOLD",
+          thresholdPaise: 50000,
+          onlineAmountPaise: 49900,
+        }),
+      ).toBe(false);
+      expect(
+        isIdentificationRequired({
+          mode: "ABOVE_THRESHOLD",
+          thresholdPaise: 50000,
+          onlineAmountPaise: 50000,
+        }),
+      ).toBe(true);
+      expect(
+        isIdentificationRequired({
+          mode: "ABOVE_THRESHOLD",
+          thresholdPaise: 50000,
+          onlineAmountPaise: 60000,
+        }),
+      ).toBe(true);
+    });
   });
 });

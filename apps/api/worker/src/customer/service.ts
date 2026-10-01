@@ -9,6 +9,7 @@ import type {
   CustomerOrderQuoteRequest,
   CustomerPrintSettingsRequest,
   CustomerQuoteData,
+  PublicOrderTrackingData,
   UploadAuthorization,
 } from "@printgo/api-contract";
 import { createSessionToken, hashSessionToken } from "@printgo/auth";
@@ -18,7 +19,12 @@ import {
   parsePageRange,
   UNPAID_RETENTION_MS,
 } from "@printgo/domain";
-import { calculatePrintPrice, PricingError } from "@printgo/pricing";
+import {
+  calculateDiscount,
+  calculatePrintPrice,
+  isIdentificationRequired,
+  PricingError,
+} from "@printgo/pricing";
 
 import type {
   CustomerRepository,
@@ -48,7 +54,8 @@ export type CustomerErrorCode =
   | "QUOTE_STATE_INVALID"
   | "QUOTE_INVALID"
   | "ADDON_SERVICE_NOT_FOUND"
-  | "ADDON_SERVICE_DISABLED";
+  | "ADDON_SERVICE_DISABLED"
+  | "TRACKING_NOT_FOUND";
 
 export class CustomerError extends Error {
   constructor(readonly code: CustomerErrorCode) {
@@ -490,8 +497,8 @@ export class CustomerService {
       (total, file) => total + file.printingAmountPaise,
       0,
     );
-    // Existing pricing applies the size-band service charge per uploaded PDF.
-    const serviceChargePaise = quoted.reduce(
+    // Base file size service charge across all files in the order.
+    const baseServiceChargePaise = quoted.reduce(
       (total, file) => total + file.serviceChargePaise,
       0,
     );
@@ -502,8 +509,31 @@ export class CustomerService {
     const addonSnapshots = orderId
       ? await this.repository.getOrderAddonSnapshots(orderId)
       : [];
-    const totalAmountPaise =
-      printingAmountPaise + serviceChargePaise + addonAmountPaise;
+
+    const { priorityPrinting, identificationPolicy, discountRules } =
+      await this.repository.getPricingRulesAndPolicy();
+
+    const isPriority = Boolean(input.isPriority && priorityPrinting.enabled);
+    const priorityFeePaise = isPriority ? priorityPrinting.feePaise : 0;
+
+    const effectiveServiceChargePaise =
+      baseServiceChargePaise + addonAmountPaise + priorityFeePaise;
+    const subtotalAmountPaise =
+      printingAmountPaise + effectiveServiceChargePaise;
+
+    const calculatedDiscount = calculateDiscount(
+      subtotalAmountPaise,
+      discountRules.map((r) => ({ ...r, enabled: true })),
+    );
+    const discountAmountPaise = calculatedDiscount.discountAmountPaise;
+    const totalAmountPaise = subtotalAmountPaise - discountAmountPaise;
+
+    const identificationRequired = isIdentificationRequired({
+      mode: identificationPolicy.mode,
+      thresholdPaise: identificationPolicy.thresholdPaise,
+      onlineAmountPaise: totalAmountPaise,
+    });
+
     const expiresAtMs = this.now() + UNPAID_RETENTION_MS;
     if (
       !(await this.repository.saveOrderQuote({
@@ -520,8 +550,15 @@ export class CustomerService {
           serviceChargePaise: file.serviceChargePaise,
         })),
         printingAmountPaise,
-        serviceChargePaise,
+        serviceChargePaise: effectiveServiceChargePaise,
         totalAmountPaise,
+        isPriority,
+        priorityFeePaise,
+        discountAmountPaise,
+        snapshotDiscountThresholdPaise:
+          calculatedDiscount.discountThresholdPaise,
+        snapshotDiscountPercent: calculatedDiscount.discountPercent,
+        identificationRequired,
         nowMs: this.now(),
         expiresAtMs,
       }))
@@ -537,13 +574,35 @@ export class CustomerService {
       colorMode: first.colorMode,
       sides: first.sides,
       printingAmountPaise,
-      serviceChargePaise,
+      serviceChargePaise: effectiveServiceChargePaise,
       totalAmountPaise,
       currency: "INR",
       expiresAt: new Date(expiresAtMs).toISOString(),
       files: quoted,
       addonAmountPaise,
       addonServices: addonSnapshots,
+      isPriority,
+      priorityFeePaise,
+      subtotalAmountPaise,
+      discountAmountPaise,
+      appliedDiscount:
+        calculatedDiscount.discountThresholdPaise !== null &&
+        calculatedDiscount.discountPercent !== null
+          ? {
+              minSubtotalPaise: calculatedDiscount.discountThresholdPaise,
+              discountPercent: calculatedDiscount.discountPercent,
+            }
+          : null,
+      identificationRequired,
     };
+  }
+
+  async trackPublicOrder(pickupCode: string): Promise<PublicOrderTrackingData> {
+    const tracking = await this.repository.findPublicTrackingByPickupCode(
+      pickupCode,
+      this.now(),
+    );
+    if (!tracking) throw new CustomerError("TRACKING_NOT_FOUND");
+    return tracking;
   }
 }

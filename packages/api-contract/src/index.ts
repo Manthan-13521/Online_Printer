@@ -86,6 +86,11 @@ export interface ShopSettings {
   lastCleanupAt?: string | null;
   nextCleanupAt?: string | null;
   lastCleanupResult?: string | null;
+  priorityPrintingEnabled?: boolean;
+  priorityFeePaise?: number;
+  idRequirementMode?: "OFF" | "ALWAYS" | "ABOVE_THRESHOLD";
+  idThresholdPaise?: number;
+  nextPickupCode?: string;
 }
 
 export interface AdminSettingsData {
@@ -143,6 +148,30 @@ export type AdminAddonServiceResponse = ApiResponse<{
   addonService: AdminAddonService;
 }>;
 
+export interface AdminDiscountRule {
+  id: string;
+  minSubtotalPaise: number;
+  discountPercent: number;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminDiscountRuleRequest {
+  minSubtotalPaise: number;
+  discountPercent: number;
+  enabled: boolean;
+}
+
+export interface AdminDiscountRulesData {
+  discountRules: AdminDiscountRule[];
+}
+
+export type AdminDiscountRulesResponse = ApiResponse<AdminDiscountRulesData>;
+export type AdminDiscountRuleResponse = ApiResponse<{
+  discountRule: AdminDiscountRule;
+}>;
+
 export interface AdminPricingConfiguration {
   /** Read-only context from Shop Settings. Updated through the settings API. */
   maxPdfSizeBytes: number;
@@ -150,15 +179,25 @@ export interface AdminPricingConfiguration {
   fileSizeServiceCharges: AdminFileSizeServiceCharge[];
   /** Included for convenience on GET /api/admin/pricing. Managed via /api/admin/addon-services. */
   addonServices?: AdminAddonService[];
+  priorityPrinting?: {
+    enabled: boolean;
+    feePaise: number;
+  };
+  discountRules?: AdminDiscountRule[];
 }
 
 /**
- * Pricing update request — covers print rates and file-size charges only.
+ * Pricing update request — covers print rates, file-size charges, and priority printing.
  * Add-on services are managed via dedicated /api/admin/addon-services endpoints.
+ * Discount rules are managed via dedicated /api/admin/discount-rules endpoints.
  */
 export interface AdminPricingUpdateRequest {
   printRates: AdminPrintRate[];
   fileSizeServiceCharges: AdminFileSizeServiceCharge[];
+  priorityPrinting?: {
+    enabled: boolean;
+    feePaise: number;
+  };
 }
 
 export interface AdminPricingData {
@@ -198,6 +237,22 @@ export interface CustomerConfigData {
   availablePrintOptions: CustomerPrintOption[];
   /** Add-on services available for customer selection. */
   addonServices?: CustomerAddonService[];
+  /** Priority printing option. */
+  priorityPrinting?: {
+    enabled: boolean;
+    feePaise: number;
+  };
+  /** Identification requirement policy. */
+  identificationPolicy?: {
+    mode: "OFF" | "ALWAYS" | "ABOVE_THRESHOLD";
+    thresholdPaise: number;
+  };
+  /** Active discount tiers. */
+  discountRules?: Array<{
+    id: string;
+    minSubtotalPaise: number;
+    discountPercent: number;
+  }>;
 }
 
 export type CustomerConfigResponse = ApiResponse<CustomerConfigData>;
@@ -228,6 +283,9 @@ export interface AdminManualOrder {
   addonServices: OrderAddonServiceSnapshot[];
   hasStaffPriced: boolean;
   hasPostPrint: boolean;
+  pickupCode?: string | null;
+  isPriority?: boolean;
+  identificationRequired?: boolean;
 }
 
 export type AdminManualOrdersResponse = ApiResponse<{
@@ -251,6 +309,7 @@ export interface CreateCustomerDraftRequest {
   expectedSizeBytes: number;
   sourcePageCount: number;
   addonServiceIds?: string[];
+  isPriority?: boolean;
 }
 
 export interface UploadAuthorization {
@@ -322,10 +381,12 @@ export interface CustomerDraftData {
   instructions: string | null;
   status: string;
   files: CustomerOrderFileData[];
+  isPriority?: boolean;
 }
 
 export interface CustomerOrderQuoteRequest {
   files: Array<CustomerPrintSettingsRequest & { fileId: string }>;
+  isPriority?: boolean;
 }
 
 export interface CustomerFileQuoteData extends CustomerOrderFileData {
@@ -347,6 +408,15 @@ export interface CustomerQuoteData {
   files?: CustomerFileQuoteData[];
   addonAmountPaise?: number;
   addonServices?: OrderAddonServiceSnapshot[];
+  isPriority?: boolean;
+  priorityFeePaise?: number;
+  subtotalAmountPaise?: number;
+  discountAmountPaise?: number;
+  appliedDiscount?: {
+    minSubtotalPaise: number;
+    discountPercent: number;
+  } | null;
+  identificationRequired?: boolean;
 }
 
 export type CustomerQuoteResponse = ApiResponse<CustomerQuoteData>;
@@ -389,12 +459,15 @@ export interface VerifyCustomerPaymentRequest {
 
 export interface CustomerPaymentSuccessData {
   jobCode: string;
+  pickupCode?: string | null;
   amountPaidPaise: number;
   currency: "INR";
-  status: "QUEUED";
+  status: "QUEUED" | "MANUAL_PRINT";
   message: string;
   trackingToken: string;
   trackingExpiresAt: string;
+  isPriority?: boolean;
+  identificationRequired?: boolean;
 }
 
 export type VerifyCustomerPaymentResponse =
@@ -613,6 +686,9 @@ export interface AdminLiveOrder {
   issue: string | null;
   paidAt: string;
   updatedAt: string;
+  pickupCode?: string | null;
+  isPriority?: boolean;
+  identificationRequired?: boolean;
 }
 export type AdminLiveOrdersResponse = ApiResponse<{ orders: AdminLiveOrder[] }>;
 
@@ -785,3 +861,33 @@ export interface AdminCleanupRunData extends AdminCleanupPreviewData {
 
 export type AdminCleanupPreviewResponse = ApiResponse<AdminCleanupPreviewData>;
 export type AdminCleanupRunResponse = ApiResponse<AdminCleanupRunData>;
+
+export type PublicTrackingStatus =
+  | "QUEUED"
+  | "PRIORITY_QUEUE"
+  | "PRINTING"
+  | "RETRYING"
+  | "PRINTER_ISSUE"
+  | "WAITING_FOR_STAFF"
+  | "FINISHING"
+  | "READY_FOR_PICKUP";
+
+export interface PublicOrderTrackingData {
+  pickupCode: string;
+  status: PublicTrackingStatus;
+  statusLabel: string;
+  statusMessage: string;
+  isPriority: boolean;
+  totalFiles: number;
+  completedFiles: number;
+  identificationRequired: boolean;
+  createdAt: string;
+  completedAt?: string | null;
+}
+
+export type PublicOrderTrackingResponse = ApiResponse<PublicOrderTrackingData>;
+
+export type AdminResetPickupCodeResponse = ApiResponse<{
+  message: string;
+  nextPickupCode: string;
+}>;

@@ -4,5 +4,6 @@ export * from "./file-size.js";
 export * from "./order-transitions.js";
 export * from "./page-range.js";
 export * from "./phone.js";
+export * from "./pickup-code.js";
 export * from "./printer-classification.js";
 export * from "./vocabularies.js";

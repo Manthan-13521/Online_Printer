@@ -450,6 +450,24 @@ export function validateShopSettingsInput(
                 lastCleanupResult: null,
               }
             : {}),
+          ...(typeof record.priorityPrintingEnabled === "boolean"
+            ? { priorityPrintingEnabled: record.priorityPrintingEnabled }
+            : {}),
+          ...(isIntegerPaise(record.priorityFeePaise)
+            ? { priorityFeePaise: record.priorityFeePaise }
+            : {}),
+          ...(typeof record.idRequirementMode === "string" &&
+          ["OFF", "ALWAYS", "ABOVE_THRESHOLD"].includes(
+            record.idRequirementMode,
+          )
+            ? {
+                idRequirementMode: record.idRequirementMode as
+                  "OFF" | "ALWAYS" | "ABOVE_THRESHOLD",
+              }
+            : {}),
+          ...(isIntegerPaise(record.idThresholdPaise)
+            ? { idThresholdPaise: record.idThresholdPaise }
+            : {}),
           shopName,
           contactPhone,
           address,
@@ -462,6 +480,60 @@ export function validateShopSettingsInput(
             record.identificationSheetPlacement as IdentificationSheetPlacement,
         },
       };
+}
+
+export function validateDiscountRuleRequest(value: unknown): ValidationResult<{
+  minSubtotalPaise: number;
+  discountPercent: number;
+  enabled: boolean;
+}> {
+  if (typeof value !== "object" || value === null) {
+    return {
+      ok: false,
+      issues: [
+        { path: [], code: "INVALID_BODY", message: "Invalid request body." },
+      ],
+    };
+  }
+  const record = value as Record<string, unknown>;
+  const issues: ValidationIssue[] = [];
+  if (
+    !isIntegerPaise(record.minSubtotalPaise) ||
+    record.minSubtotalPaise <= 0
+  ) {
+    issues.push({
+      path: ["minSubtotalPaise"],
+      code: "INVALID_THRESHOLD",
+      message: "Threshold must be greater than ₹0.",
+    });
+  }
+  if (
+    !Number.isSafeInteger(record.discountPercent) ||
+    (record.discountPercent as number) < 1 ||
+    (record.discountPercent as number) > 100
+  ) {
+    issues.push({
+      path: ["discountPercent"],
+      code: "INVALID_PERCENT",
+      message: "Discount percent must be between 1% and 100%.",
+    });
+  }
+  if (typeof record.enabled !== "boolean") {
+    issues.push({
+      path: ["enabled"],
+      code: "INVALID_BOOLEAN",
+      message: "Enabled must be true or false.",
+    });
+  }
+  if (issues.length > 0) return { ok: false, issues };
+  return {
+    ok: true,
+    value: {
+      minSubtotalPaise: record.minSubtotalPaise as number,
+      discountPercent: record.discountPercent as number,
+      enabled: record.enabled as boolean,
+    },
+  };
 }
 
 export interface ValidatedPrintRate {

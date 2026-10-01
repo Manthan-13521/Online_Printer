@@ -9,6 +9,8 @@ export const CUSTOMER_ORDER_STATUSES = [
   "PRINTER_NEEDS_ATTENTION",
   "SHOP_HANDLING_ISSUE",
   "PRINTED",
+  "WAITING_FOR_STAFF",
+  "FINISHING",
   "COMPLETED",
   "CANCELLED",
 ] as const;
@@ -64,6 +66,17 @@ export const CUSTOMER_ORDER_STATUS_PRESENTATION: Readonly<
     label: "Printed",
     message: "Your document has been printed.",
   },
+  WAITING_FOR_STAFF: {
+    code: "WAITING_FOR_STAFF",
+    label: "Waiting for Staff",
+    message:
+      "Your order requires manual handling and is waiting for shop staff.",
+  },
+  FINISHING: {
+    code: "FINISHING",
+    label: "Finishing",
+    message: "Your documents are printed and undergoing staff finishing.",
+  },
   COMPLETED: {
     code: "COMPLETED",
     label: "Completed",
@@ -104,8 +117,9 @@ export function toCustomerOrderStatus(
     case "PRINTED":
       return CUSTOMER_ORDER_STATUS_PRESENTATION.PRINTED;
     case "MANUAL_PRINT":
+      return CUSTOMER_ORDER_STATUS_PRESENTATION.WAITING_FOR_STAFF;
     case "AWAITING_FINISHING":
-      return CUSTOMER_ORDER_STATUS_PRESENTATION.PRINTED;
+      return CUSTOMER_ORDER_STATUS_PRESENTATION.FINISHING;
     case "COMPLETED":
       return CUSTOMER_ORDER_STATUS_PRESENTATION.COMPLETED;
     case "CANCELLED":
