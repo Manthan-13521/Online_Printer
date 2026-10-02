@@ -151,3 +151,15 @@
   4. Updated unit tests in `apps/agent/windows/src/printing/identification-sheet.test.ts`.
 - **Tests**: `pnpm test` (78 suites, 658 tests passing), `pnpm typecheck` (0 errors), `pnpm lint` (0 warnings), `pnpm format:check` (clean), `pnpm db:validate` (clean), `pnpm build` (all packages & Windows bundle built).
 
+### Finding 8: Add-on Services Display Converted to Custom-Length Chips Turning Green on Selection
+
+- **Issue**: Add-on services were rendered as full-width vertical blocks stretching across the entire width of the card.
+- **Expected**: Add-on services must be custom length (content-sized pill/chip buttons that wrap naturally like tags) and must turn green when selected.
+- **Actual**: Add-on services used `display: flex; flex-direction: column` full-width cards with standard light blue checkboxes.
+- **Fix**:
+  1. Updated `.addon-checkbox-list` in `apps/web/customer/src/styles.css` to `display: flex; flex-direction: row; flex-wrap: wrap; gap: 0.5rem; align-items: center;`.
+  2. Updated `.addon-checkbox-item` to `display: inline-flex; width: fit-content; border-radius: 9999px; padding: 0.4rem 0.85rem;` (capsule pill chips).
+  3. Styled `.addon-checkbox-item.selected` and `.addon-checkbox-item:has(input:checked)` with vibrant green background (`#16a34a`), matching green border (`#15803d`), white text, and semi-transparent white price badges.
+  4. Added `.selected` class binding on `App.tsx` and updated unit tests in `apps/web/customer/src/App.test.tsx`.
+- **Tests**: `pnpm test` (78 suites, 659 tests passing), `pnpm typecheck` (0 errors), `pnpm lint` (0 warnings), `pnpm format:check` (clean), `pnpm db:validate` (clean), `pnpm build` (all packages built).
+

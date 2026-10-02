@@ -555,4 +555,31 @@ describe("customer upload app", () => {
     ).toBeTruthy();
     expect(screen.queryByText("PG-ABC234")).toBeNull();
   });
+
+  it("renders add-on services as custom-length chips and applies selected class on toggle", async () => {
+    const user = userEvent.setup();
+    vi.mocked(customerApi.config).mockResolvedValueOnce({
+      ...enabledConfig,
+      addonServices: [
+        {
+          id: "svc_staple",
+          name: "Stapling",
+          pricingType: "FIXED_PRICE" as const,
+          fixedPricePaise: 500,
+        },
+      ],
+    });
+    render(<App />);
+    const stapleLabel = await screen.findByText("Stapling");
+    const chip = stapleLabel.closest("label")!;
+    expect(chip.className).toContain("addon-checkbox-item");
+    expect(chip.className).not.toContain("selected");
+
+    const checkbox = screen.getByRole("checkbox", { name: /stapling/i });
+    await user.click(checkbox);
+    expect(chip.className).toContain("selected");
+
+    await user.click(checkbox);
+    expect(chip.className).not.toContain("selected");
+  });
 });

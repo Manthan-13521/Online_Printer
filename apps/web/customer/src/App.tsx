@@ -936,7 +936,10 @@ export function App() {
                   {config.addonServices.map((service) => {
                     const isSelected = selectedAddonIds.includes(service.id);
                     return (
-                      <label key={service.id} className="addon-checkbox-item">
+                      <label
+                        key={service.id}
+                        className={`addon-checkbox-item ${isSelected ? "selected" : ""}`}
+                      >
                         <input
                           type="checkbox"
                           checked={isSelected}

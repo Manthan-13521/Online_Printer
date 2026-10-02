@@ -624,42 +624,75 @@ a {
 }
 .addon-checkbox-list {
   display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
 }
 .addon-checkbox-item {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 0.6rem;
-  padding: 0.6rem 0.75rem;
-  background: #f8fcfc;
-  border: 1px solid #b9d3d7;
-  border-radius: 0.5rem;
+  gap: 0.5rem;
+  padding: 0.4rem 0.85rem;
+  background: #f1f5f9;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 9999px;
   cursor: pointer;
-  transition:
-    border-color 0.15s,
-    background 0.15s;
+  user-select: none;
+  transition: all 0.15s ease-in-out;
+  font-size: 0.875rem;
+  color: #1e293b;
+  width: fit-content;
+  max-width: 100%;
 }
 .addon-checkbox-item:hover {
-  background: #eef8f9;
-  border-color: #0e7490;
+  background: #e2e8f0;
+  border-color: #94a3b8;
+}
+.addon-checkbox-item.selected,
+.addon-checkbox-item:has(input:checked) {
+  background: #16a34a;
+  border-color: #15803d;
+  color: #ffffff;
+  box-shadow: 0 1px 3px rgba(22, 163, 74, 0.25);
+}
+.addon-checkbox-item.selected:hover,
+.addon-checkbox-item:has(input:checked):hover {
+  background: #15803d;
+  border-color: #166534;
 }
 .addon-checkbox-item input[type="checkbox"] {
-  width: 1.1rem;
-  height: 1.1rem;
-  accent-color: #0e7490;
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  cursor: pointer;
+  accent-color: #16a34a;
+}
+.addon-checkbox-item.selected input[type="checkbox"],
+.addon-checkbox-item:has(input:checked) input[type="checkbox"] {
+  accent-color: #15803d;
 }
 .addon-name {
-  flex: 1;
-  font-size: 0.9rem;
+  font-size: 0.875rem;
   font-weight: 500;
-  color: #17324d;
+  color: #1e293b;
+}
+.addon-checkbox-item.selected .addon-name,
+.addon-checkbox-item:has(input:checked) .addon-name {
+  color: #ffffff;
+  font-weight: 600;
 }
 .addon-price-tag {
-  font-size: 0.8rem;
+  font-size: 0.775rem;
   font-weight: 600;
-  color: #0e7490;
+  color: #0369a1;
   background: #e0f2fe;
-  padding: 0.15rem 0.45rem;
-  border-radius: 0.25rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 9999px;
+  white-space: nowrap;
+}
+.addon-checkbox-item.selected .addon-price-tag,
+.addon-checkbox-item:has(input:checked) .addon-price-tag {
+  background: rgba(255, 255, 255, 0.25);
+  color: #ffffff;
 }
