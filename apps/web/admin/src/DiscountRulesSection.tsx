@@ -79,10 +79,13 @@ export function DiscountRulesSection({
     }
     if (
       isNaN(discountPercent) ||
-      discountPercent <= 0 ||
+      !Number.isInteger(discountPercent) ||
+      discountPercent < 1 ||
       discountPercent > 100
     ) {
-      setError("Discount percentage must be between 1% and 100%.");
+      setError(
+        "Discount percentage must be a whole number between 1% and 100%.",
+      );
       return;
     }
 
@@ -214,9 +217,9 @@ export function DiscountRulesSection({
                 <input
                   id="new-discount-percent"
                   type="number"
-                  min="0.1"
+                  min="1"
                   max="100"
-                  step="0.5"
+                  step="1"
                   value={draft.discountPercent}
                   onChange={(e) =>
                     setDraft((d) => ({ ...d, discountPercent: e.target.value }))
