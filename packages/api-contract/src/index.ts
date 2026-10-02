@@ -874,10 +874,18 @@ export interface AdminConfigureFallbackResponseData {
 export type AdminConfigureFallbackResponse =
   ApiResponse<AdminConfigureFallbackResponseData>;
 
+export interface IdentificationSheetAddonService {
+  name: string;
+  pricingType: "FIXED_PRICE" | "STAFF_PRICED";
+  priceChargedOnlinePaise: number;
+  handlingMode: "AUTO" | "POST_PRINT" | "MANUAL_PRINT";
+}
+
 export interface IdentificationSheetData {
   /** Private Agent payload, only for the intentional physical sheet. Never log. */
   customerPhone?: string;
   jobCode: string;
+  pickupCode?: string | null;
   customerName: string;
   maskedPhone: string;
   paperSize: PaperSize;
@@ -886,10 +894,12 @@ export interface IdentificationSheetData {
   pageRange: string;
   copies: number;
   amountPaidPaise: number;
+  dueAtPickupPaise?: number;
   currency: "INR";
   instructions: string | null;
   paidAtMs: number;
   shopName?: string | undefined;
+  addonServices?: IdentificationSheetAddonService[];
 }
 
 export interface AdminDashboardData {

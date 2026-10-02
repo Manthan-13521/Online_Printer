@@ -1,6 +1,7 @@
 import type {
   AdminLiveOrder,
   AgentPrintJobStep,
+  IdentificationSheetAddonService,
   IdentificationSheetData,
   PrintPlanStepStatus,
 } from "@printgo/api-contract";
@@ -45,6 +46,8 @@ interface JobRow {
   claim_id: string;
   claim_expires_at_ms: number;
   public_job_code: string;
+  pickup_code: string | null;
+  due_at_pickup_paise: number;
   printer_id: string;
   windows_printer_name: string;
   r2_object_key: string;
@@ -72,6 +75,7 @@ interface JobRow {
   step_type: AgentPrintJobStep["type"];
   step_status: PrintPlanStepStatus;
   spooler_job_id: string | null;
+  addon_services_json: string | null;
 }
 
 interface CandidateRow {
@@ -96,6 +100,26 @@ interface StepOwnershipRow {
   order_status: string;
   step_type: AgentPrintJobStep["type"];
   order_file_id: string | null;
+}
+
+function parseAddonServices(
+  rawJson: string | null | undefined,
+): IdentificationSheetAddonService[] {
+  if (!rawJson) return [];
+  try {
+    const parsed = JSON.parse(rawJson) as unknown;
+    if (Array.isArray(parsed)) {
+      return parsed.filter(
+        (item): item is IdentificationSheetAddonService =>
+          item !== null &&
+          typeof item === "object" &&
+          typeof (item as Record<string, unknown>).name === "string",
+      );
+    }
+    return [];
+  } catch {
+    return [];
+  }
 }
 
 function mapJob(row: JobRow | null): ClaimedPrintJobRecord | null {
@@ -124,6 +148,7 @@ function mapJob(row: JobRow | null): ClaimedPrintJobRecord | null {
       row.identification_sheet_enabled === 1
         ? {
             jobCode: row.public_job_code,
+            pickupCode: row.pickup_code,
             customerName: row.customer_name,
             maskedPhone: maskPhoneNumber(row.customer_phone),
             customerPhone: row.customer_phone,
@@ -133,10 +158,12 @@ function mapJob(row: JobRow | null): ClaimedPrintJobRecord | null {
             pageRange: row.selected_pages,
             copies: row.copies,
             amountPaidPaise: row.total_amount_paise,
+            dueAtPickupPaise: row.due_at_pickup_paise,
             currency: row.currency,
             instructions: row.instructions,
             paidAtMs: row.paid_at_ms,
             shopName: row.shop_name,
+            addonServices: parseAddonServices(row.addon_services_json),
           }
         : null,
     currentStep: {
@@ -308,14 +335,20 @@ export class D1PrintingRepository implements PrintingRepository {
     const row = await this.db
       .prepare(
         `SELECT o.id order_id, pa.id attempt_id, o.claim_id, o.claim_expires_at_ms,
-        o.public_job_code, o.printer_id, p.windows_printer_name, f.r2_object_key,
+        o.public_job_code, o.pickup_code, o.due_at_pickup_paise, o.printer_id, p.windows_printer_name, f.r2_object_key,
         f.size_bytes, f.source_page_count, f.selected_pages, f.copies,
         f.paper_size, f.color_mode, f.sides, o.customer_name, o.customer_phone,
         o.instructions, o.total_amount_paise, o.currency, o.paid_at_ms,
         f.id file_id, f.position file_position, f.original_filename,
         (SELECT COUNT(*) FROM order_files WHERE order_id = o.id) file_count,
         i.shop_name, EXISTS(SELECT 1 FROM print_attempt_steps ids WHERE ids.print_attempt_id = pa.id AND ids.step_type = 'IDENTIFICATION_SHEET') identification_sheet_enabled, ps.id step_id,
-        ps.sequence_number, ps.step_type, ps.status step_status, ps.spooler_job_id
+        ps.sequence_number, ps.step_type, ps.status step_status, ps.spooler_job_id,
+        (SELECT json_group_array(json_object(
+          'name', snapshot_name,
+          'pricingType', snapshot_pricing_type,
+          'priceChargedOnlinePaise', snapshot_price_charged_online_paise,
+          'handlingMode', snapshot_handling_mode
+        )) FROM order_addon_services WHERE order_id = o.id) addon_services_json
       FROM orders o
       JOIN print_attempts pa ON pa.order_id = o.id
         AND pa.status IN ('CREATED','SUBMITTING','SPOOLING','PRINTING','BLOCKED')

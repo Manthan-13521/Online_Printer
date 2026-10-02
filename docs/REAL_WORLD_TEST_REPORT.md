@@ -119,3 +119,16 @@
   5. Added unit tests for priority printing validation and repository updates.
 - **Tests**: `pnpm test` (78 suites, 657 tests passing), `pnpm typecheck` (0 errors), `pnpm lint` (0 warnings), `pnpm format:check` (clean), `pnpm db:validate` (clean), `pnpm build` (all packages built).
 
+### Finding 6: Add-on Services Missing from Physical Job Identification Sheet (Paper)
+
+- **Issue**: When a customer ordered print jobs with Add-on Services (such as Stapling, Spiral Binding, or Custom Colour Pages), the generated physical Identification Sheet that prints with the job omitted the add-on services list, pickup code, and any due-at-pickup balance. Print shop operators had no way to know from the printed paper what post-print finishing or manual actions were required for the customer's order.
+- **Expected**: The physical Identification Sheet must visibly display all selected Add-on Services, including their name, price (e.g. Free, fixed price, or Staff Priced), handling mode (e.g. Staff Finishing, Manual Print, or Automatic), customer Pickup Code, and any amount due at pickup.
+- **Actual**: The Identification Sheet only included customer details, general print summary (paper size, colour, sides, page range, copies), and customer instructions.
+- **Fix**:
+  1. Updated `IdentificationSheetData` and added `IdentificationSheetAddonService` in `packages/api-contract/src/index.ts` to include `pickupCode`, `dueAtPickupPaise`, and `addonServices`.
+  2. Updated `apps/api/worker/src/printing/repository.ts` to query `order_addon_services` via SQLite `json_group_array(json_object(...))` and pass `pickup_code`, `due_at_pickup_paise`, and parsed `addonServices` into `identificationSheet` on claimed print jobs.
+  3. Updated `apps/agent/windows/src/printing/identification-sheet.ts` to add a dedicated `ADD-ON SERVICES & FINISHING` section in the PDF layout, displaying each selected service (or "None selected by customer"), plus Pickup Code and Due at Pickup amounts.
+  4. Added unit tests in `apps/agent/windows/src/printing/identification-sheet.test.ts`.
+  5. Built and deployed updated Windows Agent bundle (`dist/bundle.cjs` & `dist-package/PrintGo-Windows-Test`) and API Worker (Version `b7c3d95d-234a-45cb-9aed-8dddaf5431e6`).
+- **Tests**: `pnpm test` (78 suites, 658 tests passing), `pnpm typecheck` (0 errors), `pnpm lint` (0 warnings), `pnpm format:check` (clean), `pnpm db:validate` (clean), `pnpm build` (all packages & Windows bundle built).
+

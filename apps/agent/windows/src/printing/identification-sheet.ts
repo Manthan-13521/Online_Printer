@@ -3,7 +3,10 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import type { IdentificationSheetData } from "@printgo/api-contract";
+import type {
+  IdentificationSheetAddonService,
+  IdentificationSheetData,
+} from "@printgo/api-contract";
 import { maskPhoneNumber } from "@printgo/domain";
 import type {
   PrinterAdapter,
@@ -99,8 +102,34 @@ function wrapText(value: string, width: number, maxLines: number): string[] {
 
 function instructionLines(instructions: string | null): string[] {
   if (!instructions?.trim()) return ["None provided by customer."];
-  const lines = wrapText(pdfSafeText(instructions, 500), 68, 7);
+  const lines = wrapText(pdfSafeText(instructions, 500), 68, 5);
   return lines.length > 0 ? lines : ["None provided by customer."];
+}
+
+function addonServiceLines(
+  services?: IdentificationSheetAddonService[] | null,
+): string[] {
+  if (!services || services.length === 0) {
+    return ["None selected by customer."];
+  }
+  const lines: string[] = [];
+  for (const service of services) {
+    const name = pdfSafeText(service.name, 35);
+    const price =
+      service.pricingType === "STAFF_PRICED"
+        ? "Staff Priced"
+        : service.priceChargedOnlinePaise === 0
+          ? "Free"
+          : formatAmountPaise(service.priceChargedOnlinePaise);
+    const handling =
+      service.handlingMode === "POST_PRINT"
+        ? "Staff Finishing"
+        : service.handlingMode === "MANUAL_PRINT"
+          ? "Manual Print"
+          : "Automatic";
+    lines.push(`- ${name} (${price}) -- ${handling}`);
+  }
+  return lines.slice(0, 6);
 }
 
 function validateData(data: IdentificationSheetData): void {
@@ -150,34 +179,47 @@ export function generateIdentificationSheetBuffer(
   const color = data.colorMode === "COLOR" ? "Colour" : "Black & White";
   const sides = data.sides === "DOUBLE" ? "Double-sided" : "Single-sided";
 
+  const jobDisplay = data.pickupCode
+    ? `${pdfSafeText(data.pickupCode, 15)} (${jobCode})`
+    : jobCode;
+
   const lines: string[] = [
     "0.5 w",
     "50 795 m 545 795 l S",
     `BT /F2 ${Math.min(16, 495 / Math.max(1, shopName.length * 0.95)).toFixed(2)} Tf 50 772 Td (${escapePdfText(shopName)}) Tj ET`,
     `BT /F1 10 Tf 50 756 Td (${escapePdfText("JOB IDENTIFICATION SHEET")}) Tj ET`,
     "50 744 m 545 744 l S",
-    "0.75 w 50 635 495 90 re S",
-    "BT /F1 10 Tf 65 700 Td (HUMAN JOB CODE - VERIFY WITH CUSTOMER) Tj ET",
-    `BT /F2 ${Math.min(36, 465 / Math.max(1, jobCode.length * 0.95)).toFixed(2)} Tf 65 655 Td (${escapePdfText(jobCode)}) Tj ET`,
-    "0.5 w 50 490 495 125 re S",
-    "BT /F2 11 Tf 65 592 Td (CUSTOMER AND ORDER DETAILS) Tj ET",
-    "BT /F1 11 Tf 16 TL 65 570 Td",
+    "0.75 w 50 645 495 85 re S",
+    "BT /F1 10 Tf 65 712 Td (HUMAN JOB CODE - VERIFY WITH CUSTOMER) Tj ET",
+    `BT /F2 ${Math.min(32, 465 / Math.max(1, jobDisplay.length * 0.95)).toFixed(2)} Tf 65 670 Td (${escapePdfText(jobDisplay)}) Tj ET`,
+    "0.5 w 50 525 495 105 re S",
+    "BT /F2 11 Tf 65 612 Td (CUSTOMER AND ORDER DETAILS) Tj ET",
+    "BT /F1 10 Tf 15 TL 65 592 Td",
     `(${escapePdfText(`Customer Name:  ${customerName}`)}) Tj T*`,
     `(${escapePdfText(`Phone Number:   ${sheetPhone}`)}) Tj T*`,
-    `(${escapePdfText(`Amount Paid:    ${amount} (INR)`)}) Tj T*`,
+    `(${escapePdfText(`Amount Paid:    ${amount} (INR)${data.dueAtPickupPaise && data.dueAtPickupPaise > 0 ? `  |  Due at pickup: ${formatAmountPaise(data.dueAtPickupPaise)}` : ""}`)}) Tj T*`,
     `(${escapePdfText(`Paid / Ordered: ${paidAt}`)}) Tj T* ET`,
-    "0.5 w 50 345 495 130 re S",
-    "BT /F2 11 Tf 65 452 Td (CUSTOMER PRINT SUMMARY) Tj ET",
-    "BT /F1 11 Tf 16 TL 65 430 Td",
+    "0.5 w 50 395 495 115 re S",
+    "BT /F2 11 Tf 65 492 Td (CUSTOMER PRINT SUMMARY) Tj ET",
+    "BT /F1 10 Tf 15 TL 65 472 Td",
     `(${escapePdfText(`Paper Size:     ${data.paperSize}`)}) Tj T*`,
     `(${escapePdfText(`Colour Mode:    ${color}`)}) Tj T*`,
     `(${escapePdfText(`Sides:          ${sides}`)}) Tj T*`,
     `(${escapePdfText(`Page Range:     ${pageRange}`)}) Tj T*`,
     `(${escapePdfText(`Copies Ordered: ${data.copies}`)}) Tj T* ET`,
-    "0.5 w 50 155 495 175 re S",
-    "BT /F2 11 Tf 65 305 Td (CUSTOMER SPECIAL INSTRUCTIONS) Tj ET",
-    "BT /F1 10 Tf 15 TL 65 282 Td",
+    "0.5 w 50 240 495 140 re S",
+    "BT /F2 11 Tf 65 362 Td (ADD-ON SERVICES & FINISHING) Tj ET",
+    "BT /F1 10 Tf 15 TL 65 342 Td",
   ];
+  for (const line of addonServiceLines(data.addonServices)) {
+    lines.push(`(${escapePdfText(line)}) Tj T*`);
+  }
+  lines.push(
+    "ET",
+    "0.5 w 50 95 495 130 re S",
+    "BT /F2 11 Tf 65 207 Td (CUSTOMER SPECIAL INSTRUCTIONS) Tj ET",
+    "BT /F1 10 Tf 14 TL 65 187 Td",
+  );
   for (const line of instructionLines(data.instructions)) {
     lines.push(`(${escapePdfText(line)}) Tj T*`);
   }

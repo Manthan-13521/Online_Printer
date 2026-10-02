@@ -84,6 +84,45 @@ describe("identification sheet", () => {
     expect(text).not.toContain("/Subtype /Image");
   });
 
+  it("prints add-on services, pickup code, and due at pickup on the identification sheet", () => {
+    const text = generateIdentificationSheetBuffer({
+      ...data,
+      pickupCode: "PA-001",
+      dueAtPickupPaise: 5000,
+      addonServices: [
+        {
+          name: "Stapling",
+          pricingType: "FIXED_PRICE",
+          priceChargedOnlinePaise: 0,
+          handlingMode: "POST_PRINT",
+        },
+        {
+          name: "Spiral Binding",
+          pricingType: "FIXED_PRICE",
+          priceChargedOnlinePaise: 3000,
+          handlingMode: "POST_PRINT",
+        },
+        {
+          name: "Custom Color Pages",
+          pricingType: "STAFF_PRICED",
+          priceChargedOnlinePaise: 0,
+          handlingMode: "MANUAL_PRINT",
+        },
+      ],
+    }).toString("ascii");
+
+    expect(text).toContain("PA-001 \\(PG-A1B2C3\\)");
+    expect(text).toContain("Due at pickup: Rs. 50.00");
+    expect(text).toContain("ADD-ON SERVICES & FINISHING");
+    expect(text).toContain("- Stapling \\(Free\\) -- Staff Finishing");
+    expect(text).toContain(
+      "- Spiral Binding \\(Rs. 30.00\\) -- Staff Finishing",
+    );
+    expect(text).toContain(
+      "- Custom Color Pages \\(Staff Priced\\) -- Manual Print",
+    );
+  });
+
   it("uses fixed sheet settings independent of customer print settings", () => {
     expect(IDENTIFICATION_SHEET_PRINT_SETTINGS).toEqual({
       paperSize: "A4",
