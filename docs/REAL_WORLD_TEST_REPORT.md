@@ -214,3 +214,26 @@
   4. Created `.settings-stat-grid` with `.stat-card` styling for clean, responsive key-value stats.
   5. Placed cleanup execution results in a styled `.notice` banner with inline status refresh.
 - **Tests**: `pnpm test` (79 suites, 663 tests passing), `pnpm typecheck` (0 errors), `pnpm lint` (0 warnings), `pnpm format:check` (clean), `pnpm db:validate` (clean), `pnpm build` (all packages & PWAs built).
+
+### Finding 12: Storage & Privacy Cleanup Returns "Deleted: 0 orders / 0 PDFs" and Abandoned Drafts Never Purged
+
+- **Issue**:
+  1. Triggering "Free Printed Data" or "Free All Print Data" in Admin -> Storage & Privacy returned `Deleted: 0 orders (0 PDFs) · 1 active skipped`.
+  2. The only remaining order in remote D1 (`a0e7603f`) was created 2 days ago with status `PAYMENT_PENDING` and a 3.5MB PDF in R2, but was never cleaned up automatically or manually.
+  3. The Admin UI stat card displayed `Last Cleanup: Not yet run` and `Last Result: —`, even after automated cron runs deleted earlier completed orders.
+- **Root Causes**:
+  1. **Abandoned Payment Lockout**: In `D1CleanupRepository`, `scopeWhere("EXPIRED_UNPAID")` checked `NOT EXISTS (SELECT 1 FROM payments p WHERE p.status IN ('CREATED','PENDING','PAID'))` and `safetyGuard` checked `ACTIVE_PAYMENT = EXISTS (... status IN ('CREATED','PENDING'))`. If a customer opened the Razorpay checkout modal but abandoned it, Razorpay left a row with `status = 'PENDING'`. Because the payment safety check lacked a check against the order's `draft_expires_at_ms`, the abandoned pending payment permanently locked the order from both `EXPIRED_UNPAID` and `ALL_PRINT_DATA` cleanup runs forever.
+  2. **Run Hang in `finishIfDrained`**: When an active order existed, `finishIfDrained` used `remainingGuard = "1 = 1"` for `ALL_PRINT_DATA` and `ALL_COMPLETED`, ignoring the safety guard. It detected the skipped order in `orders` and concluded that eligible work remained, leaving the cleanup run stuck in `PENDING` indefinitely instead of completing.
+  3. **Single Batch Cap on Admin Runs**: `requestAdminRun` called `processRun` once with `BATCH_LIMIT = 5`. If more than 5 orders were eligible, it only processed the first 5, leaving the run in `RUNNING` status and requiring subsequent 5-minute scheduled crons to finish the rest.
+  4. **Installation Stat Card Stale**: `recordDailyResult` was only called when `source === "DAILY"`. Neither `SCHEDULED` (5-min cron) nor `ADMIN` manual runs ever updated `installation.last_cleanup_at_ms` or `last_cleanup_result`, causing the Admin UI to continuously display "Last Cleanup: Not yet run".
+- **Fix Applied**:
+  1. In `repository.ts`:
+     - Updated `scopeWhere("EXPIRED_UNPAID")` so only `p.status = 'PAID'` prevents cleanup when `o.draft_expires_at_ms <= nowMs`. Expired drafts with abandoned/pending checkout attempts are now properly purgeable.
+     - Updated `safetyGuard(scope, nowMs)`: `ACTIVE_PAYMENT` now checks `(o.draft_expires_at_ms IS NULL OR o.draft_expires_at_ms > nowMs)`. Once the order draft expiration time passes, pending payments are treated as dead and do not block cleanup.
+     - Updated `finishIfDrained`: evaluates `safetyGuard(scope, nowMs)` directly so protected active orders do not cause the run to hang.
+     - Added `recordCleanupResult` to update `installation.last_cleanup_at_ms` and `installation.last_cleanup_result`.
+  2. In `service.ts`:
+     - Updated `requestAdminRun` to loop up to 10 batches (50 orders) and immediately call `recordCleanupResult`.
+     - Updated `runScheduled` to call `recordCleanupResult` whenever orders are deleted or a run completes.
+  3. Added comprehensive regression tests in `apps/api/worker/src/cleanup/repository.test.ts`.
+- **Tests**: `pnpm test` (79 suites, 664 tests passing), `pnpm typecheck` (0 errors), `pnpm lint` (0 warnings).

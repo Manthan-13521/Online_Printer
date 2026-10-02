@@ -24,7 +24,7 @@ function scopeWhere(scope: CleanupScope): string {
     return `o.status IN ('CREATED','UPLOADING','UPLOADED','PAYMENT_PENDING','PAYMENT_FAILED','PAYMENT_CANCELLED')
       AND o.draft_expires_at_ms <= ?
       AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.order_id = o.id
-        AND p.status IN ('CREATED','PENDING','PAID'))`;
+        AND p.status = 'PAID')`;
   if (scope === "COMPLETED_DUE")
     return `o.status = 'COMPLETED' AND o.purge_at_ms IS NOT NULL AND o.purge_at_ms <= ?`;
   if (scope === "ALL_COMPLETED") return `o.status = 'COMPLETED'`;
@@ -48,10 +48,18 @@ const UNRESOLVED_COMPLETED = `(
   )
 )`;
 
-function safetyGuard(scope: CleanupScope): string {
+function safetyGuard(scope: CleanupScope, nowMs?: number): string {
+  const activePayment =
+    nowMs !== undefined
+      ? `EXISTS (SELECT 1 FROM payments active_payment
+          WHERE active_payment.order_id = o.id AND active_payment.status IN ('CREATED','PENDING')
+          AND (o.draft_expires_at_ms IS NULL OR o.draft_expires_at_ms > ${nowMs}))`
+      : `EXISTS (SELECT 1 FROM payments active_payment
+          WHERE active_payment.order_id = o.id AND active_payment.status IN ('CREATED','PENDING'))`;
+
   return scope === "ALL_PRINT_DATA"
-    ? `NOT (${ACTIVE_PHYSICAL}) AND NOT (${ACTIVE_PAYMENT})`
-    : `NOT (${ACTIVE_PHYSICAL}) AND NOT (${ACTIVE_PAYMENT}) AND NOT (${UNRESOLVED_COMPLETED})`;
+    ? `NOT (${ACTIVE_PHYSICAL}) AND NOT (${activePayment})`
+    : `NOT (${ACTIVE_PHYSICAL}) AND NOT (${activePayment}) AND NOT (${UNRESOLVED_COMPLETED})`;
 }
 
 function scopeOrder(scope: CleanupScope): string {
@@ -67,9 +75,6 @@ function dueIndex(scope: CleanupScope): string {
     return "INDEXED BY orders_completed_cleanup_due_idx";
   return "";
 }
-
-const ACTIVE_PAYMENT = `EXISTS (SELECT 1 FROM payments active_payment
-  WHERE active_payment.order_id = o.id AND active_payment.status IN ('CREATED','PENDING'))`;
 
 export class D1CleanupRepository {
   constructor(private readonly db: D1Database) {}
@@ -92,7 +97,7 @@ export class D1CleanupRepository {
 
   async hasCandidates(scope: CleanupScope, nowMs: number): Promise<boolean> {
     const where = scopeWhere(scope);
-    const guard = safetyGuard(scope);
+    const guard = safetyGuard(scope, nowMs);
     const row = await this.db
       .prepare(
         `SELECT 1 candidate FROM orders o ${dueIndex(scope)}
@@ -114,7 +119,7 @@ export class D1CleanupRepository {
     nowMs: number,
   ): Promise<AdminCleanupPreviewData> {
     const where = scopeWhere(scope);
-    const guard = safetyGuard(scope);
+    const guard = safetyGuard(scope, nowMs);
     const sampleGuard =
       scope === "EXPIRED_UNPAID" || scope === "COMPLETED_DUE" ? guard : "1 = 1";
     const due = await this.db
@@ -285,7 +290,7 @@ export class D1CleanupRepository {
     const ids = failed.results.map((row) => row.order_id);
     if (ids.length < limit) {
       const where = scopeWhere(scope);
-      const guard = safetyGuard(scope);
+      const guard = safetyGuard(scope, nowMs);
       const due = await this.db
         .prepare(
           `SELECT o.id FROM orders o ${dueIndex(scope)}
@@ -318,7 +323,7 @@ export class D1CleanupRepository {
       .bind(nowMs, nowMs, runId)
       .run();
     const claims: D1PreparedStatement[] = [];
-    const guard = safetyGuard(scope);
+    const guard = safetyGuard(scope, nowMs);
     for (const orderId of ids) {
       claims.push(
         this.db
@@ -530,7 +535,7 @@ export class D1CleanupRepository {
     nowMs: number,
   ): Promise<boolean> {
     const where = scopeWhere(scope);
-    const guard = safetyGuard(scope);
+    const guard = safetyGuard(scope, nowMs);
     const remainingGuard =
       scope === "ALL_PRINT_DATA" || scope === "ALL_COMPLETED" ? "1 = 1" : guard;
     const remaining = await this.db
@@ -614,7 +619,7 @@ export class D1CleanupRepository {
     return result.meta.changes === 1;
   }
 
-  async recordDailyResult(
+  async recordCleanupResult(
     run: AdminCleanupRunData,
     nowMs: number,
   ): Promise<void> {
@@ -629,5 +634,12 @@ export class D1CleanupRepository {
         nowMs,
       )
       .run();
+  }
+
+  async recordDailyResult(
+    run: AdminCleanupRunData,
+    nowMs: number,
+  ): Promise<void> {
+    return this.recordCleanupResult(run, nowMs);
   }
 }

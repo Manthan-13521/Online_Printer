@@ -650,4 +650,50 @@ describe("D1 cleanup repository", () => {
       firstOrderId,
     ]);
   });
+
+  it("purges expired unpaid orders with abandoned pending payments while protecting active payments", async () => {
+    const expiredOrderId = "61000000-0000-4000-8000-000000000001";
+    const activeOrderId = "62000000-0000-4000-8000-000000000001";
+    seedOrder(expiredOrderId, "UPLOADED", 500);
+    seedOrder(activeOrderId, "UPLOADED", 1_500);
+
+    db.prepare(
+      "UPDATE orders SET status = 'PAYMENT_PENDING', draft_expires_at_ms = 1000 WHERE id = ?",
+    ).run(expiredOrderId);
+    db.prepare(
+      "UPDATE orders SET status = 'PAYMENT_PENDING', draft_expires_at_ms = 3000 WHERE id = ?",
+    ).run(activeOrderId);
+
+    db.prepare(
+      `INSERT INTO payments (id, order_id, provider, provider_order_id, amount_paise, currency, status, created_at_ms, updated_at_ms)
+       VALUES (?, ?, 'RAZORPAY', 'rp_1', 100, 'INR', 'PENDING', 500, 500)`,
+    ).run("64000000-0000-4000-8000-000000000001", expiredOrderId);
+    db.prepare(
+      `INSERT INTO payments (id, order_id, provider, provider_order_id, amount_paise, currency, status, created_at_ms, updated_at_ms)
+       VALUES (?, ?, 'RAZORPAY', 'rp_2', 100, 'INR', 'PENDING', 1500, 1500)`,
+    ).run("65000000-0000-4000-8000-000000000001", activeOrderId);
+
+    const unpaidPreview = await repository.preview("EXPIRED_UNPAID", 2_000);
+    expect(unpaidPreview.orders).toBe(1);
+
+    const allPrintPreview = await repository.preview("ALL_PRINT_DATA", 2_000);
+    expect(allPrintPreview.orders).toBe(1);
+    expect(allPrintPreview.active).toBe(1);
+
+    const runId = "63000000-0000-4000-8000-000000000001";
+    await repository.createRun({
+      id: runId,
+      scope: "ALL_PRINT_DATA",
+      source: "ADMIN",
+      preview: allPrintPreview,
+      nowMs: 2_000,
+    });
+    const candidates = await repository.claimBatch(
+      runId,
+      "ALL_PRINT_DATA",
+      2_000,
+      5,
+    );
+    expect(candidates.map((c) => c.orderId)).toEqual([expiredOrderId]);
+  });
 });

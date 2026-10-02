@@ -122,9 +122,10 @@ export class CleanupService {
       preview,
       nowMs,
     });
-    await this.processRun(runId, scope);
+    await this.processRun(runId, scope, 10);
     const run = await this.repository.getRun(runId);
     if (!run) throw new CleanupRequestError("CLEANUP_RUN_NOT_FOUND");
+    await this.repository.recordCleanupResult(run, this.now());
     return run;
   }
 
@@ -134,34 +135,41 @@ export class CleanupService {
     return run;
   }
 
-  private async processRun(runId: string, scope: CleanupScope): Promise<void> {
-    const nowMs = this.now();
-    const batch = await this.repository.claimBatch(
-      runId,
-      scope,
-      nowMs,
-      BATCH_LIMIT,
-    );
-    for (const candidate of batch) {
-      try {
-        if (
-          candidate.objectKeys.some(
-            (key) => !isOwnedUploadKey(key, candidate.orderId),
-          )
-        ) {
-          throw new Error("Cleanup candidate contains an invalid object key");
+  private async processRun(
+    runId: string,
+    scope: CleanupScope,
+    maxBatches = 1,
+  ): Promise<void> {
+    for (let batchIdx = 0; batchIdx < maxBatches; batchIdx++) {
+      const nowMs = this.now();
+      const batch = await this.repository.claimBatch(
+        runId,
+        scope,
+        nowMs,
+        BATCH_LIMIT,
+      );
+      if (batch.length === 0) break;
+      for (const candidate of batch) {
+        try {
+          if (
+            candidate.objectKeys.some(
+              (key) => !isOwnedUploadKey(key, candidate.orderId),
+            )
+          ) {
+            throw new Error("Cleanup candidate contains an invalid object key");
+          }
+          if (candidate.objectKeys.length > 0) {
+            await this.bucket.delete(candidate.objectKeys);
+          }
+          await this.repository.purgeOrder(runId, candidate, this.now());
+        } catch (caught) {
+          await this.repository.recordFailure(
+            runId,
+            candidate.orderId,
+            caught instanceof Error ? caught.message : "Cleanup failed",
+            this.now(),
+          );
         }
-        if (candidate.objectKeys.length > 0) {
-          await this.bucket.delete(candidate.objectKeys);
-        }
-        await this.repository.purgeOrder(runId, candidate, this.now());
-      } catch (caught) {
-        await this.repository.recordFailure(
-          runId,
-          candidate.orderId,
-          caught instanceof Error ? caught.message : "Cleanup failed",
-          this.now(),
-        );
       }
     }
     await this.repository.finishIfDrained(runId, scope, this.now());
@@ -235,8 +243,13 @@ export class CleanupService {
     if (!next) return null;
     await this.processRun(next.id, next.scope);
     const run = await this.repository.getRun(next.id);
-    if (run?.completedAt && next.source === "DAILY") {
-      await this.repository.recordDailyResult(run, this.now());
+    if (
+      run &&
+      (run.deletedOrders > 0 ||
+        next.source === "DAILY" ||
+        run.status === "COMPLETED")
+    ) {
+      await this.repository.recordCleanupResult(run, this.now());
     }
     return run;
   }
