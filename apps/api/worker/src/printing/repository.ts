@@ -83,6 +83,8 @@ interface CandidateRow {
   remaining_files: number;
   identification_sheet_enabled: number;
   identification_sheet_placement: "FIRST" | "LAST";
+  /** Non-null when the job was routed to a fallback printer. */
+  fallback_from_printer_id: string | null;
 }
 
 interface StepOwnershipRow {
@@ -383,7 +385,12 @@ export class D1PrintingRepository implements PrintingRepository {
         i.identification_sheet_placement, f.id file_id, f.position file_position,
         (SELECT COUNT(*) FROM order_files all_files WHERE all_files.order_id = o.id) file_count,
         (SELECT COUNT(*) FROM order_files remaining WHERE remaining.order_id = o.id
-          AND remaining.print_status <> 'PRINTED') remaining_files
+          AND remaining.print_status <> 'PRINTED') remaining_files,
+        CASE WHEN i.default_production_printer_id IS NOT NULL
+                  AND p.id <> i.default_production_printer_id
+             THEN i.default_production_printer_id
+             ELSE NULL
+        END AS fallback_from_printer_id
       FROM orders o
       JOIN order_files f ON f.order_id = o.id AND f.id = COALESCE((
         SELECT next_file.id FROM order_files next_file
@@ -399,7 +406,22 @@ export class D1PrintingRepository implements PrintingRepository {
         AND p.is_production_eligible = 1 AND p.is_virtual = 0
         AND p.capabilities_json IS NOT NULL
       JOIN installation i ON i.id = 1
-        AND (i.default_production_printer_id IS NULL OR p.id = i.default_production_printer_id)
+        AND (
+          i.default_production_printer_id IS NULL
+          OR p.id = i.default_production_printer_id
+          OR (
+            -- Fallback: primary is unavailable and this printer is its configured fallback
+            EXISTS (
+              SELECT 1 FROM printers pp
+              WHERE pp.id = i.default_production_printer_id
+                AND pp.auto_fallback_enabled = 1
+                AND pp.fallback_printer_id = p.id
+                AND (pp.enabled = 0 OR pp.status <> 'ONLINE' OR COALESCE(pp.is_paused, 0) = 1)
+            )
+            -- Prevent loop: this printer's fallback must not be the primary
+            AND COALESCE(p.fallback_printer_id, '') <> i.default_production_printer_id
+          )
+        )
       WHERE ((o.status = 'QUEUED') OR (o.status = 'RETRY_PENDING' AND (o.next_retry_at_ms IS NULL OR o.next_retry_at_ms <= ?)))
         AND o.public_job_code IS NOT NULL
         AND o.cleanup_state = 'ACTIVE' AND f.upload_status = 'UPLOADED'
@@ -494,9 +516,9 @@ export class D1PrintingRepository implements PrintingRepository {
         .prepare(
           `INSERT INTO print_attempts (id, order_id, attempt_number, agent_id, printer_id,
           status, identification_sheet_included, created_at_ms, updated_at_ms,
-          order_file_id, file_position)
+          order_file_id, file_position, fallback_from_printer_id)
         SELECT ?, id, COALESCE((SELECT MAX(attempt_number) + 1 FROM print_attempts
-          WHERE order_id = orders.id), 1), ?, ?, 'CREATED', ?, ?, ?, ?, ?
+          WHERE order_id = orders.id), 1), ?, ?, 'CREATED', ?, ?, ?, ?, ?, ?
         FROM orders WHERE id = ? AND claim_id = ? AND claimed_by_agent_id = ?`,
         )
         .bind(
@@ -508,6 +530,7 @@ export class D1PrintingRepository implements PrintingRepository {
           nowMs,
           candidate.file_id,
           candidate.file_position,
+          candidate.fallback_from_printer_id,
           candidate.order_id,
           claimId,
           agentId,
@@ -1535,7 +1558,6 @@ export class D1PrintingRepository implements PrintingRepository {
         )
         .bind(
           crypto.randomUUID(),
-          input.orderId,
           order.status,
           input.adminId,
           input.nowMs,

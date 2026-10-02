@@ -747,6 +747,10 @@ export interface AdminPrinterDetails {
   pausedAt?: string | null;
   lastHealthCheckAt?: string | null;
   healthCheckRequested?: boolean;
+  /** ID of the fallback printer to use when this printer is unavailable. */
+  fallbackPrinterId?: string | null;
+  /** Whether automatic fallback routing is enabled for this printer. */
+  autoFallbackEnabled?: boolean;
 }
 
 export interface AdminCheckPrinterHealthResponseData {
@@ -827,6 +831,20 @@ export type AdminOrderPdfUrlResponse =
 export type AdminRevokeAgentResponse = ApiResponse<{
   revoked: true;
 }>;
+
+export interface AdminConfigureFallbackRequest {
+  fallbackPrinterId: string | null;
+  autoFallbackEnabled: boolean;
+}
+
+export interface AdminConfigureFallbackResponseData {
+  printerId: string;
+  fallbackPrinterId: string | null;
+  autoFallbackEnabled: boolean;
+}
+
+export type AdminConfigureFallbackResponse =
+  ApiResponse<AdminConfigureFallbackResponseData>;
 
 export interface IdentificationSheetData {
   /** Private Agent payload, only for the intentional physical sheet. Never log. */

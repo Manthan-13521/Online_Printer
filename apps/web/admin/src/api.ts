@@ -373,4 +373,24 @@ export const adminApi = {
       body: "{}",
     });
   },
+  // ── Fallback Configuration ──────────────────────────────────────
+  configureFallback(
+    printerId: string,
+    fallbackPrinterId: string | null,
+    autoFallbackEnabled: boolean,
+  ): Promise<
+    ApiResponse<{
+      printerId: string;
+      fallbackPrinterId: string | null;
+      autoFallbackEnabled: boolean;
+    }>
+  > {
+    return request(
+      `/api/admin/printers/${encodeURIComponent(printerId)}/fallback`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ fallbackPrinterId, autoFallbackEnabled }),
+      },
+    );
+  },
 };

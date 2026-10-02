@@ -30,6 +30,7 @@ function createTestDatabase(): DatabaseSync {
     "0014_addon_services.sql",
     "0015_phase3_priority_tracking_discounts.sql",
     "0016_phase4_failure_recovery_and_pause.sql",
+    "0017_phase5_fallback_and_reprint_protection.sql",
   ];
   for (const name of migrationFiles) {
     db.exec(

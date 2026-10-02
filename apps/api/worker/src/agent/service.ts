@@ -36,7 +36,10 @@ export type AgentErrorCode =
   | "PRINTER_NOT_ELIGIBLE"
   | "CANNOT_ENABLE_VIRTUAL_PRINTER"
   | "AGENT_OFFLINE"
-  | "COMMAND_NOT_FOUND";
+  | "COMMAND_NOT_FOUND"
+  | "FALLBACK_SELF_REFERENCE"
+  | "FALLBACK_PRINTER_NOT_FOUND"
+  | "FALLBACK_LOOP_DETECTED";
 
 export class AgentError extends Error {
   constructor(readonly code: AgentErrorCode) {
@@ -327,6 +330,40 @@ export class AgentService {
       throw new AgentError("PRINTER_NOT_FOUND");
     }
     return this.repository.getLatestTestPrintCommand(printerId, this.now());
+  }
+
+  async configureFallback(
+    printerId: string,
+    fallbackPrinterId: string | null,
+    autoFallbackEnabled: boolean,
+    adminId: string,
+  ): Promise<{
+    printerId: string;
+    fallbackPrinterId: string | null;
+    autoFallbackEnabled: boolean;
+  }> {
+    try {
+      return await this.repository.configureFallback({
+        printerId,
+        fallbackPrinterId,
+        autoFallbackEnabled,
+        adminId,
+        nowMs: this.now(),
+      });
+    } catch (caught: unknown) {
+      if (caught instanceof Error) {
+        const code = caught.message;
+        if (
+          code === "PRINTER_NOT_FOUND" ||
+          code === "FALLBACK_SELF_REFERENCE" ||
+          code === "FALLBACK_PRINTER_NOT_FOUND" ||
+          code === "FALLBACK_LOOP_DETECTED"
+        ) {
+          throw new AgentError(code);
+        }
+      }
+      throw caught;
+    }
   }
 
   async checkPrinterHealth(

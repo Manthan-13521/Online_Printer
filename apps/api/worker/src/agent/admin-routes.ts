@@ -158,6 +158,35 @@ export async function handleAdminPrinterRequest(
       );
     }
 
+    const fallbackMatch =
+      /^\/api\/admin\/printers\/([^/]+)\/fallback$/u.exec(pathname);
+    if (request.method === "PUT" && fallbackMatch) {
+      const printerId = decodeURIComponent(fallbackMatch[1] ?? "");
+      const rawBody = await readAdminJson(request, MAX_JSON_BYTES);
+      if (
+        !rawBody ||
+        typeof rawBody !== "object" ||
+        typeof (rawBody as Record<string, unknown>).autoFallbackEnabled !==
+          "boolean"
+      ) {
+        return withAdminCors(
+          error(400, "VALIDATION_ERROR", "Invalid fallback configuration."),
+          env.ADMIN_ALLOWED_ORIGIN,
+        );
+      }
+      const body = rawBody as {
+        fallbackPrinterId?: string | null;
+        autoFallbackEnabled: boolean;
+      };
+      const result = await agentService.configureFallback(
+        printerId,
+        body.fallbackPrinterId ?? null,
+        body.autoFallbackEnabled,
+        session.admin.id,
+      );
+      return withAdminCors(ok(result, 200), env.ADMIN_ALLOWED_ORIGIN);
+    }
+
     return withAdminCors(
       error(404, "NOT_FOUND", "Endpoint not found."),
       env.ADMIN_ALLOWED_ORIGIN,
@@ -198,6 +227,36 @@ export async function handleAdminPrinterRequest(
             400,
             caught.code,
             "Virtual or ineligible printers cannot be used for production printing.",
+          ),
+          env.ADMIN_ALLOWED_ORIGIN,
+        );
+      }
+      if (caught.code === "FALLBACK_SELF_REFERENCE") {
+        return withAdminCors(
+          error(
+            400,
+            caught.code,
+            "A printer cannot be its own fallback.",
+          ),
+          env.ADMIN_ALLOWED_ORIGIN,
+        );
+      }
+      if (caught.code === "FALLBACK_PRINTER_NOT_FOUND") {
+        return withAdminCors(
+          error(
+            404,
+            caught.code,
+            "The selected fallback printer was not found.",
+          ),
+          env.ADMIN_ALLOWED_ORIGIN,
+        );
+      }
+      if (caught.code === "FALLBACK_LOOP_DETECTED") {
+        return withAdminCors(
+          error(
+            400,
+            caught.code,
+            "This would create a circular fallback loop.",
           ),
           env.ADMIN_ALLOWED_ORIGIN,
         );

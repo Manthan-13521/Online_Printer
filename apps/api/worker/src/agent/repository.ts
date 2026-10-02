@@ -155,6 +155,17 @@ export interface AgentRepository {
     printerId: string,
     nowMs?: number,
   ): Promise<AdminTestPrintDetails | null>;
+  configureFallback(input: {
+    printerId: string;
+    fallbackPrinterId: string | null;
+    autoFallbackEnabled: boolean;
+    adminId: string;
+    nowMs: number;
+  }): Promise<{
+    printerId: string;
+    fallbackPrinterId: string | null;
+    autoFallbackEnabled: boolean;
+  }>;
   checkPrinterHealth(
     printerId: string,
     adminId: string,
@@ -189,6 +200,8 @@ interface PrinterRow {
   paused_at_ms?: number | null;
   last_health_check_at_ms?: number | null;
   health_check_requested?: number | null;
+  fallback_printer_id?: string | null;
+  auto_fallback_enabled?: number | null;
 }
 
 export class D1AgentRepository implements AgentRepository {
@@ -582,7 +595,8 @@ export class D1AgentRepository implements AgentRepository {
           `SELECT id, agent_id, display_name, windows_printer_name, enabled,
                 status, status_reason, capabilities_json, last_status_at_ms,
                 is_production_eligible, is_virtual, port_name, driver_name,
-                is_paused, paused_reason, paused_at_ms, last_health_check_at_ms, health_check_requested
+                is_paused, paused_reason, paused_at_ms, last_health_check_at_ms, health_check_requested,
+                fallback_printer_id, auto_fallback_enabled
          FROM printers ORDER BY windows_printer_name ASC`,
         ),
         this.db.prepare(
@@ -658,6 +672,8 @@ export class D1AgentRepository implements AgentRepository {
           ? new Date(pr.last_health_check_at_ms).toISOString()
           : null,
         healthCheckRequested: pr.health_check_requested === 1,
+        fallbackPrinterId: pr.fallback_printer_id ?? null,
+        autoFallbackEnabled: pr.auto_fallback_enabled === 1,
       });
       printersByAgent.set(pr.agent_id, list);
     }
@@ -1097,6 +1113,74 @@ export class D1AgentRepository implements AgentRepository {
       .first<PrinterTestCommandRow>();
 
     return row ? toAdminTestPrintDetails(row, nowMs) : null;
+  }
+
+  async configureFallback(input: {
+    printerId: string;
+    fallbackPrinterId: string | null;
+    autoFallbackEnabled: boolean;
+    adminId: string;
+    nowMs: number;
+  }): Promise<{
+    printerId: string;
+    fallbackPrinterId: string | null;
+    autoFallbackEnabled: boolean;
+  }> {
+    const printer = await this.db
+      .prepare(`SELECT id FROM printers WHERE id = ?`)
+      .bind(input.printerId)
+      .first<{ id: string }>();
+    if (!printer) throw new Error("PRINTER_NOT_FOUND");
+
+    if (input.fallbackPrinterId) {
+      if (input.fallbackPrinterId === input.printerId) {
+        throw new Error("FALLBACK_SELF_REFERENCE");
+      }
+      const fallback = await this.db
+        .prepare(
+          `SELECT id, fallback_printer_id FROM printers WHERE id = ?`,
+        )
+        .bind(input.fallbackPrinterId)
+        .first<{ id: string; fallback_printer_id: string | null }>();
+      if (!fallback) throw new Error("FALLBACK_PRINTER_NOT_FOUND");
+      // Prevent loop: if fallback's own fallback is this printer
+      if (fallback.fallback_printer_id === input.printerId) {
+        throw new Error("FALLBACK_LOOP_DETECTED");
+      }
+    }
+
+    await this.db.batch([
+      this.db
+        .prepare(
+          `UPDATE printers
+           SET fallback_printer_id = ?, auto_fallback_enabled = ?, updated_at_ms = ?
+           WHERE id = ?`,
+        )
+        .bind(
+          input.fallbackPrinterId,
+          input.autoFallbackEnabled ? 1 : 0,
+          input.nowMs,
+          input.printerId,
+        ),
+      this.db
+        .prepare(
+          `INSERT INTO audit_logs (
+             id, actor_type, actor_id, action, entity_type, entity_id, created_at_ms
+           ) VALUES (?, 'ADMIN', ?, 'FALLBACK_CONFIGURED', 'PRINTER', ?, ?)`,
+        )
+        .bind(
+          crypto.randomUUID(),
+          input.adminId,
+          input.printerId,
+          input.nowMs,
+        ),
+    ]);
+
+    return {
+      printerId: input.printerId,
+      fallbackPrinterId: input.fallbackPrinterId,
+      autoFallbackEnabled: input.autoFallbackEnabled,
+    };
   }
 
   async checkPrinterHealth(

@@ -893,6 +893,123 @@ export function PrinterPage({
                               ) : null}
                             </div>
                           ) : null}
+                          {printer.enabled &&
+                          !printer.isVirtual &&
+                          printer.isProductionEligible ? (
+                            <div
+                              style={{
+                                marginTop: "0.5rem",
+                                padding: "0.5rem 0.75rem",
+                                backgroundColor:
+                                  printer.autoFallbackEnabled &&
+                                  printer.fallbackPrinterId
+                                    ? "#ecfdf5"
+                                    : "var(--bg-subtle, #f5f5f5)",
+                                border: `1px solid ${printer.autoFallbackEnabled && printer.fallbackPrinterId ? "#34d399" : "var(--border-color, #e0e0e0)"}`,
+                                borderRadius: "6px",
+                                fontSize: "0.85rem",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  display: "flex",
+                                  justifyContent: "space-between",
+                                  alignItems: "center",
+                                  flexWrap: "wrap",
+                                  gap: "0.5rem",
+                                }}
+                              >
+                                <span>
+                                  <strong>Fallback:</strong>{" "}
+                                  {printer.fallbackPrinterId
+                                    ? (() => {
+                                        const fb = agents
+                                          .flatMap((a) => a.printers)
+                                          .find(
+                                            (p) =>
+                                              p.id ===
+                                              printer.fallbackPrinterId,
+                                          );
+                                        return fb
+                                          ? `${fb.displayName}${printer.autoFallbackEnabled ? " (Auto)" : " (Disabled)"}`
+                                          : "Configured (printer removed)";
+                                      })()
+                                    : "Not configured"}
+                                </span>
+                                <button
+                                  type="button"
+                                  className="text-button"
+                                  style={{
+                                    fontSize: "0.8rem",
+                                    padding: "0.15rem 0.4rem",
+                                  }}
+                                  onClick={() => {
+                                    const otherPrinters = agents
+                                      .flatMap((a) => a.printers)
+                                      .filter(
+                                        (p) =>
+                                          p.id !== printer.id &&
+                                          !p.isVirtual &&
+                                          p.isProductionEligible,
+                                      );
+                                    if (otherPrinters.length === 0) {
+                                      setError(
+                                        "No eligible printers available as fallback.",
+                                      );
+                                      return;
+                                    }
+                                    const names = otherPrinters.map(
+                                      (p, i) =>
+                                        `${i + 1}. ${p.displayName}`,
+                                    );
+                                    const choice = prompt(
+                                      `Choose fallback for "${printer.displayName}" (enter number, or 0 to remove):\n${names.join("\n")}`,
+                                    );
+                                    if (choice === null) return;
+                                    const idx = parseInt(choice, 10);
+                                    const fallbackId =
+                                      idx === 0
+                                        ? null
+                                        : otherPrinters[idx - 1]?.id ?? null;
+                                    const autoEnabled =
+                                      fallbackId !== null &&
+                                      confirm(
+                                        "Enable automatic fallback when primary is unavailable?",
+                                      );
+                                    void (async () => {
+                                      try {
+                                        const res =
+                                          await adminApi.configureFallback(
+                                            printer.id,
+                                            fallbackId,
+                                            autoEnabled,
+                                          );
+                                        if (res.ok) {
+                                          setNotice("Fallback updated.");
+                                          await loadPrinters();
+                                        }
+                                      } catch (caught: unknown) {
+                                        if (
+                                          caught instanceof AdminApiError &&
+                                          caught.status === 401
+                                        ) {
+                                          onSessionExpired(
+                                            "Your session has expired. Please sign in again.",
+                                          );
+                                          return;
+                                        }
+                                        setError(
+                                          friendlyAdminError(caught),
+                                        );
+                                      }
+                                    })();
+                                  }}
+                                >
+                                  Configure
+                                </button>
+                              </div>
+                            </div>
+                          ) : null}
                         </div>
                         <div
                           style={{
