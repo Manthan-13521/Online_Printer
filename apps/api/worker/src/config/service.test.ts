@@ -78,6 +78,9 @@ function repository(): ConfigurationRepository {
             sortOrder: index + 1,
           }),
         ),
+        ...(input.priorityPrinting
+          ? { priorityPrinting: input.priorityPrinting }
+          : {}),
       };
       return Promise.resolve();
     }),
@@ -160,5 +163,30 @@ describe("ConfigurationService", () => {
       ),
     ).rejects.toMatchObject({ code: "INVALID_PRICING_CONFIGURATION" });
     expect(repo.updatePricing).not.toHaveBeenCalled();
+  });
+
+  it("updates priority printing fee and enabled status", async () => {
+    const repo = repository();
+    const service = new ConfigurationService(repo, () => 7890);
+    const current = await service.getPricing();
+    const update: AdminPricingUpdateRequest = {
+      printRates: current.printRates,
+      fileSizeServiceCharges: current.fileSizeServiceCharges,
+      priorityPrinting: {
+        enabled: true,
+        feePaise: 2000,
+      },
+    };
+
+    const result = await service.updatePricing(update, "admin-1");
+    expect(result.priorityPrinting).toEqual({
+      enabled: true,
+      feePaise: 2000,
+    });
+    expect(repo.updatePricing).toHaveBeenCalledWith({
+      ...update,
+      adminId: "admin-1",
+      nowMs: 7890,
+    });
   });
 });

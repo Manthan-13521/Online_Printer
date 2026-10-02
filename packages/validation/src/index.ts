@@ -553,6 +553,10 @@ export interface ValidatedFileSizeServiceCharge {
 export interface ValidatedPricingUpdate {
   printRates: ValidatedPrintRate[];
   fileSizeServiceCharges: ValidatedFileSizeServiceCharge[];
+  priorityPrinting?: {
+    enabled: boolean;
+    feePaise: number;
+  };
 }
 
 export function validatePricingUpdateInput(
@@ -677,9 +681,45 @@ export function validatePricingUpdateInput(
     }
   }
 
+  let priorityPrinting: { enabled: boolean; feePaise: number } | undefined;
+  if (record.priorityPrinting !== undefined) {
+    if (
+      typeof record.priorityPrinting !== "object" ||
+      record.priorityPrinting === null
+    ) {
+      issues.push({
+        path: ["priorityPrinting"],
+        code: "INVALID_PRIORITY_PRINTING",
+        message: "Check priority printing configuration.",
+      });
+    } else {
+      const pp = record.priorityPrinting as Record<string, unknown>;
+      if (typeof pp.enabled !== "boolean" || !isIntegerPaise(pp.feePaise)) {
+        issues.push({
+          path: ["priorityPrinting"],
+          code: "INVALID_PRIORITY_PRINTING",
+          message:
+            "Priority printing requires a valid enabled flag and non-negative fee.",
+        });
+      } else {
+        priorityPrinting = {
+          enabled: pp.enabled,
+          feePaise: pp.feePaise,
+        };
+      }
+    }
+  }
+
   return issues.length > 0
     ? { ok: false, issues }
-    : { ok: true, value: { printRates, fileSizeServiceCharges } };
+    : {
+        ok: true,
+        value: {
+          printRates,
+          fileSizeServiceCharges,
+          ...(priorityPrinting !== undefined ? { priorityPrinting } : {}),
+        },
+      };
 }
 
 export function validateAgentPairInput(

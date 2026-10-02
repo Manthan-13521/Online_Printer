@@ -34,7 +34,7 @@
 | **1** | 2026-10-02 18:07 IST | Admin Pricing / Addons Form       | Radio buttons for "Pricing" & "Handling" rendered as giant overlapping circles covering label text                          | Global `input` rule had `width: 100%` and `min-height: 2.85rem` without excluding radio/checkbox                                                                                                                  | Scoped `input:not([type="checkbox"]):not([type="radio"])` and set fixed `1.15rem` radio sizes & alignment in `apps/web/admin/src/styles.css`                     | 🟡 Ready for User Retest on Staging |
 | **2** | 2026-10-02 18:30 IST | Customer Payment / Verification   | Order with MANUAL_PRINT add-on displayed "Payment could not be completed" on Customer PWA after successful Razorpay payment | `createAuthorization` and `listSafeTimeline` in `apps/api/worker/src/tracking/repository.ts` lacked `'MANUAL_PRINT'` and `'AWAITING_FINISHING'` in SQL `status IN (...)`, returning `TRACKING_ACCESS_UNAVAILABLE` | Added `MANUAL_PRINT`, `AWAITING_FINISHING`, and all valid post-payment statuses to tracking queries; updated customer error fallback                             | 🟡 Ready for Deployment & Retest    |
 | **3** | 2026-10-02 19:15 IST | Admin Settings / Cleanup Triggers | "Free All Print Data" & "Free Printed Data" failed with 500; 5-min scheduled cleanup threw errors in Worker logs            | Remote D1 table `cleanup_runs` lacked `cutoff_at_ms` column, throwing `SQLITE_ERROR: table cleanup_runs has no column named cutoff_at_ms` on `createRun` & `claimBatch`                                           | Executed `ALTER TABLE cleanup_runs ADD COLUMN cutoff_at_ms INTEGER NOT NULL DEFAULT 0;` on remote D1 and deployed updated API Worker with enhanced error logging | 🟢 Fixed & Deployed                 |
-| **4** | 2026-10-02 19:50 IST | Admin Pricing / Discount Rules    | Browser rejected valid integer discount percentage (e.g. 50%) with HTML5 tooltip "Enter a valid value"                     | Input had `min="0.1"` and `step="0.5"`, causing HTML5 step constraint `(value - 0.1) % 0.5 === 0` which rejected whole numbers like 50; conflicted with integer-only backend schema | Changed input to `min="1" max="100" step="1"` and added `Number.isInteger` validation; deployed to Cloudflare Pages                                                | 🟢 Fixed & Deployed                 |
+| **4** | 2026-10-02 19:50 IST | Admin Pricing / Discount Rules    | Browser rejected valid integer discount percentage (e.g. 50%) with HTML5 tooltip "Enter a valid value"                      | Input had `min="0.1"` and `step="0.5"`, causing HTML5 step constraint `(value - 0.1) % 0.5 === 0` which rejected whole numbers like 50; conflicted with integer-only backend schema                               | Changed input to `min="1" max="100" step="1"` and added `Number.isInteger` validation; deployed to Cloudflare Pages                                              | 🟢 Fixed & Deployed                 |
 
 ---
 
@@ -95,3 +95,27 @@
   2. Added explicit `!Number.isInteger(discountPercent)` check in `handleCreate` to provide clear feedback.
   3. Built and deployed updated Admin PWA to Cloudflare Pages (`https://printgo-admin.pages.dev`).
 - **Tests**: `pnpm --filter @printgo/admin test` (all passed), `pnpm typecheck`, `pnpm lint`, `pnpm format:check`, `pnpm build` all passed (exit 0).
+
+### Finding 5: Priority Queue Persistence and Add-on Services Disappearing on Page Refresh
+
+- **Issue**:
+  1. In Admin Pricing (`/admin/pricing`), enabling "Priority Printing", setting a fee (e.g. ₹20), and clicking "Save Pricing" displayed "All changes saved", but upon refreshing or navigating away, the priority fee and toggle reverted to disabled / ₹0.
+  2. Creating Add-on Services (or Discount Rules) displayed them immediately in the UI, but upon refreshing the page, they disappeared and displayed "No add-on services configured. Click '+ Add Service' to create one."
+- **Expected**:
+  - Saved priority printing enabled state and fee persist to database and reload accurately across page refreshes.
+  - Configured add-on services and discount rules remain visible and populated across page refreshes.
+- **Actual**:
+  - Priority printing fee was not saved to the D1 `installation` table despite the UI success message.
+  - Add-on services disappeared from the UI on refresh, even though the records existed safely in the database.
+- **Root Cause**:
+  1. **Priority Printing Validation Stripping**: `packages/validation/src/index.ts` defined `ValidatedPricingUpdate` with only `printRates` and `fileSizeServiceCharges`. In `validatePricingUpdateInput`, incoming `priorityPrinting` parameters were not processed or returned in `value`. Consequently, the API route passed `{ printRates, fileSizeServiceCharges }` to `repository.updatePricing`, which skipped updating the `installation` table columns `priority_printing_enabled` and `priority_fee_paise`.
+  2. **Add-on Services Omission in Pricing Query**: `D1ConfigurationRepository.getPricing()` in `apps/api/worker/src/config/repository.ts` executed batch queries for print rates, size charges, installation, and discount rules, but omitted `addon_services`. `PricingPage.tsx` therefore received `undefined` for `pricing.addonServices`.
+  3. **React Prop Lifecycle Desynchronization**: Both `AddonServicesSection.tsx` and `DiscountRulesSection.tsx` initialized state using `useState(initialServices)` and `useState(initialRules)`. Because `useState` initializers only evaluate on component mount (when initial props are `[]`), subsequent prop updates from the parent async API response never synchronized without a `useEffect` hook.
+- **Fix**:
+  1. Updated `packages/validation/src/index.ts` to include `priorityPrinting?: { enabled: boolean; feePaise: number }` in `ValidatedPricingUpdate` and validated non-negative integer paise.
+  2. Updated `apps/api/worker/src/config/repository.ts` and `apps/api/worker/src/config/service.ts` to include `addon_services` in `getPricing()`.
+  3. Added `useEffect(() => { setServices(initialServices); }, [initialServices]);` in `AddonServicesSection.tsx` and `useEffect(() => { setRules(initialRules); }, [initialRules]);` in `DiscountRulesSection.tsx`.
+  4. Updated `PricingPage.tsx` to keep state synced across save operations.
+  5. Added unit tests for priority printing validation and repository updates.
+- **Tests**: `pnpm test` (78 suites, 657 tests passing), `pnpm typecheck` (0 errors), `pnpm lint` (0 warnings), `pnpm format:check` (clean), `pnpm db:validate` (clean), `pnpm build` (all packages built).
+

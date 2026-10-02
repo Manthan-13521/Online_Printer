@@ -5,7 +5,7 @@ import type {
   PricingType,
 } from "@printgo/api-contract";
 import { formatPaiseAsRupeesInput, parseRupeesToPaise } from "@printgo/pricing";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { adminApi, AdminApiError, friendlyAdminError } from "./api";
 
 const HANDLING_LABELS: Record<HandlingMode, string> = {
@@ -59,6 +59,10 @@ export function AddonServicesSection({
   onSessionExpired: (message: string) => void;
 }) {
   const [services, setServices] = useState(initialServices);
+
+  useEffect(() => {
+    setServices(initialServices);
+  }, [initialServices]);
   const [editing, setEditing] = useState<ServiceDraft | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);

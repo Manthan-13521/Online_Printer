@@ -177,6 +177,12 @@ export function PricingPage({
         const next = toDraft(response.data.pricing);
         setDraft(next);
         setSaved(next);
+        if (response.data.pricing.addonServices) {
+          setAddonServices(response.data.pricing.addonServices);
+        }
+        if (response.data.pricing.discountRules) {
+          setDiscountRules(response.data.pricing.discountRules);
+        }
         setMessage(response.data.message ?? "Pricing saved.");
       }
     } catch (caught: unknown) {

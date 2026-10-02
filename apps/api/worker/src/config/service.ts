@@ -73,6 +73,7 @@ export class ConfigurationService {
         maxBytesInclusive: charge.maxBytesInclusive,
         chargePaise: charge.chargePaise,
       })),
+      ...(stored.addonServices ? { addonServices: stored.addonServices } : {}),
       ...(stored.priorityPrinting
         ? { priorityPrinting: stored.priorityPrinting }
         : {}),

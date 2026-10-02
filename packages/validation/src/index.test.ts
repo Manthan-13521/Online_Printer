@@ -215,4 +215,32 @@ describe("pricing configuration validation", () => {
       }).ok,
     ).toBe(false);
   });
+
+  it("validates priorityPrinting configuration and passes it through", () => {
+    const valid = validatePricingUpdateInput({
+      printRates: validRates,
+      fileSizeServiceCharges: validCharges,
+      priorityPrinting: {
+        enabled: true,
+        feePaise: 2500,
+      },
+    });
+    expect(valid.ok).toBe(true);
+    if (valid.ok) {
+      expect(valid.value.priorityPrinting).toEqual({
+        enabled: true,
+        feePaise: 2500,
+      });
+    }
+
+    const invalidFee = validatePricingUpdateInput({
+      printRates: validRates,
+      fileSizeServiceCharges: validCharges,
+      priorityPrinting: {
+        enabled: true,
+        feePaise: -100,
+      },
+    });
+    expect(invalidFee.ok).toBe(false);
+  });
 });

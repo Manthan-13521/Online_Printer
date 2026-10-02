@@ -1,4 +1,5 @@
 import type {
+  AdminAddonService,
   AdminDiscountRule,
   AdminFileSizeServiceCharge,
   AdminPrintRate,
@@ -19,6 +20,7 @@ export interface StoredFileSizeServiceCharge extends AdminFileSizeServiceCharge 
 export interface StoredPricingConfiguration {
   printRates: StoredPrintRate[];
   fileSizeServiceCharges: StoredFileSizeServiceCharge[];
+  addonServices?: AdminAddonService[];
   priorityPrinting?: {
     enabled: boolean;
     feePaise: number;
@@ -271,29 +273,39 @@ export class D1ConfigurationRepository implements ConfigurationRepository {
   }
 
   async getPricing(): Promise<StoredPricingConfiguration> {
-    const [rateResult, chargeResult, installResult, discountResult] =
-      await this.db.batch([
-        this.db.prepare(
-          `SELECT id, paper_size, color_mode, sides, price_per_page_paise, enabled
+    const [
+      rateResult,
+      chargeResult,
+      installResult,
+      discountResult,
+      addonResult,
+    ] = await this.db.batch([
+      this.db.prepare(
+        `SELECT id, paper_size, color_mode, sides, price_per_page_paise, enabled
            FROM print_rates
            ORDER BY paper_size DESC, color_mode, sides DESC`,
-        ),
-        this.db.prepare(
-          `SELECT id, min_bytes_exclusive, max_bytes_inclusive, charge_paise,
+      ),
+      this.db.prepare(
+        `SELECT id, min_bytes_exclusive, max_bytes_inclusive, charge_paise,
                   enabled, sort_order
            FROM file_size_service_charges
            ORDER BY sort_order`,
-        ),
-        this.db.prepare(
-          `SELECT priority_printing_enabled, priority_fee_paise
+      ),
+      this.db.prepare(
+        `SELECT priority_printing_enabled, priority_fee_paise
            FROM installation WHERE id = 1`,
-        ),
-        this.db.prepare(
-          `SELECT id, min_subtotal_paise, discount_percent, enabled, created_at_ms, updated_at_ms
+      ),
+      this.db.prepare(
+        `SELECT id, min_subtotal_paise, discount_percent, enabled, created_at_ms, updated_at_ms
            FROM discount_rules
            ORDER BY min_subtotal_paise ASC`,
-        ),
-      ]);
+      ),
+      this.db.prepare(
+        `SELECT id, name, pricing_type, fixed_price_paise, handling_mode, enabled, display_order, created_at_ms, updated_at_ms
+           FROM addon_services
+           ORDER BY display_order ASC, name ASC`,
+      ),
+    ]);
     if (!rateResult || !chargeResult) {
       throw new Error("Pricing configuration could not be loaded.");
     }
@@ -305,6 +317,17 @@ export class D1ConfigurationRepository implements ConfigurationRepository {
       min_subtotal_paise: number;
       discount_percent: number;
       enabled: number;
+      created_at_ms: number;
+      updated_at_ms: number;
+    }>;
+    const addonRows = (addonResult?.results ?? []) as Array<{
+      id: string;
+      name: string;
+      pricing_type: "FIXED_PRICE" | "STAFF_PRICED";
+      fixed_price_paise: number | null;
+      handling_mode: "AUTO" | "POST_PRINT" | "MANUAL_PRINT";
+      enabled: number;
+      display_order: number;
       created_at_ms: number;
       updated_at_ms: number;
     }>;
@@ -329,6 +352,17 @@ export class D1ConfigurationRepository implements ConfigurationRepository {
         chargePaise: row.charge_paise,
         enabled: row.enabled === 1,
         sortOrder: row.sort_order,
+      })),
+      addonServices: addonRows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        pricingType: r.pricing_type,
+        fixedPricePaise: r.fixed_price_paise,
+        handlingMode: r.handling_mode,
+        enabled: r.enabled === 1,
+        displayOrder: r.display_order,
+        createdAt: new Date(r.created_at_ms).toISOString(),
+        updatedAt: new Date(r.updated_at_ms).toISOString(),
       })),
       priorityPrinting: {
         enabled: (installRow?.priority_printing_enabled ?? 0) === 1,

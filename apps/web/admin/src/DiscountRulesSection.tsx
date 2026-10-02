@@ -3,7 +3,7 @@ import type {
   AdminDiscountRuleRequest,
 } from "@printgo/api-contract";
 import { formatPaiseAsRupeesInput, parseRupeesToPaise } from "@printgo/pricing";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { adminApi, AdminApiError, friendlyAdminError } from "./api";
 
 interface RuleDraft {
@@ -20,6 +20,10 @@ export function DiscountRulesSection({
   onSessionExpired: (message: string) => void;
 }) {
   const [rules, setRules] = useState<AdminDiscountRule[]>(initialRules);
+
+  useEffect(() => {
+    setRules(initialRules);
+  }, [initialRules]);
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState<RuleDraft>({
     minSubtotalRupees: "500",
