@@ -122,6 +122,8 @@ export class CleanupService {
       preview,
       nowMs,
     });
+    // Also clear any legacy retained_order_history rows from previous cleanup runs.
+    await this.repository.purgeAllHistory();
     await this.processRun(runId, scope, 10);
     const run = await this.repository.getRun(runId);
     if (!run) throw new CleanupRequestError("CLEANUP_RUN_NOT_FOUND");

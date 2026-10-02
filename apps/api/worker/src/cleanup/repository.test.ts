@@ -234,7 +234,7 @@ describe("D1 cleanup repository", () => {
     expect(deleted).toHaveLength(1);
   });
 
-  it("purges completed multi-PDF data at two hours, expires tracking, and keeps anonymous history", async () => {
+  it("purges completed multi-PDF data at two hours, expires tracking, leaves no history row", async () => {
     const id = "51000000-0000-4000-8000-000000000001";
     seedOrder(id, "UPLOADED");
     db.prepare(
@@ -277,12 +277,9 @@ describe("D1 cleanup repository", () => {
     expect(
       db.prepare("SELECT id FROM order_files WHERE order_id = ?").get(id),
     ).toBeUndefined();
+    // No retained_order_history row — everything is permanently deleted.
     const history = await new D1OrderHistoryRepository(asD1(db)).list(null);
-    expect(history.orders[0]).toMatchObject({
-      purged: true,
-      pickupCode: null,
-      status: "COMPLETED",
-    });
+    expect(history.orders).toHaveLength(0);
   });
 
   it("skips active spool work, retains unresolved completed work, and allows inactive uncertain Free All", async () => {

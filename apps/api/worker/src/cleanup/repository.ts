@@ -95,6 +95,14 @@ export class D1CleanupRepository {
     return row !== null;
   }
 
+  /** Permanently remove all stale retained_order_history rows. */
+  async purgeAllHistory(): Promise<number> {
+    const result = await this.db
+      .prepare("DELETE FROM retained_order_history")
+      .run();
+    return result.meta.changes ?? 0;
+  }
+
   async hasCandidates(scope: CleanupScope, nowMs: number): Promise<boolean> {
     const where = scopeWhere(scope);
     const guard = safetyGuard(scope, nowMs);
@@ -394,42 +402,8 @@ export class D1CleanupRepository {
   ): Promise<void> {
     await this.db.batch([
       this.db
-        .prepare(
-          `INSERT OR IGNORE INTO retained_order_history
-          (id, created_at_ms, completed_at_ms, final_status, is_priority,
-           is_manual, online_paid_paise, due_at_pickup_paise, attempt_count,
-           printer_name, fallback_printer_name, addon_summary_json,
-           had_failure, had_uncertain, purged_at_ms)
-         SELECT o.id, o.created_at_ms, o.completed_at_ms,
-           CASE WHEN o.status = 'COMPLETED' THEN 'COMPLETED' ELSE 'DATA_CLEARED' END,
-           o.is_priority,
-           CASE WHEN EXISTS (SELECT 1 FROM order_addon_services s
-             WHERE s.order_id = o.id AND s.snapshot_handling_mode = 'MANUAL_PRINT')
-             OR EXISTS (SELECT 1 FROM order_events e WHERE e.order_id = o.id
-               AND e.event_type IN ('ORDER_MANUALLY_COMPLETED','ORDER_MANUALLY_PRINTED'))
-             THEN 1 ELSE 0 END,
-           COALESCE((SELECT MAX(p.amount_paise) FROM payments p
-             WHERE p.order_id = o.id AND p.status = 'PAID'), 0),
-           o.due_at_pickup_paise,
-           (SELECT COUNT(*) FROM print_attempts a WHERE a.order_id = o.id),
-           (SELECT p.display_name FROM print_attempts a JOIN printers p ON p.id = a.printer_id
-             WHERE a.order_id = o.id ORDER BY a.attempt_number DESC LIMIT 1),
-           (SELECT p.display_name FROM print_attempts a JOIN printers p
-             ON p.id = a.printer_id WHERE a.order_id = o.id
-             AND a.fallback_from_printer_id IS NOT NULL
-             ORDER BY a.attempt_number DESC LIMIT 1),
-           COALESCE((SELECT json_group_array(json_object('name', s.snapshot_name,
-             'onlinePricePaise', s.snapshot_price_charged_online_paise,
-             'handlingMode', s.snapshot_handling_mode))
-             FROM order_addon_services s WHERE s.order_id = o.id), '[]'),
-           CASE WHEN EXISTS (SELECT 1 FROM print_attempt_steps st
-             WHERE st.order_id = o.id AND st.status IN ('FAILED','BLOCKED')) THEN 1 ELSE 0 END,
-           CASE WHEN EXISTS (SELECT 1 FROM print_attempt_steps st
-             WHERE st.order_id = o.id AND st.status = 'UNCERTAIN') THEN 1 ELSE 0 END,
-           ? FROM orders o WHERE o.id = ? AND o.cleanup_run_id = ?
-             AND (o.paid_at_ms IS NOT NULL OR o.status = 'COMPLETED')`,
-        )
-        .bind(nowMs, candidate.orderId, runId),
+        .prepare("DELETE FROM retained_order_history WHERE id = ?")
+        .bind(candidate.orderId),
       this.db
         .prepare(
           `INSERT OR IGNORE INTO retained_payment_records

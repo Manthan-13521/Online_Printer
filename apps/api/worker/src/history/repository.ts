@@ -38,67 +38,43 @@ export class D1OrderHistoryRepository {
 
     const result = await this.db
       .prepare(
-        `WITH active_page AS (
+        `WITH page AS (
            SELECT id, created_at_ms FROM orders
            WHERE (created_at_ms, id) < (?, ?)
            ORDER BY created_at_ms DESC, id DESC LIMIT ?
-         ), retained_page AS (
-           SELECT id, created_at_ms FROM retained_order_history
-           WHERE (created_at_ms, id) < (?, ?)
-           ORDER BY created_at_ms DESC, id DESC LIMIT ?
-         ), page AS (
-           SELECT id, created_at_ms FROM (
-             SELECT id, created_at_ms FROM active_page
-             UNION ALL
-             SELECT id, created_at_ms FROM retained_page
-           ) ORDER BY created_at_ms DESC, id DESC LIMIT ?
-       )
-       SELECT o.id, o.created_at_ms, o.completed_at_ms, o.pickup_code,
-         o.is_priority,
-         CASE WHEN o.status = 'MANUAL_PRINT' OR EXISTS (
-           SELECT 1 FROM order_addon_services s WHERE s.order_id = o.id
-             AND s.snapshot_handling_mode = 'MANUAL_PRINT') OR EXISTS (
-           SELECT 1 FROM order_events e WHERE e.order_id = o.id
-             AND e.event_type IN ('ORDER_MANUALLY_COMPLETED','ORDER_MANUALLY_PRINTED'))
-           THEN 1 ELSE 0 END is_manual,
-         COALESCE((SELECT json_group_array(json_object('name', s.snapshot_name,
-           'onlinePricePaise', s.snapshot_price_charged_online_paise,
-           'handlingMode', s.snapshot_handling_mode))
-           FROM order_addon_services s WHERE s.order_id = o.id), '[]') addon_summary_json,
-         COALESCE((SELECT MAX(pay.amount_paise) FROM payments pay
-           WHERE pay.order_id = o.id AND pay.status = 'PAID'), 0) online_paid_paise,
-         o.due_at_pickup_paise, o.status final_status,
-         (SELECT pr.display_name FROM print_attempts a JOIN printers pr ON pr.id = a.printer_id
-           WHERE a.order_id = o.id ORDER BY a.attempt_number DESC LIMIT 1) printer_name,
-         (SELECT pr.display_name FROM print_attempts a JOIN printers pr ON pr.id = a.printer_id
-           WHERE a.order_id = o.id AND a.fallback_from_printer_id IS NOT NULL
-           ORDER BY a.attempt_number DESC LIMIT 1) fallback_printer_name,
-         (SELECT COUNT(*) FROM print_attempts a WHERE a.order_id = o.id) attempt_count,
-         COALESCE((SELECT json_group_array(json_object('status', st.status,
-           'code', st.failure_code, 'at', st.updated_at_ms))
-           FROM print_attempt_steps st WHERE st.order_id = o.id
-             AND st.status IN ('FAILED','BLOCKED','UNCERTAIN')), '[]') failure_json,
-         0 purged
-       FROM page JOIN orders o ON o.id = page.id
-       UNION ALL
-       SELECT h.id, h.created_at_ms, h.completed_at_ms, NULL, h.is_priority,
-         h.is_manual, h.addon_summary_json, h.online_paid_paise,
-         h.due_at_pickup_paise, h.final_status, h.printer_name,
-         h.fallback_printer_name, h.attempt_count,
-         json_array(
-           CASE WHEN h.had_failure = 1 THEN json_object('status','FAILED','code',NULL,'at',NULL) END,
-           CASE WHEN h.had_uncertain = 1 THEN json_object('status','UNCERTAIN','code',NULL,'at',NULL) END
-         ) failure_json, 1 purged
-       FROM page JOIN retained_order_history h ON h.id = page.id
-       ORDER BY 2 DESC, 1 DESC`,
+         )
+         SELECT o.id, o.created_at_ms, o.completed_at_ms, o.pickup_code,
+           o.is_priority,
+           CASE WHEN o.status = 'MANUAL_PRINT' OR EXISTS (
+             SELECT 1 FROM order_addon_services s WHERE s.order_id = o.id
+               AND s.snapshot_handling_mode = 'MANUAL_PRINT') OR EXISTS (
+             SELECT 1 FROM order_events e WHERE e.order_id = o.id
+               AND e.event_type IN ('ORDER_MANUALLY_COMPLETED','ORDER_MANUALLY_PRINTED'))
+             THEN 1 ELSE 0 END is_manual,
+           COALESCE((SELECT json_group_array(json_object('name', s.snapshot_name,
+             'onlinePricePaise', s.snapshot_price_charged_online_paise,
+             'handlingMode', s.snapshot_handling_mode))
+             FROM order_addon_services s WHERE s.order_id = o.id), '[]') addon_summary_json,
+           COALESCE((SELECT MAX(pay.amount_paise) FROM payments pay
+             WHERE pay.order_id = o.id AND pay.status = 'PAID'), 0) online_paid_paise,
+           o.due_at_pickup_paise, o.status final_status,
+           (SELECT pr.display_name FROM print_attempts a JOIN printers pr ON pr.id = a.printer_id
+             WHERE a.order_id = o.id ORDER BY a.attempt_number DESC LIMIT 1) printer_name,
+           (SELECT pr.display_name FROM print_attempts a JOIN printers pr ON pr.id = a.printer_id
+             WHERE a.order_id = o.id AND a.fallback_from_printer_id IS NOT NULL
+             ORDER BY a.attempt_number DESC LIMIT 1) fallback_printer_name,
+           (SELECT COUNT(*) FROM print_attempts a WHERE a.order_id = o.id) attempt_count,
+           COALESCE((SELECT json_group_array(json_object('status', st.status,
+             'code', st.failure_code, 'at', st.updated_at_ms))
+             FROM print_attempt_steps st WHERE st.order_id = o.id
+               AND st.status IN ('FAILED','BLOCKED','UNCERTAIN')), '[]') failure_json,
+           0 purged
+         FROM page JOIN orders o ON o.id = page.id
+         ORDER BY 2 DESC, 1 DESC`,
       )
       .bind(
         beforeMs,
         beforeId,
-        boundedLimit + 1,
-        beforeMs,
-        beforeId,
-        boundedLimit + 1,
         boundedLimit + 1,
       )
       .all<HistoryRow>();
