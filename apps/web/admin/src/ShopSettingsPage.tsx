@@ -11,7 +11,6 @@ import {
   FILE_SIZE_25_MIB,
   MIB,
 } from "@printgo/domain";
-import { formatPaiseAsRupeesInput, parseRupeesToPaise } from "@printgo/pricing";
 import {
   ADDRESS_MAX_LENGTH,
   APP_NAME_MAX_LENGTH,
@@ -71,8 +70,17 @@ export function ShopSettingsPage({
     try {
       const response = await adminApi.getSettings();
       if (response.ok) {
-        setSettings(response.data.settings);
-        setSaved(response.data.settings);
+        const loaded = response.data.settings;
+        const normalized =
+          loaded.idRequirementMode !== undefined
+            ? {
+                ...loaded,
+                idRequirementMode: "OFF" as const,
+                idThresholdPaise: 0,
+              }
+            : loaded;
+        setSettings(normalized);
+        setSaved(normalized);
       }
     } catch (caught: unknown) {
       if (caught instanceof AdminApiError && caught.status === 401) {
@@ -106,10 +114,25 @@ export function ShopSettingsPage({
     setError(null);
     setMessage(null);
     try {
-      const response = await adminApi.updateSettings(settings);
+      const payload: ShopSettings = {
+        ...settings,
+        ...(settings.idRequirementMode !== undefined
+          ? { idRequirementMode: "OFF", idThresholdPaise: 0 }
+          : {}),
+      };
+      const response = await adminApi.updateSettings(payload);
       if (response.ok) {
-        setSettings(response.data.settings);
-        setSaved(response.data.settings);
+        const loaded = response.data.settings;
+        const normalized =
+          loaded.idRequirementMode !== undefined
+            ? {
+                ...loaded,
+                idRequirementMode: "OFF" as const,
+                idThresholdPaise: 0,
+              }
+            : loaded;
+        setSettings(normalized);
+        setSaved(normalized);
         setMessage(response.data.message ?? "Shop settings saved.");
       }
     } catch (caught: unknown) {
@@ -424,132 +447,44 @@ export function ShopSettingsPage({
         </section>
 
         <section className="panel form-section">
-          <h2>Identification</h2>
-
-          <div
-            style={{ display: "grid", gap: "0.35rem", marginBottom: "0.75rem" }}
-          >
-            <h3
-              style={{
-                margin: "0.25rem 0",
-                fontSize: "1.05rem",
-                color: "#1e293b",
-              }}
-            >
-              Identification sheet
-            </h3>
-            <label className="checkbox-row">
-              <input
-                checked={settings.identificationSheetEnabled}
-                onChange={(event) =>
-                  patch({ identificationSheetEnabled: event.target.checked })
-                }
-                type="checkbox"
-              />
-              <span>Print one identification sheet for each order</span>
-            </label>
-            <p className="field-help">
-              Adds one shop identification sheet per order for sorting printed
-              jobs. Customers are not charged for this sheet.
-            </p>
-            <fieldset disabled={!settings.identificationSheetEnabled}>
-              <legend>Placement</legend>
-              <label className="radio-row">
-                <input
-                  checked={settings.identificationSheetPlacement === "FIRST"}
-                  name="placement"
-                  onChange={() =>
-                    patch({ identificationSheetPlacement: "FIRST" })
-                  }
-                  type="radio"
-                />
-                <span>Print before document</span>
-              </label>
-              <label className="radio-row">
-                <input
-                  checked={settings.identificationSheetPlacement === "LAST"}
-                  name="placement"
-                  onChange={() =>
-                    patch({ identificationSheetPlacement: "LAST" })
-                  }
-                  type="radio"
-                />
-                <span>Print after document</span>
-              </label>
-            </fieldset>
-          </div>
-
-          <div
-            style={{
-              display: "grid",
-              gap: "0.35rem",
-              paddingTop: "1rem",
-              borderTop: "1px solid #e2e8f0",
-            }}
-          >
-            <h3
-              style={{
-                margin: "0.25rem 0",
-                fontSize: "1.05rem",
-                color: "#1e293b",
-              }}
-            >
-              Customer Identification at Pickup
-            </h3>
-            <p className="field-help">
-              Require customer identification when collecting their orders. No
-              sensitive identity documents, Aadhaar numbers, or photos are ever
-              collected or stored.
-            </p>
-            <label htmlFor="id-requirement-mode">Identification policy</label>
-            <select
-              id="id-requirement-mode"
-              value={settings.idRequirementMode ?? "OFF"}
+          <h2>Identification Sheet</h2>
+          <label className="checkbox-row">
+            <input
+              checked={settings.identificationSheetEnabled}
               onChange={(event) =>
-                patch({
-                  idRequirementMode: event.target.value as
-                    "OFF" | "ALWAYS" | "ABOVE_THRESHOLD",
-                })
+                patch({ identificationSheetEnabled: event.target.checked })
               }
-            >
-              <option value="OFF">Off (Never required)</option>
-              <option value="ALWAYS">Always required</option>
-              <option value="ABOVE_THRESHOLD">
-                Required only above order amount
-              </option>
-            </select>
-
-            {settings.idRequirementMode === "ABOVE_THRESHOLD" ? (
-              <div
-                style={{ display: "grid", gap: "0.35rem", marginTop: "0.5rem" }}
-              >
-                <label htmlFor="id-threshold-amount">
-                  Minimum order amount (₹)
-                </label>
-                <input
-                  id="id-threshold-amount"
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={
-                    settings.idThresholdPaise !== undefined
-                      ? formatPaiseAsRupeesInput(settings.idThresholdPaise)
-                      : "500"
-                  }
-                  onChange={(event) =>
-                    patch({
-                      idThresholdPaise:
-                        parseRupeesToPaise(event.target.value || "0") ?? 0,
-                    })
-                  }
-                />
-                <p className="field-help">
-                  Orders with online printing total equal to or above this
-                  amount will require customer ID at pickup.
-                </p>
-              </div>
-            ) : null}
-          </div>
+              type="checkbox"
+            />
+            <span>Print one identification sheet for each order</span>
+          </label>
+          <p className="field-help">
+            Adds one shop identification sheet per order for sorting printed
+            jobs. Customers are not charged for this sheet.
+          </p>
+          <fieldset disabled={!settings.identificationSheetEnabled}>
+            <legend>Placement</legend>
+            <label className="radio-row">
+              <input
+                checked={settings.identificationSheetPlacement === "FIRST"}
+                name="placement"
+                onChange={() =>
+                  patch({ identificationSheetPlacement: "FIRST" })
+                }
+                type="radio"
+              />
+              <span>Print before document</span>
+            </label>
+            <label className="radio-row">
+              <input
+                checked={settings.identificationSheetPlacement === "LAST"}
+                name="placement"
+                onChange={() => patch({ identificationSheetPlacement: "LAST" })}
+                type="radio"
+              />
+              <span>Print after document</span>
+            </label>
+          </fieldset>
         </section>
 
         <section className="panel form-section">

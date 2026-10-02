@@ -181,3 +181,14 @@
   6. Added unit tests in `apps/web/admin/src/Pagination.test.tsx` and updated integration tests in `apps/web/admin/src/App.test.tsx`.
 - **Tests**: `pnpm test` (79 suites, 663 tests passing), `pnpm typecheck` (0 errors), `pnpm lint` (0 warnings), `pnpm format:check` (clean), `pnpm db:validate` (clean), `pnpm build` (all packages & PWAs built).
 
+### Finding 10: Customer Identification Policy Removed Completely from Admin Settings
+
+- **Issue**: The admin shop settings page contained a "Customer Identification at Pickup" dropdown (options: "Off", "Always required", "Required only above order amount") under the Identification section, which was confusing and obsolete after standardizing on single Pickup Codes (`PA-00x`).
+- **Expected**: Completely remove customer identification requirements from admin shop settings, leaving only the shop identification sheet printing settings, and ensure identification requirement policy is permanently forced to `OFF`.
+- **Actual**: The Identification section in `ShopSettingsPage.tsx` contained configuration inputs for customer pickup ID policies and minimum order threshold amounts.
+- **Fix**:
+  1. Removed the "Customer Identification at Pickup" subsection, dropdown, and threshold input from `apps/web/admin/src/ShopSettingsPage.tsx`.
+  2. Simplified the panel header to `Identification Sheet` focused exclusively on physical print sheet sorting.
+  3. Ensured that loading and saving in `ShopSettingsPage.tsx` normalizes any ID requirement policy permanently to `OFF` with `0` threshold paise.
+  4. Cleaned up unused pricing helper imports (`formatPaiseAsRupeesInput`, `parseRupeesToPaise`).
+- **Tests**: `pnpm test` (79 suites, 663 tests passing), `pnpm typecheck` (0 errors), `pnpm lint` (0 warnings), `pnpm format:check` (clean), `pnpm db:validate` (clean), `pnpm build` (all packages & PWAs built).
