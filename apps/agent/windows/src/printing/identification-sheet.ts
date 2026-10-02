@@ -179,9 +179,7 @@ export function generateIdentificationSheetBuffer(
   const color = data.colorMode === "COLOR" ? "Colour" : "Black & White";
   const sides = data.sides === "DOUBLE" ? "Double-sided" : "Single-sided";
 
-  const jobDisplay = data.pickupCode
-    ? `${pdfSafeText(data.pickupCode, 15)} (${jobCode})`
-    : jobCode;
+  const displayCode = pdfSafeText(data.pickupCode ?? jobCode, 20);
 
   const lines: string[] = [
     "0.5 w",
@@ -190,8 +188,8 @@ export function generateIdentificationSheetBuffer(
     `BT /F1 10 Tf 50 756 Td (${escapePdfText("JOB IDENTIFICATION SHEET")}) Tj ET`,
     "50 744 m 545 744 l S",
     "0.75 w 50 645 495 85 re S",
-    "BT /F1 10 Tf 65 712 Td (HUMAN JOB CODE - VERIFY WITH CUSTOMER) Tj ET",
-    `BT /F2 ${Math.min(32, 465 / Math.max(1, jobDisplay.length * 0.95)).toFixed(2)} Tf 65 670 Td (${escapePdfText(jobDisplay)}) Tj ET`,
+    "BT /F1 10 Tf 65 712 Td (PICKUP CODE - VERIFY WITH CUSTOMER) Tj ET",
+    `BT /F2 ${Math.min(36, 465 / Math.max(1, displayCode.length * 0.95)).toFixed(2)} Tf 65 665 Td (${escapePdfText(displayCode)}) Tj ET`,
     "0.5 w 50 525 495 105 re S",
     "BT /F2 11 Tf 65 612 Td (CUSTOMER AND ORDER DETAILS) Tj ET",
     "BT /F1 10 Tf 15 TL 65 592 Td",

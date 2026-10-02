@@ -111,7 +111,10 @@ describe("identification sheet", () => {
       ],
     }).toString("ascii");
 
-    expect(text).toContain("PA-001 \\(PG-A1B2C3\\)");
+    expect(text).toContain("PA-001");
+    expect(text).not.toContain("PG-A1B2C3");
+    expect(text).toContain("PICKUP CODE - VERIFY WITH CUSTOMER");
+    expect(text).not.toContain("HUMAN JOB CODE");
     expect(text).toContain("Due at pickup: Rs. 50.00");
     expect(text).toContain("ADD-ON SERVICES & FINISHING");
     expect(text).toContain("- Stapling \\(Free\\) -- Staff Finishing");

@@ -1422,104 +1422,52 @@ export function App() {
                 </div>
               </dl>
             )}
-            {quote?.identificationRequired ? (
-              <div
-                style={{
-                  margin: "0.75rem 0",
-                  padding: "0.75rem 1rem",
-                  backgroundColor: "#fef2f2",
-                  border: "1px solid #fecaca",
-                  borderRadius: "8px",
-                  color: "#991b1b",
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "0.5rem",
-                  }}
-                >
-                  <span>🪪</span>
-                  <strong>Identification will be required at pickup</strong>
-                </div>
-                <p
-                  style={{
-                    margin: "0.25rem 0 0 1.6rem",
-                    fontSize: "0.85rem",
-                    color: "#7f1d1d",
-                  }}
-                >
-                  Please carry valid ID when collecting your printed documents.
-                </p>
-              </div>
-            ) : null}
             {paymentSuccess && (
               <div className="payment-success" role="status">
                 <h3>Payment successful</h3>
-                {paymentSuccess.pickupCode ? (
-                  <div
+                <div
+                  style={{
+                    margin: "1rem 0",
+                    padding: "1.25rem",
+                    backgroundColor: "#e0f2fe",
+                    border: "2px solid #0284c7",
+                    borderRadius: "10px",
+                    textAlign: "center",
+                  }}
+                >
+                  <p
                     style={{
-                      margin: "1rem 0",
-                      padding: "1.25rem",
-                      backgroundColor: "#e0f2fe",
-                      border: "2px solid #0284c7",
-                      borderRadius: "10px",
-                      textAlign: "center",
-                    }}
-                  >
-                    <p
-                      style={{
-                        margin: 0,
-                        fontSize: "0.85rem",
-                        textTransform: "uppercase",
-                        letterSpacing: "1px",
-                        color: "#0369a1",
-                        fontWeight: 700,
-                      }}
-                    >
-                      Pickup Code
-                    </p>
-                    <strong
-                      style={{
-                        display: "block",
-                        fontSize: "2.75rem",
-                        letterSpacing: "3px",
-                        color: "#0c4a6e",
-                        margin: "0.25rem 0",
-                      }}
-                    >
-                      {paymentSuccess.pickupCode}
-                    </strong>
-                    <p
-                      style={{
-                        margin: 0,
-                        fontSize: "0.85rem",
-                        color: "#0284c7",
-                      }}
-                    >
-                      Show this code to shop staff to collect your order
-                    </p>
-                  </div>
-                ) : null}
-                <p>Your Job Reference</p>
-                <strong>{paymentSuccess.jobCode}</strong>
-                {paymentSuccess.identificationRequired ? (
-                  <div
-                    style={{
-                      margin: "0.75rem 0",
-                      padding: "0.6rem 0.85rem",
-                      backgroundColor: "#fef2f2",
-                      border: "1px solid #fecaca",
-                      borderRadius: "6px",
-                      color: "#991b1b",
+                      margin: 0,
                       fontSize: "0.85rem",
+                      textTransform: "uppercase",
+                      letterSpacing: "1px",
+                      color: "#0369a1",
+                      fontWeight: 700,
                     }}
                   >
-                    🪪 <strong>ID Required:</strong> Please show valid
-                    identification at the counter.
-                  </div>
-                ) : null}
+                    Pickup Code
+                  </p>
+                  <strong
+                    style={{
+                      display: "block",
+                      fontSize: "2.75rem",
+                      letterSpacing: "3px",
+                      color: "#0c4a6e",
+                      margin: "0.25rem 0",
+                    }}
+                  >
+                    {paymentSuccess.pickupCode ?? paymentSuccess.jobCode}
+                  </strong>
+                  <p
+                    style={{
+                      margin: 0,
+                      fontSize: "0.85rem",
+                      color: "#0284c7",
+                    }}
+                  >
+                    Show this code to shop staff to collect your order
+                  </p>
+                </div>
                 <p>Amount paid: {formatInr(paymentSuccess.amountPaidPaise)}</p>
                 <p className="muted">
                   Keep your pickup code handy until you collect your prints.

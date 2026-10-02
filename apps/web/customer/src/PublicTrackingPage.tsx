@@ -293,36 +293,6 @@ export function PublicTrackingPage({
             </div>
           </div>
         ) : null}
-
-        {data.identificationRequired ? (
-          <div
-            style={{
-              marginTop: "1rem",
-              padding: "0.85rem 1rem",
-              backgroundColor: "#fef2f2",
-              border: "1px solid #fecaca",
-              borderRadius: "8px",
-              color: "#991b1b",
-            }}
-          >
-            <div
-              style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}
-            >
-              <span style={{ fontSize: "1.25rem" }}>🪪</span>
-              <strong>Identification Required at Pickup</strong>
-            </div>
-            <p
-              style={{
-                margin: "0.35rem 0 0 1.75rem",
-                fontSize: "0.85rem",
-                color: "#7f1d1d",
-              }}
-            >
-              Please present a valid photo ID (e.g. college ID, driver&apos;s
-              license, government ID) when collecting your prints.
-            </p>
-          </div>
-        ) : null}
       </section>
 
       <section

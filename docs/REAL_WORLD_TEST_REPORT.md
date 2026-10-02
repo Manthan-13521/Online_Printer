@@ -132,3 +132,22 @@
   5. Built and deployed updated Windows Agent bundle (`dist/bundle.cjs` & `dist-package/PrintGo-Windows-Test`) and API Worker (Version `b7c3d95d-234a-45cb-9aed-8dddaf5431e6`).
 - **Tests**: `pnpm test` (78 suites, 658 tests passing), `pnpm typecheck` (0 errors), `pnpm lint` (0 warnings), `pnpm format:check` (clean), `pnpm db:validate` (clean), `pnpm build` (all packages & Windows bundle built).
 
+### Finding 7: Unification to Single Pickup Code (PA-00x) and Removal of ID Card Notices & Human Job Code
+
+- **Issue**:
+  1. Customer checkout and payment success screens displayed confusing multiple codes: a primary "PICKUP CODE: PA-00x" alongside a secondary "Your Job Reference: PG-XXXX".
+  2. The physical printed Identification Sheet also displayed both codes with title "HUMAN JOB CODE - VERIFY WITH CUSTOMER: PA-001 (PG-XXXX)".
+  3. Pre-checkout and post-payment screens displayed unwanted ID card / ID required alert banners ("🪪 Identification will be required at pickup").
+- **Expected**:
+  - Exactly ONE single code (e.g. `PA-00x`) must be shown to both customers and print shop operators.
+  - The human job reference code (`PG-XXXX`) must be completely removed from customer-facing screens and printed identification sheets.
+  - The ID card / ID required alert banners must be completely removed from customer screens.
+- **Actual**:
+  - Customers saw redundant codes and ID required notices on screens, and printed sheets showed the internal job reference.
+- **Fix**:
+  1. Updated `apps/agent/windows/src/printing/identification-sheet.ts` to display Box 1 titled `PICKUP CODE - VERIFY WITH CUSTOMER` with only the pickup code (e.g. `PA-001`), completely omitting `jobCode` / `(PG-XXXX)`.
+  2. Updated `apps/web/customer/src/App.tsx` to remove the pre-payment ID banner, remove "Your Job Reference", remove the post-payment ID banner, and display only the single Pickup Code card (`PA-00x`).
+  3. Updated `apps/web/customer/src/PublicTrackingPage.tsx` to remove the identification required alert banner.
+  4. Updated unit tests in `apps/agent/windows/src/printing/identification-sheet.test.ts`.
+- **Tests**: `pnpm test` (78 suites, 658 tests passing), `pnpm typecheck` (0 errors), `pnpm lint` (0 warnings), `pnpm format:check` (clean), `pnpm db:validate` (clean), `pnpm build` (all packages & Windows bundle built).
+
