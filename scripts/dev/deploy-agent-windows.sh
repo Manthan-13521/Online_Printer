@@ -116,9 +116,14 @@ EOF
 echo "[Step 10/15] Updating C:\\PrintGo\\agent installation..."
 ssh "$HOST" "powershell -NoProfile -ExecutionPolicy Bypass -Command \"if (-not (Test-Path 'C:\PrintGo\agent')) { New-Item -ItemType Directory -Path 'C:\PrintGo\agent' -Force | Out-Null }; Copy-Item -Path '$REMOTE_BUILD_DIR\\*' -Destination 'C:\PrintGo\agent' -Force\""
 
-# Step 11: Compile native PrintGo-Agent.exe on Windows
-echo "[Step 11/15] Compiling native PrintGo-Agent.exe on Windows..."
-ssh "$HOST" "cmd.exe /c \"cd /d C:\PrintGo\agent && build-exe.bat --silent\""
+# Step 11: Ensure native PrintGo-Agent.exe is present on Windows
+echo "[Step 11/15] Ensuring native PrintGo-Agent.exe on Windows..."
+if [[ -f "$ROOT_DIR/dist/windows/PrintGo-Agent.exe" ]]; then
+  echo "   Transferring pre-compiled standalone PrintGo-Agent.exe..."
+  scp "$ROOT_DIR/dist/windows/PrintGo-Agent.exe" "$HOST:C:/PrintGo/agent/PrintGo-Agent.exe"
+else
+  ssh "$HOST" "cmd.exe /c \"cd /d C:\PrintGo\agent && build-exe.bat --silent\""
+fi
 
 # Step 12: Verify compiled binary SHA256 and validity
 echo "[Step 12/15] Verifying compiled binary on Windows..."
