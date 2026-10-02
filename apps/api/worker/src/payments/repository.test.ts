@@ -205,6 +205,72 @@ describe("D1PaymentRepository webhook claim & stale event recovery", () => {
     } as unknown as D1Database;
   }
 
+  it("saves priority/discount totals atomically and locks the quote once payment is reserved", async () => {
+    const db = createRealDb();
+    const repo = new D1PaymentRepository(db);
+    const orderId = "50000000-0000-4000-8000-000000000099";
+    await db
+      .prepare(
+        `INSERT INTO orders (id, customer_name, customer_phone, original_filename,
+        paper_size, color_mode, sides, printing_amount_paise, service_charge_paise,
+        total_amount_paise, status, created_at_ms, updated_at_ms)
+       VALUES (?, 'Test', '9999999999', 'test.pdf', 'A4', 'BW', 'SINGLE',
+         2000, 100, 2100, 'PAYMENT_PENDING', 1000, 1000)`,
+      )
+      .bind(orderId)
+      .run();
+    const quote = {
+      orderId,
+      selectedPages: "ALL",
+      printingAmountPaise: 2000,
+      serviceChargePaise: 600,
+      totalAmountPaise: 2080,
+      isPriority: true,
+      priorityFeePaise: 500,
+      discountAmountPaise: 520,
+      snapshotDiscountThresholdPaise: 2500,
+      snapshotDiscountPercent: 20,
+      identificationRequired: true,
+      nowMs: 1100,
+    };
+    expect(await repo.saveRecalculatedQuote(quote)).toBe(true);
+    const saved = await db
+      .prepare(
+        `SELECT total_amount_paise, priority_fee_paise, discount_amount_paise,
+        identification_required FROM orders WHERE id = ?`,
+      )
+      .bind(orderId)
+      .first<{
+        total_amount_paise: number;
+        priority_fee_paise: number;
+        discount_amount_paise: number;
+        identification_required: number;
+      }>();
+    expect(saved).toEqual({
+      total_amount_paise: 2080,
+      priority_fee_paise: 500,
+      discount_amount_paise: 520,
+      identification_required: 1,
+    });
+    await db
+      .prepare(
+        `INSERT INTO payments (id, order_id, provider_order_id, amount_paise,
+        currency, status, created_at_ms, updated_at_ms)
+       VALUES ('60000000-0000-4000-8000-000000000099', ?, 'local_reserved',
+         2080, 'INR', 'CREATED', 1100, 1100)`,
+      )
+      .bind(orderId)
+      .run();
+    expect(await repo.saveRecalculatedQuote(quote)).toBe(true);
+    expect(
+      await repo.saveRecalculatedQuote({
+        ...quote,
+        totalAmountPaise: 2100,
+        discountAmountPaise: 500,
+      }),
+    ).toBe(false);
+  });
+
   it("claims a fresh event and refuses concurrent fresh re-claims", async () => {
     const db = createRealDb();
     const repo = new D1PaymentRepository(db);

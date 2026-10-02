@@ -31,6 +31,7 @@ const draft: PayableDraftRecord = {
   printingAmountPaise: 2_000,
   serviceChargePaise: 100,
   totalAmountPaise: 2_100,
+  isPriority: false,
   currency: "INR",
   orderStatus: "PAYMENT_PENDING",
   publicJobCode: null,
@@ -115,9 +116,21 @@ function customerRepository(pricePerPagePaise = 200) {
         })),
       }),
     ),
+    getPricingRulesAndPolicy: vi.fn(
+      (): ReturnType<CustomerRepository["getPricingRulesAndPolicy"]> =>
+        Promise.resolve({
+          priorityPrinting: { enabled: false, feePaise: 0 },
+          identificationPolicy: { mode: "OFF" as const, thresholdPaise: 0 },
+          discountRules: [],
+        }),
+    ),
+    getOrderAddonAmountPaise: vi.fn(() => Promise.resolve(0)),
   } satisfies Pick<
     CustomerRepository,
-    "getPublicConfig" | "getPricingConfiguration"
+    | "getPublicConfig"
+    | "getPricingConfiguration"
+    | "getPricingRulesAndPolicy"
+    | "getOrderAddonAmountPaise"
   >;
 }
 
@@ -248,6 +261,71 @@ describe("PaymentService", () => {
       expect.objectContaining({ totalAmountPaise: 3_100 }),
     );
     expect(razorpay.createOrder).not.toHaveBeenCalled();
+  });
+
+  it("rechecks priority and discount rules at checkout and persists the complete snapshot", async () => {
+    const payments = paymentRepository();
+    vi.mocked(payments.findDraft).mockResolvedValueOnce({
+      ...draft,
+      isPriority: true,
+      serviceChargePaise: 900,
+      totalAmountPaise: 2_320,
+    });
+    const customer = customerRepository();
+    vi.mocked(customer.getOrderAddonAmountPaise).mockResolvedValueOnce(300);
+    vi.mocked(customer.getPricingRulesAndPolicy).mockResolvedValueOnce({
+      priorityPrinting: { enabled: true, feePaise: 500 },
+      identificationPolicy: { mode: "ABOVE_THRESHOLD", thresholdPaise: 2_000 },
+      discountRules: [{ minSubtotalPaise: 2_500, discountPercent: 20 }],
+    });
+    const razorpay = provider();
+    vi.mocked(razorpay.createOrder).mockResolvedValueOnce({
+      id: "order_server_a",
+      amount: 2_320,
+      currency: "INR",
+      status: "created",
+    });
+    const result = await makeService({
+      payments,
+      customer,
+      provider: razorpay,
+    }).createCheckout("token", 2_320);
+    expect(result.status).toBe("CHECKOUT_READY");
+    expect(payments.saveRecalculatedQuote).toHaveBeenCalledWith(
+      expect.objectContaining({
+        printingAmountPaise: 2_000,
+        serviceChargePaise: 900,
+        totalAmountPaise: 2_320,
+        isPriority: true,
+        priorityFeePaise: 500,
+        discountAmountPaise: 580,
+        snapshotDiscountThresholdPaise: 2_500,
+        snapshotDiscountPercent: 20,
+        identificationRequired: true,
+      }),
+    );
+  });
+
+  it("returns PRICE_CHANGED when a priority rule changes before checkout", async () => {
+    const payments = paymentRepository();
+    vi.mocked(payments.findDraft).mockResolvedValueOnce({
+      ...draft,
+      isPriority: true,
+    });
+    const customer = customerRepository();
+    vi.mocked(customer.getPricingRulesAndPolicy).mockResolvedValueOnce({
+      priorityPrinting: { enabled: true, feePaise: 500 },
+      identificationPolicy: { mode: "OFF", thresholdPaise: 0 },
+      discountRules: [],
+    });
+    const result = await makeService({ payments, customer }).createCheckout(
+      "token",
+      2_100,
+    );
+    expect(result.status).toBe("PRICE_CHANGED");
+    if (result.status !== "PRICE_CHANGED") throw new Error("Unexpected result");
+    expect(result.quote.totalAmountPaise).toBe(2_600);
+    expect(result.quote.priorityFeePaise).toBe(500);
   });
 
   it("fails closed on printer readiness before calling Razorpay", async () => {

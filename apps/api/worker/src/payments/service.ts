@@ -10,7 +10,12 @@ import {
   FAILED_OR_CANCELLED_PAYMENT_RETENTION_MS,
   parsePageRange,
 } from "@printgo/domain";
-import { calculatePrintPrice, PricingError } from "@printgo/pricing";
+import {
+  calculateDiscount,
+  calculatePrintPrice,
+  isIdentificationRequired,
+  PricingError,
+} from "@printgo/pricing";
 
 import type { CustomerRepository } from "../customer/repository";
 import type { PrivateObjectStore } from "../storage/r2-verification";
@@ -60,10 +65,11 @@ export class PaymentService {
     private readonly payments: PaymentRepository,
     private readonly customer: Pick<
       CustomerRepository,
-      "getPublicConfig" | "getPricingConfiguration"
-    > & {
-      getOrderAddonAmountPaise?: (orderId: string) => Promise<number>;
-    },
+      | "getPublicConfig"
+      | "getPricingConfiguration"
+      | "getPricingRulesAndPolicy"
+      | "getOrderAddonAmountPaise"
+    >,
     private readonly objects: Pick<PrivateObjectStore, "head">,
     private readonly readiness: PaymentReadiness,
     private readonly razorpay: RazorpayClient,
@@ -182,11 +188,28 @@ export class PaymentService {
         (total, file) => total + file.serviceChargePaise,
         0,
       );
-      const addonAmountPaise = this.customer.getOrderAddonAmountPaise
-        ? await this.customer.getOrderAddonAmountPaise(draft.orderId)
-        : 0;
+      const addonAmountPaise = await this.customer.getOrderAddonAmountPaise(
+        draft.orderId,
+      );
+      const { priorityPrinting, identificationPolicy, discountRules } =
+        await this.customer.getPricingRulesAndPolicy();
+      const isPriority = draft.isPriority && priorityPrinting.enabled;
+      const priorityFeePaise = isPriority ? priorityPrinting.feePaise : 0;
+      const effectiveServiceChargePaise =
+        serviceChargePaise + addonAmountPaise + priorityFeePaise;
+      const subtotalAmountPaise =
+        printingAmountPaise + effectiveServiceChargePaise;
+      const discount = calculateDiscount(
+        subtotalAmountPaise,
+        discountRules.map((rule) => ({ ...rule, enabled: true })),
+      );
       const totalAmountPaise =
-        printingAmountPaise + serviceChargePaise + addonAmountPaise;
+        subtotalAmountPaise - discount.discountAmountPaise;
+      const identificationRequired = isIdentificationRequired({
+        mode: identificationPolicy.mode,
+        thresholdPaise: identificationPolicy.thresholdPaise,
+        onlineAmountPaise: totalAmountPaise,
+      });
       return {
         normalizedSelectedPages: first.selectedPages,
         selectedPageCount: first.selectedPageCount,
@@ -195,12 +218,25 @@ export class PaymentService {
         colorMode: first.colorMode,
         sides: first.sides,
         printingAmountPaise,
-        serviceChargePaise,
+        serviceChargePaise: effectiveServiceChargePaise,
         totalAmountPaise,
         currency: "INR",
         expiresAt: new Date(draft.expiresAtMs).toISOString(),
         files,
         addonAmountPaise,
+        isPriority,
+        priorityFeePaise,
+        subtotalAmountPaise,
+        discountAmountPaise: discount.discountAmountPaise,
+        appliedDiscount:
+          discount.discountThresholdPaise !== null &&
+          discount.discountPercent !== null
+            ? {
+                minSubtotalPaise: discount.discountThresholdPaise,
+                discountPercent: discount.discountPercent,
+              }
+            : null,
+        identificationRequired,
       };
     } catch (caught) {
       if (
@@ -223,6 +259,13 @@ export class PaymentService {
       printingAmountPaise: quote.printingAmountPaise,
       serviceChargePaise: quote.serviceChargePaise,
       totalAmountPaise: quote.totalAmountPaise,
+      isPriority: quote.isPriority ?? false,
+      priorityFeePaise: quote.priorityFeePaise ?? 0,
+      discountAmountPaise: quote.discountAmountPaise ?? 0,
+      snapshotDiscountThresholdPaise:
+        quote.appliedDiscount?.minSubtotalPaise ?? null,
+      snapshotDiscountPercent: quote.appliedDiscount?.discountPercent ?? null,
+      identificationRequired: quote.identificationRequired ?? false,
       nowMs: this.now(),
     });
     if (!saved) throw new PaymentError("PAYMENT_STATE_INVALID");

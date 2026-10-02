@@ -21,6 +21,7 @@ export interface PayableDraftRecord {
   printingAmountPaise: number;
   serviceChargePaise: number;
   totalAmountPaise: number;
+  isPriority: boolean;
   currency: "INR";
   orderStatus: string;
   publicJobCode: string | null;
@@ -90,6 +91,7 @@ interface DraftRow {
   printing_amount_paise: number;
   service_charge_paise: number;
   total_amount_paise: number;
+  is_priority: number;
   currency: "INR";
   order_status: string;
   public_job_code: string | null;
@@ -144,6 +146,12 @@ export interface PaymentRepository {
     printingAmountPaise: number;
     serviceChargePaise: number;
     totalAmountPaise: number;
+    isPriority: boolean;
+    priorityFeePaise: number;
+    discountAmountPaise: number;
+    snapshotDiscountThresholdPaise: number | null;
+    snapshotDiscountPercent: number | null;
+    identificationRequired: boolean;
     nowMs: number;
   }): Promise<boolean>;
   findActivePayment(orderId: string): Promise<PaymentRecord | null>;
@@ -216,7 +224,7 @@ export class D1PaymentRepository implements PaymentRepository {
           o.customer_name, o.customer_phone, o.original_filename,
           o.source_page_count, o.selected_pages, o.copies, o.paper_size,
           o.color_mode, o.sides, o.printing_amount_paise,
-          o.service_charge_paise, o.total_amount_paise, o.currency,
+          o.service_charge_paise, o.total_amount_paise, o.is_priority, o.currency,
           o.status AS order_status, o.public_job_code,
           u.expected_size_bytes, u.size_bytes, u.storage_status,
           o.draft_expires_at_ms, u.delete_after_ms
@@ -267,6 +275,7 @@ export class D1PaymentRepository implements PaymentRepository {
       printingAmountPaise: row.printing_amount_paise,
       serviceChargePaise: row.service_charge_paise,
       totalAmountPaise: row.total_amount_paise,
+      isPriority: row.is_priority === 1,
       currency: row.currency,
       orderStatus: row.order_status,
       publicJobCode: row.public_job_code,
@@ -301,24 +310,44 @@ export class D1PaymentRepository implements PaymentRepository {
       .prepare(
         `UPDATE orders SET selected_pages = ?, printing_amount_paise = ?,
           service_charge_paise = ?, total_amount_paise = ?,
+          is_priority = ?, priority_fee_paise = ?, discount_amount_paise = ?,
+          snapshot_discount_threshold_paise = ?, snapshot_discount_percent = ?,
+          identification_required = ?,
           status = 'PAYMENT_PENDING', updated_at_ms = ?
         WHERE id = ? AND status IN
           ('UPLOADED', 'PAYMENT_PENDING', 'PAYMENT_FAILED', 'PAYMENT_CANCELLED')
           AND cleanup_state = 'ACTIVE'
+          AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.order_id = orders.id
+            AND p.status IN ('CREATED', 'PENDING', 'PAID'))
           AND (status <> 'PAYMENT_PENDING' OR selected_pages IS NOT ? OR printing_amount_paise IS NOT ?
-            OR service_charge_paise IS NOT ? OR total_amount_paise IS NOT ?)`,
+            OR service_charge_paise IS NOT ? OR total_amount_paise IS NOT ?
+            OR is_priority IS NOT ? OR priority_fee_paise IS NOT ? OR discount_amount_paise IS NOT ?
+            OR snapshot_discount_threshold_paise IS NOT ? OR snapshot_discount_percent IS NOT ?
+            OR identification_required IS NOT ?)`,
       )
       .bind(
         input.selectedPages,
         input.printingAmountPaise,
         input.serviceChargePaise,
         input.totalAmountPaise,
+        input.isPriority ? 1 : 0,
+        input.priorityFeePaise,
+        input.discountAmountPaise,
+        input.snapshotDiscountThresholdPaise,
+        input.snapshotDiscountPercent,
+        input.identificationRequired ? 1 : 0,
         input.nowMs,
         input.orderId,
         input.selectedPages,
         input.printingAmountPaise,
         input.serviceChargePaise,
         input.totalAmountPaise,
+        input.isPriority ? 1 : 0,
+        input.priorityFeePaise,
+        input.discountAmountPaise,
+        input.snapshotDiscountThresholdPaise,
+        input.snapshotDiscountPercent,
+        input.identificationRequired ? 1 : 0,
       )
       .run();
     if (result.meta.changes === 1) return true;
@@ -328,7 +357,10 @@ export class D1PaymentRepository implements PaymentRepository {
         .prepare(
           `SELECT 1 FROM orders WHERE id = ? AND status = 'PAYMENT_PENDING'
       AND cleanup_state = 'ACTIVE'
-      AND selected_pages IS ? AND printing_amount_paise IS ? AND service_charge_paise IS ? AND total_amount_paise IS ?`,
+      AND selected_pages IS ? AND printing_amount_paise IS ? AND service_charge_paise IS ? AND total_amount_paise IS ?
+      AND is_priority IS ? AND priority_fee_paise IS ? AND discount_amount_paise IS ?
+      AND snapshot_discount_threshold_paise IS ? AND snapshot_discount_percent IS ?
+      AND identification_required IS ?`,
         )
         .bind(
           input.orderId,
@@ -336,6 +368,12 @@ export class D1PaymentRepository implements PaymentRepository {
           input.printingAmountPaise,
           input.serviceChargePaise,
           input.totalAmountPaise,
+          input.isPriority ? 1 : 0,
+          input.priorityFeePaise,
+          input.discountAmountPaise,
+          input.snapshotDiscountThresholdPaise,
+          input.snapshotDiscountPercent,
+          input.identificationRequired ? 1 : 0,
         )
         .first(),
     );
@@ -384,6 +422,7 @@ export class D1PaymentRepository implements PaymentRepository {
           SELECT ?, o.id, ?, ?, 'INR', 'CREATED', ?, ? FROM orders o
           WHERE o.id = ? AND o.cleanup_state = 'ACTIVE'
             AND o.status IN ('PAYMENT_PENDING','PAYMENT_FAILED','PAYMENT_CANCELLED')
+            AND o.total_amount_paise = ?
             AND EXISTS (SELECT 1 FROM order_files f WHERE f.order_id = o.id)
             AND NOT EXISTS (SELECT 1 FROM order_files f WHERE f.order_id = o.id
               AND f.upload_status <> 'UPLOADED')`,
@@ -395,6 +434,7 @@ export class D1PaymentRepository implements PaymentRepository {
           input.nowMs,
           input.nowMs,
           input.orderId,
+          input.amountPaise,
         ),
       this.db
         .prepare(
