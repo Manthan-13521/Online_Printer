@@ -33,6 +33,7 @@
 | :---- | :------------------- | :------------------------------ | :-------------------------------------------------------------------------------------------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------- | :---------------------------------- |
 | **1** | 2026-10-02 18:07 IST | Admin Pricing / Addons Form     | Radio buttons for "Pricing" & "Handling" rendered as giant overlapping circles covering label text                          | Global `input` rule had `width: 100%` and `min-height: 2.85rem` without excluding radio/checkbox                                                                                                                  | Scoped `input:not([type="checkbox"]):not([type="radio"])` and set fixed `1.15rem` radio sizes & alignment in `apps/web/admin/src/styles.css` | 🟡 Ready for User Retest on Staging |
 | **2** | 2026-10-02 18:30 IST | Customer Payment / Verification | Order with MANUAL_PRINT add-on displayed "Payment could not be completed" on Customer PWA after successful Razorpay payment | `createAuthorization` and `listSafeTimeline` in `apps/api/worker/src/tracking/repository.ts` lacked `'MANUAL_PRINT'` and `'AWAITING_FINISHING'` in SQL `status IN (...)`, returning `TRACKING_ACCESS_UNAVAILABLE` | Added `MANUAL_PRINT`, `AWAITING_FINISHING`, and all valid post-payment statuses to tracking queries; updated customer error fallback         | 🟡 Ready for Deployment & Retest    |
+| **3** | 2026-10-02 19:15 IST | Admin Settings / Cleanup Triggers | "Free All Print Data" & "Free Printed Data" failed with 500; 5-min scheduled cleanup threw errors in Worker logs            | Remote D1 table `cleanup_runs` lacked `cutoff_at_ms` column, throwing `SQLITE_ERROR: table cleanup_runs has no column named cutoff_at_ms` on `createRun` & `claimBatch`                                              | Executed `ALTER TABLE cleanup_runs ADD COLUMN cutoff_at_ms INTEGER NOT NULL DEFAULT 0;` on remote D1 and deployed updated API Worker with enhanced error logging | 🟢 Fixed & Deployed |
 
 ---
 
@@ -66,3 +67,19 @@
   2. Updated `paymentErrorMessage` in `apps/web/customer/src/App.tsx` with dedicated handling for `TRACKING_ACCESS_UNAVAILABLE` and `TRACKING_ACCESS_CONFLICT`.
   3. Added unit tests in `apps/api/worker/src/tracking/repository.test.ts` to assert that `createAuthorization` and `listSafeTimeline` succeed for `MANUAL_PRINT` and `AWAITING_FINISHING`.
 - **Tests**: `pnpm test` (78 suites, 655 tests passing), `pnpm typecheck` (0 errors), `pnpm lint` (0 warnings), `pnpm format:check` (clean), `pnpm db:validate` (27 tables, clean), `pnpm build` (all packages & PWAs built).
+
+### Finding 3: Cleanup Buttons ("Free All Print Data" & "Free Printed Data") Failing in Admin Settings
+
+- **Issue**: Clicking "Permanently delete" in the confirmation modal for "Free All Print Data" or "Free Printed Data" in Admin Settings resulted in a failed operation, and scheduled 5-minute cron runs in Cloudflare Workers logs repeatedly logged `Cleanup scheduled execution failed { error: 'Error' }`.
+- **Expected**: Triggering manual cleanup immediately processes a batch, deletes R2 objects and purgeable records, and returns the updated run data. Scheduled 5-minute cron runs run smoothly without uncaught SQL errors.
+- **Actual**: Both manual cleanup requests (`POST /api/admin/cleanup/runs`) and scheduled cron executions failed with uncaught exceptions.
+- **Root Cause**:
+  1. Code in `apps/api/worker/src/cleanup/repository.ts` inserts and queries `cutoff_at_ms` in `cleanup_runs` (`createRun`, `claimBatch`, `finishIfDrained`).
+  2. While `database/migrations/0012_multi_file_cleanup_and_app_branding.sql` defined `cutoff_at_ms` in the schema for fresh databases, the live remote Cloudflare D1 database (`printgo-production`) was created during an earlier iteration and was missing the `cutoff_at_ms` column on the `cleanup_runs` table.
+  3. This threw `SQLITE_ERROR: table cleanup_runs has no column named cutoff_at_ms` on every execution of `createRun`, `claimBatch`, and `finishIfDrained`.
+- **Fix**:
+  1. Executed `ALTER TABLE cleanup_runs ADD COLUMN cutoff_at_ms INTEGER NOT NULL DEFAULT 0;` and backfilled `UPDATE cleanup_runs SET cutoff_at_ms = created_at_ms WHERE cutoff_at_ms = 0;` on remote production D1.
+  2. Verified through deep schema diffing that 100% of all other tables, columns, and constraints across all 19 migrations perfectly match the remote database.
+  3. Enhanced Worker error logging in `apps/api/worker/src/index.ts` and `apps/api/worker/src/cleanup/admin-routes.ts` to log full `error.message` and `error.stack` traces.
+  4. Deployed updated worker (Version `72fc7021-7414-4a10-96a4-9454311034a9`).
+- **Tests**: `pnpm test` (78 suites, 655 tests passing), `pnpm typecheck`, `pnpm lint`, `pnpm format:check`, `pnpm db:validate`, `pnpm build` all passed (exit 0).

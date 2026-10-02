@@ -132,6 +132,7 @@ export async function handleAdminCleanupRequest(
         env.ADMIN_ALLOWED_ORIGIN,
       );
     }
+    console.error("Cleanup admin route unhandled error:", caught);
     throw caught;
   }
 

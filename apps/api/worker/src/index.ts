@@ -13,7 +13,8 @@ export default {
       return await routeRequest(request, env);
     } catch (caught: unknown) {
       console.error("Unhandled Worker request error", {
-        error: caught instanceof Error ? caught.name : "UnknownError",
+        message: caught instanceof Error ? caught.message : String(caught),
+        stack: caught instanceof Error ? caught.stack : undefined,
       });
 
       return error(
@@ -43,7 +44,8 @@ export default {
       });
     } catch (err) {
       console.error("Cleanup scheduled execution failed", {
-        error: err instanceof Error ? err.name : "UnknownError",
+        message: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined,
       });
     }
 
