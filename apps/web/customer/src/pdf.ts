@@ -1,10 +1,11 @@
-import { getDocument, GlobalWorkerOptions } from "pdfjs-dist";
-import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-
-GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
-
 export async function inspectPdf(file: File): Promise<number> {
-  const task = getDocument({
+  const [pdfjs, workerUrl] = await Promise.all([
+    import("pdfjs-dist"),
+    import("pdfjs-dist/build/pdf.worker.min.mjs?url")
+  ]);
+  pdfjs.GlobalWorkerOptions.workerSrc = workerUrl.default;
+
+  const task = pdfjs.getDocument({
     data: new Uint8Array(await file.arrayBuffer()),
     stopAtErrors: true,
   });

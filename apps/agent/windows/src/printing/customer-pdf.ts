@@ -98,13 +98,17 @@ export async function downloadAndValidateCustomerPdf(
         "SIZE_MISMATCH",
         "Downloaded PDF size does not match the verified upload.",
       );
-    const bytes = await fs.readFile(filePath);
+    const handleCheck = await fs.open(filePath, "r");
+    const prefix = Buffer.alloc(5);
+    await handleCheck.read(prefix, 0, 5, 0);
+    const suffixSize = Math.min(2048, input.expectedSizeBytes);
+    const suffix = Buffer.alloc(suffixSize);
+    await handleCheck.read(suffix, 0, suffixSize, input.expectedSizeBytes - suffixSize);
+    await handleCheck.close();
+
     if (
-      bytes.subarray(0, 5).toString("ascii") !== "%PDF-" ||
-      !bytes
-        .subarray(Math.max(0, bytes.length - 2048))
-        .toString("latin1")
-        .includes("%%EOF")
+      prefix.toString("ascii") !== "%PDF-" ||
+      !suffix.toString("latin1").includes("%%EOF")
     ) {
       throw new CustomerPdfError(
         "INVALID_PDF",
