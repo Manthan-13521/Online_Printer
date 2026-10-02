@@ -1,5 +1,6 @@
 import type {
   AdminAgentDetails,
+  AdminCheckPrinterHealthResponseData,
   AdminTestPrintDetails,
   AgentHeartbeatData,
   AgentPairData,
@@ -326,5 +327,23 @@ export class AgentService {
       throw new AgentError("PRINTER_NOT_FOUND");
     }
     return this.repository.getLatestTestPrintCommand(printerId, this.now());
+  }
+
+  async checkPrinterHealth(
+    printerId: string,
+    adminId: string,
+  ): Promise<AdminCheckPrinterHealthResponseData> {
+    try {
+      return await this.repository.checkPrinterHealth(
+        printerId,
+        adminId,
+        this.now(),
+      );
+    } catch (caught: unknown) {
+      if (caught instanceof Error && caught.message === "PRINTER_NOT_FOUND") {
+        throw new AgentError("PRINTER_NOT_FOUND");
+      }
+      throw caught;
+    }
   }
 }

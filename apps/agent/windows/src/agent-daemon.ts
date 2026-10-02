@@ -69,7 +69,7 @@ export class AgentDaemon {
       this.heartbeatIntervalMs > 30_000 ||
       !Number.isFinite(this.printerRefreshMs) ||
       this.printerRefreshMs < 1_000 ||
-      this.printerRefreshMs > 60_000
+      this.printerRefreshMs > 120_000
     )
       throw new Error("Invalid Agent polling intervals.");
     this.agentVersion = options.agentVersion ?? "2.0.0";

@@ -183,6 +183,7 @@ describe("D1PaymentRepository webhook claim & stale event recovery", () => {
       "0013_d1_usage_optimization.sql",
       "0014_addon_services.sql",
       "0015_phase3_priority_tracking_discounts.sql",
+      "0016_phase4_failure_recovery_and_pause.sql",
     ]) {
       database.exec(
         readFileSync(

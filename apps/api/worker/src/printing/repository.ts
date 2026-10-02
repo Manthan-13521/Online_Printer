@@ -8,6 +8,8 @@ import {
   COMPLETED_RETENTION_MS,
   PRINT_CLAIM_LEASE_MS,
   maskPhoneNumber,
+  normalizePrinterFailure,
+  isPrinterWideFailure,
   type ColorMode,
   type PaperSize,
   type SidesMode,
@@ -338,7 +340,7 @@ export class D1PrintingRepository implements PrintingRepository {
     const work = await this.db
       .prepare(
         `SELECT 1 FROM orders
-         WHERE status IN ('QUEUED','CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED')
+         WHERE status IN ('QUEUED','CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED','RETRY_PENDING')
             OR (status = 'PRINT_FAILED' AND cleanup_state = 'ACTIVE' AND updated_at_ms <= ?)
          LIMIT 1`,
       )
@@ -393,11 +395,13 @@ export class D1PrintingRepository implements PrintingRepository {
         AND pay.provider_payment_id IS NOT NULL AND pay.verified_at_ms IS NOT NULL
       JOIN agents a ON a.id = ? AND a.is_active = 1 AND a.last_heartbeat_at_ms >= ?
       JOIN printers p ON p.agent_id = a.id AND p.enabled = 1 AND p.status = 'ONLINE'
+        AND COALESCE(p.is_paused, 0) = 0
         AND p.is_production_eligible = 1 AND p.is_virtual = 0
         AND p.capabilities_json IS NOT NULL
       JOIN installation i ON i.id = 1
         AND (i.default_production_printer_id IS NULL OR p.id = i.default_production_printer_id)
-      WHERE o.status = 'QUEUED' AND o.public_job_code IS NOT NULL
+      WHERE ((o.status = 'QUEUED') OR (o.status = 'RETRY_PENDING' AND (o.next_retry_at_ms IS NULL OR o.next_retry_at_ms <= ?)))
+        AND o.public_job_code IS NOT NULL
         AND o.cleanup_state = 'ACTIVE' AND f.upload_status = 'UPLOADED'
         AND f.size_bytes IS NOT NULL
         AND (f.position <> 1 OR EXISTS (SELECT 1 FROM uploads u
@@ -409,9 +413,9 @@ export class D1PrintingRepository implements PrintingRepository {
           WHERE upper(value) = f.paper_size)
         AND NOT EXISTS (SELECT 1 FROM orders busy WHERE busy.claimed_by_agent_id = a.id
           AND busy.status IN ('CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED'))
-      ORDER BY o.is_priority DESC, o.queued_at_ms ASC, o.id, p.id LIMIT 1`,
+      ORDER BY o.is_priority DESC, (CASE WHEN o.status = 'QUEUED' THEN 0 ELSE 1 END) ASC, o.queued_at_ms ASC, o.id, p.id LIMIT 1`,
       )
-      .bind(agentId, nowMs - 90_000)
+      .bind(agentId, nowMs - 90_000, nowMs)
       .first<CandidateRow>();
     if (!candidate) return null;
 
@@ -450,7 +454,7 @@ export class D1PrintingRepository implements PrintingRepository {
         .prepare(
           `UPDATE orders SET status = 'CLAIMED', claimed_by_agent_id = ?, claim_id = ?,
           claim_expires_at_ms = ?, printer_id = ?, claimed_at_ms = ?, updated_at_ms = ?
-        WHERE id = ? AND status = 'QUEUED' AND cleanup_state = 'ACTIVE' AND EXISTS (
+        WHERE id = ? AND status IN ('QUEUED', 'RETRY_PENDING') AND cleanup_state = 'ACTIVE' AND EXISTS (
           SELECT 1 FROM payments WHERE order_id = orders.id AND status = 'PAID'
             AND provider_payment_id IS NOT NULL AND verified_at_ms IS NOT NULL
         ) AND EXISTS (
@@ -839,6 +843,30 @@ export class D1PrintingRepository implements PrintingRepository {
       input.spoolerJobId !== current.spooler_job_id
     )
       return null;
+    function toStepFailureCode(code: string | null | undefined): string | null {
+      if (!code) return null;
+      const upper = code.trim().toUpperCase();
+      const allowed = [
+        "PAPER_OUT",
+        "PAPER_JAM",
+        "OFFLINE",
+        "NO_TONER",
+        "TONER_LOW",
+        "DOOR_OPEN",
+        "USER_INTERVENTION",
+        "PRINTER_ERROR",
+        "UNKNOWN",
+      ];
+      if (allowed.includes(upper)) {
+        return upper;
+      }
+      if (upper === "PRINTER_OFFLINE" || upper === "CONNECTION_LOST")
+        return "OFFLINE";
+      if (upper === "SPOOLER_ERROR") return "PRINTER_ERROR";
+      return "UNKNOWN";
+    }
+
+    const stepFailureCode = toStepFailureCode(input.failureCode);
     const finished = input.status === "BLOCKED" ? null : input.nowMs;
     const stepUpdate = await this.db
       .prepare(
@@ -849,7 +877,7 @@ export class D1PrintingRepository implements PrintingRepository {
       .bind(
         input.status,
         input.spoolerJobId,
-        input.failureCode,
+        stepFailureCode,
         input.failureDetail,
         input.nowMs,
         finished,
@@ -880,14 +908,27 @@ export class D1PrintingRepository implements PrintingRepository {
         .run();
     }
 
-    if (input.status === "BLOCKED") {
-      await this.db.batch([
+    const normFailure = normalizePrinterFailure(
+      input.failureCode || input.failureDetail,
+    );
+    const printerWide = isPrinterWideFailure(normFailure);
+
+    if (
+      input.status === "BLOCKED" ||
+      (input.status === "FAILED" && printerWide)
+    ) {
+      const printerRow = await this.db
+        .prepare("SELECT printer_id FROM orders WHERE id = ?")
+        .bind(input.orderId)
+        .first<{ printer_id: string | null }>();
+
+      const statements: D1PreparedStatement[] = [
         this.db
           .prepare(
             "UPDATE print_attempts SET status = 'BLOCKED', failure_code = ?, failure_detail = ?, last_observed_at_ms = ?, updated_at_ms = ? WHERE id = ?",
           )
           .bind(
-            input.failureCode,
+            stepFailureCode,
             input.failureDetail,
             input.nowMs,
             input.nowMs,
@@ -895,9 +936,14 @@ export class D1PrintingRepository implements PrintingRepository {
           ),
         this.db
           .prepare(
-            "UPDATE orders SET status = 'PRINT_BLOCKED', claim_expires_at_ms = ?, updated_at_ms = ? WHERE id = ? AND claim_id = ?",
+            `UPDATE orders
+             SET status = 'PRINT_BLOCKED', error_category = ?, raw_error = ?,
+                 claim_expires_at_ms = ?, updated_at_ms = ?
+             WHERE id = ? AND claim_id = ?`,
           )
           .bind(
+            normFailure,
+            input.failureDetail ?? input.failureCode ?? "Printer is blocked",
             input.nowMs + PRINT_CLAIM_LEASE_MS,
             input.nowMs,
             input.orderId,
@@ -911,38 +957,166 @@ export class D1PrintingRepository implements PrintingRepository {
           input.agentId,
           input.nowMs,
         ),
-      ]);
-    } else if (input.status === "FAILED" || input.status === "UNCERTAIN") {
-      const orderStatus =
-        input.status === "UNCERTAIN" ? "ADMIN_ACTION_REQUIRED" : "PRINT_FAILED";
+      ];
+
+      if (printerRow?.printer_id) {
+        statements.push(
+          this.db
+            .prepare(
+              `UPDATE printers
+               SET is_paused = 1, paused_reason = ?,
+                   paused_at_ms = COALESCE(paused_at_ms, ?), updated_at_ms = ?
+               WHERE id = ? AND (is_paused = 0 OR paused_reason <> ?)`,
+            )
+            .bind(
+              normFailure,
+              input.nowMs,
+              input.nowMs,
+              printerRow.printer_id,
+              normFailure,
+            ),
+        );
+      }
+
+      await this.db.batch(statements);
+    } else if (input.status === "UNCERTAIN") {
+      const orderMeta = await this.db
+        .prepare("SELECT attempt_count FROM orders WHERE id = ?")
+        .bind(input.orderId)
+        .first<{ attempt_count: number }>();
+      const currentAttempts = (orderMeta?.attempt_count ?? 0) + 1;
+
       await this.db.batch([
         this.db
           .prepare(
             "UPDATE print_attempts SET status = 'FAILED', failure_code = ?, failure_detail = ?, finished_at_ms = ?, updated_at_ms = ? WHERE id = ?",
           )
           .bind(
-            input.failureCode ?? "UNKNOWN",
-            input.failureDetail,
+            "UNKNOWN",
+            input.failureDetail ?? "Print outcome uncertain",
             input.nowMs,
             input.nowMs,
             current.attempt_id,
           ),
         this.db
           .prepare(
-            "UPDATE orders SET status = ?, updated_at_ms = ? WHERE id = ? AND claim_id = ?",
+            `UPDATE orders
+             SET status = 'COMPLETION_UNKNOWN', claimed_by_agent_id = NULL, claim_id = NULL,
+                 claim_expires_at_ms = NULL, error_category = 'COMPLETION_UNKNOWN',
+                 raw_error = ?, attempt_count = ?, last_attempt_at_ms = ?, updated_at_ms = ?
+             WHERE id = ? AND claim_id = ?`,
           )
-          .bind(orderStatus, input.nowMs, input.orderId, input.claimId),
+          .bind(
+            input.failureDetail ??
+              "Print outcome uncertain / completion unknown",
+            currentAttempts,
+            input.nowMs,
+            input.nowMs,
+            input.orderId,
+            input.claimId,
+          ),
         this.event(
           input.orderId,
-          input.status === "UNCERTAIN"
-            ? "PRINT_OUTCOME_UNCERTAIN"
-            : "PRINT_FAILED",
+          "PRINT_OUTCOME_UNCERTAIN",
           current.order_status,
-          orderStatus,
+          "COMPLETION_UNKNOWN",
           input.agentId,
           input.nowMs,
         ),
       ]);
+    } else if (input.status === "FAILED") {
+      const orderMeta = await this.db
+        .prepare("SELECT attempt_count FROM orders WHERE id = ?")
+        .bind(input.orderId)
+        .first<{ attempt_count: number }>();
+      const currentAttempts = (orderMeta?.attempt_count ?? 0) + 1;
+
+      if (currentAttempts < 3) {
+        const statements: D1PreparedStatement[] = [
+          this.db
+            .prepare(
+              "UPDATE print_attempts SET status = 'FAILED', failure_code = ?, failure_detail = ?, finished_at_ms = ?, updated_at_ms = ? WHERE id = ?",
+            )
+            .bind(
+              stepFailureCode,
+              input.failureDetail,
+              input.nowMs,
+              input.nowMs,
+              current.attempt_id,
+            ),
+          this.db
+            .prepare(
+              `UPDATE orders
+               SET status = 'RETRY_PENDING', claimed_by_agent_id = NULL, claim_id = NULL,
+                   claim_expires_at_ms = NULL, error_category = ?, raw_error = ?,
+                   attempt_count = ?, last_attempt_at_ms = ?, next_retry_at_ms = ?,
+                   updated_at_ms = ?
+               WHERE id = ? AND claim_id = ?`,
+            )
+            .bind(
+              normFailure,
+              input.failureDetail ?? input.failureCode ?? "Print failed",
+              currentAttempts,
+              input.nowMs,
+              input.nowMs + 10_000,
+              input.nowMs,
+              input.orderId,
+              input.claimId,
+            ),
+          this.event(
+            input.orderId,
+            "PRINT_RETRY_PENDING",
+            current.order_status,
+            "RETRY_PENDING",
+            input.agentId,
+            input.nowMs,
+          ),
+        ];
+
+        await this.db.batch(statements);
+      } else {
+        await this.db.batch([
+          this.db
+            .prepare(
+              "UPDATE print_attempts SET status = 'FAILED', failure_code = ?, failure_detail = ?, finished_at_ms = ?, updated_at_ms = ? WHERE id = ?",
+            )
+            .bind(
+              stepFailureCode,
+              input.failureDetail,
+              input.nowMs,
+              input.nowMs,
+              current.attempt_id,
+            ),
+          this.db
+            .prepare(
+              `UPDATE orders
+               SET status = 'NEEDS_ADMIN', claimed_by_agent_id = NULL, claim_id = NULL,
+                   claim_expires_at_ms = NULL, error_category = ?, raw_error = ?,
+                   attempt_count = ?, last_attempt_at_ms = ?, next_retry_at_ms = NULL,
+                   updated_at_ms = ?
+               WHERE id = ? AND claim_id = ?`,
+            )
+            .bind(
+              normFailure,
+              input.failureDetail ??
+                input.failureCode ??
+                "Print failed after retries",
+              currentAttempts,
+              input.nowMs,
+              input.nowMs,
+              input.orderId,
+              input.claimId,
+            ),
+          this.event(
+            input.orderId,
+            "PRINT_NEEDS_ADMIN",
+            current.order_status,
+            "NEEDS_ADMIN",
+            input.agentId,
+            input.nowMs,
+          ),
+        ]);
+      }
     } else {
       if (!(await this.completeAttemptIfReady(current, input))) {
         await this.db.batch([
@@ -1006,7 +1180,7 @@ export class D1PrintingRepository implements PrintingRepository {
           .prepare(
             `UPDATE orders SET status = 'QUEUED', claimed_by_agent_id = NULL,
              claim_id = NULL, claim_expires_at_ms = NULL, printer_id = NULL,
-             claimed_at_ms = NULL, updated_at_ms = ?
+             claimed_at_ms = NULL, error_category = NULL, raw_error = NULL, next_retry_at_ms = NULL, updated_at_ms = ?
              WHERE id = ? AND claim_id = ?`,
           )
           .bind(input.nowMs, input.orderId, input.claimId),
@@ -1049,7 +1223,7 @@ export class D1PrintingRepository implements PrintingRepository {
           .bind(input.nowMs, input.nowMs, current.attempt_id),
         this.db
           .prepare(
-            "UPDATE orders SET status = 'AWAITING_FINISHING', printed_at_ms = COALESCE(printed_at_ms, ?), claimed_by_agent_id = NULL, claim_id = NULL, claim_expires_at_ms = NULL, updated_at_ms = ? WHERE id = ? AND claim_id = ? AND status <> 'AWAITING_FINISHING'",
+            "UPDATE orders SET status = 'AWAITING_FINISHING', printed_at_ms = COALESCE(printed_at_ms, ?), claimed_by_agent_id = NULL, claim_id = NULL, claim_expires_at_ms = NULL, error_category = NULL, raw_error = NULL, next_retry_at_ms = NULL, updated_at_ms = ? WHERE id = ? AND claim_id = ? AND status <> 'AWAITING_FINISHING'",
           )
           .bind(input.nowMs, input.nowMs, input.orderId, input.claimId),
         this.db
@@ -1078,7 +1252,7 @@ export class D1PrintingRepository implements PrintingRepository {
         this.db
           .prepare(
             // PRINTED and COMPLETED already shared one atomic batch. Keep both forensic events below.
-            "UPDATE orders SET status = 'COMPLETED', printed_at_ms = COALESCE(printed_at_ms, ?), completed_at_ms = COALESCE(completed_at_ms, ?), purge_at_ms = COALESCE(purge_at_ms, ?), updated_at_ms = ? WHERE id = ? AND claim_id = ? AND status <> 'COMPLETED'",
+            "UPDATE orders SET status = 'COMPLETED', printed_at_ms = COALESCE(printed_at_ms, ?), completed_at_ms = COALESCE(completed_at_ms, ?), purge_at_ms = COALESCE(purge_at_ms, ?), error_category = NULL, raw_error = NULL, next_retry_at_ms = NULL, updated_at_ms = ? WHERE id = ? AND claim_id = ? AND status <> 'COMPLETED'",
           )
           .bind(
             input.nowMs,
@@ -1156,15 +1330,17 @@ export class D1PrintingRepository implements PrintingRepository {
               customer_name, customer_phone,
               selected_pages, copies, paper_size, color_mode, sides,
               total_amount_paise, currency, status, claimed_by_agent_id, printer_id,
+              error_category, raw_error, attempt_count, last_attempt_at_ms, next_retry_at_ms,
               paid_at_ms, updated_at_ms
             FROM orders
             WHERE status IN ('QUEUED','CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED',
-              'PRINT_FAILED','ADMIN_ACTION_REQUIRED')
+              'PRINT_FAILED','ADMIN_ACTION_REQUIRED','RETRY_PENDING','NEEDS_ADMIN','COMPLETION_UNKNOWN')
             UNION ALL
             SELECT id, public_job_code, pickup_code, is_priority, identification_required,
               customer_name, customer_phone,
               selected_pages, copies, paper_size, color_mode, sides,
               total_amount_paise, currency, status, claimed_by_agent_id, printer_id,
+              error_category, raw_error, attempt_count, last_attempt_at_ms, next_retry_at_ms,
               paid_at_ms, updated_at_ms
             FROM orders
             WHERE status = 'PRINTED' AND updated_at_ms >= ?
@@ -1176,7 +1352,9 @@ export class D1PrintingRepository implements PrintingRepository {
           o.customer_name, o.customer_phone,
           o.selected_pages, o.copies, o.paper_size, o.color_mode, o.sides,
           o.total_amount_paise, o.currency, o.status, a.display_name agent_name,
-          p.display_name printer_name, pa.failure_detail, o.paid_at_ms, o.updated_at_ms
+          p.display_name printer_name, pa.failure_detail,
+          o.error_category, o.raw_error, o.attempt_count, o.last_attempt_at_ms, o.next_retry_at_ms,
+          o.paid_at_ms, o.updated_at_ms
         FROM live_candidates o
         LEFT JOIN agents a ON a.id = o.claimed_by_agent_id
         LEFT JOIN printers p ON p.id = o.printer_id
@@ -1204,6 +1382,11 @@ export class D1PrintingRepository implements PrintingRepository {
         agent_name: string | null;
         printer_name: string | null;
         failure_detail: string | null;
+        error_category: string | null;
+        raw_error: string | null;
+        attempt_count: number;
+        last_attempt_at_ms: number | null;
+        next_retry_at_ms: number | null;
         paid_at_ms: number;
         updated_at_ms: number;
       }>();
@@ -1227,7 +1410,16 @@ export class D1PrintingRepository implements PrintingRepository {
       status: row.status,
       agentName: row.agent_name,
       printerName: row.printer_name,
-      issue: row.failure_detail,
+      issue: row.raw_error ?? row.failure_detail ?? null,
+      errorCategory: row.error_category ?? null,
+      rawError: row.raw_error ?? null,
+      attemptCount: row.attempt_count ?? 0,
+      lastAttemptAt: row.last_attempt_at_ms
+        ? new Date(row.last_attempt_at_ms).toISOString()
+        : null,
+      nextRetryAt: row.next_retry_at_ms
+        ? new Date(row.next_retry_at_ms).toISOString()
+        : null,
       paidAt: new Date(row.paid_at_ms).toISOString(),
       updatedAt: new Date(row.updated_at_ms).toISOString(),
     }));
@@ -1384,15 +1576,24 @@ export class D1PrintingRepository implements PrintingRepository {
       throw new Error("ORDER_CANNOT_BE_RETRIED");
     }
 
-    if (
-      !["ADMIN_ACTION_REQUIRED", "PRINT_FAILED", "PRINT_BLOCKED"].includes(
-        order.status,
-      )
-    ) {
+    const retriableStatuses = [
+      "ADMIN_ACTION_REQUIRED",
+      "PRINT_FAILED",
+      "PRINT_BLOCKED",
+      "NEEDS_ADMIN",
+      "COMPLETION_UNKNOWN",
+      "RETRY_PENDING",
+    ];
+
+    if (!retriableStatuses.includes(order.status)) {
       throw new Error("ORDER_CANNOT_BE_RETRIED");
     }
 
-    if (order.status === "ADMIN_ACTION_REQUIRED" && !input.forceUncertain) {
+    if (
+      (order.status === "ADMIN_ACTION_REQUIRED" ||
+        order.status === "COMPLETION_UNKNOWN") &&
+      !input.forceUncertain
+    ) {
       throw new Error("UNCERTAIN_RETRY_CONFIRMATION_REQUIRED");
     }
 
@@ -1402,9 +1603,10 @@ export class D1PrintingRepository implements PrintingRepository {
           `UPDATE orders
            SET status = 'QUEUED', claimed_by_agent_id = NULL, claim_id = NULL,
                claim_expires_at_ms = NULL, printer_id = NULL, claimed_at_ms = NULL,
-               queued_at_ms = ?, updated_at_ms = ?
+               error_category = NULL, raw_error = NULL, attempt_count = 0,
+               next_retry_at_ms = NULL, queued_at_ms = ?, updated_at_ms = ?
            WHERE id = ? AND cleanup_state = 'ACTIVE'
-             AND status IN ('ADMIN_ACTION_REQUIRED','PRINT_FAILED','PRINT_BLOCKED')`,
+             AND status IN ('ADMIN_ACTION_REQUIRED','PRINT_FAILED','PRINT_BLOCKED','NEEDS_ADMIN','COMPLETION_UNKNOWN','RETRY_PENDING')`,
         )
         .bind(input.nowMs, input.nowMs, input.orderId),
       this.db
@@ -1435,7 +1637,6 @@ export class D1PrintingRepository implements PrintingRepository {
         )
         .bind(
           crypto.randomUUID(),
-          input.orderId,
           order.status,
           input.adminId,
           input.nowMs,

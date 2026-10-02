@@ -689,6 +689,11 @@ export interface AdminLiveOrder {
   pickupCode?: string | null;
   isPriority?: boolean;
   identificationRequired?: boolean;
+  errorCategory?: string | null;
+  rawError?: string | null;
+  attemptCount?: number;
+  lastAttemptAt?: string | null;
+  nextRetryAt?: string | null;
 }
 export type AdminLiveOrdersResponse = ApiResponse<{ orders: AdminLiveOrder[] }>;
 
@@ -737,7 +742,22 @@ export interface AdminPrinterDetails {
   isProductionDefault: boolean;
   portName?: string | null;
   driverName?: string | null;
+  isPaused?: boolean;
+  pausedReason?: string | null;
+  pausedAt?: string | null;
+  lastHealthCheckAt?: string | null;
+  healthCheckRequested?: boolean;
 }
+
+export interface AdminCheckPrinterHealthResponseData {
+  printerId: string;
+  isPaused: boolean;
+  status: string;
+  message: string;
+}
+
+export type AdminCheckPrinterHealthResponse =
+  ApiResponse<AdminCheckPrinterHealthResponseData>;
 
 export interface AdminAgentDetails {
   id: string;

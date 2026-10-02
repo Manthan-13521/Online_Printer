@@ -220,12 +220,54 @@ export function LiveOrdersPage({
                   </div>
                   <h2>{order.customerName}</h2>
                 </div>
-                <strong className="status-pill">
-                  {order.status.replaceAll("_", " ")}
+                <strong
+                  className="status-pill"
+                  style={{
+                    backgroundColor:
+                      order.status === "RETRY_PENDING"
+                        ? "#feefe3"
+                        : order.status === "NEEDS_ADMIN" ||
+                            order.status === "PRINT_FAILED"
+                          ? "#fee2e2"
+                          : order.status === "PRINT_BLOCKED"
+                            ? "#fef3c7"
+                            : undefined,
+                    color:
+                      order.status === "RETRY_PENDING"
+                        ? "#b06000"
+                        : order.status === "NEEDS_ADMIN" ||
+                            order.status === "PRINT_FAILED"
+                          ? "#991b1b"
+                          : order.status === "PRINT_BLOCKED"
+                            ? "#92400e"
+                            : undefined,
+                  }}
+                >
+                  {order.status === "RETRY_PENDING"
+                    ? "Retrying"
+                    : order.status === "NEEDS_ADMIN"
+                      ? "Needs Admin"
+                      : order.status === "COMPLETION_UNKNOWN"
+                        ? "Completion Unknown"
+                        : order.status === "PRINT_BLOCKED"
+                          ? "Printer Issue"
+                          : order.status.replaceAll("_", " ")}
                 </strong>
               </div>
               <p>{summary(order)}</p>
               <dl className="live-order-details">
+                {order.attemptCount && order.attemptCount > 0 ? (
+                  <div>
+                    <dt>Attempts</dt>
+                    <dd>{order.attemptCount} / 3</dd>
+                  </div>
+                ) : null}
+                {order.errorCategory ? (
+                  <div>
+                    <dt>Error</dt>
+                    <dd>{order.rawError ?? order.errorCategory}</dd>
+                  </div>
+                ) : null}
                 {order.pickupCode ? (
                   <div>
                     <dt>Pickup Code</dt>
@@ -302,6 +344,9 @@ export function LiveOrdersPage({
                   "PRINTING",
                   "SPOOLING",
                   "CLAIMED",
+                  "NEEDS_ADMIN",
+                  "COMPLETION_UNKNOWN",
+                  "RETRY_PENDING",
                 ].includes(order.status) ? (
                   <button
                     type="button"
@@ -320,6 +365,9 @@ export function LiveOrdersPage({
                   "ADMIN_ACTION_REQUIRED",
                   "PRINT_FAILED",
                   "PRINT_BLOCKED",
+                  "NEEDS_ADMIN",
+                  "COMPLETION_UNKNOWN",
+                  "RETRY_PENDING",
                 ].includes(order.status) ? (
                   confirmRetryId === order.orderId ? (
                     <div
@@ -361,7 +409,10 @@ export function LiveOrdersPage({
                       className="primary-button"
                       disabled={actionBusyId !== null}
                       onClick={() => {
-                        if (order.status === "ADMIN_ACTION_REQUIRED") {
+                        if (
+                          order.status === "ADMIN_ACTION_REQUIRED" ||
+                          order.status === "COMPLETION_UNKNOWN"
+                        ) {
                           setConfirmRetryId(order.orderId);
                         } else {
                           void handleRetry(order, false);

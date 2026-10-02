@@ -462,10 +462,13 @@ export class D1CustomerRepository implements CustomerRepository {
         break;
       case "PRINT_FAILED":
       case "ADMIN_ACTION_REQUIRED":
+      case "RETRY_PENDING":
         status = "RETRYING";
         statusLabel = "Retrying";
         statusMessage = "The shop is resolving a print issue and retrying.";
         break;
+      case "NEEDS_ADMIN":
+      case "COMPLETION_UNKNOWN":
       case "MANUAL_PRINT":
         status = "WAITING_FOR_STAFF";
         statusLabel = "Waiting for Staff";

@@ -26,6 +26,7 @@ function createMockRepository(
     getLatestTestPrintCommand: vi.fn(() => Promise.resolve(null)),
     setDefaultProductionPrinter: vi.fn(),
     getDefaultProductionPrinterId: vi.fn(() => Promise.resolve(null)),
+    checkPrinterHealth: vi.fn(),
     ...overrides,
   };
 }

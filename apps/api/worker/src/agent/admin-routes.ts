@@ -121,6 +121,17 @@ export async function handleAdminPrinterRequest(
       return withAdminCors(ok({ testPrint }, 200), env.ADMIN_ALLOWED_ORIGIN);
     }
 
+    const checkHealthMatch =
+      /^\/api\/admin\/printers\/([^/]+)\/check-health$/u.exec(pathname);
+    if (request.method === "POST" && checkHealthMatch) {
+      const printerId = decodeURIComponent(checkHealthMatch[1] ?? "");
+      const result = await agentService.checkPrinterHealth(
+        printerId,
+        session.admin.id,
+      );
+      return withAdminCors(ok(result, 200), env.ADMIN_ALLOWED_ORIGIN);
+    }
+
     const printerMatch = /^\/api\/admin\/printers\/([^/]+)$/u.exec(pathname);
     if (request.method === "PUT" && printerMatch) {
       const printerId = decodeURIComponent(printerMatch[1] ?? "");

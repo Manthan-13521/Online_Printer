@@ -21,6 +21,7 @@ const migrations = [
   "0013_d1_usage_optimization.sql",
   "0014_addon_services.sql",
   "0015_phase3_priority_tracking_discounts.sql",
+  "0016_phase4_failure_recovery_and_pause.sql",
 ].map((name) =>
   readFileSync(
     new URL(`../../../../../database/migrations/${name}`, import.meta.url),
@@ -568,7 +569,7 @@ describe("paid-print D1 safety", () => {
         )
         .get(ids.order),
     ).toEqual({
-      status: "PRINT_FAILED",
+      status: "RETRY_PENDING",
       completed_at_ms: null,
       purge_at_ms: null,
     });

@@ -59,6 +59,32 @@ export function PrinterPage({
     string | null
   >(null);
   const [settingDefaultId, setSettingDefaultId] = useState<string | null>(null);
+  const [checkingHealthId, setCheckingHealthId] = useState<string | null>(null);
+
+  async function handleCheckHealth(printerId: string) {
+    setCheckingHealthId(printerId);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await adminApi.checkPrinterHealth(printerId);
+      if (response.ok) {
+        if (response.data.isPaused) {
+          setError(response.data.message);
+        } else {
+          setNotice(response.data.message);
+        }
+        await loadPrinters();
+      }
+    } catch (caught: unknown) {
+      if (caught instanceof AdminApiError && caught.status === 401) {
+        onSessionExpired("Your session has expired. Please sign in again.");
+        return;
+      }
+      setError(friendlyAdminError(caught));
+    } finally {
+      setCheckingHealthId(null);
+    }
+  }
 
   async function loadPrinters(isManual = false) {
     if (isManual) setRefreshing(true);
@@ -797,6 +823,76 @@ export function PrinterPage({
                           >
                             {colorText} • {duplexText} • Paper: {sizesText}
                           </p>
+                          {printer.isPaused ? (
+                            <div
+                              style={{
+                                marginTop: "0.5rem",
+                                padding: "0.5rem 0.75rem",
+                                backgroundColor: "#fef3c7",
+                                border: "1px solid #f59e0b",
+                                borderRadius: "6px",
+                                display: "flex",
+                                flexDirection: "column",
+                                gap: "0.3rem",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  display: "flex",
+                                  justifyContent: "space-between",
+                                  alignItems: "center",
+                                  flexWrap: "wrap",
+                                  gap: "0.5rem",
+                                }}
+                              >
+                                <strong
+                                  style={{
+                                    color: "#92400e",
+                                    fontSize: "0.85rem",
+                                  }}
+                                >
+                                  ⏸️ PRINTING PAUSED
+                                </strong>
+                                <button
+                                  type="button"
+                                  disabled={checkingHealthId === printer.id}
+                                  onClick={() =>
+                                    void handleCheckHealth(printer.id)
+                                  }
+                                  className="secondary-button"
+                                  style={{
+                                    fontSize: "0.8rem",
+                                    padding: "0.2rem 0.5rem",
+                                  }}
+                                >
+                                  {checkingHealthId === printer.id
+                                    ? "Checking…"
+                                    : "Issue Solved / Check Again"}
+                                </button>
+                              </div>
+                              <div
+                                style={{
+                                  fontSize: "0.8rem",
+                                  color: "#78350f",
+                                }}
+                              >
+                                <strong>Reason:</strong>{" "}
+                                {printer.pausedReason ??
+                                  "Printer problem reported"}
+                              </div>
+                              {printer.pausedAt ? (
+                                <div
+                                  style={{
+                                    fontSize: "0.75rem",
+                                    color: "#92400e",
+                                  }}
+                                >
+                                  <strong>Waiting since:</strong>{" "}
+                                  {formatRelativeTime(printer.pausedAt)}
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : null}
                         </div>
                         <div
                           style={{

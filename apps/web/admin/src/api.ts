@@ -19,6 +19,7 @@ import type {
   AdminRetryOrderResponse,
   AdminOrderPdfUrlResponse,
   AdminSetDefaultPrinterResponse,
+  AdminCheckPrinterHealthResponse,
   ApiFailure,
   ApiResponse,
   AdminDashboardData,
@@ -215,6 +216,17 @@ export const adminApi = {
   getTestPrintStatus(printerId: string): Promise<AdminTestPrintResponse> {
     return request(
       `/api/admin/printers/${encodeURIComponent(printerId)}/test-print`,
+    );
+  },
+  checkPrinterHealth(
+    printerId: string,
+  ): Promise<AdminCheckPrinterHealthResponse> {
+    return request(
+      `/api/admin/printers/${encodeURIComponent(printerId)}/check-health`,
+      {
+        method: "POST",
+        body: "{}",
+      },
     );
   },
   setDefaultPrinter(

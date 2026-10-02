@@ -12,6 +12,9 @@ export const ORDER_STATUSES = [
   "PRINTING",
   "PRINT_BLOCKED",
   "PRINT_FAILED",
+  "RETRY_PENDING",
+  "NEEDS_ADMIN",
+  "COMPLETION_UNKNOWN",
   "ADMIN_ACTION_REQUIRED",
   "PRINTED",
   "MANUAL_PRINT",
@@ -74,6 +77,84 @@ export const PRINTER_FAILURE_CODES = [
   "UNKNOWN",
 ] as const;
 export type PrinterFailureCode = (typeof PRINTER_FAILURE_CODES)[number];
+
+export const NORMALIZED_PRINTER_FAILURES = [
+  "PRINTER_OFFLINE",
+  "PAPER_OUT",
+  "PAPER_JAM",
+  "CONNECTION_LOST",
+  "SPOOLER_ERROR",
+  "PRINTER_ERROR",
+  "UNKNOWN",
+] as const;
+export type NormalizedPrinterFailure =
+  (typeof NORMALIZED_PRINTER_FAILURES)[number];
+
+export function normalizePrinterFailure(
+  rawCodeOrDetail: string | null | undefined,
+): NormalizedPrinterFailure {
+  if (!rawCodeOrDetail) return "UNKNOWN";
+  const upper = rawCodeOrDetail.toUpperCase().trim();
+  if (
+    upper === "OFFLINE" ||
+    upper === "PRINTER_OFFLINE" ||
+    upper.includes("OFFLINE") ||
+    upper.includes("NOT_AVAILABLE")
+  ) {
+    return "PRINTER_OFFLINE";
+  }
+  if (
+    upper === "PAPER_OUT" ||
+    upper === "OUT_OF_PAPER" ||
+    upper.includes("PAPER_OUT") ||
+    upper.includes("OUT_OF_PAPER") ||
+    upper.includes("NO_PAPER")
+  ) {
+    return "PAPER_OUT";
+  }
+  if (
+    upper === "PAPER_JAM" ||
+    upper.includes("PAPER_JAM") ||
+    upper.includes("JAM")
+  ) {
+    return "PAPER_JAM";
+  }
+  if (
+    upper === "CONNECTION_LOST" ||
+    upper.includes("CONNECTION_LOST") ||
+    upper.includes("COMM_ERROR") ||
+    upper.includes("COMMUNICATION") ||
+    upper.includes("NETWORK_ERROR")
+  ) {
+    return "CONNECTION_LOST";
+  }
+  if (
+    upper === "SPOOLER_ERROR" ||
+    upper.includes("SPOOLER") ||
+    upper.includes("RPC") ||
+    upper.includes("PRINT_SPOOLER")
+  ) {
+    return "SPOOLER_ERROR";
+  }
+  if (
+    upper === "PRINTER_ERROR" ||
+    upper.includes("PRINTER_ERROR") ||
+    upper.includes("DOOR_OPEN") ||
+    upper.includes("NO_TONER") ||
+    upper.includes("TONER_LOW") ||
+    upper.includes("USER_INTERVENTION") ||
+    upper === "ERROR"
+  ) {
+    return "PRINTER_ERROR";
+  }
+  return "UNKNOWN";
+}
+
+export function isPrinterWideFailure(
+  failure: NormalizedPrinterFailure,
+): boolean {
+  return failure !== "UNKNOWN";
+}
 
 export const PRINTER_STATUSES = [
   "UNKNOWN",

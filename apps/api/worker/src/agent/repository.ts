@@ -1,12 +1,17 @@
 import type {
   AdminAgentDetails,
+  AdminCheckPrinterHealthResponseData,
   AdminPrinterDetails,
   AdminTestPrintDetails,
   AgentTestPrintCommand,
   PrinterCapabilitySummary,
   TestPrintCommandStatus,
 } from "@printgo/api-contract";
-import { AGENT_HEARTBEAT_TIMEOUT_MS } from "@printgo/domain";
+import {
+  AGENT_HEARTBEAT_TIMEOUT_MS,
+  normalizePrinterFailure,
+  isPrinterWideFailure,
+} from "@printgo/domain";
 import type { ValidatedPrinterReport } from "@printgo/validation";
 
 export interface StoredAgent {
@@ -150,6 +155,11 @@ export interface AgentRepository {
     printerId: string,
     nowMs?: number,
   ): Promise<AdminTestPrintDetails | null>;
+  checkPrinterHealth(
+    printerId: string,
+    adminId: string,
+    nowMs: number,
+  ): Promise<AdminCheckPrinterHealthResponseData>;
 }
 
 interface AgentRow {
@@ -174,6 +184,11 @@ interface PrinterRow {
   is_virtual: number;
   port_name: string | null;
   driver_name: string | null;
+  is_paused?: number | null;
+  paused_reason?: string | null;
+  paused_at_ms?: number | null;
+  last_health_check_at_ms?: number | null;
+  health_check_requested?: number | null;
 }
 
 export class D1AgentRepository implements AgentRepository {
@@ -566,7 +581,8 @@ export class D1AgentRepository implements AgentRepository {
         this.db.prepare(
           `SELECT id, agent_id, display_name, windows_printer_name, enabled,
                 status, status_reason, capabilities_json, last_status_at_ms,
-                is_production_eligible, is_virtual, port_name, driver_name
+                is_production_eligible, is_virtual, port_name, driver_name,
+                is_paused, paused_reason, paused_at_ms, last_health_check_at_ms, health_check_requested
          FROM printers ORDER BY windows_printer_name ASC`,
         ),
         this.db.prepare(
@@ -633,6 +649,15 @@ export class D1AgentRepository implements AgentRepository {
         isProductionDefault: pr.id === defaultProductionPrinterId,
         portName: pr.port_name ?? null,
         driverName: pr.driver_name ?? null,
+        isPaused: pr.is_paused === 1,
+        pausedReason: pr.paused_reason ?? null,
+        pausedAt: pr.paused_at_ms
+          ? new Date(pr.paused_at_ms).toISOString()
+          : null,
+        lastHealthCheckAt: pr.last_health_check_at_ms
+          ? new Date(pr.last_health_check_at_ms).toISOString()
+          : null,
+        healthCheckRequested: pr.health_check_requested === 1,
       });
       printersByAgent.set(pr.agent_id, list);
     }
@@ -1072,5 +1097,89 @@ export class D1AgentRepository implements AgentRepository {
       .first<PrinterTestCommandRow>();
 
     return row ? toAdminTestPrintDetails(row, nowMs) : null;
+  }
+
+  async checkPrinterHealth(
+    printerId: string,
+    _adminId: string,
+    nowMs: number,
+  ): Promise<AdminCheckPrinterHealthResponseData> {
+    const printer = await this.db
+      .prepare(
+        `SELECT p.id, p.agent_id, p.display_name, p.status, p.status_reason, p.is_paused,
+                p.paused_reason, p.paused_at_ms, a.is_active, a.last_heartbeat_at_ms
+         FROM printers p
+         JOIN agents a ON a.id = p.agent_id
+         WHERE p.id = ?`,
+      )
+      .bind(printerId)
+      .first<{
+        id: string;
+        agent_id: string;
+        display_name: string;
+        status: string;
+        status_reason: string | null;
+        is_paused: number;
+        paused_reason: string | null;
+        paused_at_ms: number | null;
+        is_active: number;
+        last_heartbeat_at_ms: number | null;
+      }>();
+
+    if (!printer) {
+      throw new Error("PRINTER_NOT_FOUND");
+    }
+
+    const agentIsOnline =
+      printer.is_active === 1 &&
+      printer.last_heartbeat_at_ms !== null &&
+      nowMs - printer.last_heartbeat_at_ms <= AGENT_HEARTBEAT_TIMEOUT_MS;
+
+    if (!agentIsOnline) {
+      return {
+        printerId: printer.id,
+        isPaused: true,
+        status: "OFFLINE",
+        message: "Agent is offline. Cannot verify printer health.",
+      };
+    }
+
+    const normReason = normalizePrinterFailure(
+      printer.status_reason ||
+        (printer.status !== "ONLINE" ? printer.status : null),
+    );
+
+    if (printer.status !== "ONLINE" || isPrinterWideFailure(normReason)) {
+      await this.db
+        .prepare(
+          `UPDATE printers SET last_health_check_at_ms = ?, health_check_requested = 1, updated_at_ms = ? WHERE id = ?`,
+        )
+        .bind(nowMs, nowMs, printer.id)
+        .run();
+
+      return {
+        printerId: printer.id,
+        isPaused: true,
+        status: printer.status,
+        message: `Printer is still reporting issue (${printer.status_reason || normReason}). Queue remains paused.`,
+      };
+    }
+
+    await this.db
+      .prepare(
+        `UPDATE printers
+         SET is_paused = 0, paused_reason = NULL, paused_at_ms = NULL,
+             last_health_check_at_ms = ?, health_check_requested = 0, updated_at_ms = ?
+         WHERE id = ?`,
+      )
+      .bind(nowMs, nowMs, printer.id)
+      .run();
+
+    return {
+      printerId: printer.id,
+      isPaused: false,
+      status: "ONLINE",
+      message: "Printer is healthy and online. Queue resumed.",
+    };
   }
 }
