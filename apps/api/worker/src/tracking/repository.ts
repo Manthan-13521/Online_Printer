@@ -139,8 +139,9 @@ export class D1TrackingRepository implements TrackingRepository {
         WHERE id = ? AND tracking_token_hash IS NULL
           AND public_job_code IS NOT NULL
           AND status IN ('PAID', 'QUEUED', 'CLAIMED', 'SPOOLING', 'PRINTING',
-            'PRINT_BLOCKED', 'PRINT_FAILED', 'ADMIN_ACTION_REQUIRED', 'PRINTED',
-            'COMPLETED', 'CANCELLED')`,
+            'PRINT_BLOCKED', 'PRINT_FAILED', 'RETRY_PENDING', 'NEEDS_ADMIN',
+            'COMPLETION_UNKNOWN', 'ADMIN_ACTION_REQUIRED', 'PRINTED',
+            'MANUAL_PRINT', 'AWAITING_FINISHING', 'COMPLETED', 'CANCELLED')`,
       )
       .bind(
         input.tokenHash,
@@ -208,7 +209,9 @@ export class D1TrackingRepository implements TrackingRepository {
         WHERE order_id = ? AND (
           event_type = 'PAYMENT_VERIFIED' OR
           to_status IN ('QUEUED', 'CLAIMED', 'SPOOLING', 'PRINTING',
-            'PRINT_BLOCKED', 'PRINT_FAILED', 'ADMIN_ACTION_REQUIRED',
+            'PRINT_BLOCKED', 'PRINT_FAILED', 'RETRY_PENDING', 'NEEDS_ADMIN',
+            'COMPLETION_UNKNOWN', 'ADMIN_ACTION_REQUIRED',
+            'MANUAL_PRINT', 'AWAITING_FINISHING',
             'PRINTED', 'COMPLETED', 'CANCELLED')
         )
         ORDER BY created_at_ms ASC, id ASC`,

@@ -114,6 +114,11 @@ function paymentErrorMessage(caught: unknown): string {
     return "The payment service could not be reached. Please check your connection and try again.";
   if (code === "CHECKOUT_LOAD_FAILED")
     return "The secure payment window could not be loaded. Please try again.";
+  if (
+    code === "TRACKING_ACCESS_UNAVAILABLE" ||
+    code === "TRACKING_ACCESS_CONFLICT"
+  )
+    return "Payment was received, but tracking confirmation encountered an issue. Please contact shop staff with your payment ID.";
   return "Payment could not be completed. You have not been shown a successful print job.";
 }
 
