@@ -83,7 +83,11 @@ if (process.platform === "win32") {
   );
   fs.copyFileSync(process.execPath, exePath);
 
-  execSync(`signtool remove /s "${exePath}"`, { stdio: "inherit" });
+  try {
+    execSync(`signtool remove /s "${exePath}"`, { stdio: "ignore" });
+  } catch {
+    // signtool may not be installed or binary is unsigned; safe to proceed
+  }
   console.log("[Build Agent] Injecting SEA blob using pinned postject...");
   execSync(
     `npx --yes postject@1.0.0-alpha.6 "${exePath}" NODE_SEA_BLOB "${path.resolve(distDir, "sea-prep.blob")}" --sentinel-fuse NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2`,
