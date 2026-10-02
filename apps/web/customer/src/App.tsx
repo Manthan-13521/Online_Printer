@@ -1350,9 +1350,70 @@ export function App() {
                     <dd>-{formatInr(quote.discountAmountPaise)}</dd>
                   </div>
                 ) : null}
-                <div className="total">
-                  <dt>Total</dt>
-                  <dd>{formatInr(quote.totalAmountPaise)}</dd>
+                <div
+                  className="total"
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "0.4rem",
+                    paddingTop: "0.5rem",
+                    borderTop: "1px solid var(--border-color, #e2e8f0)",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                    }}
+                  >
+                    <dt style={{ fontWeight: 600, fontSize: "0.95rem" }}>
+                      ONLINE PAYMENT
+                    </dt>
+                    <dd
+                      style={{
+                        fontWeight: 700,
+                        fontSize: "1.1rem",
+                        color: "#0f172a",
+                      }}
+                    >
+                      {formatInr(quote.totalAmountPaise)}
+                    </dd>
+                  </div>
+                  {quote.addonServices?.some(
+                    (s) => s.pricingType === "STAFF_PRICED",
+                  ) ? (
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        backgroundColor: "#fff7ed",
+                        padding: "0.35rem 0.6rem",
+                        borderRadius: "6px",
+                        border: "1px solid #ffedd5",
+                      }}
+                    >
+                      <dt
+                        style={{
+                          fontSize: "0.85rem",
+                          color: "#c2410c",
+                          fontWeight: 600,
+                        }}
+                      >
+                        PAYABLE AT SHOP
+                      </dt>
+                      <dd
+                        style={{
+                          fontSize: "0.85rem",
+                          color: "#c2410c",
+                          fontWeight: 600,
+                        }}
+                      >
+                        Price decided by staff
+                      </dd>
+                    </div>
+                  ) : null}
                 </div>
               </dl>
             )}

@@ -936,74 +936,103 @@ export function PrinterPage({
                                       })()
                                     : "Not configured"}
                                 </span>
-                                <button
-                                  type="button"
-                                  className="text-button"
+                                <div
                                   style={{
-                                    fontSize: "0.8rem",
-                                    padding: "0.15rem 0.4rem",
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: "0.5rem",
+                                    marginTop: "0.25rem",
                                   }}
-                                  onClick={() => {
-                                    const otherPrinters = agents
+                                >
+                                  <select
+                                    aria-label={`Fallback Printer for ${printer.displayName}`}
+                                    value={printer.fallbackPrinterId ?? ""}
+                                    onChange={(e) => {
+                                      const selectedId = e.target.value
+                                        ? e.target.value
+                                        : null;
+                                      void (async () => {
+                                        try {
+                                          const res =
+                                            await adminApi.configureFallback(
+                                              printer.id,
+                                              selectedId,
+                                              selectedId !== null
+                                                ? Boolean(
+                                                    printer.autoFallbackEnabled,
+                                                  )
+                                                : false,
+                                            );
+                                          if (res.ok) {
+                                            void loadPrinters();
+                                          } else {
+                                            setError(res.error.message);
+                                          }
+                                        } catch (err: unknown) {
+                                          setError((err as Error).message);
+                                        }
+                                      })();
+                                    }}
+                                    style={{
+                                      fontSize: "0.85rem",
+                                      padding: "0.2rem 0.4rem",
+                                      borderRadius: "4px",
+                                    }}
+                                  >
+                                    <option value="">None (Disabled)</option>
+                                    {agents
                                       .flatMap((a) => a.printers)
                                       .filter(
                                         (p) =>
                                           p.id !== printer.id &&
                                           !p.isVirtual &&
                                           p.isProductionEligible,
-                                      );
-                                    if (otherPrinters.length === 0) {
-                                      setError(
-                                        "No eligible printers available as fallback.",
-                                      );
-                                      return;
-                                    }
-                                    const names = otherPrinters.map(
-                                      (p, i) => `${i + 1}. ${p.displayName}`,
-                                    );
-                                    const choice = prompt(
-                                      `Choose fallback for "${printer.displayName}" (enter number, or 0 to remove):\n${names.join("\n")}`,
-                                    );
-                                    if (choice === null) return;
-                                    const idx = parseInt(choice, 10);
-                                    const fallbackId =
-                                      idx === 0
-                                        ? null
-                                        : (otherPrinters[idx - 1]?.id ?? null);
-                                    const autoEnabled =
-                                      fallbackId !== null &&
-                                      confirm(
-                                        "Enable automatic fallback when primary is unavailable?",
-                                      );
-                                    void (async () => {
-                                      try {
-                                        const res =
-                                          await adminApi.configureFallback(
-                                            printer.id,
-                                            fallbackId,
-                                            autoEnabled,
-                                          );
-                                        if (res.ok) {
-                                          setNotice("Fallback updated.");
-                                          await loadPrinters();
-                                        }
-                                      } catch (caught: unknown) {
-                                        if (
-                                          caught instanceof AdminApiError &&
-                                          caught.status === 401
-                                        ) {
-                                          onSessionExpired(
-                                            "Your session has expired. Please sign in again.",
-                                          );
-                                          return;
-                                        }
-                                        setError(friendlyAdminError(caught));
-                                      }
-                                    })();
-                                  }}
-                                >
-                                  Configure
-                                </button>
+                                      )
+                                      .map((p) => (
+                                        <option key={p.id} value={p.id}>
+                                          {p.displayName}
+                                        </option>
+                                      ))}
+                                  </select>
+                                  {printer.fallbackPrinterId ? (
+                                    <label
+                                      style={{
+                                        fontSize: "0.8rem",
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        gap: "0.25rem",
+                                        cursor: "pointer",
+                                      }}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={printer.autoFallbackEnabled}
+                                        onChange={(e) => {
+                                          const enabled = e.target.checked;
+                                          void (async () => {
+                                            try {
+                                              const res =
+                                                await adminApi.configureFallback(
+                                                  printer.id,
+                                                  printer.fallbackPrinterId ??
+                                                    null,
+                                                  enabled,
+                                                );
+                                              if (res.ok) {
+                                                void loadPrinters();
+                                              } else {
+                                                setError(res.error.message);
+                                              }
+                                            } catch (err: unknown) {
+                                              setError((err as Error).message);
+                                            }
+                                          })();
+                                        }}
+                                      />
+                                      Auto Fallback
+                                    </label>
+                                  ) : null}
+                                </div>
                               </div>
                             </div>
                           ) : null}
