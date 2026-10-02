@@ -22,6 +22,7 @@
       "binding": "DB",
       "database_name": "printgo-production",
       "database_id": "81bc9e6b-6e65-4a8a-85dd-4440484482ff",
+      "migrations_dir": "../../../database/migrations",
     },
   ],
   "r2_buckets": [
