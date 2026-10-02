@@ -424,99 +424,132 @@ export function ShopSettingsPage({
         </section>
 
         <section className="panel form-section">
-          <h2>Identification sheet</h2>
-          <label className="checkbox-row">
-            <input
-              checked={settings.identificationSheetEnabled}
-              onChange={(event) =>
-                patch({ identificationSheetEnabled: event.target.checked })
-              }
-              type="checkbox"
-            />
-            <span>Print one identification sheet for each order</span>
-          </label>
-          <p className="field-help">
-            Adds one shop identification sheet per order for sorting printed
-            jobs. Customers are not charged for this sheet.
-          </p>
-          <fieldset disabled={!settings.identificationSheetEnabled}>
-            <legend>Placement</legend>
-            <label className="radio-row">
-              <input
-                checked={settings.identificationSheetPlacement === "FIRST"}
-                name="placement"
-                onChange={() =>
-                  patch({ identificationSheetPlacement: "FIRST" })
-                }
-                type="radio"
-              />
-              <span>Print before document</span>
-            </label>
-            <label className="radio-row">
-              <input
-                checked={settings.identificationSheetPlacement === "LAST"}
-                name="placement"
-                onChange={() => patch({ identificationSheetPlacement: "LAST" })}
-                type="radio"
-              />
-              <span>Print after document</span>
-            </label>
-          </fieldset>
-        </section>
+          <h2>Identification</h2>
 
-        <section className="panel form-section">
-          <h2>Customer Identification at Pickup</h2>
-          <p className="field-help">
-            Require customer identification when collecting their orders. No
-            sensitive identity documents, Aadhaar numbers, or photos are ever
-            collected or stored.
-          </p>
-          <label htmlFor="id-requirement-mode">Identification policy</label>
-          <select
-            id="id-requirement-mode"
-            value={settings.idRequirementMode ?? "OFF"}
-            onChange={(event) =>
-              patch({
-                idRequirementMode: event.target.value as
-                  "OFF" | "ALWAYS" | "ABOVE_THRESHOLD",
-              })
-            }
+          <div
+            style={{ display: "grid", gap: "0.35rem", marginBottom: "0.75rem" }}
           >
-            <option value="OFF">Off (Never required)</option>
-            <option value="ALWAYS">Always required</option>
-            <option value="ABOVE_THRESHOLD">
-              Required only above order amount
-            </option>
-          </select>
-
-          {settings.idRequirementMode === "ABOVE_THRESHOLD" ? (
-            <div style={{ marginTop: "0.75rem" }}>
-              <label htmlFor="id-threshold-amount">
-                Minimum order amount (₹)
-              </label>
+            <h3
+              style={{
+                margin: "0.25rem 0",
+                fontSize: "1.05rem",
+                color: "#1e293b",
+              }}
+            >
+              Identification sheet
+            </h3>
+            <label className="checkbox-row">
               <input
-                id="id-threshold-amount"
-                type="number"
-                min="1"
-                step="1"
-                value={
-                  settings.idThresholdPaise !== undefined
-                    ? formatPaiseAsRupeesInput(settings.idThresholdPaise)
-                    : "500"
-                }
+                checked={settings.identificationSheetEnabled}
                 onChange={(event) =>
-                  patch({
-                    idThresholdPaise:
-                      parseRupeesToPaise(event.target.value || "0") ?? 0,
-                  })
+                  patch({ identificationSheetEnabled: event.target.checked })
                 }
+                type="checkbox"
               />
-              <p className="field-help">
-                Orders with online printing total equal to or above this amount
-                will require customer ID at pickup.
-              </p>
-            </div>
-          ) : null}
+              <span>Print one identification sheet for each order</span>
+            </label>
+            <p className="field-help">
+              Adds one shop identification sheet per order for sorting printed
+              jobs. Customers are not charged for this sheet.
+            </p>
+            <fieldset disabled={!settings.identificationSheetEnabled}>
+              <legend>Placement</legend>
+              <label className="radio-row">
+                <input
+                  checked={settings.identificationSheetPlacement === "FIRST"}
+                  name="placement"
+                  onChange={() =>
+                    patch({ identificationSheetPlacement: "FIRST" })
+                  }
+                  type="radio"
+                />
+                <span>Print before document</span>
+              </label>
+              <label className="radio-row">
+                <input
+                  checked={settings.identificationSheetPlacement === "LAST"}
+                  name="placement"
+                  onChange={() =>
+                    patch({ identificationSheetPlacement: "LAST" })
+                  }
+                  type="radio"
+                />
+                <span>Print after document</span>
+              </label>
+            </fieldset>
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gap: "0.35rem",
+              paddingTop: "1rem",
+              borderTop: "1px solid #e2e8f0",
+            }}
+          >
+            <h3
+              style={{
+                margin: "0.25rem 0",
+                fontSize: "1.05rem",
+                color: "#1e293b",
+              }}
+            >
+              Customer Identification at Pickup
+            </h3>
+            <p className="field-help">
+              Require customer identification when collecting their orders. No
+              sensitive identity documents, Aadhaar numbers, or photos are ever
+              collected or stored.
+            </p>
+            <label htmlFor="id-requirement-mode">Identification policy</label>
+            <select
+              id="id-requirement-mode"
+              value={settings.idRequirementMode ?? "OFF"}
+              onChange={(event) =>
+                patch({
+                  idRequirementMode: event.target.value as
+                    "OFF" | "ALWAYS" | "ABOVE_THRESHOLD",
+                })
+              }
+            >
+              <option value="OFF">Off (Never required)</option>
+              <option value="ALWAYS">Always required</option>
+              <option value="ABOVE_THRESHOLD">
+                Required only above order amount
+              </option>
+            </select>
+
+            {settings.idRequirementMode === "ABOVE_THRESHOLD" ? (
+              <div
+                style={{ display: "grid", gap: "0.35rem", marginTop: "0.5rem" }}
+              >
+                <label htmlFor="id-threshold-amount">
+                  Minimum order amount (₹)
+                </label>
+                <input
+                  id="id-threshold-amount"
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={
+                    settings.idThresholdPaise !== undefined
+                      ? formatPaiseAsRupeesInput(settings.idThresholdPaise)
+                      : "500"
+                  }
+                  onChange={(event) =>
+                    patch({
+                      idThresholdPaise:
+                        parseRupeesToPaise(event.target.value || "0") ?? 0,
+                    })
+                  }
+                />
+                <p className="field-help">
+                  Orders with online printing total equal to or above this
+                  amount will require customer ID at pickup.
+                </p>
+              </div>
+            ) : null}
+          </div>
         </section>
 
         <section className="panel form-section">
