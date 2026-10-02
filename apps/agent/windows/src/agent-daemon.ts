@@ -46,6 +46,7 @@ export class AgentDaemon {
   private lastPrinterRefreshMs = -Infinity;
   private lastReportedPrinters = "";
   private nextDelayMs = 5_000;
+  private idlePolls = 0;
   private failures = 0;
   private lastStatusWriteMs = -Infinity;
 
@@ -198,9 +199,9 @@ export class AgentDaemon {
       const unhealthy =
         this.printerReports.length === 0 ||
         this.printerReports.some((p) => p.status !== "ONLINE");
-      const refreshEveryMs = unhealthy
-        ? Math.min(30_000, this.printerRefreshMs)
-        : this.printerRefreshMs;
+      // A blocked printer needs a local health probe every two minutes;
+      // the /pulse cadence remains shorter than the server liveness timeout.
+      const refreshEveryMs = unhealthy ? 120_000 : this.printerRefreshMs;
       const refreshPrinters =
         Date.now() - this.lastPrinterRefreshMs >=
         (this.nextDelayMs === 0 ? 60_000 : refreshEveryMs);
@@ -265,10 +266,18 @@ export class AgentDaemon {
           p.isEligibleForProductionPrint !== false &&
           !p.isVirtual,
       );
+      const hadWork = Boolean(
+        heartbeatData.nextCommand || heartbeatData.printJob,
+      );
+      if (hadWork || (reportChanged && ready)) this.idlePolls = 0;
+      else this.idlePolls = Math.min(this.idlePolls + 1, 4);
       this.nextDelayMs =
         heartbeatData.onlinePrintingEnabled === false || !ready
           ? 30_000
-          : this.heartbeatIntervalMs;
+          : Math.min(
+              30_000,
+              this.heartbeatIntervalMs * 2 ** Math.max(0, this.idlePolls - 1),
+            );
       if (Date.now() - this.lastStatusWriteMs >= 60_000 || refreshPrinters) {
         this.lastStatusWriteMs = Date.now();
 
@@ -321,6 +330,7 @@ export class AgentDaemon {
         this.notifyError(err);
       } else {
         this.failures++;
+        this.idlePolls = 0;
         this.lastPrinterRefreshMs = -Infinity;
         this.nextDelayMs =
           Math.min(

@@ -233,6 +233,17 @@ export async function handleAdminManualOrdersRequest(
       request.method === "GET" &&
       url.pathname === "/api/admin/orders/manual"
     ) {
+      const cursor = url.searchParams.get("cursor");
+      const cursorMatch = cursor && /^(\d+):([0-9a-f-]{36})$/iu.exec(cursor);
+      if (
+        cursor &&
+        (!cursorMatch || !Number.isSafeInteger(Number(cursorMatch[1])))
+      ) {
+        return withAdminCors(
+          error(400, "INVALID_CURSOR", "Invalid manual-order cursor."),
+          allowedOrigin,
+        );
+      }
       interface ManualOrderRow {
         id: string;
         public_job_code: string;
@@ -255,17 +266,20 @@ export async function handleAdminManualOrdersRequest(
                   o.status, o.instructions, o.total_amount_paise, o.due_at_pickup_paise,
                   o.paid_at_ms,
                   (SELECT COUNT(*) FROM order_files f WHERE f.order_id = o.id) file_count
-           FROM orders o
+           FROM orders o INDEXED BY orders_manual_queue_idx
            WHERE o.status IN ('MANUAL_PRINT', 'AWAITING_FINISHING')
              AND o.cleanup_state = 'ACTIVE'
-           ORDER BY o.paid_at_ms`,
+             ${cursorMatch ? "AND (o.paid_at_ms, o.id) > (?, ?)" : ""}
+           ORDER BY o.paid_at_ms, o.id LIMIT 51`,
         )
+        .bind(...(cursorMatch ? [Number(cursorMatch[1]), cursorMatch[2]] : []))
         .all<ManualOrderRow>();
 
-      const orderIds = result.results.map((r) => r.id);
+      const page = result.results.slice(0, 50);
+      const orderIds = page.map((r) => r.id);
       const snapshotsMap = await addonRepo.getOrderSnapshotsBatch(orderIds);
 
-      const orders: AdminManualOrder[] = result.results.map((row) => {
+      const orders: AdminManualOrder[] = page.map((row) => {
         const snapshots: OrderAddonServiceSnapshot[] =
           snapshotsMap.get(row.id) ?? [];
         const hasStaffPriced = snapshots.some(
@@ -295,7 +309,14 @@ export async function handleAdminManualOrdersRequest(
         };
       });
 
-      response = ok({ orders });
+      const last = page.at(-1);
+      response = ok({
+        orders,
+        nextCursor:
+          result.results.length > 50 && last
+            ? `${last.paid_at_ms}:${last.id}`
+            : null,
+      });
     } else if (
       request.method === "POST" &&
       url.pathname.startsWith("/api/admin/orders/")

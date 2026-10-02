@@ -1,0 +1,76 @@
+{
+  "scope": "Local SQLite representative hot access paths; full Worker route plans are also captured by efficiency-audit.mjs",
+  "changed": [
+    {
+      "name": "customer draft token lookup",
+      "before": ["SCAN orders USING INDEX orders_cleanup_created_idx"],
+      "after": [
+        "SEARCH orders USING INDEX orders_draft_token_lookup_idx (draft_token_hash=?)"
+      ]
+    },
+    {
+      "name": "unpaid cleanup due probe",
+      "before": [
+        "SEARCH o USING INDEX idx_orders_claim_priority_queue (status=?)"
+      ],
+      "after": [
+        "SEARCH o USING INDEX orders_unpaid_cleanup_due_idx (draft_expires_at_ms<?)"
+      ]
+    },
+    {
+      "name": "completed cleanup due probe",
+      "before": [
+        "SEARCH o USING INDEX idx_orders_claim_priority_queue (status=?)"
+      ],
+      "after": [
+        "SEARCH o USING INDEX orders_completed_cleanup_due_idx (purge_at_ms>? AND purge_at_ms<?)"
+      ]
+    },
+    {
+      "name": "manual queue",
+      "before": [
+        "SEARCH o USING INDEX idx_orders_claim_priority_queue (status=?)",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ],
+      "after": ["SCAN o USING INDEX orders_manual_queue_idx"]
+    }
+  ],
+  "unchanged": [
+    {
+      "name": "priority and next-job candidate",
+      "plan": [
+        "SEARCH orders USING INDEX idx_orders_status_created (status=?)",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ]
+    },
+    {
+      "name": "retry queue",
+      "plan": [
+        "SEARCH orders USING INDEX idx_orders_claim_priority_queue (status=?)",
+        "USE TEMP B-TREE FOR ORDER BY"
+      ]
+    },
+    {
+      "name": "pickup tracking",
+      "plan": [
+        "SEARCH orders USING INDEX sqlite_autoindex_orders_3 (pickup_code=?)"
+      ]
+    },
+    {
+      "name": "Admin active history keyset",
+      "plan": [
+        "SEARCH orders USING COVERING INDEX idx_orders_created ((created_at_ms,id)<(?,?))"
+      ]
+    },
+    {
+      "name": "Admin retained history keyset",
+      "plan": [
+        "SEARCH retained_order_history USING COVERING INDEX retained_order_history_created_idx ((created_at_ms,id)<(?,?))"
+      ]
+    },
+    {
+      "name": "daily cleanup bounded page",
+      "plan": ["SCAN orders USING COVERING INDEX orders_cleanup_created_idx"]
+    }
+  ]
+}

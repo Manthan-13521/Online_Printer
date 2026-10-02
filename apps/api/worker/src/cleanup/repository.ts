@@ -60,6 +60,14 @@ function scopeOrder(scope: CleanupScope): string {
   return "o.created_at_ms, o.id";
 }
 
+function dueIndex(scope: CleanupScope): string {
+  if (scope === "EXPIRED_UNPAID")
+    return "INDEXED BY orders_unpaid_cleanup_due_idx";
+  if (scope === "COMPLETED_DUE")
+    return "INDEXED BY orders_completed_cleanup_due_idx";
+  return "";
+}
+
 const ACTIVE_PAYMENT = `EXISTS (SELECT 1 FROM payments active_payment
   WHERE active_payment.order_id = o.id AND active_payment.status IN ('CREATED','PENDING'))`;
 
@@ -87,7 +95,7 @@ export class D1CleanupRepository {
     const guard = safetyGuard(scope);
     const row = await this.db
       .prepare(
-        `SELECT 1 candidate FROM orders o
+        `SELECT 1 candidate FROM orders o ${dueIndex(scope)}
          WHERE o.cleanup_state = 'ACTIVE' AND ${where}
            AND ${guard}
          LIMIT 1`,
@@ -112,7 +120,7 @@ export class D1CleanupRepository {
     const due = await this.db
       .prepare(
         `WITH sample AS (
-           SELECT o.id FROM orders o WHERE o.cleanup_state = 'ACTIVE' AND ${where}
+           SELECT o.id FROM orders o ${dueIndex(scope)} WHERE o.cleanup_state = 'ACTIVE' AND ${where}
              AND ${sampleGuard}
            ORDER BY ${scopeOrder(scope)} LIMIT 100
          )
@@ -280,7 +288,7 @@ export class D1CleanupRepository {
       const guard = safetyGuard(scope);
       const due = await this.db
         .prepare(
-          `SELECT o.id FROM orders o
+          `SELECT o.id FROM orders o ${dueIndex(scope)}
            WHERE o.cleanup_state = 'ACTIVE' AND ${where}
              AND o.created_at_ms <= (SELECT cutoff_at_ms FROM cleanup_runs WHERE id = ?)
              AND ${guard}
@@ -533,7 +541,7 @@ export class D1CleanupRepository {
          SELECT 1 FROM cleanup_run_items
          WHERE run_id = ? AND status IN ('PENDING','FAILED')
          UNION ALL
-         SELECT 1 FROM orders o
+         SELECT 1 FROM orders o ${dueIndex(scope)}
          WHERE o.cleanup_state = 'ACTIVE' AND ${where}
            AND o.created_at_ms <= (SELECT cutoff_at_ms FROM cleanup_runs WHERE id = ?)
            AND ${remainingGuard}

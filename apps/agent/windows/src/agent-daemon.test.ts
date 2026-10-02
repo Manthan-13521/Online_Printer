@@ -178,6 +178,93 @@ describe("AgentDaemon", () => {
     expect(mockClient.sendHeartbeat).toHaveBeenCalledTimes(2);
   });
 
+  it("backs off idle polls but returns to responsive polling when work appears", async () => {
+    let polls = 0;
+    const client = {
+      sendHeartbeat: vi.fn(() => {
+        polls++;
+        return Promise.resolve({
+          acknowledged: true,
+          serverTimeMs: Date.now(),
+          ...(polls === 6
+            ? {
+                nextCommand: {
+                  type: "TEST_PRINT" as const,
+                  commandId: "cmd-after-idle",
+                  printerId: "printer-1",
+                  windowsPrinterName: "p1",
+                  printerDisplayName: "Printer 1",
+                  shopName: "Test Shop",
+                  // Skip execution; this test isolates scheduler timing.
+                  expiresAtMs: Date.now() - 1,
+                },
+              }
+            : {}),
+        });
+      }),
+    } as unknown as AgentClient;
+    const daemon = new AgentDaemon({
+      client,
+      credentialStore: createMockStore({
+        agentId: "agent_1",
+        agentSecret: "secret_1",
+        serverUrl: "https://api.printgo.shop",
+        displayName: "Front Desk PC",
+      }),
+      printerAdapter: createMockAdapter(),
+    });
+
+    const startedAt = Date.now();
+    await daemon.start();
+    for (const [elapsed, calls] of [
+      [5_000, 2],
+      [10_000, 3],
+      [20_000, 4],
+      [40_000, 5],
+      [70_000, 6],
+    ] as const) {
+      await vi.advanceTimersToNextTimerAsync();
+      expect(client.sendHeartbeat).toHaveBeenCalledTimes(calls);
+      expect(Date.now() - startedAt).toBe(elapsed);
+    }
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(client.sendHeartbeat).toHaveBeenCalledTimes(7);
+    daemon.stop();
+  });
+
+  it("checks a blocked printer every two minutes while keeping Agent liveness pulses", async () => {
+    const adapter = createMockAdapter();
+    vi.mocked(adapter.getStatus).mockResolvedValue({
+      availability: "BLOCKED",
+      message: "Paper jam",
+    });
+    const client = {
+      sendHeartbeat: vi.fn(() =>
+        Promise.resolve({ acknowledged: true, serverTimeMs: Date.now() }),
+      ),
+    } as unknown as AgentClient;
+    const daemon = new AgentDaemon({
+      client,
+      credentialStore: createMockStore({
+        agentId: "agent_1",
+        agentSecret: "secret_1",
+        serverUrl: "https://api.printgo.shop",
+        displayName: "Front Desk PC",
+      }),
+      printerAdapter: adapter,
+    });
+
+    await daemon.start();
+    expect(adapter.listPrinters).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(90_000);
+    expect(client.sendHeartbeat).toHaveBeenCalledTimes(4);
+    expect(adapter.listPrinters).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(client.sendHeartbeat).toHaveBeenCalledTimes(5);
+    expect(adapter.listPrinters).toHaveBeenCalledTimes(2);
+    daemon.stop();
+  });
+
   it("stops automatically when server indicates agent is unauthorized / revoked", async () => {
     const store = createMockStore({
       agentId: "agent_1",

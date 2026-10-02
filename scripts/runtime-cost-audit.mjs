@@ -81,9 +81,9 @@ function requestHarness(runtime) {
   };
 }
 
-async function simulateIdle(seconds) {
+async function simulateIdle(seconds, cadence) {
   const runtime = await createRuntime(
-    `.tmp/runtime-cost/idle-${seconds}-${realNow()}`,
+    `.tmp/runtime-cost/idle-${cadence}-${seconds}-${realNow()}`,
     { profileWrites: true },
   );
   const { request, snapshot } = requestHarness(runtime);
@@ -91,17 +91,30 @@ async function simulateIdle(seconds) {
   Date.now = () => now;
   try {
     const before = totals(runtime);
-    const pulses = seconds / 5;
     const cleanupRuns = Math.floor(seconds / 300);
-    let nextCleanup = 300;
-    for (let pulse = 1; pulse <= pulses; pulse++) {
-      now += 5_000;
-      await request("agent-job-poll", "/api/agent/pulse", {
-        method: "POST",
-        token: runtime.agentTokens[0],
-        body: { agentVersion: "audit", operationalState: "ONLINE" },
-      });
-      if (pulse * 5 >= nextCleanup) {
+    let nextCleanupMs = 300_000;
+    let nextPulseMs = 5_000;
+    let idlePolls = 0;
+    let pulses = 0;
+    let elapsedMs = 0;
+    while (Math.min(nextPulseMs, nextCleanupMs) <= seconds * 1_000) {
+      const eventMs = Math.min(nextPulseMs, nextCleanupMs);
+      now += eventMs - elapsedMs;
+      elapsedMs = eventMs;
+      if (eventMs === nextPulseMs) {
+        await request("agent-job-poll", "/api/agent/pulse", {
+          method: "POST",
+          token: runtime.agentTokens[0],
+          body: { agentVersion: "audit", operationalState: "ONLINE" },
+        });
+        pulses++;
+        idlePolls = Math.min(idlePolls + 1, 4);
+        nextPulseMs +=
+          cadence === "adaptive"
+            ? Math.min(30_000, 5_000 * 2 ** Math.max(0, idlePolls - 1))
+            : 5_000;
+      }
+      if (eventMs === nextCleanupMs) {
         const stats = {
           endpoint: "retention-cleanup",
           calls: 1,
@@ -116,15 +129,16 @@ async function simulateIdle(seconds) {
           () => now,
         );
         await runtime.context.run(stats, () => service.runCleanup());
-        nextCleanup += 300;
+        nextCleanupMs += 300_000;
       }
     }
     const delta = subtract(totals(runtime), before);
-    assert.equal(delta.changedRows, seconds / 60);
+    if (cadence === "fixed") assert.equal(delta.changedRows, seconds / 60);
     assert.equal(snapshot().httpRequests, pulses);
     return {
       label:
-        "SIMULATED local current handlers; rows are SQLite returned/changed table rows, not Cloudflare D1 billed rows",
+        "MODELED Agent schedule through MEASURED local Worker handlers; rows are SQLite returned/changed table rows, not Cloudflare D1 billed rows",
+      cadence,
       seconds,
       agentHttpRequests: pulses,
       scheduledInvocations: cleanupRuns,
@@ -292,9 +306,12 @@ async function measurePrinterSync() {
   }
 }
 
-const idle = [];
-for (const seconds of [600, 3_600, 54_000])
-  idle.push(await simulateIdle(seconds));
+const idleBefore = [];
+const idleAfter = [];
+for (const seconds of [600, 3_600, 54_000]) {
+  idleBefore.push(await simulateIdle(seconds, "fixed"));
+  idleAfter.push(await simulateIdle(seconds, "adaptive"));
+}
 const testPrint = await measureTestPrint();
 const uiPolls = await measureUiPolls();
 const printerSync = await measurePrinterSync();
@@ -302,7 +319,8 @@ const result = {
   generatedAt: new Date().toISOString(),
   scope:
     "Local actual Worker routes with SQLite and mocked providers. No Cloudflare telemetry, Windows, physical printer, R2 network or payment provider.",
-  idle,
+  idleBefore,
+  idleAfter,
   testPrint,
   uiPolls,
   printerSync,

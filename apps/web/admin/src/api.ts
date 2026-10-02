@@ -312,8 +312,10 @@ export const adminApi = {
     );
   },
   // ── Manual Orders ─────────────────────────────────────────────────
-  getManualOrders(): Promise<AdminManualOrdersResponse> {
-    return request("/api/admin/orders/manual");
+  getManualOrders(cursor?: string): Promise<AdminManualOrdersResponse> {
+    return request(
+      `/api/admin/orders/manual${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`,
+    );
   },
   markOrderPrinted(
     orderId: string,

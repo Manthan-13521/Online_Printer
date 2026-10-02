@@ -124,7 +124,7 @@ async function regressions() {
     for (const [name, body, mime, status] of [
       ["mime", png, "image/svg+xml", 400],
       ["signature", Buffer.from("<svg/>"), "image/png", 400],
-      ["oversize", Buffer.alloc(262145), "image/png", 413],
+      ["oversize", Buffer.alloc(1024 * 1024 + 1), "image/png", 413],
     ]) {
       await request(name, "/api/admin/branding/logo", {
         admin: true,

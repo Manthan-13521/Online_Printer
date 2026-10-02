@@ -290,6 +290,7 @@ export interface AdminManualOrder {
 
 export type AdminManualOrdersResponse = ApiResponse<{
   orders: AdminManualOrder[];
+  nextCursor: string | null;
 }>;
 
 export interface AdminSetPickupChargeRequest {

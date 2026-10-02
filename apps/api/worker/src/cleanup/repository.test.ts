@@ -75,6 +75,7 @@ const migrations = [
   "0016_phase4_failure_recovery_and_pause.sql",
   "0017_phase5_fallback_and_reprint_protection.sql",
   "0018_phase6_history_cleanup.sql",
+  "0019_phase7_restore_hot_indexes.sql",
 ].map((name) =>
   readFileSync(
     new URL(`../../../../../database/migrations/${name}`, import.meta.url),
@@ -94,6 +95,40 @@ describe("D1 cleanup repository", () => {
        VALUES (1, 'Safe Shop', 0, 0)`,
     ).run();
     repository = new D1CleanupRepository(asD1(db));
+  });
+
+  it("uses keyed draft and due-cleanup access paths after the Phase 4 table rebuild", () => {
+    const plans = [
+      [
+        "SELECT id FROM orders WHERE draft_token_hash = ? AND cleanup_state = 'ACTIVE'",
+        "orders_draft_token_lookup_idx",
+      ],
+      [
+        `SELECT o.id FROM orders o INDEXED BY orders_unpaid_cleanup_due_idx
+         WHERE o.cleanup_state = 'ACTIVE'
+           AND o.status IN ('CREATED','UPLOADING','UPLOADED','PAYMENT_PENDING','PAYMENT_FAILED','PAYMENT_CANCELLED')
+           AND o.draft_expires_at_ms <= ? LIMIT 1`,
+        "orders_unpaid_cleanup_due_idx",
+      ],
+      [
+        `SELECT o.id FROM orders o INDEXED BY orders_completed_cleanup_due_idx
+         WHERE o.cleanup_state = 'ACTIVE' AND o.status = 'COMPLETED'
+           AND o.purge_at_ms IS NOT NULL AND o.purge_at_ms <= ? LIMIT 1`,
+        "orders_completed_cleanup_due_idx",
+      ],
+    ] as const;
+    for (const [sql, expectedIndex] of plans) {
+      const details = db
+        .prepare(`EXPLAIN QUERY PLAN ${sql}`)
+        .all(sql.includes("draft_token_hash") ? "token" : 1)
+        .map((row) => String(row.detail));
+      expect(details.some((detail) => detail.includes(expectedIndex))).toBe(
+        true,
+      );
+      expect(details.some((detail) => detail.startsWith("SCAN orders"))).toBe(
+        false,
+      );
+    }
   });
 
   afterEach(() => db.close());

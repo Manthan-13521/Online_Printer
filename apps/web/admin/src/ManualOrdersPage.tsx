@@ -322,16 +322,20 @@ export function ManualOrdersPage({
   onSessionExpired: (message: string) => void;
 }) {
   const [orders, setOrders] = useState<AdminManualOrder[]>([]);
+  const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  async function load() {
+  async function load(next?: string) {
     setLoading(true);
     setError(null);
     try {
-      const response = await adminApi.getManualOrders();
+      const response = await adminApi.getManualOrders(next);
       if (response.ok) {
-        setOrders(response.data.orders);
+        setOrders((current) =>
+          next ? [...current, ...response.data.orders] : response.data.orders,
+        );
+        setCursor(response.data.nextCursor);
       }
     } catch (caught: unknown) {
       if (caught instanceof AdminApiError && caught.status === 401) {
@@ -348,7 +352,7 @@ export function ManualOrdersPage({
     void load();
   }, []);
 
-  if (loading) {
+  if (loading && orders.length === 0) {
     return (
       <div className="panel page-loading" aria-busy="true">
         Loading manual orders…
@@ -394,6 +398,16 @@ export function ManualOrdersPage({
           ))}
         </div>
       )}
+      {cursor ? (
+        <button
+          className="secondary-button fit"
+          type="button"
+          disabled={loading}
+          onClick={() => void load(cursor)}
+        >
+          {loading ? "Loading…" : "Load more"}
+        </button>
+      ) : null}
     </div>
   );
 }

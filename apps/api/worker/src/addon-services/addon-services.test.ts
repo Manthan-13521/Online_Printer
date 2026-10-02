@@ -33,6 +33,7 @@ function createTestDatabase(): DatabaseSync {
     "0016_phase4_failure_recovery_and_pause.sql",
     "0017_phase5_fallback_and_reprint_protection.sql",
     "0018_phase6_history_cleanup.sql",
+    "0019_phase7_restore_hot_indexes.sql",
   ];
   for (const name of migrationFiles) {
     db.exec(
@@ -148,6 +149,78 @@ function seedOrder(
 }
 
 describe("Phase 2 — Add-on Services and Manual Orders", () => {
+  it("paginates the manual queue by paid time and ID without dropping orders", async () => {
+    const rawDb = createTestDatabase();
+    seedInstallation(rawDb);
+    for (let index = 0; index < 55; index++) {
+      const orderId = `${index.toString(16).padStart(6, "0")}00-0000-4000-8000-000000000001`;
+      seedOrder(rawDb, orderId, "MANUAL_PRINT", 1_000 + index);
+    }
+    const adminId = "a4000000-0000-4000-8000-000000000001";
+    const token = "manual-queue-session";
+    rawDb
+      .prepare(
+        `INSERT INTO admins (id, login_identifier, password_hash,
+         created_at_ms, updated_at_ms) VALUES (?, 'owner', 'hash', 0, 0)`,
+      )
+      .run(adminId);
+    rawDb
+      .prepare(
+        `INSERT INTO admin_sessions (id, admin_id, token_hash,
+         created_at_ms, expires_at_ms) VALUES (?, ?, ?, 0, ?)`,
+      )
+      .run(
+        "a5000000-0000-4000-8000-000000000001",
+        adminId,
+        await hashSessionToken(token),
+        Date.now() + 100_000,
+      );
+    const env = {
+      DB: asD1(rawDb),
+      APP_ENV: "development",
+      ADMIN_ALLOWED_ORIGIN: "https://admin.example.test",
+    } as WorkerEnv;
+    const request = (cursor?: string) =>
+      new Request(
+        `https://api.example.test/api/admin/orders/manual${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`,
+        {
+          headers: {
+            origin: env.ADMIN_ALLOWED_ORIGIN,
+            cookie: `printgo_admin_dev=${token}`,
+          },
+        },
+      );
+    const first = await handleAdminManualOrdersRequest(request(), env);
+    expect(first.status).toBe(200);
+    const firstBody: {
+      data: { orders: { orderId: string }[]; nextCursor: string | null };
+    } = await first.json();
+    expect(firstBody.data.orders).toHaveLength(50);
+    expect(firstBody.data.nextCursor).not.toBeNull();
+    const second = await handleAdminManualOrdersRequest(
+      request(firstBody.data.nextCursor!),
+      env,
+    );
+    const secondBody: {
+      data: { orders: { orderId: string }[]; nextCursor: string | null };
+    } = await second.json();
+    expect(secondBody.data.orders).toHaveLength(5);
+    expect(secondBody.data.nextCursor).toBeNull();
+    expect(
+      new Set(
+        [...firstBody.data.orders, ...secondBody.data.orders].map(
+          (order) => order.orderId,
+        ),
+      ).size,
+    ).toBe(55);
+    const invalid = await handleAdminManualOrdersRequest(
+      request("not-a-cursor"),
+      env,
+    );
+    expect(invalid.status).toBe(400);
+    rawDb.close();
+  });
+
   it("Phase 6: manual print and finishing complete through Admin routes only after each step", async () => {
     const rawDb = createTestDatabase();
     const d1 = asD1(rawDb);
