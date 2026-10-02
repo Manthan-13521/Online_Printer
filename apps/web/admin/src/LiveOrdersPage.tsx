@@ -76,19 +76,31 @@ export function LiveOrdersPage({
   }
 
   async function handleManualComplete(order: AdminLiveOrder) {
+    const reason = window
+      .prompt(
+        `Confirm every file in ${order.jobCode} was physically printed. Enter who verified it and how:`,
+      )
+      ?.trim();
+    if (!reason) return;
     setActionBusyId(`complete-${order.orderId}`);
     setError(null);
     setActionNotice(null);
     try {
-      const res = await adminApi.manualCompleteOrder(order.orderId);
+      const res = await adminApi.manualCompleteOrder(order.orderId, reason);
       if (res.ok) {
         setOrders(
           (prev) =>
             prev?.map((o) =>
-              o.orderId === order.orderId ? { ...o, status: "COMPLETED" } : o,
+              o.orderId === order.orderId
+                ? { ...o, status: res.data.status }
+                : o,
             ) ?? [],
         );
-        setActionNotice(`Job ${order.jobCode} marked as completed.`);
+        setActionNotice(
+          res.data.status === "COMPLETED"
+            ? `Job ${order.jobCode} marked as completed.`
+            : `Job ${order.jobCode} is awaiting finishing in Manual Orders.`,
+        );
       }
     } catch (caught: unknown) {
       if (caught instanceof AdminApiError && caught.status === 401) {

@@ -713,6 +713,25 @@ legend {
 }
 
 /* ── Manual Orders ────────────────────────────────────────────────────────── */
+.history-list {
+  display: grid;
+  gap: 1rem;
+  max-width: 58rem;
+  margin-block: 1.5rem;
+}
+.history-details {
+  display: grid;
+  grid-template-columns: minmax(8rem, 12rem) minmax(0, 1fr);
+  gap: 0.4rem 1rem;
+  margin: 0;
+}
+.history-details dt {
+  color: #475569;
+}
+.history-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
 .manual-orders-list {
   display: flex;
   flex-direction: column;

@@ -697,6 +697,33 @@ export interface AdminLiveOrder {
 }
 export type AdminLiveOrdersResponse = ApiResponse<{ orders: AdminLiveOrder[] }>;
 
+export interface AdminOrderHistoryEntry {
+  orderId: string;
+  pickupCode: string | null;
+  createdAt: string;
+  completedAt: string | null;
+  isPriority: boolean;
+  isManual: boolean;
+  addonServices: {
+    name: string;
+    onlinePricePaise: number;
+    handlingMode: string;
+  }[];
+  onlinePaidPaise: number;
+  dueAtPickupPaise: number;
+  status: string;
+  printerUsed: string | null;
+  fallbackPrinter: string | null;
+  attemptCount: number;
+  failureHistory: { status: string; code: string | null; at: string | null }[];
+  purged: boolean;
+}
+
+export type AdminOrderHistoryResponse = ApiResponse<{
+  orders: AdminOrderHistoryEntry[];
+  nextCursor: string | null;
+}>;
+
 export type TestPrintCommandStatus =
   | "PENDING"
   | "CLAIMED"
@@ -803,7 +830,7 @@ export interface AdminManualCompleteOrderRequest {
 
 export interface AdminManualCompleteOrderResponseData {
   orderId: string;
-  status: "COMPLETED";
+  status: "COMPLETED" | "AWAITING_FINISHING";
 }
 
 export type AdminManualCompleteOrderResponse =
@@ -882,6 +909,7 @@ export interface AdminCleanupPreviewData {
   files: number;
   bytes: number;
   active: number;
+  limited?: boolean;
 }
 
 export interface AdminCleanupRunData extends AdminCleanupPreviewData {

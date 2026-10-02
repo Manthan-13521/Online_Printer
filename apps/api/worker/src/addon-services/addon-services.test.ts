@@ -3,10 +3,14 @@ import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 
 import { calculateAddonOnlinePrice } from "@printgo/pricing";
+import { hashSessionToken } from "@printgo/auth";
+import { COMPLETED_RETENTION_MS } from "@printgo/domain";
+import type { WorkerEnv } from "../env";
 import { D1CustomerRepository } from "../customer/repository.js";
 import { D1PaymentRepository } from "../payments/repository.js";
 import { D1PrintingRepository } from "../printing/repository.js";
 import { AddonServiceError, D1AddonServiceRepository } from "./repository.js";
+import { handleAdminManualOrdersRequest } from "./routes.js";
 
 function createTestDatabase(): DatabaseSync {
   const db = new DatabaseSync(":memory:");
@@ -28,6 +32,7 @@ function createTestDatabase(): DatabaseSync {
     "0015_phase3_priority_tracking_discounts.sql",
     "0016_phase4_failure_recovery_and_pause.sql",
     "0017_phase5_fallback_and_reprint_protection.sql",
+    "0018_phase6_history_cleanup.sql",
   ];
   for (const name of migrationFiles) {
     db.exec(
@@ -143,6 +148,105 @@ function seedOrder(
 }
 
 describe("Phase 2 — Add-on Services and Manual Orders", () => {
+  it("Phase 6: manual print and finishing complete through Admin routes only after each step", async () => {
+    const rawDb = createTestDatabase();
+    const d1 = asD1(rawDb);
+    const orderId = "b1000000-0000-4000-8000-000000000001";
+    const fileId = "b2000000-0000-4000-8000-000000000001";
+    const serviceId = "b3000000-0000-4000-8000-000000000001";
+    const adminId = "b4000000-0000-4000-8000-000000000001";
+    seedInstallation(rawDb);
+    seedOrder(rawDb, orderId, "MANUAL_PRINT");
+    rawDb
+      .prepare(
+        `INSERT INTO order_files (id, order_id, position, original_filename,
+      r2_object_key, expected_size_bytes, size_bytes, source_page_count,
+      paper_size, color_mode, sides, upload_status, print_status,
+      uploaded_at_ms, created_at_ms, updated_at_ms)
+      VALUES (?, ?, 1, 'document.pdf', ?, 100, 100, 1, 'A4', 'BW', 'SINGLE',
+        'UPLOADED', 'PENDING', 1000, 1000, 1000)`,
+      )
+      .run(fileId, orderId, `uploads/${orderId}/${fileId}.pdf`);
+    rawDb
+      .prepare(
+        `INSERT INTO addon_services (id, name, pricing_type,
+      fixed_price_paise, handling_mode, created_at_ms, updated_at_ms)
+      VALUES (?, 'Binding', 'FIXED_PRICE', 500, 'POST_PRINT', 1000, 1000)`,
+      )
+      .run(serviceId);
+    rawDb
+      .prepare(
+        `INSERT INTO order_addon_services (order_id, service_id,
+      snapshot_name, snapshot_pricing_type, snapshot_price_charged_online_paise,
+      snapshot_handling_mode) VALUES (?, ?, 'Binding', 'FIXED_PRICE', 500, 'POST_PRINT')`,
+      )
+      .run(orderId, serviceId);
+    rawDb
+      .prepare(
+        `INSERT INTO admins (id, login_identifier, password_hash,
+      created_at_ms, updated_at_ms) VALUES (?, 'owner', 'hash', 0, 0)`,
+      )
+      .run(adminId);
+    const token = "test-session-token";
+    rawDb
+      .prepare(
+        `INSERT INTO admin_sessions (id, admin_id, token_hash,
+      created_at_ms, expires_at_ms) VALUES (?, ?, ?, 0, ?)`,
+      )
+      .run(
+        "b5000000-0000-4000-8000-000000000001",
+        adminId,
+        await hashSessionToken(token),
+        Date.now() + 100_000,
+      );
+    const env = {
+      DB: d1,
+      APP_ENV: "development",
+      ADMIN_ALLOWED_ORIGIN: "https://admin.example.test",
+    } as WorkerEnv;
+    const request = (action: string) =>
+      new Request(
+        `https://api.example.test/api/admin/orders/${orderId}/${action}`,
+        {
+          method: "POST",
+          headers: {
+            origin: env.ADMIN_ALLOWED_ORIGIN,
+            cookie: `printgo_admin_dev=${token}`,
+          },
+        },
+      );
+    const printed = await handleAdminManualOrdersRequest(
+      request("mark-printed"),
+      env,
+    );
+    expect(printed.status).toBe(200);
+    expect(
+      rawDb
+        .prepare("SELECT status, purge_at_ms FROM orders WHERE id = ?")
+        .get(orderId),
+    ).toEqual({ status: "AWAITING_FINISHING", purge_at_ms: null });
+    expect(
+      rawDb
+        .prepare("SELECT print_status FROM order_files WHERE id = ?")
+        .get(fileId),
+    ).toEqual({ print_status: "PRINTED" });
+    const finished = await handleAdminManualOrdersRequest(
+      request("mark-finished"),
+      env,
+    );
+    expect(finished.status).toBe(200);
+    const row = rawDb
+      .prepare(
+        "SELECT status, completed_at_ms, purge_at_ms FROM orders WHERE id = ?",
+      )
+      .get(orderId) as {
+      status: string;
+      completed_at_ms: number;
+      purge_at_ms: number;
+    };
+    expect(row.status).toBe("COMPLETED");
+    expect(row.purge_at_ms - row.completed_at_ms).toBe(COMPLETED_RETENTION_MS);
+  });
   it("1. no add-on: existing pricing and order behavior unchanged", () => {
     const total = calculateAddonOnlinePrice([]);
     expect(total).toBe(0);

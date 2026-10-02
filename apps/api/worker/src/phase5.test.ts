@@ -25,6 +25,7 @@ function createTestDatabase(): DatabaseSync {
     "0015_phase3_priority_tracking_discounts.sql",
     "0016_phase4_failure_recovery_and_pause.sql",
     "0017_phase5_fallback_and_reprint_protection.sql",
+    "0018_phase6_history_cleanup.sql",
   ];
   for (const name of migrationFiles) {
     db.exec(
@@ -162,8 +163,13 @@ function insertPaidOrder(
   const uploadId = crypto.randomUUID();
 
   const needsClaim = [
-    "CLAIMED", "SPOOLING", "PRINTING", "PRINT_BLOCKED",
-    "PRINT_FAILED", "ADMIN_ACTION_REQUIRED", "PRINTED",
+    "CLAIMED",
+    "SPOOLING",
+    "PRINTING",
+    "PRINT_BLOCKED",
+    "PRINT_FAILED",
+    "ADMIN_ACTION_REQUIRED",
+    "PRINTED",
   ].includes(status);
   const claimedBy = needsClaim ? `'${AGENT_ID}'` : "NULL";
   const claimId = needsClaim ? `'${crypto.randomUUID()}'` : "NULL";
@@ -240,9 +246,13 @@ describe("Phase 5: Printer Fallback + Duplicate/Reprint Protection", () => {
     expect(job!.printerId).toBe(PRIMARY_PRINTER_ID);
 
     // Verify no fallback provenance recorded
-    const attempt = rawDb.prepare(
-      "SELECT fallback_from_printer_id FROM print_attempts WHERE order_id = ?",
-    ).get("11111111-1111-1111-1111-111111111111") as { fallback_from_printer_id: string | null };
+    const attempt = rawDb
+      .prepare(
+        "SELECT fallback_from_printer_id FROM print_attempts WHERE order_id = ?",
+      )
+      .get("11111111-1111-1111-1111-111111111111") as {
+      fallback_from_printer_id: string | null;
+    };
     expect(attempt.fallback_from_printer_id).toBeNull();
   });
 
@@ -272,9 +282,13 @@ describe("Phase 5: Printer Fallback + Duplicate/Reprint Protection", () => {
     expect(job!.printerId).toBe(FALLBACK_PRINTER_ID);
 
     // Verify fallback provenance
-    const attempt = rawDb.prepare(
-      "SELECT fallback_from_printer_id FROM print_attempts WHERE order_id = ?",
-    ).get("22222222-2222-2222-2222-222222222222") as { fallback_from_printer_id: string | null };
+    const attempt = rawDb
+      .prepare(
+        "SELECT fallback_from_printer_id FROM print_attempts WHERE order_id = ?",
+      )
+      .get("22222222-2222-2222-2222-222222222222") as {
+      fallback_from_printer_id: string | null;
+    };
     expect(attempt.fallback_from_printer_id).toBe(PRIMARY_PRINTER_ID);
   });
 
@@ -496,9 +510,14 @@ describe("Phase 5: Printer Fallback + Duplicate/Reprint Protection", () => {
     expect(result.autoFallbackEnabled).toBe(true);
 
     // Verify DB
-    const row = rawDb.prepare(
-      "SELECT fallback_printer_id, auto_fallback_enabled FROM printers WHERE id = ?",
-    ).get(PRIMARY_PRINTER_ID) as { fallback_printer_id: string; auto_fallback_enabled: number };
+    const row = rawDb
+      .prepare(
+        "SELECT fallback_printer_id, auto_fallback_enabled FROM printers WHERE id = ?",
+      )
+      .get(PRIMARY_PRINTER_ID) as {
+      fallback_printer_id: string;
+      auto_fallback_enabled: number;
+    };
     expect(row.fallback_printer_id).toBe(FALLBACK_PRINTER_ID);
     expect(row.auto_fallback_enabled).toBe(1);
 
@@ -591,11 +610,15 @@ describe("Phase 5: Printer Fallback + Duplicate/Reprint Protection", () => {
     `);
 
     const agents = await agentRepo.listAgentsWithPrinters(nowMs);
-    const primary = agents[0]?.printers.find((p) => p.id === PRIMARY_PRINTER_ID);
+    const primary = agents[0]?.printers.find(
+      (p) => p.id === PRIMARY_PRINTER_ID,
+    );
     expect(primary?.fallbackPrinterId).toBe(FALLBACK_PRINTER_ID);
     expect(primary?.autoFallbackEnabled).toBe(true);
 
-    const fallback = agents[0]?.printers.find((p) => p.id === FALLBACK_PRINTER_ID);
+    const fallback = agents[0]?.printers.find(
+      (p) => p.id === FALLBACK_PRINTER_ID,
+    );
     expect(fallback?.fallbackPrinterId).toBeNull();
     expect(fallback?.autoFallbackEnabled).toBe(false);
   });
@@ -705,7 +728,8 @@ describe("Phase 5: Printer Fallback + Duplicate/Reprint Protection", () => {
     expect(res2).not.toBeNull();
 
     // Order should be COMPLETED (only once)
-    const order = rawDb.prepare("SELECT status FROM orders WHERE id = ?")
+    const order = rawDb
+      .prepare("SELECT status FROM orders WHERE id = ?")
       .get("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb") as { status: string };
     expect(order.status).toBe("COMPLETED");
   });
@@ -745,8 +769,10 @@ describe("Phase 5: Printer Fallback + Duplicate/Reprint Protection", () => {
     for (let i = 0; i < 2; i++) {
       const iterNow = nowMs + 20_000 * (i + 1);
       // keep agent alive
-      rawDb.exec(`UPDATE agents SET last_heartbeat_at_ms = ${iterNow} WHERE id = '${AGENT_ID}'`);
-      
+      rawDb.exec(
+        `UPDATE agents SET last_heartbeat_at_ms = ${iterNow} WHERE id = '${AGENT_ID}'`,
+      );
+
       const retryJob = await repo.claimOrRenew(AGENT_ID, iterNow);
       if (retryJob) {
         await repo.startStep({
@@ -770,14 +796,20 @@ describe("Phase 5: Printer Fallback + Duplicate/Reprint Protection", () => {
       }
     }
 
-    const needsAdmin = rawDb.prepare("SELECT status, attempt_count FROM orders WHERE id = ?")
-      .get("cccccccc-cccc-cccc-cccc-cccccccccccc") as { status: string; attempt_count: number };
+    const needsAdmin = rawDb
+      .prepare("SELECT status, attempt_count FROM orders WHERE id = ?")
+      .get("cccccccc-cccc-cccc-cccc-cccccccccccc") as {
+      status: string;
+      attempt_count: number;
+    };
     expect(needsAdmin.status).toBe("NEEDS_ADMIN");
     expect(needsAdmin.attempt_count).toBe(3);
 
     // Admin retries → new attempt with fresh attempt_count
     const laterNow = nowMs + 100_000;
-    rawDb.exec(`UPDATE agents SET last_heartbeat_at_ms = ${laterNow} WHERE id = '${AGENT_ID}'`);
+    rawDb.exec(
+      `UPDATE agents SET last_heartbeat_at_ms = ${laterNow} WHERE id = '${AGENT_ID}'`,
+    );
 
     await repo.retryOrder({
       orderId: "cccccccc-cccc-cccc-cccc-cccccccccccc",
@@ -785,8 +817,12 @@ describe("Phase 5: Printer Fallback + Duplicate/Reprint Protection", () => {
       nowMs: laterNow,
     });
 
-    const reset = rawDb.prepare("SELECT status, attempt_count FROM orders WHERE id = ?")
-      .get("cccccccc-cccc-cccc-cccc-cccccccccccc") as { status: string; attempt_count: number };
+    const reset = rawDb
+      .prepare("SELECT status, attempt_count FROM orders WHERE id = ?")
+      .get("cccccccc-cccc-cccc-cccc-cccccccccccc") as {
+      status: string;
+      attempt_count: number;
+    };
     expect(reset.status).toBe("QUEUED");
     expect(reset.attempt_count).toBe(0);
 
@@ -797,9 +833,9 @@ describe("Phase 5: Printer Fallback + Duplicate/Reprint Protection", () => {
     expect(newJob!.attemptId).not.toBe(job!.attemptId);
 
     // Count total attempts: should be at least 4 (3 failed + 1 new)
-    const attempts = rawDb.prepare(
-      "SELECT COUNT(*) count FROM print_attempts WHERE order_id = ?",
-    ).get("cccccccc-cccc-cccc-cccc-cccccccccccc") as { count: number };
+    const attempts = rawDb
+      .prepare("SELECT COUNT(*) count FROM print_attempts WHERE order_id = ?")
+      .get("cccccccc-cccc-cccc-cccc-cccccccccccc") as { count: number };
     expect(attempts.count).toBeGreaterThanOrEqual(4);
   });
 
@@ -832,7 +868,8 @@ describe("Phase 5: Printer Fallback + Duplicate/Reprint Protection", () => {
       nowMs: nowMs + 100,
     });
 
-    const order = rawDb.prepare("SELECT status FROM orders WHERE id = ?")
+    const order = rawDb
+      .prepare("SELECT status FROM orders WHERE id = ?")
       .get("dddddddd-dddd-dddd-dddd-dddddddddddd") as { status: string };
     expect(order.status).toBe("COMPLETION_UNKNOWN");
 
@@ -846,6 +883,14 @@ describe("Phase 5: Printer Fallback + Duplicate/Reprint Protection", () => {
       }),
     ).rejects.toThrow("UNCERTAIN_RETRY_CONFIRMATION_REQUIRED");
 
+    await expect(
+      repo.manualComplete({
+        orderId: "dddddddd-dddd-dddd-dddd-dddddddddddd",
+        adminId: "admin_1",
+        nowMs: nowMs + 250,
+      }),
+    ).rejects.toThrow("ORDER_CONFIRMATION_REQUIRED");
+
     // Admin confirms via manualComplete → COMPLETED without reprint
     await repo.manualComplete({
       orderId: "dddddddd-dddd-dddd-dddd-dddddddddddd",
@@ -854,9 +899,56 @@ describe("Phase 5: Printer Fallback + Duplicate/Reprint Protection", () => {
       nowMs: nowMs + 300,
     });
 
-    const completed = rawDb.prepare("SELECT status FROM orders WHERE id = ?")
-      .get("dddddddd-dddd-dddd-dddd-dddddddddddd") as { status: string };
+    const completed = rawDb
+      .prepare("SELECT status, purge_at_ms FROM orders WHERE id = ?")
+      .get("dddddddd-dddd-dddd-dddd-dddddddddddd") as {
+      status: string;
+      purge_at_ms: number;
+    };
     expect(completed.status).toBe("COMPLETED");
+    expect(completed.purge_at_ms).toBe(nowMs + 300 + 7_200_000);
+    expect(
+      rawDb
+        .prepare("SELECT status FROM print_attempt_steps WHERE order_id = ?")
+        .get("dddddddd-dddd-dddd-dddd-dddddddddddd"),
+    ).toEqual({ status: "UNCERTAIN" });
+  });
+
+  it("keeps POST_PRINT work open after staff confirms an uncertain print", async () => {
+    const rawDb = createTestDatabase();
+    const repo = new D1PrintingRepository(asD1(rawDb));
+    const nowMs = 1_000_000;
+    seedAgentAndTwoPrinters(rawDb, nowMs);
+    const id = "d1000000-dddd-dddd-dddd-dddddddddddd";
+    insertPaidOrder(rawDb, id, { status: "COMPLETION_UNKNOWN", nowMs });
+    const serviceId = "d2000000-dddd-dddd-dddd-dddddddddddd";
+    rawDb
+      .prepare(
+        `INSERT INTO addon_services (id, name, pricing_type,
+      fixed_price_paise, handling_mode, created_at_ms, updated_at_ms)
+      VALUES (?, 'Binding', 'FIXED_PRICE', 500, 'POST_PRINT', ?, ?)`,
+      )
+      .run(serviceId, nowMs, nowMs);
+    rawDb
+      .prepare(
+        `INSERT INTO order_addon_services (order_id, service_id,
+      snapshot_name, snapshot_pricing_type, snapshot_price_charged_online_paise,
+      snapshot_handling_mode) VALUES (?, ?, 'Binding', 'FIXED_PRICE', 500, 'POST_PRINT')`,
+      )
+      .run(id, serviceId);
+    expect(
+      await repo.manualComplete({
+        orderId: id,
+        adminId: "admin_1",
+        reason: "All pages physically verified",
+        nowMs: nowMs + 100,
+      }),
+    ).toEqual({ orderId: id, status: "AWAITING_FINISHING" });
+    expect(
+      rawDb
+        .prepare("SELECT status, purge_at_ms FROM orders WHERE id = ?")
+        .get(id),
+    ).toEqual({ status: "AWAITING_FINISHING", purge_at_ms: null });
   });
 
   // ───────────────────────────────────────────────────────────────────
@@ -881,13 +973,13 @@ describe("Phase 5: Printer Fallback + Duplicate/Reprint Protection", () => {
       nowMs,
     });
 
-    const orders = rawDb.prepare(
-      "SELECT id, purge_at_ms FROM orders WHERE id IN (?, ?, ?)",
-    ).all(
-      "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
-      "ffffffff-ffff-ffff-ffff-ffffffffffff",
-      "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
-    ) as Array<{ id: string; purge_at_ms: number | null }>;
+    const orders = rawDb
+      .prepare("SELECT id, purge_at_ms FROM orders WHERE id IN (?, ?, ?)")
+      .all(
+        "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+        "ffffffff-ffff-ffff-ffff-ffffffffffff",
+        "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      ) as Array<{ id: string; purge_at_ms: number | null }>;
 
     for (const o of orders) {
       expect(o.purge_at_ms).toBeNull();
@@ -940,7 +1032,8 @@ describe("Phase 5: Printer Fallback + Duplicate/Reprint Protection", () => {
       nowMs: nowMs + 200,
     });
 
-    const order = rawDb.prepare("SELECT status FROM orders WHERE id = ?")
+    const order = rawDb
+      .prepare("SELECT status FROM orders WHERE id = ?")
       .get("99999999-9999-9999-9999-999999999999") as { status: string };
     expect(order.status).toBe("COMPLETED");
   });

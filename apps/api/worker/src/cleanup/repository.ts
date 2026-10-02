@@ -12,6 +12,7 @@ export interface CleanupCandidate {
 }
 
 interface CountRow {
+  sample_count: number;
   orders_count: number;
   files_count: number;
   bytes_count: number;
@@ -31,15 +32,33 @@ function scopeWhere(scope: CleanupScope): string {
 }
 
 const ACTIVE_PHYSICAL = `(
-  o.status IN ('PAID','QUEUED','CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED',
-    'ADMIN_ACTION_REQUIRED','PRINTED')
+  o.status IN ('CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED')
+  OR EXISTS (SELECT 1 FROM print_attempt_steps active_step
+    WHERE active_step.order_id = o.id
+      AND active_step.status IN ('SUBMISSION_STARTED','SUBMITTED'))
   OR EXISTS (SELECT 1 FROM order_files active_file WHERE active_file.order_id = o.id
-    AND active_file.print_status IN ('SUBMISSION_STARTED','SUBMITTED','BLOCKED','UNCERTAIN'))
-  OR (EXISTS (SELECT 1 FROM order_files printed_file WHERE printed_file.order_id = o.id
-      AND printed_file.print_status = 'PRINTED')
-    AND EXISTS (SELECT 1 FROM order_files unfinished_file WHERE unfinished_file.order_id = o.id
-      AND unfinished_file.print_status <> 'PRINTED'))
+    AND active_file.print_status IN ('SUBMISSION_STARTED','SUBMITTED'))
 )`;
+
+const UNRESOLVED_COMPLETED = `(
+  o.status = 'COMPLETED' AND (
+    NOT EXISTS (SELECT 1 FROM order_files f WHERE f.order_id = o.id)
+    OR EXISTS (SELECT 1 FROM order_files f WHERE f.order_id = o.id
+      AND f.print_status <> 'PRINTED')
+  )
+)`;
+
+function safetyGuard(scope: CleanupScope): string {
+  return scope === "ALL_PRINT_DATA"
+    ? `NOT (${ACTIVE_PHYSICAL}) AND NOT (${ACTIVE_PAYMENT})`
+    : `NOT (${ACTIVE_PHYSICAL}) AND NOT (${ACTIVE_PAYMENT}) AND NOT (${UNRESOLVED_COMPLETED})`;
+}
+
+function scopeOrder(scope: CleanupScope): string {
+  if (scope === "EXPIRED_UNPAID") return "o.draft_expires_at_ms, o.id";
+  if (scope === "COMPLETED_DUE") return "o.purge_at_ms, o.id";
+  return "o.created_at_ms, o.id";
+}
 
 const ACTIVE_PAYMENT = `EXISTS (SELECT 1 FROM payments active_payment
   WHERE active_payment.order_id = o.id AND active_payment.status IN ('CREATED','PENDING'))`;
@@ -65,11 +84,12 @@ export class D1CleanupRepository {
 
   async hasCandidates(scope: CleanupScope, nowMs: number): Promise<boolean> {
     const where = scopeWhere(scope);
+    const guard = safetyGuard(scope);
     const row = await this.db
       .prepare(
         `SELECT 1 candidate FROM orders o
          WHERE o.cleanup_state = 'ACTIVE' AND ${where}
-           AND NOT (${ACTIVE_PHYSICAL}) AND NOT (${ACTIVE_PAYMENT})
+           AND ${guard}
          LIMIT 1`,
       )
       .bind(
@@ -86,15 +106,24 @@ export class D1CleanupRepository {
     nowMs: number,
   ): Promise<AdminCleanupPreviewData> {
     const where = scopeWhere(scope);
+    const guard = safetyGuard(scope);
+    const sampleGuard =
+      scope === "EXPIRED_UNPAID" || scope === "COMPLETED_DUE" ? guard : "1 = 1";
     const due = await this.db
       .prepare(
-        `SELECT COUNT(DISTINCT CASE WHEN NOT (${ACTIVE_PHYSICAL}) AND NOT (${ACTIVE_PAYMENT}) THEN o.id END) orders_count,
-          COUNT(DISTINCT CASE WHEN NOT (${ACTIVE_PHYSICAL}) AND NOT (${ACTIVE_PAYMENT}) THEN f.id END) files_count,
-          COALESCE(SUM(CASE WHEN f.id IS NOT NULL AND NOT (${ACTIVE_PHYSICAL})
-            AND NOT (${ACTIVE_PAYMENT}) THEN f.size_bytes ELSE 0 END), 0) bytes_count,
-          COUNT(DISTINCT CASE WHEN ${ACTIVE_PHYSICAL} OR ${ACTIVE_PAYMENT} THEN o.id END) active_count
-         FROM orders o LEFT JOIN order_files f ON f.order_id = o.id
-         WHERE o.cleanup_state = 'ACTIVE' AND ${where}`,
+        `WITH sample AS (
+           SELECT o.id FROM orders o WHERE o.cleanup_state = 'ACTIVE' AND ${where}
+             AND ${sampleGuard}
+           ORDER BY ${scopeOrder(scope)} LIMIT 100
+         )
+         SELECT COUNT(DISTINCT o.id) sample_count,
+          COUNT(DISTINCT CASE WHEN ${guard} THEN o.id END) orders_count,
+          COUNT(DISTINCT CASE WHEN ${guard} THEN f.id END) files_count,
+          COALESCE(SUM(CASE WHEN f.id IS NOT NULL AND ${guard}
+            THEN f.size_bytes ELSE 0 END), 0) bytes_count,
+          COUNT(DISTINCT CASE WHEN NOT (${guard}) THEN o.id END) active_count
+         FROM sample JOIN orders o ON o.id = sample.id
+         LEFT JOIN order_files f ON f.order_id = o.id`,
       )
       .bind(
         ...(scope === "EXPIRED_UNPAID" || scope === "COMPLETED_DUE"
@@ -108,6 +137,7 @@ export class D1CleanupRepository {
       files: due?.files_count ?? 0,
       bytes: due?.bytes_count ?? 0,
       active: due?.active_count ?? 0,
+      limited: (due?.sample_count ?? 0) === 100,
     };
   }
 
@@ -200,12 +230,14 @@ export class D1CleanupRepository {
       : null;
   }
 
-  async nextRunnableRun(
-    nowMs: number,
-  ): Promise<{ id: string; scope: CleanupScope } | null> {
+  async nextRunnableRun(nowMs: number): Promise<{
+    id: string;
+    scope: CleanupScope;
+    source: "SCHEDULED" | "ADMIN" | "DAILY";
+  } | null> {
     return this.db
       .prepare(
-        `SELECT id, scope FROM cleanup_runs
+        `SELECT id, scope, source FROM cleanup_runs
          WHERE status IN ('PENDING','RUNNING','PARTIAL')
          ORDER BY CASE
            WHEN status = 'PENDING' THEN 0
@@ -220,7 +252,11 @@ export class D1CleanupRepository {
          LIMIT 1`,
       )
       .bind(nowMs)
-      .first<{ id: string; scope: CleanupScope }>();
+      .first<{
+        id: string;
+        scope: CleanupScope;
+        source: "SCHEDULED" | "ADMIN" | "DAILY";
+      }>();
   }
 
   async claimBatch(
@@ -241,16 +277,16 @@ export class D1CleanupRepository {
     const ids = failed.results.map((row) => row.order_id);
     if (ids.length < limit) {
       const where = scopeWhere(scope);
+      const guard = safetyGuard(scope);
       const due = await this.db
         .prepare(
           `SELECT o.id FROM orders o
            WHERE o.cleanup_state = 'ACTIVE' AND ${where}
              AND o.created_at_ms <= (SELECT cutoff_at_ms FROM cleanup_runs WHERE id = ?)
-             AND NOT (${ACTIVE_PHYSICAL})
-             AND NOT (${ACTIVE_PAYMENT})
+             AND ${guard}
              AND NOT EXISTS (SELECT 1 FROM cleanup_run_items item
                WHERE item.run_id = ? AND item.order_id = o.id)
-           ORDER BY COALESCE(o.purge_at_ms, o.draft_expires_at_ms, o.created_at_ms), o.id
+           ORDER BY ${scopeOrder(scope)}
            LIMIT ?`,
         )
         .bind(
@@ -274,6 +310,7 @@ export class D1CleanupRepository {
       .bind(nowMs, nowMs, runId)
       .run();
     const claims: D1PreparedStatement[] = [];
+    const guard = safetyGuard(scope);
     for (const orderId of ids) {
       claims.push(
         this.db
@@ -281,7 +318,7 @@ export class D1CleanupRepository {
             `UPDATE orders AS o SET cleanup_state = 'CLAIMED', cleanup_run_id = ?, updated_at_ms = ?
              WHERE id = ? AND cleanup_state IN ('ACTIVE','CLAIMED')
                AND (cleanup_run_id IS NULL OR cleanup_run_id = ?)
-               AND NOT (${ACTIVE_PHYSICAL}) AND NOT (${ACTIVE_PAYMENT})`,
+               AND ${guard}`,
           )
           .bind(runId, nowMs, orderId, runId),
         this.db
@@ -302,10 +339,16 @@ export class D1CleanupRepository {
     const placeholders = ids.map(() => "?").join(",");
     const rows = await this.db
       .prepare(
-        `SELECT o.id order_id, f.r2_object_key, f.size_bytes
-         FROM orders o LEFT JOIN order_files f ON f.order_id = o.id
+        `SELECT o.id order_id, k.r2_object_key, k.size_bytes
+         FROM orders o LEFT JOIN (
+           SELECT order_id, r2_object_key, size_bytes FROM order_files
+           UNION ALL
+           SELECT u.order_id, u.r2_object_key, u.size_bytes FROM uploads u
+             WHERE NOT EXISTS (SELECT 1 FROM order_files f
+               WHERE f.order_id = u.order_id AND f.r2_object_key = u.r2_object_key)
+         ) k ON k.order_id = o.id
          WHERE o.cleanup_run_id = ? AND o.id IN (${placeholders})
-         ORDER BY o.id, f.position`,
+         ORDER BY o.id, k.r2_object_key`,
       )
       .bind(runId, ...ids)
       .all<{
@@ -337,6 +380,43 @@ export class D1CleanupRepository {
     nowMs: number,
   ): Promise<void> {
     await this.db.batch([
+      this.db
+        .prepare(
+          `INSERT OR IGNORE INTO retained_order_history
+          (id, created_at_ms, completed_at_ms, final_status, is_priority,
+           is_manual, online_paid_paise, due_at_pickup_paise, attempt_count,
+           printer_name, fallback_printer_name, addon_summary_json,
+           had_failure, had_uncertain, purged_at_ms)
+         SELECT o.id, o.created_at_ms, o.completed_at_ms,
+           CASE WHEN o.status = 'COMPLETED' THEN 'COMPLETED' ELSE 'DATA_CLEARED' END,
+           o.is_priority,
+           CASE WHEN EXISTS (SELECT 1 FROM order_addon_services s
+             WHERE s.order_id = o.id AND s.snapshot_handling_mode = 'MANUAL_PRINT')
+             OR EXISTS (SELECT 1 FROM order_events e WHERE e.order_id = o.id
+               AND e.event_type IN ('ORDER_MANUALLY_COMPLETED','ORDER_MANUALLY_PRINTED'))
+             THEN 1 ELSE 0 END,
+           COALESCE((SELECT MAX(p.amount_paise) FROM payments p
+             WHERE p.order_id = o.id AND p.status = 'PAID'), 0),
+           o.due_at_pickup_paise,
+           (SELECT COUNT(*) FROM print_attempts a WHERE a.order_id = o.id),
+           (SELECT p.display_name FROM print_attempts a JOIN printers p ON p.id = a.printer_id
+             WHERE a.order_id = o.id ORDER BY a.attempt_number DESC LIMIT 1),
+           (SELECT p.display_name FROM print_attempts a JOIN printers p
+             ON p.id = a.printer_id WHERE a.order_id = o.id
+             AND a.fallback_from_printer_id IS NOT NULL
+             ORDER BY a.attempt_number DESC LIMIT 1),
+           COALESCE((SELECT json_group_array(json_object('name', s.snapshot_name,
+             'onlinePricePaise', s.snapshot_price_charged_online_paise,
+             'handlingMode', s.snapshot_handling_mode))
+             FROM order_addon_services s WHERE s.order_id = o.id), '[]'),
+           CASE WHEN EXISTS (SELECT 1 FROM print_attempt_steps st
+             WHERE st.order_id = o.id AND st.status IN ('FAILED','BLOCKED')) THEN 1 ELSE 0 END,
+           CASE WHEN EXISTS (SELECT 1 FROM print_attempt_steps st
+             WHERE st.order_id = o.id AND st.status = 'UNCERTAIN') THEN 1 ELSE 0 END,
+           ? FROM orders o WHERE o.id = ? AND o.cleanup_run_id = ?
+             AND (o.paid_at_ms IS NOT NULL OR o.status = 'COMPLETED')`,
+        )
+        .bind(nowMs, candidate.orderId, runId),
       this.db
         .prepare(
           `INSERT OR IGNORE INTO retained_payment_records
@@ -374,6 +454,11 @@ export class D1CleanupRepository {
         .prepare("DELETE FROM order_events WHERE order_id = ?")
         .bind(candidate.orderId),
       this.db
+        .prepare(
+          "UPDATE audit_logs SET entity_id = NULL, metadata_json = NULL WHERE entity_type = 'ORDER' AND entity_id = ?",
+        )
+        .bind(candidate.orderId),
+      this.db
         .prepare("DELETE FROM payments WHERE order_id = ?")
         .bind(candidate.orderId),
       this.db
@@ -381,6 +466,9 @@ export class D1CleanupRepository {
         .bind(candidate.orderId),
       this.db
         .prepare("DELETE FROM order_files WHERE order_id = ?")
+        .bind(candidate.orderId),
+      this.db
+        .prepare("DELETE FROM order_addon_services WHERE order_id = ?")
         .bind(candidate.orderId),
       this.db
         .prepare(
@@ -434,6 +522,9 @@ export class D1CleanupRepository {
     nowMs: number,
   ): Promise<boolean> {
     const where = scopeWhere(scope);
+    const guard = safetyGuard(scope);
+    const remainingGuard =
+      scope === "ALL_PRINT_DATA" || scope === "ALL_COMPLETED" ? "1 = 1" : guard;
     const remaining = await this.db
       .prepare(
         `SELECT 1 remaining FROM orders o
@@ -445,7 +536,7 @@ export class D1CleanupRepository {
          SELECT 1 FROM orders o
          WHERE o.cleanup_state = 'ACTIVE' AND ${where}
            AND o.created_at_ms <= (SELECT cutoff_at_ms FROM cleanup_runs WHERE id = ?)
-           AND NOT (${ACTIVE_PHYSICAL}) AND NOT (${ACTIVE_PAYMENT})
+           AND ${remainingGuard}
            AND NOT EXISTS (SELECT 1 FROM cleanup_run_items item
              WHERE item.run_id = ? AND item.order_id = o.id)
          LIMIT 1`,
@@ -463,9 +554,11 @@ export class D1CleanupRepository {
     if (remaining) return false;
     const result = await this.db
       .prepare(
-        `UPDATE cleanup_runs SET status = CASE WHEN failures > 0 THEN 'PARTIAL' ELSE 'COMPLETED' END,
+        `UPDATE cleanup_runs SET status = 'COMPLETED',
          completed_at_ms = ?, updated_at_ms = ? WHERE id = ?
-           AND NOT EXISTS (SELECT 1 FROM cleanup_run_items WHERE run_id = ? AND status = 'PENDING')`,
+           AND status IN ('PENDING','RUNNING','PARTIAL')
+           AND NOT EXISTS (SELECT 1 FROM cleanup_run_items
+             WHERE run_id = ? AND status IN ('PENDING','FAILED'))`,
       )
       .bind(nowMs, nowMs, runId, runId)
       .run();

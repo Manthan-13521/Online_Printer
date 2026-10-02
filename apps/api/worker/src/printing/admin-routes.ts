@@ -4,6 +4,7 @@ import { D1AdminAuthRepository } from "../auth/repository";
 import { AdminAuthService, AuthError } from "../auth/service";
 import type { WorkerEnv } from "../env";
 import { error, ok } from "../http";
+import { D1OrderHistoryRepository } from "../history/repository";
 import { D1PrintingRepository } from "./repository";
 import { createPrintingService } from "./routes";
 import { PrintingError } from "./service";
@@ -49,6 +50,25 @@ export async function handleAdminOrdersRequest(
         ok({ orders: await repository.listLiveOrders() }),
         env.ADMIN_ALLOWED_ORIGIN,
       );
+    }
+
+    if (request.method === "GET" && pathname === "/api/admin/orders/history") {
+      const cursor = new URL(request.url).searchParams.get("cursor");
+      try {
+        const history = await new D1OrderHistoryRepository(env.DB).list(cursor);
+        return withAdminCors(ok(history), env.ADMIN_ALLOWED_ORIGIN);
+      } catch (caught) {
+        if (
+          caught instanceof Error &&
+          caught.message === "INVALID_HISTORY_CURSOR"
+        ) {
+          return withAdminCors(
+            error(400, "INVALID_HISTORY_CURSOR", "Invalid history page."),
+            env.ADMIN_ALLOWED_ORIGIN,
+          );
+        }
+        throw caught;
+      }
     }
 
     const manualCompleteMatch =
@@ -151,6 +171,21 @@ export async function handleAdminOrdersRequest(
             400,
             "UNCERTAIN_RETRY_CONFIRMATION_REQUIRED",
             "Confirmation is required to retry an uncertain print order.",
+          ),
+          env.ADMIN_ALLOWED_ORIGIN,
+        );
+      }
+      if (
+        caught.code === "ORDER_CANNOT_BE_COMPLETED" ||
+        caught.code === "ORDER_CONFIRMATION_REQUIRED"
+      ) {
+        return withAdminCors(
+          error(
+            409,
+            caught.code,
+            caught.code === "ORDER_CONFIRMATION_REQUIRED"
+              ? "Enter a brief physical print confirmation before completing this order."
+              : "This order still has active or unresolved print work.",
           ),
           env.ADMIN_ALLOWED_ORIGIN,
         );

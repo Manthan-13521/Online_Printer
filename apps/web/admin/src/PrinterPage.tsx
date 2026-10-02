@@ -959,8 +959,7 @@ export function PrinterPage({
                                       return;
                                     }
                                     const names = otherPrinters.map(
-                                      (p, i) =>
-                                        `${i + 1}. ${p.displayName}`,
+                                      (p, i) => `${i + 1}. ${p.displayName}`,
                                     );
                                     const choice = prompt(
                                       `Choose fallback for "${printer.displayName}" (enter number, or 0 to remove):\n${names.join("\n")}`,
@@ -970,7 +969,7 @@ export function PrinterPage({
                                     const fallbackId =
                                       idx === 0
                                         ? null
-                                        : otherPrinters[idx - 1]?.id ?? null;
+                                        : (otherPrinters[idx - 1]?.id ?? null);
                                     const autoEnabled =
                                       fallbackId !== null &&
                                       confirm(
@@ -998,9 +997,7 @@ export function PrinterPage({
                                           );
                                           return;
                                         }
-                                        setError(
-                                          friendlyAdminError(caught),
-                                        );
+                                        setError(friendlyAdminError(caught));
                                       }
                                     })();
                                   }}

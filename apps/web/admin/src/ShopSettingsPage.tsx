@@ -195,6 +195,21 @@ export function ShopSettingsPage({
     }
   }
 
+  async function refreshCleanup() {
+    if (!cleanupResult || cleanupBusy) return;
+    setCleanupBusy(true);
+    try {
+      const response = await adminApi.getCleanupRun(cleanupResult.runId);
+      if (response.ok) setCleanupResult(response.data);
+    } catch (caught) {
+      if (caught instanceof AdminApiError && caught.status === 401)
+        onSessionExpired(caught.message);
+      else setError(friendlyAdminError(caught));
+    } finally {
+      setCleanupBusy(false);
+    }
+  }
+
   async function handleResetPickupCode() {
     if (
       !window.confirm(
@@ -627,6 +642,9 @@ export function ShopSettingsPage({
                 {cleanupPreview.orders} orders · {cleanupPreview.files} PDFs ·{" "}
                 {Math.ceil(cleanupPreview.bytes / MIB)} MB.{" "}
                 {cleanupPreview.active} active orders will be skipped.
+                {cleanupPreview.limited
+                  ? " Preview covers the first 100 due orders; cleanup continues in bounded batches."
+                  : ""}
               </p>
               <label htmlFor="cleanup-confirmation">
                 Type{" "}
@@ -663,12 +681,23 @@ export function ShopSettingsPage({
             </div>
           ) : null}
           {cleanupResult ? (
-            <p role="status">
-              Deleted: {cleanupResult.deletedOrders} orders /{" "}
-              {cleanupResult.deletedFiles} PDFs. Active skipped:{" "}
-              {cleanupResult.activeSkipped}. Failed: {cleanupResult.failures}.
-              Status: {cleanupResult.status}.
-            </p>
+            <div>
+              <p role="status">
+                Deleted: {cleanupResult.deletedOrders} orders /{" "}
+                {cleanupResult.deletedFiles} PDFs. Active skipped:{" "}
+                {cleanupResult.activeSkipped}. Failed: {cleanupResult.failures}.
+                Status: {cleanupResult.status}.
+              </p>
+              {cleanupResult.status !== "COMPLETED" ? (
+                <button
+                  type="button"
+                  disabled={cleanupBusy}
+                  onClick={() => void refreshCleanup()}
+                >
+                  Refresh cleanup status
+                </button>
+              ) : null}
+            </div>
           ) : null}
         </section>
 

@@ -23,6 +23,7 @@ const migrations = [
   "0015_phase3_priority_tracking_discounts.sql",
   "0016_phase4_failure_recovery_and_pause.sql",
   "0017_phase5_fallback_and_reprint_protection.sql",
+  "0018_phase6_history_cleanup.sql",
 ].map((name) =>
   readFileSync(
     new URL(`../../../../../database/migrations/${name}`, import.meta.url),

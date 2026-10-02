@@ -195,7 +195,7 @@ export interface PrintingRepository {
     adminId: string;
     reason?: string;
     nowMs: number;
-  }): Promise<{ orderId: string; status: "COMPLETED" }>;
+  }): Promise<{ orderId: string; status: "COMPLETED" | "AWAITING_FINISHING" }>;
   retryOrder(input: {
     orderId: string;
     adminId: string;
@@ -686,7 +686,8 @@ export class D1PrintingRepository implements PrintingRepository {
       FROM orders o JOIN print_attempts pa ON pa.order_id = o.id
       JOIN print_attempt_steps ps ON ps.print_attempt_id = pa.id
       WHERE o.id = ? AND ps.id = ? AND o.claimed_by_agent_id = ?
-        AND o.claim_id = ? AND o.claim_expires_at_ms > ?`,
+        AND o.claim_id = ? AND o.claim_expires_at_ms > ?
+        AND o.cleanup_state = 'ACTIVE'`,
       )
       .bind(
         input.orderId,
@@ -711,9 +712,18 @@ export class D1PrintingRepository implements PrintingRepository {
         .prepare(
           `UPDATE print_attempt_steps SET status = 'SUBMISSION_STARTED',
           submission_started_at_ms = ?, updated_at_ms = ?
-        WHERE id = ? AND print_attempt_id = ? AND status = 'PENDING'`,
+        WHERE id = ? AND print_attempt_id = ? AND status = 'PENDING'
+          AND EXISTS (SELECT 1 FROM orders o
+            WHERE o.id = print_attempt_steps.order_id AND o.cleanup_state = 'ACTIVE'
+              AND o.claim_id = ?)`,
         )
-        .bind(input.nowMs, input.nowMs, input.stepId, current.attempt_id),
+        .bind(
+          input.nowMs,
+          input.nowMs,
+          input.stepId,
+          current.attempt_id,
+          input.claimId,
+        ),
       this.db
         .prepare(
           `UPDATE print_attempts SET status = 'SUBMITTING', updated_at_ms = ?
@@ -788,7 +798,10 @@ export class D1PrintingRepository implements PrintingRepository {
         .prepare(
           `UPDATE print_attempt_steps SET status = 'SUBMITTED', spooler_job_id = ?,
           submitted_at_ms = ?, last_observed_at_ms = ?, updated_at_ms = ?
-        WHERE id = ? AND status = 'SUBMISSION_STARTED' AND spooler_job_id IS NULL`,
+        WHERE id = ? AND status = 'SUBMISSION_STARTED' AND spooler_job_id IS NULL
+          AND EXISTS (SELECT 1 FROM orders o
+            WHERE o.id = print_attempt_steps.order_id AND o.cleanup_state = 'ACTIVE'
+              AND o.claim_id = ?)`,
         )
         .bind(
           input.spoolerJobId,
@@ -796,6 +809,7 @@ export class D1PrintingRepository implements PrintingRepository {
           input.nowMs,
           input.nowMs,
           input.stepId,
+          input.claimId,
         ),
       this.db
         .prepare(
@@ -895,7 +909,10 @@ export class D1PrintingRepository implements PrintingRepository {
       .prepare(
         `UPDATE print_attempt_steps SET status = ?, spooler_job_id = COALESCE(spooler_job_id, ?),
         failure_code = ?, failure_detail = ?, last_observed_at_ms = ?, finished_at_ms = ?,
-        updated_at_ms = ? WHERE id = ? AND status = ?`,
+        updated_at_ms = ? WHERE id = ? AND status = ?
+          AND EXISTS (SELECT 1 FROM orders o
+            WHERE o.id = print_attempt_steps.order_id AND o.cleanup_state = 'ACTIVE'
+              AND o.claim_id = ?)`,
       )
       .bind(
         input.status,
@@ -907,6 +924,7 @@ export class D1PrintingRepository implements PrintingRepository {
         input.nowMs,
         input.stepId,
         current.step_status,
+        input.claimId,
       )
       .run();
     if (stepUpdate.meta.changes !== 1) return null;
@@ -918,7 +936,9 @@ export class D1PrintingRepository implements PrintingRepository {
           `UPDATE order_files SET print_status = ?,
            spooler_job_id = COALESCE(spooler_job_id, ?),
            printed_at_ms = CASE WHEN ? = 'PRINTED' THEN ? ELSE printed_at_ms END,
-           updated_at_ms = ? WHERE id = ?`,
+           updated_at_ms = ? WHERE id = ?
+             AND EXISTS (SELECT 1 FROM orders o
+               WHERE o.id = order_files.order_id AND o.cleanup_state = 'ACTIVE')`,
         )
         .bind(
           fileStatus,
@@ -1275,7 +1295,15 @@ export class D1PrintingRepository implements PrintingRepository {
         this.db
           .prepare(
             // PRINTED and COMPLETED already shared one atomic batch. Keep both forensic events below.
-            "UPDATE orders SET status = 'COMPLETED', printed_at_ms = COALESCE(printed_at_ms, ?), completed_at_ms = COALESCE(completed_at_ms, ?), purge_at_ms = COALESCE(purge_at_ms, ?), error_category = NULL, raw_error = NULL, next_retry_at_ms = NULL, updated_at_ms = ? WHERE id = ? AND claim_id = ? AND status <> 'COMPLETED'",
+            `UPDATE orders SET status = 'COMPLETED', printed_at_ms = COALESCE(printed_at_ms, ?),
+             completed_at_ms = COALESCE(completed_at_ms, ?), purge_at_ms = COALESCE(purge_at_ms, ?),
+             error_category = NULL, raw_error = NULL, next_retry_at_ms = NULL, updated_at_ms = ?
+             WHERE id = ? AND claim_id = ? AND status IN ('CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED')
+               AND EXISTS (SELECT 1 FROM order_files WHERE order_id = orders.id)
+               AND NOT EXISTS (SELECT 1 FROM order_files
+                 WHERE order_id = orders.id AND print_status <> 'PRINTED')
+               AND NOT EXISTS (SELECT 1 FROM order_addon_services
+                 WHERE order_id = orders.id AND snapshot_handling_mode IN ('MANUAL_PRINT','POST_PRINT'))`,
           )
           .bind(
             input.nowMs,
@@ -1287,7 +1315,9 @@ export class D1PrintingRepository implements PrintingRepository {
           ),
         this.db
           .prepare(
-            "UPDATE uploads SET retention_reason = 'COMPLETED', delete_after_ms = ?, updated_at_ms = ? WHERE order_id = ? AND storage_status = 'UPLOADED' AND retention_reason IS NOT 'COMPLETED'",
+            `UPDATE uploads SET retention_reason = 'COMPLETED', delete_after_ms = ?, updated_at_ms = ?
+             WHERE order_id = ? AND storage_status = 'UPLOADED' AND retention_reason IS NOT 'COMPLETED'
+               AND EXISTS (SELECT 1 FROM orders WHERE id = uploads.order_id AND status = 'COMPLETED')`,
           )
           .bind(
             input.nowMs + COMPLETED_RETENTION_MS,
@@ -1312,14 +1342,15 @@ export class D1PrintingRepository implements PrintingRepository {
           .prepare(
             `INSERT OR IGNORE INTO order_events (id, order_id, event_type, from_status,
               to_status, actor_type, actor_id, idempotency_key, created_at_ms)
-            VALUES (?, ?, 'ORDER_COMPLETED', 'PRINTED', 'COMPLETED', 'AGENT', ?, ?, ?)`,
+            SELECT ?, o.id, 'ORDER_COMPLETED', 'PRINTED', 'COMPLETED', 'AGENT', ?, ?, ?
+            FROM orders o WHERE o.id = ? AND o.status = 'COMPLETED'`,
           )
           .bind(
             crypto.randomUUID(),
-            input.orderId,
             input.agentId,
             `print-attempt:${current.attempt_id}:completed`,
             input.nowMs,
+            input.orderId,
           ),
       ]);
     }
@@ -1472,7 +1503,7 @@ export class D1PrintingRepository implements PrintingRepository {
     adminId: string;
     reason?: string;
     nowMs: number;
-  }): Promise<{ orderId: string; status: "COMPLETED" }> {
+  }): Promise<{ orderId: string; status: "COMPLETED" | "AWAITING_FINISHING" }> {
     const order = await this.db
       .prepare(`SELECT id, status, cleanup_state FROM orders WHERE id = ?`)
       .bind(input.orderId)
@@ -1488,96 +1519,98 @@ export class D1PrintingRepository implements PrintingRepository {
     if (order.status === "COMPLETED") {
       return { orderId: order.id, status: "COMPLETED" };
     }
+    const reason = input.reason?.trim();
+    if (!reason || reason.length > 500)
+      throw new Error("ORDER_CONFIRMATION_REQUIRED");
+    if (
+      ![
+        "NEEDS_ADMIN",
+        "COMPLETION_UNKNOWN",
+        "RETRY_PENDING",
+        "PRINT_FAILED",
+        "ADMIN_ACTION_REQUIRED",
+        "PRINTED",
+      ].includes(order.status)
+    )
+      throw new Error("ORDER_CANNOT_BE_COMPLETED");
 
+    const hasFinishing = await this.db
+      .prepare(
+        `SELECT 1 AS required FROM order_addon_services
+       WHERE order_id = ? AND snapshot_handling_mode = 'POST_PRINT' LIMIT 1`,
+      )
+      .bind(input.orderId)
+      .first<{ required: number }>();
+    const nextStatus = hasFinishing ? "AWAITING_FINISHING" : "COMPLETED";
     const statements: D1PreparedStatement[] = [
       this.db
         .prepare(
-          `UPDATE orders
-           SET status = 'COMPLETED', printed_at_ms = COALESCE(printed_at_ms, ?),
-               completed_at_ms = ?, purge_at_ms = ?, updated_at_ms = ?
-           WHERE id = ? AND cleanup_state = 'ACTIVE'`,
+          `UPDATE orders SET status = ?, printed_at_ms = COALESCE(printed_at_ms, ?),
+         completed_at_ms = ?, purge_at_ms = ?, claimed_by_agent_id = NULL,
+         claim_id = NULL, claim_expires_at_ms = NULL, updated_at_ms = ?
+         WHERE id = ? AND cleanup_state = 'ACTIVE'
+           AND status IN ('NEEDS_ADMIN','COMPLETION_UNKNOWN','RETRY_PENDING',
+             'PRINT_FAILED','ADMIN_ACTION_REQUIRED','PRINTED')
+           AND EXISTS (SELECT 1 FROM order_files WHERE order_id = orders.id)
+           AND NOT EXISTS (SELECT 1 FROM print_attempt_steps
+             WHERE order_id = orders.id AND status IN ('SUBMISSION_STARTED','SUBMITTED'))`,
         )
         .bind(
+          nextStatus,
           input.nowMs,
+          hasFinishing ? null : input.nowMs,
+          hasFinishing ? null : input.nowMs + COMPLETED_RETENTION_MS,
           input.nowMs,
-          input.nowMs + COMPLETED_RETENTION_MS,
-          input.nowMs,
-          input.orderId,
-        ),
-      this.db
-        .prepare(
-          `UPDATE print_attempts
-           SET status = 'SUCCEEDED', finished_at_ms = COALESCE(finished_at_ms, ?),
-               updated_at_ms = ?
-           WHERE order_id = ? AND status NOT IN ('SUCCEEDED', 'CANCELLED')
-             AND EXISTS (SELECT 1 FROM orders WHERE id = ?
-               AND cleanup_state = 'ACTIVE' AND status = 'COMPLETED')`,
-        )
-        .bind(input.nowMs, input.nowMs, input.orderId, input.orderId),
-      this.db
-        .prepare(
-          `UPDATE print_attempt_steps
-           SET status = 'SUCCEEDED', finished_at_ms = COALESCE(finished_at_ms, ?),
-               updated_at_ms = ?
-           WHERE order_id = ? AND status <> 'SUCCEEDED'
-             AND EXISTS (SELECT 1 FROM orders WHERE id = ?
-               AND cleanup_state = 'ACTIVE' AND status = 'COMPLETED')`,
-        )
-        .bind(input.nowMs, input.nowMs, input.orderId, input.orderId),
-      this.db
-        .prepare(
-          `UPDATE uploads
-           SET retention_reason = 'COMPLETED', delete_after_ms = ?, updated_at_ms = ?
-           WHERE order_id = ? AND storage_status = 'UPLOADED' AND retention_reason IS NULL
-             AND EXISTS (SELECT 1 FROM orders WHERE id = ?
-               AND cleanup_state = 'ACTIVE' AND status = 'COMPLETED')`,
-        )
-        .bind(
-          input.nowMs + COMPLETED_RETENTION_MS,
-          input.nowMs,
-          input.orderId,
           input.orderId,
         ),
       this.db
         .prepare(
           `UPDATE order_files SET print_status = 'PRINTED',
-           printed_at_ms = COALESCE(printed_at_ms, ?), updated_at_ms = ?
-           WHERE order_id = ? AND print_status <> 'PRINTED'
-             AND EXISTS (SELECT 1 FROM orders WHERE id = ?
-               AND cleanup_state = 'ACTIVE' AND status = 'COMPLETED')`,
-        )
-        .bind(input.nowMs, input.nowMs, input.orderId, input.orderId),
-      this.db
-        .prepare(
-          `INSERT INTO order_events (
-             id, order_id, event_type, from_status, to_status,
-             actor_type, actor_id, created_at_ms
-           ) SELECT ?, o.id, 'ORDER_MANUALLY_COMPLETED', ?, 'COMPLETED', 'ADMIN', ?, ?
-             FROM orders o WHERE o.id = ? AND o.cleanup_state = 'ACTIVE'
-               AND o.status = 'COMPLETED'`,
+         printed_at_ms = COALESCE(printed_at_ms, ?), updated_at_ms = ?
+         WHERE order_id = ? AND print_status <> 'PRINTED'
+           AND EXISTS (SELECT 1 FROM orders WHERE id = ? AND status = ?)`,
         )
         .bind(
-          crypto.randomUUID(),
-          order.status,
-          input.adminId,
           input.nowMs,
+          input.nowMs,
+          input.orderId,
+          input.orderId,
+          nextStatus,
+        ),
+      this.db
+        .prepare(
+          `UPDATE uploads SET retention_reason = 'COMPLETED', delete_after_ms = ?,
+         updated_at_ms = ? WHERE order_id = ? AND storage_status = 'UPLOADED'
+           AND EXISTS (SELECT 1 FROM orders WHERE id = ? AND status = 'COMPLETED')`,
+        )
+        .bind(
+          input.nowMs + COMPLETED_RETENTION_MS,
+          input.nowMs,
+          input.orderId,
           input.orderId,
         ),
       this.db
         .prepare(
-          `INSERT INTO audit_logs (
-             id, actor_type, actor_id, action, entity_type, entity_id, created_at_ms
-           ) SELECT ?, 'ADMIN', ?, 'ORDER_MANUAL_COMPLETED', 'ORDER', o.id, ?
-             FROM orders o WHERE o.id = ? AND o.cleanup_state = 'ACTIVE'
-               AND o.status = 'COMPLETED'`,
+          `INSERT INTO order_events (id, order_id, event_type, from_status,
+          to_status, actor_type, actor_id, details_json, created_at_ms)
+         SELECT ?, id, 'ORDER_MANUALLY_COMPLETED', ?, ?, 'ADMIN', ?, ?, ?
+         FROM orders WHERE id = ? AND status = ?`,
         )
-        .bind(crypto.randomUUID(), input.adminId, input.nowMs, input.orderId),
+        .bind(
+          crypto.randomUUID(),
+          order.status,
+          nextStatus,
+          input.adminId,
+          JSON.stringify({ confirmation: reason }),
+          input.nowMs,
+          input.orderId,
+          nextStatus,
+        ),
     ];
-
     const results = await this.db.batch(statements);
     if (results[0]?.meta.changes !== 1)
       throw new Error("ORDER_CANNOT_BE_COMPLETED");
-    return { orderId: input.orderId, status: "COMPLETED" };
+    return { orderId: input.orderId, status: nextStatus };
   }
 
   async retryOrder(input: {

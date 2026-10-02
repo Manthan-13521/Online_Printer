@@ -5,6 +5,7 @@ import type {
   OrderAddonServiceSnapshot,
   PricingType,
 } from "@printgo/api-contract";
+import { COMPLETED_RETENTION_MS } from "@printgo/domain";
 import { isIntegerPaise } from "@printgo/validation";
 
 import {
@@ -319,17 +320,58 @@ export async function handleAdminManualOrdersRequest(
           const nextStatus = hasPostPrint ? "AWAITING_FINISHING" : "COMPLETED";
           const completedAt = hasPostPrint ? null : nowMs;
 
-          const result = await db
-            .prepare(
-              `UPDATE orders
-               SET status = ?, updated_at_ms = ?,
-                   completed_at_ms = COALESCE(completed_at_ms, ?)
-               WHERE id = ? AND status = 'MANUAL_PRINT' AND cleanup_state = 'ACTIVE'`,
-            )
-            .bind(nextStatus, nowMs, completedAt, orderId)
-            .run();
+          const [result] = await db.batch([
+            db
+              .prepare(
+                `UPDATE orders SET status = ?, printed_at_ms = COALESCE(printed_at_ms, ?),
+                 completed_at_ms = ?, purge_at_ms = ?, updated_at_ms = ?
+               WHERE id = ? AND status = 'MANUAL_PRINT' AND cleanup_state = 'ACTIVE'
+                 AND EXISTS (SELECT 1 FROM order_files WHERE order_id = orders.id)
+                 AND NOT EXISTS (SELECT 1 FROM print_attempt_steps
+                   WHERE order_id = orders.id AND status IN ('SUBMISSION_STARTED','SUBMITTED'))`,
+              )
+              .bind(
+                nextStatus,
+                nowMs,
+                completedAt,
+                hasPostPrint ? null : nowMs + COMPLETED_RETENTION_MS,
+                nowMs,
+                orderId,
+              ),
+            db
+              .prepare(
+                `INSERT OR IGNORE INTO order_events (id, order_id, event_type,
+                from_status, to_status, actor_type, actor_id, idempotency_key,
+                created_at_ms)
+               SELECT ?, o.id, 'ORDER_MANUALLY_PRINTED', 'MANUAL_PRINT', ?,
+                 'ADMIN', NULL, ?, ? FROM orders o WHERE o.id = ? AND o.status = ?`,
+              )
+              .bind(
+                crypto.randomUUID(),
+                nextStatus,
+                `manual-printed:${orderId}`,
+                nowMs,
+                orderId,
+                nextStatus,
+              ),
+            db
+              .prepare(
+                `UPDATE order_files SET print_status = 'PRINTED',
+                 printed_at_ms = COALESCE(printed_at_ms, ?), updated_at_ms = ?
+               WHERE order_id = ? AND print_status <> 'PRINTED'
+                 AND EXISTS (SELECT 1 FROM orders WHERE id = ? AND status = ?)`,
+              )
+              .bind(nowMs, nowMs, orderId, orderId, nextStatus),
+            db
+              .prepare(
+                `UPDATE uploads SET retention_reason = 'COMPLETED', delete_after_ms = ?,
+                 updated_at_ms = ? WHERE order_id = ? AND storage_status = 'UPLOADED'
+                 AND EXISTS (SELECT 1 FROM orders WHERE id = ? AND status = 'COMPLETED')`,
+              )
+              .bind(nowMs + COMPLETED_RETENTION_MS, nowMs, orderId, orderId),
+          ]);
 
-          if (result.meta.changes === 0) {
+          if (result?.meta.changes !== 1) {
             response = error(
               409,
               "INVALID_TRANSITION",
@@ -340,16 +382,29 @@ export async function handleAdminManualOrdersRequest(
           }
         } else if (action === "mark-finished") {
           // AWAITING_FINISHING → COMPLETED
-          const result = await db
-            .prepare(
-              `UPDATE orders
-               SET status = 'COMPLETED', completed_at_ms = ?, updated_at_ms = ?
-               WHERE id = ? AND status = 'AWAITING_FINISHING' AND cleanup_state = 'ACTIVE'`,
-            )
-            .bind(nowMs, nowMs, orderId)
-            .run();
+          const [result] = await db.batch([
+            db
+              .prepare(
+                `UPDATE orders SET status = 'COMPLETED', completed_at_ms = ?,
+                 purge_at_ms = ?, updated_at_ms = ?
+               WHERE id = ? AND status = 'AWAITING_FINISHING' AND cleanup_state = 'ACTIVE'
+                 AND EXISTS (SELECT 1 FROM order_files WHERE order_id = orders.id)
+                 AND NOT EXISTS (SELECT 1 FROM order_files
+                   WHERE order_id = orders.id AND print_status <> 'PRINTED')
+                 AND NOT EXISTS (SELECT 1 FROM print_attempt_steps
+                   WHERE order_id = orders.id AND status IN ('SUBMISSION_STARTED','SUBMITTED'))`,
+              )
+              .bind(nowMs, nowMs + COMPLETED_RETENTION_MS, nowMs, orderId),
+            db
+              .prepare(
+                `UPDATE uploads SET retention_reason = 'COMPLETED', delete_after_ms = ?,
+                 updated_at_ms = ? WHERE order_id = ? AND storage_status = 'UPLOADED'
+                 AND EXISTS (SELECT 1 FROM orders WHERE id = ? AND status = 'COMPLETED')`,
+              )
+              .bind(nowMs + COMPLETED_RETENTION_MS, nowMs, orderId, orderId),
+          ]);
 
-          if (result.meta.changes === 0) {
+          if (result?.meta.changes !== 1) {
             response = error(
               409,
               "INVALID_TRANSITION",

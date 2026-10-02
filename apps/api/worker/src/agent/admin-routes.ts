@@ -158,8 +158,9 @@ export async function handleAdminPrinterRequest(
       );
     }
 
-    const fallbackMatch =
-      /^\/api\/admin\/printers\/([^/]+)\/fallback$/u.exec(pathname);
+    const fallbackMatch = /^\/api\/admin\/printers\/([^/]+)\/fallback$/u.exec(
+      pathname,
+    );
     if (request.method === "PUT" && fallbackMatch) {
       const printerId = decodeURIComponent(fallbackMatch[1] ?? "");
       const rawBody = await readAdminJson(request, MAX_JSON_BYTES);
@@ -233,11 +234,7 @@ export async function handleAdminPrinterRequest(
       }
       if (caught.code === "FALLBACK_SELF_REFERENCE") {
         return withAdminCors(
-          error(
-            400,
-            caught.code,
-            "A printer cannot be its own fallback.",
-          ),
+          error(400, caught.code, "A printer cannot be its own fallback."),
           env.ADMIN_ALLOWED_ORIGIN,
         );
       }

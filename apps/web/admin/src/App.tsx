@@ -15,6 +15,7 @@ import { ShopSettingsPage } from "./ShopSettingsPage";
 import { LiveOrdersPage } from "./LiveOrdersPage";
 import { DashboardPage } from "./DashboardPage";
 import { ManualOrdersPage } from "./ManualOrdersPage";
+import { OrderHistoryPage } from "./OrderHistoryPage";
 
 const navigation = [
   { label: "Dashboard", path: "/admin" },
@@ -361,6 +362,8 @@ function PageContent({
     return <ShopSettingsPage onSessionExpired={onSignedOut} />;
   if (item.path === "/admin/live-orders")
     return <LiveOrdersPage onSessionExpired={onSignedOut} />;
+  if (item.path === "/admin/order-history")
+    return <OrderHistoryPage onSessionExpired={onSignedOut} />;
   if (item.path === "/admin")
     return (
       <DashboardPage onSessionExpired={onSignedOut} onNavigate={onNavigate} />

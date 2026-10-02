@@ -235,11 +235,7 @@ export class CleanupService {
     if (!next) return null;
     await this.processRun(next.id, next.scope);
     const run = await this.repository.getRun(next.id);
-    if (
-      run &&
-      next.scope === "ALL_PRINT_DATA" &&
-      (run.completedAt || run.failures > 0)
-    ) {
+    if (run?.completedAt && next.source === "DAILY") {
       await this.repository.recordDailyResult(run, this.now());
     }
     return run;

@@ -5,6 +5,7 @@ import type {
   AdminLoginRequest,
   AdminLoginResponse,
   AdminLiveOrdersResponse,
+  AdminOrderHistoryResponse,
   AdminLogoutResponse,
   AdminMeResponse,
   AdminPricingResponse,
@@ -166,6 +167,9 @@ export const adminApi = {
       body: JSON.stringify({ scope, confirmation }),
     });
   },
+  getCleanupRun(runId: string): Promise<ApiResponse<AdminCleanupRunData>> {
+    return request(`/api/admin/cleanup/runs/${encodeURIComponent(runId)}`);
+  },
   getPricing(): Promise<AdminPricingResponse> {
     return request("/api/admin/pricing");
   },
@@ -182,6 +186,11 @@ export const adminApi = {
   },
   getLiveOrders(): Promise<AdminLiveOrdersResponse> {
     return request("/api/admin/orders/live");
+  },
+  getOrderHistory(cursor?: string): Promise<AdminOrderHistoryResponse> {
+    return request(
+      `/api/admin/orders/history${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`,
+    );
   },
   createPairCode(): Promise<AdminCreatePairCodeResponse> {
     return request("/api/admin/agents/pair-code", {

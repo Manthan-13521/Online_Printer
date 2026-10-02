@@ -16,7 +16,9 @@ export type PrintingErrorCode =
   | "ORDER_CANNOT_BE_RETRIED"
   | "UNCERTAIN_RETRY_CONFIRMATION_REQUIRED"
   | "ORDER_PDF_NOT_FOUND"
-  | "ORDER_PDF_EXPIRED";
+  | "ORDER_PDF_EXPIRED"
+  | "ORDER_CANNOT_BE_COMPLETED"
+  | "ORDER_CONFIRMATION_REQUIRED";
 
 export class PrintingError extends Error {
   constructor(readonly code: PrintingErrorCode) {
@@ -176,6 +178,13 @@ export class PrintingService {
     } catch (err) {
       if (err instanceof Error && err.message === "ORDER_NOT_FOUND") {
         throw new PrintingError("ORDER_NOT_FOUND");
+      }
+      if (
+        err instanceof Error &&
+        (err.message === "ORDER_CANNOT_BE_COMPLETED" ||
+          err.message === "ORDER_CONFIRMATION_REQUIRED")
+      ) {
+        throw new PrintingError(err.message);
       }
       throw err;
     }

@@ -33,6 +33,7 @@ vi.mock("./api", async (importOriginal) => {
       getPricing: vi.fn(),
       updatePricing: vi.fn(),
       getLiveOrders: vi.fn(),
+      getOrderHistory: vi.fn(),
       getDashboard: vi.fn(),
     },
   };
@@ -206,6 +207,61 @@ describe("Admin application", () => {
       }),
     );
     expect(await screen.findByText("Shop settings saved.")).toBeTruthy();
+  });
+
+  it("loads paginated order history without requesting PDFs", async () => {
+    window.history.replaceState({}, "", "/admin/order-history");
+    mockedApi.me.mockResolvedValue({ ok: true, data: { admin } });
+    mockedApi.getOrderHistory
+      .mockResolvedValueOnce({
+        ok: true,
+        data: {
+          orders: [
+            {
+              orderId: "order-1",
+              pickupCode: "PA-123",
+              createdAt: "2026-10-01T10:00:00.000Z",
+              completedAt: "2026-10-01T11:00:00.000Z",
+              isPriority: true,
+              isManual: false,
+              addonServices: [
+                {
+                  name: "Binding",
+                  onlinePricePaise: 500,
+                  handlingMode: "POST_PRINT",
+                },
+              ],
+              onlinePaidPaise: 1200,
+              dueAtPickupPaise: 300,
+              status: "COMPLETED",
+              printerUsed: "Backup Printer",
+              fallbackPrinter: "Backup Printer",
+              attemptCount: 2,
+              failureHistory: [
+                { status: "UNCERTAIN", code: "UNKNOWN", at: null },
+              ],
+              purged: false,
+            },
+          ],
+          nextCursor: "1000:00000000-0000-4000-8000-000000000001",
+        },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        data: { orders: [], nextCursor: null },
+      });
+    const user = userEvent.setup();
+    render(<App />);
+    expect(await screen.findByText("Pickup PA-123")).toBeTruthy();
+    expect(screen.getByText("Binding")).toBeTruthy();
+    expect(screen.getAllByText("Backup Printer")).toHaveLength(2);
+    await user.click(screen.getByRole("button", { name: "Load more" }));
+    await waitFor(() =>
+      expect(mockedApi.getOrderHistory).toHaveBeenLastCalledWith(
+        "1000:00000000-0000-4000-8000-000000000001",
+      ),
+    );
+    expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
   });
 
   it("shows real live orders without a retry control", async () => {

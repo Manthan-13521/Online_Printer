@@ -3,6 +3,8 @@ import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { D1CleanupRepository } from "./repository";
+import { CleanupService } from "./service";
+import { D1OrderHistoryRepository } from "../history/repository";
 
 class Statement {
   private values: SQLInputValue[] = [];
@@ -72,6 +74,7 @@ const migrations = [
   "0015_phase3_priority_tracking_discounts.sql",
   "0016_phase4_failure_recovery_and_pause.sql",
   "0017_phase5_fallback_and_reprint_protection.sql",
+  "0018_phase6_history_cleanup.sql",
 ].map((name) =>
   readFileSync(
     new URL(`../../../../../database/migrations/${name}`, import.meta.url),
@@ -158,11 +161,325 @@ describe("D1 cleanup repository", () => {
     });
   });
 
-  it("reports paid queued work as active and ineligible for Free All", async () => {
+  it("includes inactive paid queued work in Free All", async () => {
     const orderId = "40000000-0000-4000-8000-000000000001";
     seedOrder(orderId, "QUEUED");
     const preview = await repository.preview("ALL_PRINT_DATA", 2_000);
-    expect(preview).toMatchObject({ orders: 0, files: 0, active: 1 });
+    expect(preview).toMatchObject({ orders: 1, files: 1, active: 0 });
+  });
+
+  it("enforces the ten-minute unpaid deadline and deletes only stored object keys", async () => {
+    const id = "50000000-0000-4000-8000-000000000001";
+    seedOrder(id, "UPLOADED");
+    db.prepare(
+      "UPDATE orders SET draft_expires_at_ms = 600000 WHERE id = ?",
+    ).run(id);
+    expect(await repository.hasCandidates("EXPIRED_UNPAID", 599_999)).toBe(
+      false,
+    );
+    expect(await repository.hasCandidates("EXPIRED_UNPAID", 600_000)).toBe(
+      true,
+    );
+    const deleted: string[][] = [];
+    const bucket = {
+      delete: (keys: string[]) => {
+        deleted.push(keys);
+        return Promise.resolve();
+      },
+    } as unknown as R2Bucket;
+    const service = new CleanupService(repository, bucket, () => 600_000);
+    await service.runScheduled();
+    expect(deleted).toEqual([
+      [`uploads/${id}/50000000-0000-4000-8000-000000000002.pdf`],
+    ]);
+    expect(
+      db.prepare("SELECT id FROM orders WHERE id = ?").get(id),
+    ).toBeUndefined();
+    await service.runScheduled();
+    expect(deleted).toHaveLength(1);
+  });
+
+  it("purges completed multi-PDF data at two hours, expires tracking, and keeps anonymous history", async () => {
+    const id = "51000000-0000-4000-8000-000000000001";
+    seedOrder(id, "UPLOADED");
+    db.prepare(
+      `UPDATE orders SET status = 'COMPLETED', pickup_code = 'PA-123',
+      completed_at_ms = 1000, purge_at_ms = 7201000 WHERE id = ?`,
+    ).run(id);
+    db.prepare(
+      "UPDATE order_files SET print_status = 'PRINTED' WHERE order_id = ?",
+    ).run(id);
+    const second = "51000000-0000-4000-8000-000000000003";
+    const key = `uploads/${id}/${second}.pdf`;
+    db.prepare(
+      `INSERT INTO order_files (id, order_id, position, original_filename,
+      r2_object_key, expected_size_bytes, size_bytes, source_page_count,
+      paper_size, color_mode, sides, upload_status, print_status, uploaded_at_ms, created_at_ms, updated_at_ms)
+      VALUES (?, ?, 2, 'second.pdf', ?, 200, 200, 1, 'A4', 'BW', 'SINGLE',
+        'UPLOADED', 'PRINTED', 0, 0, 0)`,
+    ).run(second, id, key);
+    expect(await repository.hasCandidates("COMPLETED_DUE", 7_200_999)).toBe(
+      false,
+    );
+    const deleted: string[][] = [];
+    const service = new CleanupService(
+      repository,
+      {
+        delete: (keys: string[]) => {
+          deleted.push(keys);
+          return Promise.resolve();
+        },
+      } as unknown as R2Bucket,
+      () => 7_201_000,
+    );
+    await service.runScheduled();
+    expect(deleted).toHaveLength(1);
+    expect(deleted[0]).toContain(key);
+    expect(deleted[0]).toHaveLength(2);
+    expect(
+      db.prepare("SELECT id FROM orders WHERE pickup_code = 'PA-123'").get(),
+    ).toBeUndefined();
+    expect(
+      db.prepare("SELECT id FROM order_files WHERE order_id = ?").get(id),
+    ).toBeUndefined();
+    const history = await new D1OrderHistoryRepository(asD1(db)).list(null);
+    expect(history.orders[0]).toMatchObject({
+      purged: true,
+      pickupCode: null,
+      status: "COMPLETED",
+    });
+  });
+
+  it("skips active spool work, retains unresolved completed work, and allows inactive uncertain Free All", async () => {
+    const active = "52000000-0000-4000-8000-000000000001";
+    const unresolved = "53000000-0000-4000-8000-000000000003";
+    seedOrder(active, "QUEUED");
+    seedOrder(unresolved, "UPLOADED");
+    db.prepare(
+      "UPDATE order_files SET print_status = 'SUBMITTED' WHERE order_id = ?",
+    ).run(active);
+    db.prepare(
+      "UPDATE orders SET status = 'COMPLETED', purge_at_ms = 1 WHERE id = ?",
+    ).run(unresolved);
+    db.prepare(
+      "UPDATE order_files SET print_status = 'UNCERTAIN' WHERE order_id = ?",
+    ).run(unresolved);
+    expect((await repository.preview("ALL_PRINT_DATA", 2_000)).active).toBe(1);
+    expect(await repository.hasCandidates("COMPLETED_DUE", 2_000)).toBe(false);
+    db.prepare(
+      "UPDATE order_files SET print_status = 'UNCERTAIN' WHERE order_id = ?",
+    ).run(active);
+    db.prepare(
+      "UPDATE orders SET status = 'COMPLETION_UNKNOWN' WHERE id = ?",
+    ).run(active);
+    expect((await repository.preview("ALL_PRINT_DATA", 2_000)).orders).toBe(2);
+  });
+
+  it("Free Printed and Free All use the same purge and preserve shop configuration", async () => {
+    const printed = "54000000-0000-4000-8000-000000000001";
+    const uncertain = "55000000-0000-4000-8000-000000000001";
+    seedOrder(printed, "UPLOADED");
+    seedOrder(uncertain, "QUEUED");
+    db.prepare(
+      "UPDATE orders SET status = 'COMPLETED', completed_at_ms = 1000, purge_at_ms = 7201000 WHERE id = ?",
+    ).run(printed);
+    db.prepare(
+      "UPDATE order_files SET print_status = 'PRINTED' WHERE order_id = ?",
+    ).run(printed);
+    db.prepare(
+      "UPDATE orders SET status = 'COMPLETION_UNKNOWN' WHERE id = ?",
+    ).run(uncertain);
+    db.prepare(
+      "UPDATE order_files SET print_status = 'UNCERTAIN' WHERE order_id = ?",
+    ).run(uncertain);
+    const adminId = "56000000-0000-4000-8000-000000000001";
+    db.prepare(
+      `INSERT INTO admins (id, login_identifier, password_hash, created_at_ms, updated_at_ms)
+      VALUES (?, 'owner', 'hash', 0, 0)`,
+    ).run(adminId);
+    const deleted: string[][] = [];
+    const service = new CleanupService(
+      repository,
+      {
+        delete: (keys: string[]) => {
+          deleted.push(keys);
+          return Promise.resolve();
+        },
+      } as unknown as R2Bucket,
+      () => 2_000,
+    );
+    const first = await service.requestAdminRun(
+      "ALL_COMPLETED",
+      adminId,
+      "FREE PRINTED",
+    );
+    expect(first.deletedOrders).toBe(1);
+    expect(
+      db.prepare("SELECT id FROM orders WHERE id = ?").get(uncertain),
+    ).toBeDefined();
+    const second = await service.requestAdminRun(
+      "ALL_PRINT_DATA",
+      adminId,
+      "FREE ALL",
+    );
+    expect(second.deletedOrders).toBe(1);
+    expect(deleted).toHaveLength(2);
+    expect(
+      db
+        .prepare(
+          "SELECT shop_name, daily_cleanup_time FROM installation WHERE id = 1",
+        )
+        .get(),
+    ).toEqual({ shop_name: "Safe Shop", daily_cleanup_time: "23:30" });
+    expect(
+      db.prepare("SELECT id FROM admins WHERE id = ?").get(adminId),
+    ).toBeDefined();
+    expect((await service.preview("ALL_PRINT_DATA")).orders).toBe(0);
+  });
+
+  it("keeps an Admin cleanup run open and retries once active spool ownership ends", async () => {
+    const id = "5b000000-0000-4000-8000-000000000001";
+    const adminId = "5c000000-0000-4000-8000-000000000001";
+    seedOrder(id, "QUEUED");
+    db.prepare(
+      "UPDATE order_files SET print_status = 'SUBMITTED' WHERE order_id = ?",
+    ).run(id);
+    db.prepare(
+      `INSERT INTO admins (id, login_identifier, password_hash, created_at_ms, updated_at_ms)
+      VALUES (?, 'owner', 'hash', 0, 0)`,
+    ).run(adminId);
+    let now = 2_000;
+    const deleted: string[][] = [];
+    const service = new CleanupService(
+      repository,
+      {
+        delete: (keys: string[]) => {
+          deleted.push(keys);
+          return Promise.resolve();
+        },
+      } as unknown as R2Bucket,
+      () => now,
+    );
+    const run = await service.requestAdminRun(
+      "ALL_PRINT_DATA",
+      adminId,
+      "FREE ALL",
+    );
+    expect(run.status).toBe("PENDING");
+    expect(run.activeSkipped).toBe(1);
+    expect(deleted).toHaveLength(0);
+    db.prepare(
+      "UPDATE order_files SET print_status = 'UNCERTAIN' WHERE order_id = ?",
+    ).run(id);
+    db.prepare(
+      "UPDATE orders SET status = 'COMPLETION_UNKNOWN' WHERE id = ?",
+    ).run(id);
+    now = 3_000;
+    const resumed = await service.runScheduled();
+    expect(resumed?.runId).toBe(run.runId);
+    expect(resumed?.status).toBe("COMPLETED");
+    expect(deleted).toHaveLength(1);
+  });
+
+  it("runs daily Free All at its stored local schedule and records the result", async () => {
+    const id = "57000000-0000-4000-8000-000000000001";
+    seedOrder(id, "QUEUED");
+    db.prepare(
+      `UPDATE installation SET automatic_daily_cleanup_enabled = 1,
+      daily_cleanup_time = '23:30', timezone = 'Asia/Kolkata',
+      next_daily_cleanup_at_ms = 2000 WHERE id = 1`,
+    ).run();
+    const service = new CleanupService(
+      repository,
+      { delete: () => Promise.resolve() } as unknown as R2Bucket,
+      () => 2_000,
+    );
+    const result = await service.runScheduled();
+    expect(result?.deletedOrders).toBe(1);
+    expect(
+      db.prepare("SELECT id FROM orders WHERE id = ?").get(id),
+    ).toBeUndefined();
+    const settings = db
+      .prepare(
+        `SELECT next_daily_cleanup_at_ms,
+      last_cleanup_at_ms, last_cleanup_result FROM installation WHERE id = 1`,
+      )
+      .get() as {
+      next_daily_cleanup_at_ms: number;
+      last_cleanup_at_ms: number;
+      last_cleanup_result: string;
+    };
+    expect(settings.next_daily_cleanup_at_ms).toBeGreaterThan(2_000);
+    expect(settings.last_cleanup_at_ms).toBe(2_000);
+    expect(settings.last_cleanup_result).toContain("1 orders / 1 PDFs deleted");
+  });
+
+  it("paginates live history without document binaries and shows selected add-ons", async () => {
+    const first = "58000000-0000-4000-8000-000000000001";
+    const second = "59000000-0000-4000-8000-000000000001";
+    seedOrder(first, "QUEUED", 1_000);
+    seedOrder(second, "QUEUED", 2_000);
+    db.prepare(
+      "UPDATE orders SET pickup_code = 'PA-456', is_priority = 1, due_at_pickup_paise = 250 WHERE id = ?",
+    ).run(second);
+    const serviceId = "5a000000-0000-4000-8000-000000000001";
+    db.prepare(
+      `INSERT INTO addon_services
+      (id, name, pricing_type, fixed_price_paise, handling_mode,
+       created_at_ms, updated_at_ms)
+      VALUES (?, 'Binding', 'FIXED_PRICE', 500, 'POST_PRINT', 0, 0)`,
+    ).run(serviceId);
+    db.prepare(
+      `INSERT INTO order_addon_services
+      (order_id, service_id, snapshot_name, snapshot_pricing_type,
+       snapshot_price_charged_online_paise, snapshot_handling_mode)
+      VALUES (?, ?, 'Binding', 'FIXED_PRICE', 500, 'POST_PRINT')`,
+    ).run(second, serviceId);
+    const agentId = "5d000000-0000-4000-8000-000000000001";
+    const primaryId = "5e000000-0000-4000-8000-000000000001";
+    const backupId = "5f000000-0000-4000-8000-000000000001";
+    const attemptId = "60000000-0000-4000-8000-000000000001";
+    db.prepare(
+      `INSERT INTO agents (id, display_name, created_at_ms, updated_at_ms)
+      VALUES (?, 'Counter PC', 0, 0)`,
+    ).run(agentId);
+    for (const [id, name] of [
+      [primaryId, "Main Printer"],
+      [backupId, "Backup Printer"],
+    ] as const) {
+      db.prepare(
+        `INSERT INTO printers (id, agent_id, display_name, windows_printer_name,
+        created_at_ms, updated_at_ms) VALUES (?, ?, ?, ?, 0, 0)`,
+      ).run(id, agentId, name, name);
+    }
+    db.prepare(
+      `INSERT INTO print_attempts (id, order_id, attempt_number, agent_id,
+      printer_id, fallback_from_printer_id, status, created_at_ms, updated_at_ms)
+      VALUES (?, ?, 1, ?, ?, ?, 'FAILED', 2000, 2000)`,
+    ).run(attemptId, second, agentId, backupId, primaryId);
+    db.prepare(
+      `INSERT INTO print_attempt_steps (id, print_attempt_id, order_id,
+      sequence_number, step_type, status, failure_code, created_at_ms, updated_at_ms)
+      VALUES (?, ?, ?, 1, 'CUSTOMER_DOCUMENT', 'UNCERTAIN', 'UNKNOWN', 2000, 2000)`,
+    ).run("61000000-0000-4000-8000-000000000001", attemptId, second);
+    const history = new D1OrderHistoryRepository(asD1(db));
+    const page1 = await history.list(null, 1);
+    expect(page1.orders[0]).toMatchObject({
+      pickupCode: "PA-456",
+      isPriority: true,
+      dueAtPickupPaise: 250,
+      addonServices: [{ name: "Binding" }],
+      printerUsed: "Backup Printer",
+      fallbackPrinter: "Backup Printer",
+      attemptCount: 1,
+      failureHistory: [{ status: "UNCERTAIN", code: "UNKNOWN" }],
+      purged: false,
+    });
+    expect(page1.nextCursor).not.toBeNull();
+    const page2 = await history.list(page1.nextCursor, 1);
+    expect(page2.orders[0]?.orderId).toBe(first);
+    expect(page2.nextCursor).toBeNull();
+    expect(JSON.stringify(page1)).not.toContain("private.pdf");
   });
 
   it("uses bounded probes before scheduled cleanup previews", async () => {
@@ -182,6 +499,21 @@ describe("D1 cleanup repository", () => {
     expect(await repository.hasOpenRun("EXPIRED_UNPAID", "SCHEDULED")).toBe(
       true,
     );
+  });
+
+  it("finds a due order beyond a hundred unresolved completed rows", async () => {
+    for (let index = 1; index <= 101; index++) {
+      const id = `${index.toString(16).padStart(8, "0")}-0000-4000-8000-000000000001`;
+      seedOrder(id, "UPLOADED");
+      db.prepare(
+        "UPDATE orders SET status = 'COMPLETED', purge_at_ms = ? WHERE id = ?",
+      ).run(index, id);
+      db.prepare(
+        "UPDATE order_files SET print_status = ? WHERE order_id = ?",
+      ).run(index === 101 ? "PRINTED" : "UNCERTAIN", id);
+    }
+    expect(await repository.hasCandidates("COMPLETED_DUE", 200)).toBe(true);
+    expect((await repository.preview("COMPLETED_DUE", 200)).orders).toBe(1);
   });
 
   it("backs failed cleanup items off without writing on every cron tick", async () => {
@@ -253,6 +585,7 @@ describe("D1 cleanup repository", () => {
     await expect(repository.nextRunnableRun(2_002)).resolves.toEqual({
       id: pendingRunId,
       scope: "COMPLETED_DUE",
+      source: "SCHEDULED",
     });
   });
 

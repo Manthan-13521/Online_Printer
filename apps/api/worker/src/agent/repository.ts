@@ -1137,9 +1137,7 @@ export class D1AgentRepository implements AgentRepository {
         throw new Error("FALLBACK_SELF_REFERENCE");
       }
       const fallback = await this.db
-        .prepare(
-          `SELECT id, fallback_printer_id FROM printers WHERE id = ?`,
-        )
+        .prepare(`SELECT id, fallback_printer_id FROM printers WHERE id = ?`)
         .bind(input.fallbackPrinterId)
         .first<{ id: string; fallback_printer_id: string | null }>();
       if (!fallback) throw new Error("FALLBACK_PRINTER_NOT_FOUND");
@@ -1168,12 +1166,7 @@ export class D1AgentRepository implements AgentRepository {
              id, actor_type, actor_id, action, entity_type, entity_id, created_at_ms
            ) VALUES (?, 'ADMIN', ?, 'FALLBACK_CONFIGURED', 'PRINTER', ?, ?)`,
         )
-        .bind(
-          crypto.randomUUID(),
-          input.adminId,
-          input.printerId,
-          input.nowMs,
-        ),
+        .bind(crypto.randomUUID(), input.adminId, input.printerId, input.nowMs),
     ]);
 
     return {
