@@ -163,3 +163,21 @@
   4. Added `.selected` class binding on `App.tsx` and updated unit tests in `apps/web/customer/src/App.test.tsx`.
 - **Tests**: `pnpm test` (78 suites, 659 tests passing), `pnpm typecheck` (0 errors), `pnpm lint` (0 warnings), `pnpm format:check` (clean), `pnpm db:validate` (clean), `pnpm build` (all packages built).
 
+### Finding 9: Pagination Added to Live Orders, Manual Orders, and Order History
+
+- **Issue**:
+  1. Live Orders rendered all active jobs in a single unbounded vertical list without pagination.
+  2. Manual Orders and Order History used a continuous "Load more" pattern that stacked cards indefinitely on the page rather than structured pagination.
+- **Expected**:
+  - Live Orders, Manual Orders, and Order History must provide structured, accessible pagination controls showing the current range, page numbers, and previous/next page navigation.
+- **Actual**:
+  - Live Orders had no page division; Manual Orders and Order History had bare "Load more" appending buttons.
+- **Fix**:
+  1. Created accessible, responsive `<Pagination />` component (`apps/web/admin/src/Pagination.tsx`) with item counters (`Showing X–Y of Z orders`), page number pill buttons (`1`, `2`, `3`...), and `← Prev` / `Next →` navigation.
+  2. Integrated pagination into `LiveOrdersPage.tsx` with automatic page bounds clamping on polling updates.
+  3. Integrated pagination into `ManualOrdersPage.tsx`, replacing the bare "Load more" button and seamlessly loading subsequent server batches on page advancement.
+  4. Integrated pagination into `OrderHistoryPage.tsx`, replacing the bare "Load more" button with clean page-by-page traversal and server cursor fetching.
+  5. Added comprehensive pagination CSS in `apps/web/admin/src/styles.css` with responsive mobile stacking and active page pill highlights.
+  6. Added unit tests in `apps/web/admin/src/Pagination.test.tsx` and updated integration tests in `apps/web/admin/src/App.test.tsx`.
+- **Tests**: `pnpm test` (79 suites, 663 tests passing), `pnpm typecheck` (0 errors), `pnpm lint` (0 warnings), `pnpm format:check` (clean), `pnpm db:validate` (clean), `pnpm build` (all packages & PWAs built).
+

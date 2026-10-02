@@ -1,6 +1,7 @@
 import type { AdminOrderHistoryEntry } from "@printgo/api-contract";
 import { useEffect, useState } from "react";
 
+import { Pagination } from "./Pagination";
 import { adminApi, AdminApiError, friendlyAdminError } from "./api";
 
 function amount(paise: number): string {
@@ -21,6 +22,8 @@ export function OrderHistoryPage({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 10;
 
   async function load(next?: string) {
     setLoading(true);
@@ -48,6 +51,22 @@ export function OrderHistoryPage({
     void load();
   }, []);
 
+  const totalPages = Math.max(1, Math.ceil(orders.length / PAGE_SIZE));
+
+  async function handlePageChange(newPage: number) {
+    if (newPage > totalPages && cursor) {
+      await load(cursor);
+      setCurrentPage(newPage);
+    } else {
+      setCurrentPage(newPage);
+    }
+  }
+
+  const paginatedOrders = orders.slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE,
+  );
+
   return (
     <section className="page-content" aria-labelledby="history-title">
       <p className="eyebrow">Orders</p>
@@ -63,7 +82,7 @@ export function OrderHistoryPage({
       ) : null}
       {loaded && orders.length === 0 ? <p>No orders yet.</p> : null}
       <div className="history-list">
-        {orders.map((order) => (
+        {paginatedOrders.map((order) => (
           <article className="manual-order-card" key={order.orderId}>
             <div className="manual-order-header">
               <div>
@@ -124,15 +143,15 @@ export function OrderHistoryPage({
         ))}
       </div>
       {loading ? <p role="status">Loading history…</p> : null}
-      {cursor ? (
-        <button
-          type="button"
-          disabled={loading}
-          onClick={() => void load(cursor)}
-        >
-          Load more
-        </button>
-      ) : null}
+      <Pagination
+        currentPage={currentPage}
+        totalItems={orders.length}
+        pageSize={PAGE_SIZE}
+        onPageChange={(p) => void handlePageChange(p)}
+        loading={loading}
+        hasNextPage={Boolean(cursor)}
+        itemLabel="orders"
+      />
     </section>
   );
 }

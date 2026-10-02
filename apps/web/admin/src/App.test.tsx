@@ -255,13 +255,13 @@ describe("Admin application", () => {
     expect(await screen.findByText("Pickup PA-123")).toBeTruthy();
     expect(screen.getByText("Binding")).toBeTruthy();
     expect(screen.getAllByText("Backup Printer")).toHaveLength(2);
-    await user.click(screen.getByRole("button", { name: "Load more" }));
+    await user.click(screen.getByRole("button", { name: "Next page" }));
     await waitFor(() =>
       expect(mockedApi.getOrderHistory).toHaveBeenLastCalledWith(
         "1000:00000000-0000-4000-8000-000000000001",
       ),
     );
-    expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Next page" })).toBeNull();
   });
 
   it("shows real live orders without a retry control", async () => {

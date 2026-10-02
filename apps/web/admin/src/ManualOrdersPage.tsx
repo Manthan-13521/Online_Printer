@@ -3,6 +3,7 @@ import type {
   OrderAddonServiceSnapshot,
 } from "@printgo/api-contract";
 import { useEffect, useState } from "react";
+import { Pagination } from "./Pagination";
 import { adminApi, AdminApiError, friendlyAdminError } from "./api";
 
 function formatPaise(paise: number): string {
@@ -325,6 +326,8 @@ export function ManualOrdersPage({
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 10;
 
   async function load(next?: string) {
     setLoading(true);
@@ -352,6 +355,22 @@ export function ManualOrdersPage({
     void load();
   }, []);
 
+  const totalPages = Math.max(1, Math.ceil(orders.length / PAGE_SIZE));
+
+  async function handlePageChange(newPage: number) {
+    if (newPage > totalPages && cursor) {
+      await load(cursor);
+      setCurrentPage(newPage);
+    } else {
+      setCurrentPage(newPage);
+    }
+  }
+
+  const paginatedOrders = orders.slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE,
+  );
+
   if (loading && orders.length === 0) {
     return (
       <div className="panel page-loading" aria-busy="true">
@@ -378,7 +397,10 @@ export function ManualOrdersPage({
       <button
         className="secondary-button fit"
         type="button"
-        onClick={() => void load()}
+        onClick={() => {
+          setCurrentPage(1);
+          void load();
+        }}
       >
         Refresh
       </button>
@@ -388,7 +410,7 @@ export function ManualOrdersPage({
         </div>
       ) : (
         <div className="manual-orders-list">
-          {orders.map((order) => (
+          {paginatedOrders.map((order) => (
             <ManualOrderCard
               key={order.orderId}
               order={order}
@@ -398,16 +420,15 @@ export function ManualOrdersPage({
           ))}
         </div>
       )}
-      {cursor ? (
-        <button
-          className="secondary-button fit"
-          type="button"
-          disabled={loading}
-          onClick={() => void load(cursor)}
-        >
-          {loading ? "Loading…" : "Load more"}
-        </button>
-      ) : null}
+      <Pagination
+        currentPage={currentPage}
+        totalItems={orders.length}
+        pageSize={PAGE_SIZE}
+        onPageChange={(p) => void handlePageChange(p)}
+        loading={loading}
+        hasNextPage={Boolean(cursor)}
+        itemLabel="manual orders"
+      />
     </div>
   );
 }
