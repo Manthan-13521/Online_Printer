@@ -192,3 +192,25 @@
   3. Ensured that loading and saving in `ShopSettingsPage.tsx` normalizes any ID requirement policy permanently to `OFF` with `0` threshold paise.
   4. Cleaned up unused pricing helper imports (`formatPaiseAsRupeesInput`, `parseRupeesToPaise`).
 - **Tests**: `pnpm test` (79 suites, 663 tests passing), `pnpm typecheck` (0 errors), `pnpm lint` (0 warnings), `pnpm format:check` (clean), `pnpm db:validate` (clean), `pnpm build` (all packages & PWAs built).
+
+### Finding 11: Storage & Privacy UI Layout, Modal Backdrop, and Danger Button Inconsistencies Fixed
+
+- **Issue**:
+  1. The "Free All Print Data" confirmation dialog was rendered inline without `.dialog-backdrop`, causing it to float haphazardly inside the card and overlap buttons.
+  2. The primary `.danger-button` class was overridden by a secondary definition in `styles.css` with small padding (`0.4rem 0.75rem`) and light pink background, causing "Permanently delete" to have a completely mismatched height and style next to the "Cancel" `.secondary-button`.
+  3. "Next Cleanup" was displaying a raw UTC ISO string (`2026-10-02T18:00:00.000Z`) rather than a friendly localized time.
+  4. The definition list `<dl>` for cleanup status had broken grid alignment due to wrapper divs.
+  5. The cleanup result status and refresh button were unstyled and rendered raw underneath the card content.
+- **Expected**:
+  - The confirmation dialog must be a centered modal with a dimmed backdrop (`.dialog-backdrop`).
+  - `.danger-button` must match `.secondary-button` and `.primary-button` in height (`2.85rem`), border-radius (`0.55rem`), and typography, with solid red `#dc2626` background.
+  - Dates and timestamps must be formatted in friendly localized medium date/time format.
+  - Cleanup stats must be rendered in structured `.settings-stat-grid` cards.
+  - Cleanup results must be rendered in an integrated `.notice` banner.
+- **Fix**:
+  1. Wrapped `cleanupPreview` confirmation dialog in `<div className="dialog-backdrop">` outside the form, with proper ARIA attributes and full backdrop blur/dim.
+  2. Harmonized `.danger-button` styling with `.danger-button.subtle` (for card trigger buttons) and `.danger-button.compact` (for inline table actions), removing the conflicting global override.
+  3. Formatted `lastCleanupAt` and `nextCleanupAt` with `formatCleanupDateTime` for readable localized date and time.
+  4. Created `.settings-stat-grid` with `.stat-card` styling for clean, responsive key-value stats.
+  5. Placed cleanup execution results in a styled `.notice` banner with inline status refresh.
+- **Tests**: `pnpm test` (79 suites, 663 tests passing), `pnpm typecheck` (0 errors), `pnpm lint` (0 warnings), `pnpm format:check` (clean), `pnpm db:validate` (clean), `pnpm build` (all packages & PWAs built).

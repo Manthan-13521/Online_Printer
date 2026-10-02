@@ -644,7 +644,7 @@ export function PrinterPage({
                       Confirm revoke?
                     </span>
                     <button
-                      className="danger-button"
+                      className="danger-button compact"
                       disabled={revokingAgentId === agent.id}
                       onClick={() => void handleRevokeAgent(agent.id)}
                       type="button"
