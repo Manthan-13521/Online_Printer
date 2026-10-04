@@ -567,7 +567,14 @@ if (-not $ready -or $ready.WorkOffline -or $ready.PrinterStatus -in @(6,7) -or
 }
 
 # 2. Record pre-submission spooler job IDs for this exact printer
-$beforeIds = @(Get-CimInstance Win32_PrintJob -ErrorAction SilentlyContinue | Where-Object { $_.Name.StartsWith("$printer,") } | ForEach-Object { [int]$_.JobId })
+$useCim = $false
+$beforeIds = @()
+try {
+    $beforeIds = @(Get-PrintJob -PrinterName $printer -ErrorAction Stop | ForEach-Object { [int]$_.Id })
+} catch {
+    $useCim = $true
+    $beforeIds = @(Get-CimInstance Win32_PrintJob -ErrorAction SilentlyContinue | Where-Object { $_.Name.StartsWith("$printer,") } | ForEach-Object { [int]$_.JobId })
+}
 
 if (-not $sumatra -or -not (Test-Path $sumatra)) {
     throw "Deterministic PDF printing requires SumatraPDF.exe. No unverified Windows PrintTo fallback is permitted."
@@ -575,7 +582,7 @@ if (-not $sumatra -or -not (Test-Path $sumatra)) {
 
 $psi = New-Object System.Diagnostics.ProcessStartInfo
 $psi.FileName = $sumatra
-$psi.Arguments = "-print-to \`"$printer\`" -print-settings \`"$settings\`" -silent \`"$pdf\`""
+$psi.Arguments = "-print-to \`"$printer\`" -print-settings \`"$settings\`" -silent -exit-on-print \`"$pdf\`""
 $psi.CreateNoWindow = $true
 $psi.UseShellExecute = $false
 $psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
@@ -593,18 +600,29 @@ $spoolCapturedAtMs = $null
 $matchedJob = $null
 $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 
+function Find-MatchedJob {
+    if (-not $useCim) {
+        $rJobs = @(Get-PrintJob -PrinterName $printer -ErrorAction SilentlyContinue | Where-Object { $beforeIds -notcontains [int]$_.Id })
+        if ($rJobs.Count -gt 0) {
+            $tMatch = $rJobs | Where-Object { $_.DocumentName -and ($_.DocumentName.Contains($docIdentifier) -or $_.DocumentName.Contains($fileNameWithoutExt) -or $_.DocumentName.Contains($fileName)) }
+            $m = if ($tMatch) { $tMatch[0] } else { $rJobs[0] }
+            return [pscustomobject]@{ JobId = $m.Id; Document = $m.DocumentName }
+        }
+    } else {
+        $rJobs = @(Get-CimInstance Win32_PrintJob -ErrorAction SilentlyContinue | Where-Object { $_.Name.StartsWith("$printer,") -and $beforeIds -notcontains [int]$_.JobId })
+        if ($rJobs.Count -gt 0) {
+            $tMatch = $rJobs | Where-Object { $_.Document -and ($_.Document.Contains($docIdentifier) -or $_.Document.Contains($fileNameWithoutExt) -or $_.Document.Contains($fileName)) }
+            return if ($tMatch) { $tMatch[0] } else { $rJobs[0] }
+        }
+    }
+    return $null
+}
+
 # Poll while process is running to catch jobs before fast despool
 while (-not $proc.HasExited -and $stopwatch.ElapsedMilliseconds -lt 25000) {
     Start-Sleep -Milliseconds 80
-    $runningJobs = @(Get-CimInstance Win32_PrintJob -ErrorAction SilentlyContinue | Where-Object {
-        $_.Name.StartsWith("$printer,") -and
-        $beforeIds -notcontains [int]$_.JobId
-    })
-    if ($runningJobs.Count -gt 0) {
-        $titleMatch = $runningJobs | Where-Object {
-            $_.Document -and ($_.Document.Contains($docIdentifier) -or $_.Document.Contains($fileNameWithoutExt) -or $_.Document.Contains($fileName))
-        }
-        $matchedJob = if ($titleMatch) { $titleMatch[0] } else { $runningJobs[0] }
+    $matchedJob = Find-MatchedJob
+    if ($matchedJob) {
         $spoolCapturedAtMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
         break
     }
@@ -612,6 +630,32 @@ while (-not $proc.HasExited -and $stopwatch.ElapsedMilliseconds -lt 25000) {
 
 # 4. Wait for SumatraPDF process to complete transmission cleanly
 $waitTimeoutMs = if ($matchedJob) { 45000 } else { 15000 }
+$exited = $proc.WaitForExit($waitTimeoutMs)
+if (-not $exited) {
+    $proc.Kill()
+    if (-not $matchedJob) {
+        throw "SumatraPDF print process timed out after 30 seconds."
+    }
+}
+if ($exited -and $proc.ExitCode -ne 0 -and -not $matchedJob) {
+    throw "SumatraPDF exited with error code $($proc.ExitCode)."
+}
+
+# If not caught while running, poll briefly post-exit
+if (-not $matchedJob) {
+    $pollLoops = if ($useCim) { 10 } else { 25 }
+    $sleepMs = if ($useCim) { 150 } else { 50 }
+    for ($i = 0; $i -lt $pollLoops; $i++) {
+        $matchedJob = Find-MatchedJob
+        if ($matchedJob) {
+            $spoolCapturedAtMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+            break
+        }
+        Start-Sleep -Milliseconds $sleepMs
+    }
+}
+
+if ($matchedJob) { 45000 } else { 15000 }
 $exited = $proc.WaitForExit($waitTimeoutMs)
 if (-not $exited) {
     $proc.Kill()

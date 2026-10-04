@@ -75,6 +75,8 @@ export class PaidPrintExecutor {
 
     if (
       job.currentStep.status === "SUBMITTED" ||
+      job.currentStep.status === "SPOOLING" ||
+      job.currentStep.status === "PRINTING" ||
       job.currentStep.status === "BLOCKED"
     ) {
       const spoolerJobId =
