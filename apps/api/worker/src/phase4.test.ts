@@ -852,7 +852,7 @@ describe("Phase 4: Print Failure Recovery + Queue Pause/Resume", () => {
 
   it("Domain toCustomerOrderStatus mappings for Phase 4 statuses", () => {
     expect(toCustomerOrderStatus("RETRY_PENDING").label).toBe(
-      "Waiting to print",
+      "In queue",
     );
     expect(toCustomerOrderStatus("NEEDS_ADMIN").label).toBe(
       "Waiting for Staff",

@@ -4,7 +4,8 @@ export const CUSTOMER_ORDER_STATUSES = [
   "PREPARING",
   "PAYMENT_PENDING",
   "PAYMENT_NOT_RECEIVED",
-  "WAITING_TO_PRINT",
+  "QUEUED",
+  "CLAIMED",
   "PRINTING",
   "PRINTER_NEEDS_ATTENTION",
   "SHOP_HANDLING_ISSUE",
@@ -28,7 +29,7 @@ export const CUSTOMER_ORDER_STATUS_PRESENTATION: Readonly<
 > = {
   PREPARING: {
     code: "PREPARING",
-    label: "Preparing order",
+    label: "Preparing print",
     message: "Your print request is being prepared.",
   },
   PAYMENT_PENDING: {
@@ -41,10 +42,15 @@ export const CUSTOMER_ORDER_STATUS_PRESENTATION: Readonly<
     label: "Payment not received",
     message: "A verified payment was not received for this request.",
   },
-  WAITING_TO_PRINT: {
-    code: "WAITING_TO_PRINT",
-    label: "Waiting to print",
-    message: "Your paid print job is waiting for the shop printer.",
+  QUEUED: {
+    code: "QUEUED",
+    label: "In queue",
+    message: "Your paid print job is in the printer queue.",
+  },
+  CLAIMED: {
+    code: "CLAIMED",
+    label: "Preparing your document",
+    message: "The shop agent is preparing your document.",
   },
   PRINTING: {
     code: "PRINTING",
@@ -79,8 +85,8 @@ export const CUSTOMER_ORDER_STATUS_PRESENTATION: Readonly<
   },
   COMPLETED: {
     code: "COMPLETED",
-    label: "Completed",
-    message: "Your print job is complete.",
+    label: "Ready for Pickup",
+    message: "Your print job is complete and ready for pickup.",
   },
   CANCELLED: {
     code: "CANCELLED",
@@ -104,8 +110,10 @@ export function toCustomerOrderStatus(
       return CUSTOMER_ORDER_STATUS_PRESENTATION.PAYMENT_NOT_RECEIVED;
     case "PAID":
     case "QUEUED":
+    case "RETRY_PENDING":
+      return CUSTOMER_ORDER_STATUS_PRESENTATION.QUEUED;
     case "CLAIMED":
-      return CUSTOMER_ORDER_STATUS_PRESENTATION.WAITING_TO_PRINT;
+      return CUSTOMER_ORDER_STATUS_PRESENTATION.CLAIMED;
     case "SPOOLING":
     case "PRINTING":
       return CUSTOMER_ORDER_STATUS_PRESENTATION.PRINTING;
@@ -114,8 +122,6 @@ export function toCustomerOrderStatus(
     case "PRINT_FAILED":
     case "ADMIN_ACTION_REQUIRED":
       return CUSTOMER_ORDER_STATUS_PRESENTATION.SHOP_HANDLING_ISSUE;
-    case "RETRY_PENDING":
-      return CUSTOMER_ORDER_STATUS_PRESENTATION.WAITING_TO_PRINT;
     case "NEEDS_ADMIN":
     case "COMPLETION_UNKNOWN":
     case "MANUAL_PRINT":

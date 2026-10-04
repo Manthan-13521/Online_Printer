@@ -15,10 +15,13 @@ export function getFigmaStageIndex(status: CustomerOrderStatus): number {
       return 2;
 
     // 3 = PRINT QUEUE (QUEUED)
-    case "WAITING_TO_PRINT":
+    case "QUEUED":
       return 3;
 
-    // 4 = PRINTER (PRINTING)
+    // 4 = PRINTER (PRINTING / CLAIMED)
+    case "CLAIMED":
+      return 4;
+
     case "PRINTING":
       return 4;
 

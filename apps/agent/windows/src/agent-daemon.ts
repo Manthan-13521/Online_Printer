@@ -269,15 +269,21 @@ export class AgentDaemon {
       const hadWork = Boolean(
         heartbeatData.nextCommand || heartbeatData.printJob,
       );
-      if (hadWork || (reportChanged && ready)) this.idlePolls = 0;
-      else this.idlePolls = Math.min(this.idlePolls + 1, 4);
-      this.nextDelayMs =
-        heartbeatData.onlinePrintingEnabled === false || !ready
-          ? 30_000
-          : Math.min(
-              30_000,
-              this.heartbeatIntervalMs * 2 ** Math.max(0, this.idlePolls - 1),
-            );
+      if (hadWork || (reportChanged && ready)) {
+        this.idlePolls = 0;
+      } else {
+        this.idlePolls = Math.min(this.idlePolls + 1, 4);
+      }
+      if (heartbeatData.onlinePrintingEnabled === false || !ready) {
+        this.nextDelayMs = 30_000;
+      } else if (heartbeatData.printJob) {
+        this.nextDelayMs = 2_000;
+      } else {
+        this.nextDelayMs = Math.min(
+          15_000,
+          this.heartbeatIntervalMs * 2 ** Math.max(0, this.idlePolls - 1),
+        );
+      }
       if (Date.now() - this.lastStatusWriteMs >= 60_000 || refreshPrinters) {
         this.lastStatusWriteMs = Date.now();
 

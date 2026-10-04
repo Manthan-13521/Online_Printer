@@ -360,7 +360,10 @@ export class D1PrintingRepository implements PrintingRepository {
       JOIN installation i ON i.id = 1
       WHERE o.claimed_by_agent_id = ?
         AND o.status IN ('CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED')
-      ORDER BY ps.sequence_number LIMIT 1`,
+      ORDER BY 
+        CASE WHEN ps.status IN ('PENDING', 'SUBMISSION_STARTED') THEN 0 ELSE 1 END ASC,
+        ps.sequence_number ASC 
+      LIMIT 1`,
       )
       .bind(agentId)
       .first<JobRow>();

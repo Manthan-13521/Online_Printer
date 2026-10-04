@@ -138,14 +138,14 @@ describe("TrackingService", () => {
       expect.objectContaining({
         jobCode: "PG-ABC234",
         paymentStatus: "PAYMENT_RECEIVED",
-        orderStatus: "WAITING_TO_PRINT",
+        orderStatus: "QUEUED",
         amountPaidPaise: 4_200,
         fileRetentionStatus: "TEMPORARILY_RETAINED",
       }),
     );
     expect(result.timeline.map((item) => item.label)).toEqual([
       "Payment received",
-      "Waiting to print",
+      "In queue",
     ]);
     expect(JSON.stringify(result)).not.toMatch(
       /orderId|r2|objectKey|providerPayment|customerPhone/iu,

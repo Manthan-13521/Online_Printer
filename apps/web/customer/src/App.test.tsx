@@ -54,8 +54,31 @@ beforeEach(() => {
   vi.clearAllMocks();
   delete window.Razorpay;
   sessionStorage.clear();
+  window.history.replaceState(null, "", "/");
   vi.mocked(customerApi.config).mockResolvedValue(enabledConfig);
   vi.mocked(inspectPdf).mockResolvedValue(10);
+  vi.mocked(customerApi.tracking).mockResolvedValue({
+    jobCode: "PG-ABC234",
+    customerName: "Rahul",
+    paymentStatus: "PAYMENT_RECEIVED",
+    orderStatus: "QUEUED",
+    statusLabel: "In queue",
+    statusMessage: "Queue",
+    submittedAt: "2026-09-26T00:00:00.000Z",
+    paidAt: "2026-09-26T00:01:00.000Z",
+    printSummary: {
+      selectedPages: "1-12",
+      copies: 1,
+      paperSize: "A4",
+      colorMode: "BW",
+      sides: "DOUBLE",
+    },
+    amountPaidPaise: 4200,
+    currency: "INR",
+    fileRetentionStatus: "TEMPORARILY_RETAINED",
+    timeline: [],
+    trackingExpiresAt: "2026-10-10T00:01:00.000Z",
+  });
   vi.mocked(customerApi.createDraft).mockResolvedValue({
     draftToken: "A".repeat(43),
     draftExpiresAt: "2026-09-26T00:10:00.000Z",
@@ -308,8 +331,8 @@ describe("customer upload app", () => {
         .closest("form")!,
     );
     expect(
-      await screen.findByText(/Connection lost during upload/),
-    ).toBeTruthy();
+      (await screen.findAllByText(/The upload was interrupted/i)).length
+    ).toBeGreaterThan(0);
     expect(screen.getByLabelText<HTMLInputElement>("Name").value).toBe("Rahul");
     const retry = screen.getByRole("button", { name: "Try upload again" });
     fireEvent.submit(retry.closest("form")!);
@@ -423,9 +446,8 @@ describe("customer upload app", () => {
       razorpay_payment_id: "pay_server_a",
       razorpay_signature: "a".repeat(64),
     });
-    expect(await screen.findByText("PG-ABC234")).toBeTruthy();
-    expect(screen.getByText("Amount paid: ₹21.00")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Track My Print" })).toBeTruthy();
+    expect(await screen.findByText("Order PG-ABC234")).toBeTruthy();
+    expect(screen.getByText("In queue")).toBeTruthy();
     expect(sessionStorage.getItem("printgo.tracking.PG-ABC234")).toBe(
       "T".repeat(43),
     );

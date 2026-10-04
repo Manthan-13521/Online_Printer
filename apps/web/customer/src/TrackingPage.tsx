@@ -20,7 +20,15 @@ function isTerminalStatus(status: string): boolean {
   );
 }
 
-export function TrackingPage({ jobCode }: { jobCode: string }) {
+export function TrackingPage({
+  jobCode,
+  onBack,
+  onPrintAnother,
+}: {
+  jobCode: string;
+  onBack?: () => void;
+  onPrintAnother?: () => void;
+}) {
   const [data, setData] = useState<CustomerTrackingData | null>(null);
   const [state, setState] = useState<"loading" | "invalid" | "network">(
     "loading",
@@ -93,7 +101,7 @@ export function TrackingPage({ jobCode }: { jobCode: string }) {
     const scheduleNextPoll = () => {
       if (!active || terminalReachedRef.current) return;
       if (timer) clearTimeout(timer);
-      const delayMs = Date.now() - mountTime < 120_000 ? 15_000 : 30_000;
+      const delayMs = Date.now() - mountTime < 120_000 ? 3_000 : 15_000;
       timer = setTimeout(fetchStatus, delayMs);
     };
 
@@ -180,6 +188,8 @@ export function TrackingPage({ jobCode }: { jobCode: string }) {
         colorMode: data.printSummary.colorMode === "BW" ? "B&W" : "Color",
         paperSize: data.printSummary.paperSize,
       }}
+      onBack={onBack}
+      onPrintAnother={onPrintAnother}
     >
       <h2>{data.statusLabel}</h2>
       <p>{data.statusMessage}</p>

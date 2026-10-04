@@ -1,5 +1,5 @@
 import { applyShopBranding } from "../../branding";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 
 import type { ColorMode, PaperSize, SidesMode } from "@printgo/domain";
 import type {
@@ -39,6 +39,9 @@ interface LocalOrderFile {
   size: number;
   pageCount: number;
   uploaded: boolean;
+  uploadStatus: "SELECTED" | "UPLOADING" | "UPLOADED" | "FAILED";
+  uploadProgress: number;
+  uploadError: string | null;
   pageMode: "ALL" | "CUSTOM";
   customPages: string;
   copies: number;
@@ -97,8 +100,14 @@ function customerErrorMessage(caught: unknown): string {
     return "This upload session expired. Please upload your PDF again.";
   if (code === "UPLOAD_INVALID")
     return "We couldn't read this PDF. Please check the file and try again.";
-  if (code === "UPLOAD_NETWORK_ERROR" || code === "Failed to fetch")
-    return "Connection lost during upload. Check your connection and try again.";
+  if (code === "UPLOAD_ABORTED")
+    return "Upload was cancelled.";
+  if (code === "UPLOAD_HTTP_403" || code === "UPLOAD_HTTP_400")
+    return "The secure upload link expired or was rejected. Click 'Try upload again' to get a fresh one.";
+  if (code === "UPLOAD_NETWORK_ERROR")
+    return "The upload was interrupted. Keep the app open and don't switch tabs while uploading. Check connection and try again.";
+  if (code === "Failed to fetch")
+    return "Could not reach the shop server. Please check your internet connection.";
   return "The upload could not be completed. Your selections are preserved; please try again.";
 }
 
@@ -130,10 +139,22 @@ export function App() {
   const [customerPhone, setCustomerPhone] = useState("");
   const [instructions, setInstructions] = useState("");
   const [files, setFiles] = useState<LocalOrderFile[]>([]);
+  const filesRef = useRef(files);
+  useEffect(() => {
+    filesRef.current = files;
+  }, [files]);
+  
+  // Helper to synchronously update ref for async functions and trigger re-render
+  const updateFile = (clientId: string, updater: Partial<LocalOrderFile>) => {
+    filesRef.current = filesRef.current.map(f => f.clientId === clientId ? { ...f, ...updater } : f);
+    setFiles(filesRef.current);
+  };
+  
+  const abortControllers = useRef(new Map<string, AbortController>());
   const [selectedFileIndex, setSelectedFileIndex] = useState(0);
   const [fileError, setFileError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [progress, setProgress] = useState(0);
+
   const [status, setStatus] = useState<string | null>(null);
   const [quote, setQuote] = useState<CustomerQuoteData | null>(null);
   const [draftToken, setDraftToken] = useState<string | null>(null);
@@ -189,6 +210,9 @@ export function App() {
             size: remote.sizeBytes ?? 0,
             pageCount: remote.sourcePageCount,
             uploaded: remote.uploadStatus === "UPLOADED",
+            uploadStatus: remote.uploadStatus === "UPLOADED" ? "UPLOADED" : "FAILED",
+            uploadProgress: remote.uploadStatus === "UPLOADED" ? 100 : 0,
+            uploadError: remote.uploadStatus === "UPLOADED" ? null : "Upload was interrupted",
             pageMode: remote.selectedPages === "ALL" ? "ALL" : "CUSTOM",
             customPages:
               remote.selectedPages === "ALL"
@@ -274,6 +298,9 @@ export function App() {
           size: selectedFile.size,
           pageCount: pages,
           uploaded: false,
+          uploadStatus: "SELECTED",
+          uploadProgress: 0,
+          uploadError: null,
           pageMode: "ALL",
           customPages: `1-${pages}`,
           copies: 1,
@@ -318,72 +345,113 @@ export function App() {
     setBusy(true);
     setStatus("Creating a secure upload…");
     setQuote(null);
+    let errorToReport: Error | null = null;
     try {
       let token = draftToken;
-      const working = [...files];
-      for (let index = 0; index < working.length; index++) {
-        let item = working[index]!;
-        if (item.uploaded) continue;
+      
+      for (let index = 0; index < filesRef.current.length; index++) {
+        const clientId = filesRef.current[index]?.clientId;
+        if (!clientId) continue;
+
+        let item = filesRef.current.find(f => f.clientId === clientId);
+        if (!item || item.uploadStatus === "UPLOADED") continue;
         if (!item.file) throw new Error("UPLOAD_FILE_REQUIRED");
+        
         const uploadFile = item.file;
         let upload;
-        if (!token) {
-          const draft = await customerApi.createDraft({
-            customerName,
-            customerPhone,
-            instructions: instructions.trim() || null,
-            originalFilename: item.name,
-            expectedSizeBytes: item.size,
-            sourcePageCount: item.pageCount,
-            ...(selectedAddonIds.length > 0
-              ? { addonServiceIds: selectedAddonIds }
-              : {}),
-          });
-          token = draft.draftToken;
-          upload = draft.upload;
-          if (!draft.fileId) throw new Error("DRAFT_INVALID");
-          item = { ...item, fileId: draft.fileId };
-          setDraftToken(token);
-          sessionStorage.setItem(DRAFT_TOKEN_KEY, token);
-        } else if (!item.fileId) {
-          const created = await customerApi.addFile(token, {
-            originalFilename: item.name,
-            expectedSizeBytes: item.size,
-            sourcePageCount: item.pageCount,
-          });
-          item = { ...item, fileId: created.fileId };
-          upload = created.upload;
-        } else {
-          upload = (await customerApi.authorize(token, item.fileId)).upload;
+        
+        updateFile(clientId, { uploadStatus: "VALIDATING", uploadProgress: 0, uploadError: null });
+
+        try {
+          if (!token) {
+            const draft = await customerApi.createDraft({
+              customerName,
+              customerPhone,
+              instructions: instructions.trim() || null,
+              originalFilename: item.name,
+              expectedSizeBytes: item.size,
+              sourcePageCount: item.pageCount,
+              ...(selectedAddonIds.length > 0
+                ? { addonServiceIds: selectedAddonIds }
+                : {}),
+            });
+            token = draft.draftToken;
+            upload = draft.upload;
+            updateFile(clientId, { fileId: draft.fileId });
+            setDraftToken(token);
+            sessionStorage.setItem(DRAFT_TOKEN_KEY, token);
+          } else if (!item.fileId) {
+            const created = await customerApi.addFile(token, {
+              originalFilename: item.name,
+              expectedSizeBytes: item.size,
+              sourcePageCount: item.pageCount,
+            });
+            upload = created.upload;
+            updateFile(clientId, { fileId: created.fileId });
+          } else {
+            upload = (await customerApi.authorize(token, item.fileId)).upload;
+          }
+
+          if (!filesRef.current.find(f => f.clientId === clientId)) continue;
+
+          updateFile(clientId, { uploadStatus: "UPLOADING" });
+          setStatus(`Uploading File ${index + 1} of ${filesRef.current.length}…`);
+          
+          const controller = new AbortController();
+          abortControllers.current.set(clientId, controller);
+          
+          await uploadDirectly(
+            uploadFile,
+            upload.uploadUrl,
+            upload.requiredHeaders,
+            (p) => updateFile(clientId, { uploadProgress: p }),
+            controller.signal
+          );
+          
+          abortControllers.current.delete(clientId);
+
+          if (!filesRef.current.find(f => f.clientId === clientId)) continue;
+
+          updateFile(clientId, { uploadStatus: "FINALIZING" });
+          setStatus(`Verifying File ${index + 1}…`);
+          
+          const latestItem = filesRef.current.find(f => f.clientId === clientId);
+          await customerApi.complete(token, latestItem!.fileId!);
+          
+          updateFile(clientId, { uploaded: true, uploadStatus: "UPLOADED", uploadProgress: 100 });
+        } catch (caught) {
+          if (caught instanceof Error && caught.message === "UPLOAD_ABORTED") {
+            continue;
+          }
+          const errMsg = customerErrorMessage(caught);
+          updateFile(clientId, { uploadStatus: "FAILED", uploadError: errMsg });
+          errorToReport = caught instanceof Error ? caught : new Error(String(caught));
+          break;
         }
-        working[index] = item;
-        setFiles([...working]);
-        setStatus(`Uploading File ${index + 1} of ${working.length}…`);
-        await uploadDirectly(
-          uploadFile,
-          upload.uploadUrl,
-          upload.requiredHeaders,
-          setProgress,
-        );
-        setStatus(`Verifying File ${index + 1}…`);
-        await customerApi.complete(token, item.fileId);
-        working[index] = { ...item, uploaded: true };
-        setFiles([...working]);
       }
+
+      if (errorToReport) throw errorToReport;
+
+      const allUploaded = filesRef.current.every(f => f.uploadStatus === "UPLOADED");
+      if (!allUploaded || filesRef.current.length === 0) {
+         setBusy(false);
+         return; // User removed a file or something else failed
+      }
+
       if (!token) throw new Error("DRAFT_INVALID");
       setStatus("Calculating your review total…");
       setQuote(
         await customerApi.quoteOrder(token, {
-          files: working.map((item) => ({
-            fileId: item.fileId!,
+          files: filesRef.current.map((f) => ({
+            fileId: f.fileId!,
             selectedPages:
-              item.pageMode === "ALL"
-                ? `1-${item.pageCount}`
-                : item.customPages,
-            copies: item.copies,
-            paperSize: item.paperSize,
-            colorMode: item.colorMode,
-            sides: item.sides,
+              f.pageMode === "ALL"
+                ? `1-${f.pageCount}`
+                : f.customPages,
+            copies: f.copies,
+            paperSize: f.paperSize,
+            colorMode: f.colorMode,
+            sides: f.sides,
           })),
           isPriority,
         }),
@@ -407,33 +475,34 @@ export function App() {
   }
 
   async function removeFile(index: number) {
-    if (files.length <= 1 || busy || paymentBusy) return;
+    if (paymentBusy) return;
     const item = files[index];
     if (!item) return;
-    setBusy(true);
-    setStatus(`Removing File ${index + 1}…`);
-    try {
-      if (draftToken && item.fileId) {
-        await customerApi.removeFile(draftToken, item.fileId);
-      }
-      setFiles((current) =>
-        current.filter((_, position) => position !== index),
-      );
-      setSelectedFileIndex((current) =>
-        Math.max(
-          0,
-          Math.min(current > index ? current - 1 : current, files.length - 2),
-        ),
-      );
-      setQuote(null);
-      setStatus(
-        "PDF removed. File numbers and pricing will update automatically.",
-      );
-    } catch (caught) {
-      setStatus(customerErrorMessage(caught));
-    } finally {
-      setBusy(false);
+
+    // Abort if uploading
+    const controller = abortControllers.current.get(item.clientId);
+    if (controller) {
+      controller.abort();
+      abortControllers.current.delete(item.clientId);
     }
+
+    // Do not set global busy if we just want to remove a file while other things are uploading.
+    // If it's a drafted file, delete it in the background to not block UI.
+    if (draftToken && item.fileId) {
+      void customerApi.removeFile(draftToken, item.fileId).catch(() => {});
+    }
+
+    setFiles((current) =>
+      current.filter((_, position) => position !== index),
+    );
+    setSelectedFileIndex((current) =>
+      Math.max(
+        0,
+        Math.min(current > index ? current - 1 : current, files.length - 2),
+      ),
+    );
+    setQuote(null);
+    setStatus("PDF removed.");
   }
 
   function applySettingsToAll() {
@@ -517,9 +586,13 @@ export function App() {
       );
       sessionStorage.removeItem(pendingKey);
       sessionStorage.removeItem(DRAFT_TOKEN_KEY);
+      
+      // Auto-navigate to tracking page
+      const code = result.pickupCode ?? result.jobCode;
+      window.history.pushState(null, "", `/track/${encodeURIComponent(code)}`);
+      setTrackingJobCode(code);
     } catch (caught) {
       setStatus(paymentErrorMessage(caught));
-    } finally {
       setPaymentBusy(false);
     }
   }
@@ -722,10 +795,24 @@ export function App() {
       );
     }
 
+    const handleResetToHome = () => {
+      setTrackingJobCode(null);
+      setFiles([]);
+      setSelectedFileIndex(0);
+      setQuote(null);
+      setDraftToken(null);
+      setPaymentSuccess(null);
+      window.history.pushState(null, "", "/");
+    };
+
     return (
       <>
         {shopHeader}
-        <TrackingPage jobCode={trackingJobCode} />
+        <TrackingPage
+          jobCode={trackingJobCode}
+          onBack={handleResetToHome}
+          onPrintAnother={handleResetToHome}
+        />
       </>
     );
   }
@@ -986,24 +1073,47 @@ export function App() {
               {files.map((item, index) => (
                 <div className="file-sequence" key={item.clientId}>
                   <strong className="file-number">File {index + 1}</strong>
-                  <div className="file-card">
+                  <div className="file-card" style={{ position: "relative" }}>
                     <button
                       type="button"
                       className="file-card-main"
                       aria-label={`Edit settings for File ${index + 1}, ${item.name}`}
                       onClick={() => setSelectedFileIndex(index)}
+                      style={{ paddingRight: "44px" }}
                     >
                       <span>{item.name}</span>
                       <small>
                         {item.pageCount} pages · {humanFileSize(item.size)}
                       </small>
+                      {item.uploadStatus === "FAILED" && (
+                        <div style={{ color: "#d32f2f", marginTop: "4px", fontSize: "0.85em", fontWeight: 600 }}>
+                          {item.uploadError}
+                        </div>
+                      )}
+                      {(item.uploadStatus === "UPLOADING" || item.uploadStatus === "VALIDATING") && (
+                        <div style={{ marginTop: "4px", display: "flex", alignItems: "center", gap: "8px" }}>
+                          <progress value={item.uploadProgress} max="100" style={{ flexGrow: 1 }} />
+                          <span style={{ fontSize: "0.8em" }}>{item.uploadStatus === "VALIDATING" ? "Starting" : `${item.uploadProgress}%`}</span>
+                        </div>
+                      )}
+                      {item.uploadStatus === "FINALIZING" && (
+                        <div style={{ marginTop: "4px", fontSize: "0.85em", color: "#0288d1" }}>
+                          Verifying...
+                        </div>
+                      )}
+                      {item.uploadStatus === "UPLOADED" && (
+                        <div style={{ marginTop: "4px", fontSize: "0.85em", color: "#388e3c", fontWeight: 600 }}>
+                          Uploaded ✓
+                        </div>
+                      )}
                     </button>
                     <button
                       type="button"
                       className="remove-file"
                       aria-label={`Remove File ${index + 1}`}
-                      disabled={files.length === 1 || busy || paymentBusy}
+                      disabled={paymentBusy}
                       onClick={() => void removeFile(index)}
+                      style={{ minWidth: "44px", minHeight: "44px", padding: 0, position: "absolute", right: 0, top: 0, bottom: 0, display: "flex", alignItems: "center", justifyContent: "center", border: "none", background: "none", fontSize: "1.5rem", color: "#64748b", cursor: "pointer" }}
                     >
                       ×
                     </button>
@@ -1236,11 +1346,7 @@ export function App() {
           <section className="step review">
             <span className="step-number">4</span>
             <h2>Review</h2>
-            {busy && (
-              <progress max={100} value={progress}>
-                {progress}%
-              </progress>
-            )}
+
             {status && <p role="status">{status}</p>}
             {config?.priorityPrinting?.enabled ? (
               <div

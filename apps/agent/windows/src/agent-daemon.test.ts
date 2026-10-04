@@ -168,14 +168,14 @@ describe("AgentDaemon", () => {
 
     // Advance 30 seconds
     await vi.advanceTimersByTimeAsync(30_000);
-    expect(mockClient.sendHeartbeat).toHaveBeenCalledTimes(2);
+    expect(mockClient.sendHeartbeat).toHaveBeenCalledTimes(3);
 
     daemon.stop();
     expect(daemon.isRunning()).toBe(false);
 
     // Should not pulse after stop
     await vi.advanceTimersByTimeAsync(30_000);
-    expect(mockClient.sendHeartbeat).toHaveBeenCalledTimes(2);
+    expect(mockClient.sendHeartbeat).toHaveBeenCalledTimes(3);
   });
 
   it("backs off idle polls but returns to responsive polling when work appears", async () => {
@@ -220,8 +220,8 @@ describe("AgentDaemon", () => {
       [5_000, 2],
       [10_000, 3],
       [20_000, 4],
-      [40_000, 5],
-      [70_000, 6],
+      [35_000, 5],
+      [50_000, 6],
     ] as const) {
       await vi.advanceTimersToNextTimerAsync();
       expect(client.sendHeartbeat).toHaveBeenCalledTimes(calls);

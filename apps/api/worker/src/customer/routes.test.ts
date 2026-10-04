@@ -126,9 +126,9 @@ function actions(): CustomerActions {
         jobCode: "PG-ABC234",
         customerName: "Rahul",
         paymentStatus: "PAYMENT_RECEIVED" as const,
-        orderStatus: "WAITING_TO_PRINT" as const,
-        statusLabel: "Waiting to print",
-        statusMessage: "Your paid print job is waiting for the shop printer.",
+        orderStatus: "QUEUED" as const,
+        statusLabel: "In queue",
+        statusMessage: "Your paid print job is in the printer queue.",
         submittedAt: "2026-09-26T00:00:00.000Z",
         paidAt: "2026-09-26T00:01:00.000Z",
         printSummary: {

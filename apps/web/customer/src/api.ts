@@ -135,9 +135,15 @@ export function uploadDirectly(
   uploadUrl: string,
   headers: Readonly<Record<string, string>>,
   onProgress: (percent: number) => void,
+  signal?: AbortSignal,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(new Error("UPLOAD_ABORTED"));
     const request = new XMLHttpRequest();
+    const abortHandler = () => request.abort();
+    if (signal) {
+      signal.addEventListener("abort", abortHandler);
+    }
     request.open("PUT", uploadUrl);
     for (const [name, value] of Object.entries(headers))
       request.setRequestHeader(name, value);
@@ -146,12 +152,18 @@ export function uploadDirectly(
         onProgress(Math.round((event.loaded / event.total) * 100));
     });
     request.addEventListener("load", () => {
+      if (signal) signal.removeEventListener("abort", abortHandler);
       if (request.status >= 200 && request.status < 300) resolve();
       else reject(new Error(`UPLOAD_HTTP_${request.status}`));
     });
-    request.addEventListener("error", () =>
-      reject(new Error("UPLOAD_NETWORK_ERROR")),
-    );
+    request.addEventListener("abort", () => {
+      if (signal) signal.removeEventListener("abort", abortHandler);
+      reject(new Error("UPLOAD_ABORTED"));
+    });
+    request.addEventListener("error", () => {
+      if (signal) signal.removeEventListener("abort", abortHandler);
+      reject(new Error("UPLOAD_NETWORK_ERROR"));
+    });
     request.send(file);
   });
 }

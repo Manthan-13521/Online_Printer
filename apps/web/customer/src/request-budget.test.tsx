@@ -128,11 +128,11 @@ describe("Customer App Request Budget & Polling Optimization", () => {
     expect(customerApi.tracking).toHaveBeenCalledTimes(1);
 
     // PRINTED is finishing, not ready; polling must continue.
-    await vi.advanceTimersByTimeAsync(15_000);
+    await vi.advanceTimersByTimeAsync(3_000);
     expect(customerApi.tracking).toHaveBeenCalledTimes(2);
 
     // COMPLETED is terminal; polling must then stop.
-    await vi.advanceTimersByTimeAsync(15_000);
+    await vi.advanceTimersByTimeAsync(3_000);
     expect(customerApi.tracking).toHaveBeenCalledTimes(3);
     await vi.advanceTimersByTimeAsync(60_000);
     expect(customerApi.tracking).toHaveBeenCalledTimes(3);
