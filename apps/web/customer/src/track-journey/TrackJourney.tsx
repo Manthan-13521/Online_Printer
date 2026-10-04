@@ -876,13 +876,14 @@ function FinishedScreen({
   };
 
   return (
-    <div className="fixed inset-0 bg-printgo-green text-printgo-paper flex flex-col items-center font-sans p-4 md:p-6 text-center overflow-hidden z-50">
-      {/* Top Bar with Clean Back Button */}
-      <div className="w-full flex items-center justify-between z-20 pt-2 shrink-0">
+    <div className="fixed inset-0 bg-printgo-green text-printgo-paper flex flex-col items-center justify-center font-sans p-4 md:p-6 text-center overflow-hidden z-50">
+      {/* Top Left Back Button */}
+      <div className="absolute top-0 left-0 pt-[max(env(safe-area-inset-top),1rem)] pl-4 z-30">
         <button
           type="button"
           onClick={handleBackAction}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 md:px-4 md:py-2 text-[15px] font-medium text-white transition-opacity active:opacity-60"
+          aria-label="Back"
+          className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-white/20 active:bg-white/40 text-white transition-opacity shadow-sm"
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
@@ -899,7 +900,7 @@ function FinishedScreen({
         initial={reduceMotion ? false : { opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         transition={{ duration: 0.8, ease: "easeOut" }}
-        className="flex flex-col items-center justify-center h-full relative z-10 w-full max-w-[85%] md:max-w-md mx-auto"
+        className="flex flex-col items-center justify-center relative z-10 w-full max-w-[85%] md:max-w-md mx-auto my-auto"
       >
         <div className="bg-white text-printgo-green rounded-full p-2.5 md:p-4 mb-2 md:mb-6 shadow-xl">
           <Check className="w-6 h-6 md:w-12 md:h-12" strokeWidth={4} />
@@ -925,8 +926,7 @@ function FinishedScreen({
           >
             {activeCode}
           </div>
-          <div className="h-px bg-white/20 w-full mb-3" />
-          <p className="text-white/80 text-xs mt-2 font-medium">Take a screenshot</p>
+          <div className="h-px bg-white/20 w-full" />
         </div>
       </motion.div>
     </div>
