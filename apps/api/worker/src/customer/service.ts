@@ -391,18 +391,21 @@ export class CustomerService {
         draft.orderId,
       );
       const totalAmountPaise = price.totalAmountPaise + addonAmountPaise;
-      await this.repository.saveQuote({
-        orderId: draft.orderId,
-        selectedPages: selection.normalized,
-        copies: input.copies,
-        paperSize: input.paperSize,
-        colorMode: input.colorMode,
-        sides: input.sides,
-        printingAmountPaise: price.printingAmountPaise,
-        serviceChargePaise: price.serviceChargePaise,
-        totalAmountPaise,
-        nowMs: this.now(),
-      });
+      if (
+        !(await this.repository.saveQuote({
+          orderId: draft.orderId,
+          selectedPages: selection.normalized,
+          copies: input.copies,
+          paperSize: input.paperSize,
+          colorMode: input.colorMode,
+          sides: input.sides,
+          printingAmountPaise: price.printingAmountPaise,
+          serviceChargePaise: price.serviceChargePaise,
+          totalAmountPaise,
+          nowMs: this.now(),
+        }))
+      )
+        throw new CustomerError("QUOTE_STATE_INVALID");
       return {
         normalizedSelectedPages: selection.normalized,
         selectedPageCount: selection.selectedPageCount,

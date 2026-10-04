@@ -4,26 +4,30 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { D1AgentRepository, toAdminTestPrintDetails } from "./repository.js";
 
-const schemaSql = readFileSync(
-  new URL(
-    "../../../../../database/migrations/0001_initial_schema.sql",
-    import.meta.url,
+const migrations = [
+  "0001_initial_schema.sql",
+  "0002_customer_draft_upload.sql",
+  "0003_payment_idempotency.sql",
+  "0004_customer_tracking.sql",
+  "0005_printer_test_commands.sql",
+  "0006_paid_print_execution.sql",
+  "0007_performance_optimization_indexes.sql",
+  "0008_production_printer_reliability.sql",
+  "0009_retention_and_pii_purge.sql",
+  "0010_efficiency_and_branding.sql",
+  "0011_retention_retry_schedule.sql",
+  "0012_multi_file_cleanup_and_app_branding.sql",
+  "0013_d1_usage_optimization.sql",
+  "0014_addon_services.sql",
+  "0015_phase3_priority_tracking_discounts.sql",
+  "0016_phase4_failure_recovery_and_pause.sql",
+  "0017_phase5_fallback_and_reprint_protection.sql",
+  "0018_phase6_history_cleanup.sql",
+].map((name) =>
+  readFileSync(
+    new URL(`../../../../../database/migrations/${name}`, import.meta.url),
+    "utf8",
   ),
-  "utf8",
-);
-const testPrintSql = readFileSync(
-  new URL(
-    "../../../../../database/migrations/0005_printer_test_commands.sql",
-    import.meta.url,
-  ),
-  "utf8",
-);
-const printerReliabilitySql = readFileSync(
-  new URL(
-    "../../../../../database/migrations/0008_production_printer_reliability.sql",
-    import.meta.url,
-  ),
-  "utf8",
 );
 
 class SqliteD1Statement {
@@ -89,13 +93,37 @@ describe("D1AgentRepository safety invariants", () => {
 
   beforeEach(() => {
     database = new DatabaseSync(":memory:");
-    database.exec(schemaSql);
-    database.exec(testPrintSql);
-    database.exec(printerReliabilitySql);
+    for (const migration of migrations) database.exec(migration);
     repository = new D1AgentRepository(asD1(database));
   });
 
   afterEach(() => database.close());
+
+  it("wakes print claiming when only a retry-pending order exists", async () => {
+    database
+      .prepare(
+        `INSERT INTO agents
+         (id, display_name, credential_hash, is_active, paired_at_ms,
+          last_heartbeat_at_ms, created_at_ms, updated_at_ms)
+         VALUES (?, 'Agent', 'retry_hash', 1, 1000, 1000, 1000, 1000)`,
+      )
+      .run("20000000-0000-4000-8000-000000000003");
+    database
+      .prepare(
+        `INSERT INTO orders
+         (id, customer_name, customer_phone, original_filename,
+          color_mode, paper_size, sides, status, created_at_ms, updated_at_ms)
+         VALUES (?, 'Customer', '0000000000', 'document.pdf',
+          'BW', 'A4', 'SINGLE', 'RETRY_PENDING', 1000, 1000)`,
+      )
+      .run("10000000-0000-4000-8000-000000000003");
+
+    const agent = await repository.findAgentByCredentialHash(
+      "retry_hash",
+      2_000,
+    );
+    expect(agent?.hasPrintWork).toBe(true);
+  });
 
   it("creates the Agent before attaching the pair-code foreign key and consumes once", async () => {
     database

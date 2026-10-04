@@ -565,7 +565,7 @@ export function App() {
             .finally(() => setPaymentBusy(false));
         },
       },
-      theme: { color: "#0e7490" },
+      theme: { color: "#16754A" },
     });
     instance.on("payment.failed", () => {
       setPaymentBusy(false);
@@ -628,25 +628,25 @@ export function App() {
 
   const shopHeader = (
     <header className="hero">
-      <div className="hero-top-row">
-        <div className="hero-branding">
+      <div className="hero-top-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+        <div className="hero-branding" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
           {config?.logoUrl ? (
             <img
               src={resolveCustomerApiUrl(config.logoUrl)}
               alt="Shop logo"
               style={{ maxWidth: 144, maxHeight: 80, objectFit: "contain" }}
             />
-          ) : null}
+          ) : (
+            <h1 style={{ margin: 0, fontSize: '1.75rem', color: '#123B4A' }}>{config?.shopName ?? "Online printing"}</h1>
+          )}
         </div>
         <button
           type="button"
-          className="pricing-info-button"
-          onClick={() => setShowPricingInfo(true)}
+          className="pricing-info-button" onClick={() => setShowPricingInfo(true)} style={{ width: "auto", marginTop: 0 }}
         >
           Pricing &amp; Info
         </button>
       </div>
-      <h1>{config?.shopName ?? "Online printing"}</h1>
       <p>
         {config?.customerNotice ??
           "Upload a PDF and review your print settings."}
@@ -685,17 +685,14 @@ export function App() {
             fontWeight: 600,
             textTransform: "uppercase",
             borderRadius: "6px",
-            border: "1px solid #94a3b8",
+            border: "1.5px solid #E1E5E2", outline: "none", color: "#123B4A",
           }}
         />
         <button
           type="submit"
           className="secondary-button"
           style={{
-            whiteSpace: "nowrap",
-            padding: "0.45rem 0.85rem",
-            fontSize: "0.85rem",
-            fontWeight: 700,
+            whiteSpace: "nowrap", padding: "0.45rem 0.85rem", fontSize: "0.85rem", fontWeight: 700, marginTop: 0, width: "auto",
           }}
         >
           Track
@@ -858,7 +855,7 @@ export function App() {
                       <span>
                         Orders above ₹{(rule.minSubtotalPaise / 100).toFixed(0)}
                       </span>
-                      <strong style={{ color: "#16a34a" }}>
+                      <strong style={{ color: "#16754A" }}>
                         {rule.discountPercent}% OFF
                       </strong>
                     </li>
@@ -1351,7 +1348,7 @@ export function App() {
                   </div>
                 ) : null}
                 {quote.discountAmountPaise && quote.discountAmountPaise > 0 ? (
-                  <div style={{ color: "#15803d" }}>
+                  <div style={{ color: "#16754A" }}>
                     <dt>
                       Discount ({quote.appliedDiscount?.discountPercent}% off)
                     </dt>
@@ -1382,7 +1379,7 @@ export function App() {
                       style={{
                         fontWeight: 700,
                         fontSize: "1.1rem",
-                        color: "#0f172a",
+                        color: "#123B4A",
                       }}
                     >
                       {formatInr(quote.totalAmountPaise)}
@@ -1432,8 +1429,8 @@ export function App() {
                   style={{
                     margin: "1rem 0",
                     padding: "1.25rem",
-                    backgroundColor: "#e0f2fe",
-                    border: "2px solid #0284c7",
+                    backgroundColor: "#F2F9F5",
+                    border: "2px solid #16754A",
                     borderRadius: "10px",
                     textAlign: "center",
                   }}
@@ -1444,7 +1441,7 @@ export function App() {
                       fontSize: "0.85rem",
                       textTransform: "uppercase",
                       letterSpacing: "1px",
-                      color: "#0369a1",
+                      color: "#16754A",
                       fontWeight: 700,
                     }}
                   >
@@ -1455,7 +1452,7 @@ export function App() {
                       display: "block",
                       fontSize: "2.75rem",
                       letterSpacing: "3px",
-                      color: "#0c4a6e",
+                      color: "#123B4A",
                       margin: "0.25rem 0",
                     }}
                   >
@@ -1465,7 +1462,7 @@ export function App() {
                     style={{
                       margin: 0,
                       fontSize: "0.85rem",
-                      color: "#0284c7",
+                      color: "#16754A",
                     }}
                   >
                     Show this code to shop staff to collect your order
@@ -1541,7 +1538,7 @@ export function App() {
         style={{
           marginTop: "2.5rem",
           paddingTop: "1.5rem",
-          borderTop: "1px solid #c9dcdf",
+          borderTop: "1px solid #E1E5E2",
           textAlign: "center",
         }}
       >

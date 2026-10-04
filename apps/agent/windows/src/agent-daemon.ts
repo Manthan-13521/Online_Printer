@@ -309,10 +309,11 @@ export class AgentDaemon {
       }
       if (heartbeatData.printJob?.type === "PAID_PRINT_JOB") {
         try {
-          await this.paidPrintExecutor.handle(
+          const printOutcome = await this.paidPrintExecutor.handle(
             this.credentials,
             heartbeatData.printJob,
           );
+          if (printOutcome === "PREFLIGHT_DEFERRED") this.nextDelayMs = 30_000;
         } catch (err: unknown) {
           const error = err instanceof Error ? err : new Error(String(err));
           this.log(

@@ -112,6 +112,13 @@ describe("Customer App Request Budget & Polling Optimization", () => {
         statusLabel: "Printed",
         statusMessage: "Your document has been printed.",
         fileRetentionStatus: "DELETION_PENDING",
+      })
+      .mockResolvedValueOnce({
+        ...baseTracking,
+        orderStatus: "COMPLETED",
+        statusLabel: "Ready",
+        statusMessage: "Your order is ready for pickup.",
+        fileRetentionStatus: "DELETION_PENDING",
       });
 
     render(<TrackingPage jobCode="PG-JOB123" />);
@@ -120,13 +127,15 @@ describe("Customer App Request Budget & Polling Optimization", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(customerApi.tracking).toHaveBeenCalledTimes(1);
 
-    // Advance 15 seconds: second poll returns terminal status PRINTED
+    // PRINTED is finishing, not ready; polling must continue.
     await vi.advanceTimersByTimeAsync(15_000);
     expect(customerApi.tracking).toHaveBeenCalledTimes(2);
 
-    // Advance another 60 seconds: ZERO subsequent polling calls!
+    // COMPLETED is terminal; polling must then stop.
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(customerApi.tracking).toHaveBeenCalledTimes(3);
     await vi.advanceTimersByTimeAsync(60_000);
-    expect(customerApi.tracking).toHaveBeenCalledTimes(2);
+    expect(customerApi.tracking).toHaveBeenCalledTimes(3);
   });
   it("terminal tracking stays idle after visibility resumes", async () => {
     vi.useFakeTimers();
@@ -135,9 +144,9 @@ describe("Customer App Request Budget & Polling Optimization", () => {
       jobCode: "PG-JOB123",
       customerName: "Synthetic",
       paymentStatus: "PAYMENT_RECEIVED",
-      orderStatus: "PRINTED",
-      statusLabel: "Printed",
-      statusMessage: "Printed",
+      orderStatus: "COMPLETED",
+      statusLabel: "Ready",
+      statusMessage: "Ready for pickup",
       submittedAt: "2026-09-26T00:00:00.000Z",
       paidAt: "2026-09-26T00:01:00.000Z",
       amountPaidPaise: 100,
@@ -168,7 +177,6 @@ describe("Customer App Request Budget & Polling Optimization", () => {
     });
     document.dispatchEvent(new Event("visibilitychange"));
     await vi.advanceTimersByTimeAsync(0);
-    // Currently receives a second call: effect closure still sees data=null.
     expect(customerApi.tracking).toHaveBeenCalledTimes(1);
   });
 });

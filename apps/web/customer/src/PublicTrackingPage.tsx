@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { PublicOrderTrackingData } from "@printgo/api-contract";
 import { customerApi } from "./api";
+import TrackJourney from "./track-journey/TrackJourney";
+import { getFigmaStageIndexPublic } from "./track-journey/TrackViewModel";
 
 export function PublicTrackingPage({
   pickupCode,
@@ -122,7 +124,7 @@ export function PublicTrackingPage({
           style={{ textAlign: "center", padding: "2.5rem 1.5rem" }}
         >
           <h2>Order Not Found</h2>
-          <p style={{ margin: "1rem 0", color: "#64748b" }}>{error}</p>
+          <p style={{ margin: "1rem 0", color: "#5E6A63" }}>{error}</p>
           <button
             type="button"
             className="primary-button"
@@ -138,179 +140,40 @@ export function PublicTrackingPage({
 
   if (!data) return null;
 
+  const stageIndex = getFigmaStageIndexPublic(data.status);
+
+  if (stageIndex < 0) {
+    return (
+      <main className="page-shell tracking-shell">
+        <section className="tracking-card" role="status">
+          <h1>{data.statusLabel}</h1>
+          <p>{data.statusMessage}</p>
+          <p>Pickup code {data.pickupCode}</p>
+        </section>
+      </main>
+    );
+  }
+
   return (
-    <main className="page-shell tracking-shell">
-      <header
-        className="hero"
-        style={{ textAlign: "center", paddingBottom: "0.5rem" }}
-      >
-        <p className="eyebrow" style={{ letterSpacing: "1.5px" }}>
-          Live Order Tracking
+    <TrackJourney
+      currentStageIndex={stageIndex}
+      orderDetails={{
+        pickupCode: data.pickupCode,
+      }}
+    >
+      <h2>{data.statusLabel}</h2>
+      <p>{data.statusMessage}</p>
+      <p>Pickup code {data.pickupCode}</p>
+      {data.totalFiles > 1 && (
+        <p>
+          {data.completedFiles} of {data.totalFiles} files printed
         </p>
-        <div style={{ margin: "0.5rem 0 1rem" }}>
-          <span
-            style={{
-              fontSize: "0.9rem",
-              color: "#64748b",
-              textTransform: "uppercase",
-              letterSpacing: "1px",
-            }}
-          >
-            Pickup Code
-          </span>
-          <h1
-            style={{
-              fontSize: "3rem",
-              letterSpacing: "3px",
-              color: "#0e7490",
-              margin: "0.2rem 0",
-            }}
-          >
-            {data.pickupCode}
-          </h1>
-        </div>
-      </header>
-
-      <section
-        className="step"
-        style={{
-          borderLeft: "6px solid #0e7490",
-          backgroundColor: "#f8fafc",
-          marginBottom: "1rem",
-        }}
-        aria-live="polite"
-      >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            flexWrap: "wrap",
-            gap: "0.5rem",
-          }}
-        >
-          <div>
-            <span
-              className="muted"
-              style={{
-                fontSize: "0.85rem",
-                textTransform: "uppercase",
-                fontWeight: 700,
-              }}
-            >
-              Current Status
-            </span>
-            <h2
-              style={{
-                display: "block",
-                fontSize: "1.75rem",
-                margin: "0.25rem 0",
-                color: "#0f172a",
-              }}
-            >
-              {data.statusLabel}
-            </h2>
-            <p
-              style={{
-                margin: "0.25rem 0 0",
-                color: "#475569",
-                fontSize: "0.95rem",
-              }}
-            >
-              {data.statusMessage}
-            </p>
-          </div>
-          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-            {data.isPriority ? (
-              <span
-                style={{
-                  padding: "0.25rem 0.65rem",
-                  borderRadius: "999px",
-                  backgroundColor: "#fef3c7",
-                  color: "#92400e",
-                  fontWeight: 700,
-                  fontSize: "0.85rem",
-                }}
-              >
-                ⚡ Priority Queue
-              </span>
-            ) : null}
-            <span
-              style={{
-                padding: "0.25rem 0.65rem",
-                borderRadius: "999px",
-                backgroundColor: "#e2e8f0",
-                color: "#334155",
-                fontWeight: 600,
-                fontSize: "0.85rem",
-              }}
-            >
-              {data.status === "READY_FOR_PICKUP" ? "Ready" : "In Progress"}
-            </span>
-          </div>
-        </div>
-
-        {data.totalFiles > 1 ? (
-          <div
-            style={{
-              marginTop: "1rem",
-              padding: "0.75rem",
-              backgroundColor: "#ffffff",
-              borderRadius: "8px",
-              border: "1px solid #e2e8f0",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                fontSize: "0.9rem",
-                marginBottom: "0.35rem",
-              }}
-            >
-              <span>Multi-File Progress</span>
-              <strong>
-                {data.completedFiles} of {data.totalFiles} files completed
-              </strong>
-            </div>
-            <div
-              style={{
-                width: "100%",
-                height: "8px",
-                backgroundColor: "#e2e8f0",
-                borderRadius: "4px",
-                overflow: "hidden",
-              }}
-            >
-              <div
-                style={{
-                  width: `${Math.round((data.completedFiles / data.totalFiles) * 100)}%`,
-                  height: "100%",
-                  backgroundColor: "#0e7490",
-                  transition: "width 0.3s ease",
-                }}
-              />
-            </div>
-          </div>
-        ) : null}
-      </section>
-
-      <section
-        className="step"
-        style={{ textAlign: "center", padding: "1.5rem" }}
-      >
-        <p
-          className="muted"
-          style={{ fontSize: "0.85rem", margin: "0 0 1rem" }}
-        >
-          🔒 Privacy Notice: For customer privacy, names, uploaded files, and
-          pricing amounts are not shown on public tracking. Completed print
-          records are permanently deleted 2 hours after finishing.
+      )}
+      {error && (
+        <p role="alert">
+          Status could not be refreshed. Showing the last known update.
         </p>
-        <button type="button" className="secondary-button" onClick={handleBack}>
-          Track Another Order or Upload New
-        </button>
-      </section>
-    </main>
+      )}
+    </TrackJourney>
   );
 }

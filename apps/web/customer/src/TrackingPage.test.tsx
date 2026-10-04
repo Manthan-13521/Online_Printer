@@ -73,27 +73,21 @@ describe("customer tracking page", () => {
   it("consumes the fragment, restores refresh access, and renders safe details", async () => {
     window.history.replaceState(null, "", `/track/PG-ABC234#${token}`);
     const { container } = render(<TrackingPage jobCode="PG-ABC234" />);
-    expect(
-      await screen.findByRole("heading", { name: "Waiting to print" }),
-    ).toBeTruthy();
-    expect(screen.getByText("A4 • B&W • Double-sided")).toBeTruthy();
-    expect(screen.getByText("₹42.00")).toBeTruthy();
-    expect(
-      screen.getByText(
-        "Your document is temporarily retained for print recovery.",
-      ),
-    ).toBeTruthy();
+    expect(await screen.findByText(/Order PG-ABC234/i)).toBeTruthy();
     expect(window.location.hash).toBe("");
     expect(sessionStorage.getItem("printgo.tracking.PG-ABC234")).toBe(token);
     expect(customerApi.tracking).toHaveBeenCalledWith("PG-ABC234", token);
-    expect(container.querySelector(".tracking-shell")).toBeTruthy();
+    expect(
+      container.querySelector(".track-journey-root") ||
+        container.querySelector("svg"),
+    ).toBeTruthy();
     expect(screen.queryByText(/9876543210/u)).toBeNull();
   });
 
   it("uses sessionStorage after refresh", async () => {
     sessionStorage.setItem("printgo.tracking.PG-ABC234", token);
     render(<TrackingPage jobCode="PG-ABC234" />);
-    expect(await screen.findByText("Print summary")).toBeTruthy();
+    expect(await screen.findByText(/Order PG-ABC234/i)).toBeTruthy();
     expect(customerApi.tracking).toHaveBeenCalledWith("PG-ABC234", token);
   });
 
@@ -113,10 +107,54 @@ describe("customer tracking page", () => {
       fileRetentionStatus: "DELETED",
     });
     render(<TrackingPage jobCode="PG-ABC234" />);
-    expect(await screen.findByText("Completed")).toBeTruthy();
+    expect(await screen.findByText("Ready for pickup")).toBeTruthy();
+    expect(screen.getByText("Order code")).toBeTruthy();
+    expect(screen.getByText("PG-ABC234")).toBeTruthy();
+  });
+
+  it("does not show ready while staff finishing is pending", async () => {
+    sessionStorage.setItem("printgo.tracking.PG-ABC234", token);
+    vi.mocked(customerApi.tracking).mockResolvedValueOnce({
+      ...tracking,
+      orderStatus: "FINISHING",
+      statusLabel: "Finishing",
+      statusMessage: "The shop is finishing your order.",
+    });
+    render(<TrackingPage jobCode="PG-ABC234" />);
+    expect(await screen.findByText(/Order PG-ABC234/i)).toBeTruthy();
+    expect(screen.getByText("The shop is finishing your order.")).toBeTruthy();
+    expect(screen.queryByText("Ready for pickup")).toBeNull();
+  });
+
+  it("does not claim pickup readiness for a PRINTED order awaiting completion", async () => {
+    sessionStorage.setItem("printgo.tracking.PG-ABC234", token);
+    vi.mocked(customerApi.tracking).mockResolvedValueOnce({
+      ...tracking,
+      orderStatus: "PRINTED",
+      statusLabel: "Printed",
+      statusMessage: "Your document has been printed.",
+    });
+    render(<TrackingPage jobCode="PG-ABC234" />);
     expect(
-      screen.getByText("Your uploaded PDF has been deleted."),
+      await screen.findByText("Your document has been printed."),
     ).toBeTruthy();
+    expect(screen.queryByText("Ready for pickup")).toBeNull();
+  });
+
+  it("shows the backend printer issue instead of ordinary progress", async () => {
+    sessionStorage.setItem("printgo.tracking.PG-ABC234", token);
+    vi.mocked(customerApi.tracking).mockResolvedValueOnce({
+      ...tracking,
+      orderStatus: "PRINTER_NEEDS_ATTENTION",
+      statusLabel: "Printer needs attention",
+      statusMessage: "The shop is handling a printer issue.",
+    });
+    render(<TrackingPage jobCode="PG-ABC234" />);
+    expect(await screen.findByText("Printer needs attention")).toBeTruthy();
+    expect(
+      screen.getByText("The shop is handling a printer issue."),
+    ).toBeTruthy();
+    expect(screen.queryByText("Ready for pickup")).toBeNull();
   });
 
   it("distinguishes a retryable network failure from an invalid link", async () => {

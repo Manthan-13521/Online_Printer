@@ -130,7 +130,7 @@ export interface CustomerRepository {
     serviceChargePaise: number;
     totalAmountPaise: number;
     nowMs: number;
-  }): Promise<void>;
+  }): Promise<boolean>;
   saveOrderQuote(input: {
     tokenHash: string;
     files: Array<{
@@ -965,13 +965,16 @@ export class D1CustomerRepository implements CustomerRepository {
 
   async saveQuote(
     input: Parameters<CustomerRepository["saveQuote"]>[0],
-  ): Promise<void> {
-    await this.db
+  ): Promise<boolean> {
+    const result = await this.db
       .prepare(
         `UPDATE orders SET selected_pages = ?, copies = ?, paper_size = ?,
       color_mode = ?, sides = ?, printing_amount_paise = ?, service_charge_paise = ?,
       total_amount_paise = ?, status = 'PAYMENT_PENDING', updated_at_ms = ?
       WHERE id = ? AND status IN ('UPLOADED', 'PAYMENT_PENDING')
+        AND cleanup_state = 'ACTIVE'
+        AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.order_id = orders.id
+          AND p.status IN ('CREATED', 'PENDING', 'PAID'))
         AND (status <> 'PAYMENT_PENDING' OR selected_pages IS NOT ? OR copies IS NOT ? OR paper_size IS NOT ?
           OR color_mode IS NOT ? OR sides IS NOT ? OR printing_amount_paise IS NOT ?
           OR service_charge_paise IS NOT ? OR total_amount_paise IS NOT ?)`,
@@ -997,6 +1000,33 @@ export class D1CustomerRepository implements CustomerRepository {
         input.totalAmountPaise,
       )
       .run();
+    if (result.meta.changes === 1) return true;
+    // Preserve an unchanged quote without writing, but never accept one after
+    // a payment attempt has reserved the order's commercial snapshot.
+    return Boolean(
+      await this.db
+        .prepare(
+          `SELECT 1 FROM orders WHERE id = ? AND status = 'PAYMENT_PENDING'
+            AND cleanup_state = 'ACTIVE'
+            AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.order_id = orders.id
+              AND p.status IN ('CREATED', 'PENDING', 'PAID'))
+            AND selected_pages IS ? AND copies IS ? AND paper_size IS ?
+            AND color_mode IS ? AND sides IS ? AND printing_amount_paise IS ?
+            AND service_charge_paise IS ? AND total_amount_paise IS ?`,
+        )
+        .bind(
+          input.orderId,
+          input.selectedPages,
+          input.copies,
+          input.paperSize,
+          input.colorMode,
+          input.sides,
+          input.printingAmountPaise,
+          input.serviceChargePaise,
+          input.totalAmountPaise,
+        )
+        .first(),
+    );
   }
 
   async saveOrderQuote(

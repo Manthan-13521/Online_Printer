@@ -48,6 +48,11 @@ const UNRESOLVED_COMPLETED = `(
   )
 )`;
 
+const PAID_NONTERMINAL = `(
+  o.status <> 'COMPLETED' AND EXISTS (SELECT 1 FROM payments paid_payment
+    WHERE paid_payment.order_id = o.id AND paid_payment.status = 'PAID')
+)`;
+
 function safetyGuard(scope: CleanupScope, nowMs?: number): string {
   const activePayment =
     nowMs !== undefined
@@ -58,7 +63,7 @@ function safetyGuard(scope: CleanupScope, nowMs?: number): string {
           WHERE active_payment.order_id = o.id AND active_payment.status IN ('CREATED','PENDING'))`;
 
   return scope === "ALL_PRINT_DATA"
-    ? `NOT (${ACTIVE_PHYSICAL}) AND NOT (${activePayment})`
+    ? `NOT (${ACTIVE_PHYSICAL}) AND NOT (${activePayment}) AND NOT (${PAID_NONTERMINAL})`
     : `NOT (${ACTIVE_PHYSICAL}) AND NOT (${activePayment}) AND NOT (${UNRESOLVED_COMPLETED})`;
 }
 
@@ -511,7 +516,11 @@ export class D1CleanupRepository {
     const where = scopeWhere(scope);
     const guard = safetyGuard(scope, nowMs);
     const remainingGuard =
-      scope === "ALL_PRINT_DATA" || scope === "ALL_COMPLETED" ? "1 = 1" : guard;
+      scope === "ALL_PRINT_DATA"
+        ? `NOT (${PAID_NONTERMINAL})`
+        : scope === "ALL_COMPLETED"
+          ? "1 = 1"
+          : guard;
     const remaining = await this.db
       .prepare(
         `SELECT 1 remaining FROM orders o

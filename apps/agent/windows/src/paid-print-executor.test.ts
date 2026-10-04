@@ -126,6 +126,30 @@ async function journal() {
 }
 
 describe("PaidPrintExecutor duplicate prevention", () => {
+  it("waits before submission while offline, then uses the same pending step when online", async () => {
+    const api = client();
+    const printer = adapter();
+    vi.mocked(printer.getStatus)
+      .mockResolvedValueOnce({
+        availability: "OFFLINE",
+        message: "Printer is offline",
+      })
+      .mockResolvedValueOnce({ availability: "ONLINE" });
+    const store = await journal();
+    const executor = new PaidPrintExecutor(api, printer, store);
+
+    await executor.handle(credentials, job("IDENTIFICATION_SHEET"));
+
+    expect(api.startPrintStep).not.toHaveBeenCalled();
+    expect(api.reportPrintStep).not.toHaveBeenCalled();
+    expect(printer.submitPdfJob).not.toHaveBeenCalled();
+    expect(await store.load()).toBeNull();
+
+    await executor.handle(credentials, job("IDENTIFICATION_SHEET"));
+    expect(api.startPrintStep).toHaveBeenCalledTimes(1);
+    expect(printer.submitPdfJob).toHaveBeenCalledTimes(1);
+  });
+
   it("enforces exact paid document settings and all 10 copies in one submission", async () => {
     const bytes = generateIdentificationSheetBuffer(
       job().identificationSheet!,

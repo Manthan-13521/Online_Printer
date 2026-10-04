@@ -52,11 +52,11 @@ h1 {
   line-height: 1.15;
 }
 h2 {
-  color: #1e293b;
+  color: #123B4A;
   font-size: 1.08rem;
 }
 .muted {
-  color: #64748b;
+  color: #5E6A63;
   line-height: 1.55;
 }
 .login-page,
@@ -94,7 +94,7 @@ h2 {
 }
 .portal-name {
   margin: 0.1rem 0 2rem;
-  color: #64748b;
+  color: #5E6A63;
   font-size: 0.9rem;
 }
 form {
@@ -201,7 +201,7 @@ button:disabled {
 }
 .loading-screen {
   align-content: center;
-  color: #475569;
+  color: #5E6A63;
 }
 .spinner {
   width: 2rem;
@@ -282,13 +282,13 @@ button:disabled {
   display: block;
   padding: 0.72rem 0.85rem;
   border-radius: 0.55rem;
-  color: #475569;
+  color: #5E6A63;
   font-size: 0.94rem;
   font-weight: 650;
   text-decoration: none;
 }
 .sidebar a:hover {
-  background: #f1f5f9;
+  background: #FFFFFF;
 }
 .sidebar a[aria-current="page"] {
   background: #e8efff;
@@ -315,7 +315,7 @@ button:disabled {
 }
 .welcome p:last-child,
 .page-intro {
-  color: #64748b;
+  color: #5E6A63;
   font-size: 1.02rem;
   line-height: 1.7;
 }
@@ -346,7 +346,7 @@ dl {
   margin-bottom: 0;
 }
 dt {
-  color: #64748b;
+  color: #5E6A63;
 }
 dd {
   margin: 0;
@@ -370,7 +370,7 @@ dd {
 }
 .field-help {
   margin: 0.1rem 0 0;
-  color: #64748b;
+  color: #5E6A63;
   font-size: 0.82rem;
   line-height: 1.45;
 }
@@ -431,7 +431,7 @@ legend {
   z-index: 10;
   margin-top: 0.75rem;
   padding: 0.8rem 1rem;
-  border: 1px solid #cbd5e1;
+  border: 1px solid #E1E5E2;
   border-radius: 0.8rem;
   background: rgb(255 255 255 / 96%);
   box-shadow: 0 0.8rem 2rem rgb(30 41 59 / 12%);
@@ -466,11 +466,11 @@ legend {
   margin-top: 0;
   margin-bottom: 0.5rem;
   font-size: 1.25rem;
-  color: #0f172a;
+  color: #123B4A;
 }
 .confirm-dialog p {
   margin: 0.35rem 0;
-  color: #475569;
+  color: #5E6A63;
   font-size: 0.95rem;
   line-height: 1.45;
 }
@@ -530,9 +530,9 @@ legend {
 }
 .settings-stat-grid .stat-card {
   padding: 0.75rem 1rem;
-  border: 1px solid #e2e8f0;
+  border: 1px solid #E1E5E2;
   border-radius: 0.55rem;
-  background: #f8fafc;
+  background: #FFFFFF;
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
@@ -540,7 +540,7 @@ legend {
 .settings-stat-grid dt {
   font-size: 0.75rem;
   font-weight: 600;
-  color: #64748b;
+  color: #5E6A63;
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -548,11 +548,11 @@ legend {
   margin: 0;
   font-size: 0.95rem;
   font-weight: 700;
-  color: #0f172a;
+  color: #123B4A;
   word-break: break-word;
 }
 .page-loading {
-  color: #475569;
+  color: #5E6A63;
 }
 .pricing-section {
   display: grid;
@@ -565,9 +565,9 @@ legend {
 }
 .rate-group {
   padding: 1rem;
-  border: 1px solid #e2e8f0;
+  border: 1px solid #E1E5E2;
   border-radius: 0.7rem;
-  background: #f8fafc;
+  background: #FFFFFF;
 }
 .rate-group h3 {
   margin: 0 0 0.7rem;
@@ -578,7 +578,7 @@ legend {
   grid-template-columns: minmax(7rem, 1fr) minmax(11rem, 1.5fr) auto;
   gap: 0.75rem;
   padding: 0.75rem 0;
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid #E1E5E2;
 }
 .rate-row > label {
   margin-top: 0;
@@ -588,7 +588,7 @@ legend {
   grid-template-columns: auto minmax(4rem, 1fr) auto;
   align-items: center;
   gap: 0.35rem;
-  color: #64748b;
+  color: #5E6A63;
   font-size: 0.82rem;
 }
 .money-input input {
@@ -599,7 +599,7 @@ legend {
 }
 .charge-row {
   padding: 0.85rem 0;
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid #E1E5E2;
 }
 .charge-row .money-input {
   width: min(14rem, 45%);
@@ -643,7 +643,7 @@ legend {
   min-width: 0;
 }
 .live-order-details dt {
-  color: #64748b;
+  color: #5E6A63;
   font-size: 0.78rem;
   font-weight: 700;
 }
@@ -736,8 +736,8 @@ legend {
 
 /* ── Add-on Services ──────────────────────────────────────────────────────── */
 .addon-service-form {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  background: #FFFFFF;
+  border: 1px solid #E1E5E2;
   border-radius: 0.75rem;
   padding: 1.25rem;
   margin-bottom: 1.25rem;
@@ -748,7 +748,7 @@ legend {
 .addon-service-form h3 {
   margin: 0;
   font-size: 1rem;
-  color: #1e293b;
+  color: #123B4A;
 }
 .radio-group {
   display: flex;
@@ -780,7 +780,7 @@ legend {
   gap: 1rem;
   padding: 0.85rem 1rem;
   background: #fff;
-  border: 1px solid #e2e8f0;
+  border: 1px solid #E1E5E2;
   border-radius: 0.5rem;
 }
 .addon-service-info {
@@ -809,7 +809,7 @@ legend {
   margin: 0;
 }
 .history-details dt {
-  color: #475569;
+  color: #5E6A63;
 }
 .history-details dd {
   margin: 0;
@@ -822,7 +822,7 @@ legend {
 }
 .manual-order-card {
   background: #fff;
-  border: 1px solid #e2e8f0;
+  border: 1px solid #E1E5E2;
   border-radius: 0.75rem;
   padding: 1.25rem;
   display: flex;
@@ -871,8 +871,8 @@ legend {
   gap: 0.5rem;
 }
 .addon-badge {
-  background: #f1f5f9;
-  border: 1px solid #cbd5e1;
+  background: #FFFFFF;
+  border: 1px solid #E1E5E2;
   padding: 0.2rem 0.5rem;
   border-radius: 0.35rem;
   font-size: 0.825rem;
@@ -902,14 +902,14 @@ legend {
 }
 .manual-order-amounts strong {
   font-size: 1.05rem;
-  color: #0f172a;
+  color: #123B4A;
 }
 .pickup-charge-form {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
   padding: 0.75rem;
-  background: #f8fafc;
+  background: #FFFFFF;
   border-radius: 0.5rem;
 }
 .manual-order-actions {
@@ -928,17 +928,17 @@ legend {
   gap: 1rem;
   padding: 0.85rem 1.15rem;
   background: #ffffff;
-  border: 1px solid #e2e8f0;
+  border: 1px solid #E1E5E2;
   border-radius: 0.75rem;
   margin-top: 1.25rem;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 .pagination-info {
   font-size: 0.875rem;
-  color: #475569;
+  color: #5E6A63;
 }
 .pagination-info strong {
-  color: #0f172a;
+  color: #123B4A;
   font-weight: 600;
 }
 .pagination-controls {
@@ -955,8 +955,8 @@ legend {
   font-size: 0.85rem;
   font-weight: 600;
   color: #1e40af;
-  background: #f8fafc;
-  border: 1px solid #cbd5e1;
+  background: #FFFFFF;
+  border: 1px solid #E1E5E2;
   border-radius: 0.4rem;
   cursor: pointer;
   transition: all 0.15s ease-in-out;
@@ -968,7 +968,7 @@ legend {
 .pagination-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
-  border-color: #e2e8f0;
+  border-color: #E1E5E2;
   color: #94a3b8;
 }
 .pagination-pages {
@@ -987,13 +987,13 @@ legend {
   font-weight: 600;
   color: #334155;
   background: #ffffff;
-  border: 1px solid #cbd5e1;
+  border: 1px solid #E1E5E2;
   border-radius: 0.4rem;
   cursor: pointer;
   transition: all 0.15s ease-in-out;
 }
 .pagination-page-btn:hover:not(:disabled):not(.active) {
-  background: #f1f5f9;
+  background: #FFFFFF;
   border-color: #94a3b8;
 }
 .pagination-page-btn.active {

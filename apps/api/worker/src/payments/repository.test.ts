@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { describe, expect, it, vi } from "vitest";
 
+import { D1CustomerRepository } from "../customer/repository";
 import { D1PaymentRepository } from "./repository";
 
 class SqliteD1Statement {
@@ -269,6 +270,60 @@ describe("D1PaymentRepository webhook claim & stale event recovery", () => {
         discountAmountPaise: 500,
       }),
     ).toBe(false);
+  });
+
+  it("locks the legacy customer quote after payment reservation", async () => {
+    const db = createRealDb();
+    const customer = new D1CustomerRepository(db);
+    const orderId = "50000000-0000-4000-8000-000000000098";
+    await db
+      .prepare(
+        `INSERT INTO orders (id, customer_name, customer_phone, original_filename,
+          paper_size, color_mode, sides, printing_amount_paise, service_charge_paise,
+          total_amount_paise, status, created_at_ms, updated_at_ms)
+         VALUES (?, 'Test', '9999999999', 'test.pdf', 'A4', 'BW', 'SINGLE',
+           2000, 100, 2100, 'UPLOADED', 1000, 1000)`,
+      )
+      .bind(orderId)
+      .run();
+    const quote = {
+      orderId,
+      selectedPages: "ALL",
+      copies: 1,
+      paperSize: "A4" as const,
+      colorMode: "BW" as const,
+      sides: "SINGLE" as const,
+      printingAmountPaise: 2000,
+      serviceChargePaise: 100,
+      totalAmountPaise: 2100,
+      nowMs: 1100,
+    };
+    expect(await customer.saveQuote(quote)).toBe(true);
+    expect(await customer.saveQuote(quote)).toBe(true);
+    await db
+      .prepare(
+        `INSERT INTO payments (id, order_id, provider_order_id, amount_paise,
+          currency, status, created_at_ms, updated_at_ms)
+         VALUES ('60000000-0000-4000-8000-000000000098', ?, 'local_reserved',
+           2100, 'INR', 'CREATED', 1100, 1100)`,
+      )
+      .bind(orderId)
+      .run();
+    expect(
+      await customer.saveQuote({
+        ...quote,
+        copies: 2,
+        printingAmountPaise: 4000,
+        totalAmountPaise: 4100,
+        nowMs: 1200,
+      }),
+    ).toBe(false);
+    expect(
+      await db
+        .prepare(`SELECT copies, total_amount_paise FROM orders WHERE id = ?`)
+        .bind(orderId)
+        .first(),
+    ).toEqual({ copies: 1, total_amount_paise: 2100 });
   });
 
   it("claims a fresh event and refuses concurrent fresh re-claims", async () => {

@@ -83,7 +83,7 @@ function repository(
     deleteFile: vi.fn(() => Promise.resolve(false)),
     markUploadValidated: vi.fn(() => Promise.resolve()),
     markValidationFailure: vi.fn(() => Promise.resolve()),
-    saveQuote: vi.fn(() => Promise.resolve()),
+    saveQuote: vi.fn(() => Promise.resolve(true)),
     saveOrderQuote: vi.fn(() => Promise.resolve(false)),
     getPricingRulesAndPolicy: vi.fn(() =>
       Promise.resolve({
@@ -262,6 +262,20 @@ describe("CustomerService", () => {
     expect(quote.normalizedSelectedPages).toBe("1-2,5-6");
     expect(quote.selectedPageCount).toBe(4);
     expect(quote.printingAmountPaise).toBe(1600);
+  });
+
+  it("rejects a legacy quote when the payment snapshot is locked", async () => {
+    const repo = repository();
+    vi.mocked(repo.saveQuote).mockResolvedValue(false);
+    await expect(
+      service(repo).quote("token", {
+        selectedPages: "1",
+        copies: 2,
+        paperSize: "A4",
+        colorMode: "BW",
+        sides: "SINGLE",
+      }),
+    ).rejects.toEqual(expect.objectContaining({ code: "QUOTE_STATE_INVALID" }));
   });
 
   it("fails closed when a token does not resolve to its own draft", async () => {

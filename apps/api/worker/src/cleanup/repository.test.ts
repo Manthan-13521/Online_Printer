@@ -196,11 +196,106 @@ describe("D1 cleanup repository", () => {
     });
   });
 
-  it("includes inactive paid queued work in Free All", async () => {
+  it("includes queued work without a paid payment in Free All", async () => {
     const orderId = "40000000-0000-4000-8000-000000000001";
     seedOrder(orderId, "QUEUED");
     const preview = await repository.preview("ALL_PRINT_DATA", 2_000);
     expect(preview).toMatchObject({ orders: 1, files: 1, active: 0 });
+  });
+
+  it("keeps paid nonterminal work while Free All removes unpaid and completed controls", async () => {
+    const paidId = "41000000-0000-4000-8000-000000000001";
+    const unpaidId = "42000000-0000-4000-8000-000000000001";
+    const completedId = "43000000-0000-4000-8000-000000000001";
+    const adminId = "44000000-0000-4000-8000-000000000001";
+    seedOrder(paidId, "QUEUED");
+    seedOrder(unpaidId, "UPLOADED");
+    seedOrder(completedId, "UPLOADED");
+    db.prepare(
+      `INSERT INTO payments (id, order_id, provider, provider_order_id,
+       provider_payment_id, amount_paise, currency, status, verified_at_ms,
+       created_at_ms, updated_at_ms)
+       VALUES (?, ?, 'RAZORPAY', 'rp_paid_queued', 'pay_queued', 100, 'INR', 'PAID', 0, 0, 0)`,
+    ).run("45000000-0000-4000-8000-000000000001", paidId);
+    db.prepare(
+      "UPDATE orders SET status = 'COMPLETED', completed_at_ms = 1000, purge_at_ms = 7201000 WHERE id = ?",
+    ).run(completedId);
+    db.prepare(
+      "UPDATE order_files SET print_status = 'PRINTED' WHERE order_id = ?",
+    ).run(completedId);
+    db.prepare(
+      `INSERT INTO admins (id, login_identifier, password_hash, created_at_ms, updated_at_ms)
+       VALUES (?, 'owner', 'hash', 0, 0)`,
+    ).run(adminId);
+
+    expect(await repository.preview("ALL_PRINT_DATA", 2_000)).toMatchObject({
+      orders: 2,
+      active: 1,
+    });
+    const deleted: string[][] = [];
+    const service = new CleanupService(
+      repository,
+      {
+        delete: (keys: string[]) => {
+          deleted.push(keys);
+          return Promise.resolve();
+        },
+      } as unknown as R2Bucket,
+      () => 2_000,
+    );
+    const run = await service.requestAdminRun(
+      "ALL_PRINT_DATA",
+      adminId,
+      "FREE ALL",
+    );
+    expect(run.status).toBe("COMPLETED");
+    expect(run.deletedOrders).toBe(2);
+    expect(deleted).toHaveLength(2);
+    expect(deleted.flat().some((key) => key.includes(paidId))).toBe(false);
+    expect(
+      db.prepare("SELECT id FROM orders WHERE id = ?").get(paidId),
+    ).toBeDefined();
+    expect(
+      db.prepare("SELECT id FROM orders WHERE id = ?").get(unpaidId),
+    ).toBeUndefined();
+    expect(
+      db.prepare("SELECT id FROM orders WHERE id = ?").get(completedId),
+    ).toBeUndefined();
+  });
+
+  it("finishes daily Free All without deleting a paid queued order", async () => {
+    const orderId = "46000000-0000-4000-8000-000000000001";
+    seedOrder(orderId, "QUEUED");
+    db.prepare(
+      `INSERT INTO payments (id, order_id, provider, provider_order_id,
+       provider_payment_id, amount_paise, currency, status, verified_at_ms,
+       created_at_ms, updated_at_ms)
+       VALUES (?, ?, 'RAZORPAY', 'rp_daily_paid', 'pay_daily', 100, 'INR', 'PAID', 0, 0, 0)`,
+    ).run("47000000-0000-4000-8000-000000000001", orderId);
+    db.prepare(
+      `UPDATE installation SET automatic_daily_cleanup_enabled = 1,
+       next_daily_cleanup_at_ms = 2000 WHERE id = 1`,
+    ).run();
+    const deleted: string[][] = [];
+    const service = new CleanupService(
+      repository,
+      {
+        delete: (keys: string[]) => {
+          deleted.push(keys);
+          return Promise.resolve();
+        },
+      } as unknown as R2Bucket,
+      () => 2_000,
+    );
+
+    const run = await service.runScheduled();
+    expect(run?.scope).toBe("ALL_PRINT_DATA");
+    expect(run?.status).toBe("COMPLETED");
+    expect(run?.deletedOrders).toBe(0);
+    expect(deleted).toHaveLength(0);
+    expect(
+      db.prepare("SELECT id FROM orders WHERE id = ?").get(orderId),
+    ).toBeDefined();
   });
 
   it("enforces the ten-minute unpaid deadline and deletes only stored object keys", async () => {

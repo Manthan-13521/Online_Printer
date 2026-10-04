@@ -30,7 +30,7 @@ export class PaidPrintExecutor {
   async handle(
     credentials: AgentCredentials,
     job: AgentPrintJob,
-  ): Promise<void> {
+  ): Promise<"PREFLIGHT_DEFERRED" | void> {
     const timing = (event: string, atMs = Date.now()) =>
       this.log(
         `PRINT_TIMING step=${job.currentStep.stepId} event=${event} atMs=${atMs}`,
@@ -106,22 +106,9 @@ export class PaidPrintExecutor {
       );
       if (printerStatus && printerStatus.availability !== "ONLINE") {
         this.log(
-          `Printer ${job.windowsPrinterName} is not online (${printerStatus.availability}: ${printerStatus.message ?? "Not ready"}). Reporting step as BLOCKED.`,
+          `Printer ${job.windowsPrinterName} is not online (${printerStatus.availability}: ${printerStatus.message ?? "Not ready"}). Waiting before print submission.`,
         );
-        await this.client.reportPrintStep(
-          credentials.serverUrl,
-          credentials.agentId,
-          credentials.agentSecret,
-          job,
-          {
-            status: "BLOCKED",
-            failureCode: "PRINTER_UNAVAILABLE",
-            failureDetail:
-              printerStatus.message ??
-              `Printer is currently ${printerStatus.availability}.`,
-          },
-        );
-        return;
+        return "PREFLIGHT_DEFERRED";
       }
     }
 

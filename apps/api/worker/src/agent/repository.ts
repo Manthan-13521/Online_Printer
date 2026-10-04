@@ -335,7 +335,7 @@ export class D1AgentRepository implements AgentRepository {
           EXISTS(SELECT 1 FROM printer_test_commands c WHERE c.agent_id = agents.id AND c.status = 'PENDING') has_pending_command,
           (EXISTS(
             SELECT 1 FROM orders
-            WHERE status IN ('QUEUED','CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED')
+            WHERE status IN ('QUEUED','CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED','RETRY_PENDING')
           ) OR EXISTS(
             SELECT 1 FROM orders
             WHERE status = 'PRINT_FAILED' AND cleanup_state = 'ACTIVE' AND updated_at_ms <= (? - 60000)
