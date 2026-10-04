@@ -26,8 +26,8 @@ export function TrackingPage({
   onPrintAnother,
 }: {
   jobCode: string;
-  onBack?: () => void;
-  onPrintAnother?: () => void;
+  onBack?: (() => void) | undefined;
+  onPrintAnother?: (() => void) | undefined;
 }) {
   const [data, setData] = useState<CustomerTrackingData | null>(null);
   const [state, setState] = useState<"loading" | "invalid" | "network">(

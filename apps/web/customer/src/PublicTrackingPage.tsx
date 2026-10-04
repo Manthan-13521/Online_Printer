@@ -9,7 +9,7 @@ export function PublicTrackingPage({
   onBack,
 }: {
   pickupCode: string;
-  onBack?: () => void;
+  onBack?: (() => void) | undefined;
 }) {
   const [data, setData] = useState<PublicOrderTrackingData | null>(null);
   const [loading, setLoading] = useState(true);

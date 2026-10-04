@@ -58,7 +58,7 @@ beforeEach(() => {
   vi.mocked(customerApi.config).mockResolvedValue(enabledConfig);
   vi.mocked(inspectPdf).mockResolvedValue(10);
   vi.mocked(customerApi.tracking).mockResolvedValue({
-    jobCode: "PG-ABC234",
+    jobCode: "PG-ABC234", instructions: null,
     customerName: "Rahul",
     paymentStatus: "PAYMENT_RECEIVED",
     orderStatus: "QUEUED",

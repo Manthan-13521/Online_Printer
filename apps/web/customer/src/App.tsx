@@ -39,7 +39,7 @@ interface LocalOrderFile {
   size: number;
   pageCount: number;
   uploaded: boolean;
-  uploadStatus: "SELECTED" | "UPLOADING" | "UPLOADED" | "FAILED";
+  uploadStatus: "SELECTED" | "VALIDATING" | "UPLOADING" | "FINALIZING" | "UPLOADED" | "FAILED";
   uploadProgress: number;
   uploadError: string | null;
   pageMode: "ALL" | "CUSTOM";
@@ -353,7 +353,7 @@ export function App() {
         const clientId = filesRef.current[index]?.clientId;
         if (!clientId) continue;
 
-        let item = filesRef.current.find(f => f.clientId === clientId);
+        const item = filesRef.current.find(f => f.clientId === clientId);
         if (!item || item.uploadStatus === "UPLOADED") continue;
         if (!item.file) throw new Error("UPLOAD_FILE_REQUIRED");
         
@@ -377,7 +377,7 @@ export function App() {
             });
             token = draft.draftToken;
             upload = draft.upload;
-            updateFile(clientId, { fileId: draft.fileId });
+            if (draft.fileId) updateFile(clientId, { fileId: draft.fileId });
             setDraftToken(token);
             sessionStorage.setItem(DRAFT_TOKEN_KEY, token);
           } else if (!item.fileId) {
@@ -387,7 +387,7 @@ export function App() {
               sourcePageCount: item.pageCount,
             });
             upload = created.upload;
-            updateFile(clientId, { fileId: created.fileId });
+            if (created.fileId) updateFile(clientId, { fileId: created.fileId });
           } else {
             upload = (await customerApi.authorize(token, item.fileId)).upload;
           }
@@ -416,7 +416,7 @@ export function App() {
           setStatus(`Verifying File ${index + 1}…`);
           
           const latestItem = filesRef.current.find(f => f.clientId === clientId);
-          await customerApi.complete(token, latestItem!.fileId!);
+          await customerApi.complete(token, latestItem?.fileId || "");
           
           updateFile(clientId, { uploaded: true, uploadStatus: "UPLOADED", uploadProgress: 100 });
         } catch (caught) {
@@ -474,7 +474,7 @@ export function App() {
     }
   }
 
-  async function removeFile(index: number) {
+  function removeFile(index: number) {
     if (paymentBusy) return;
     const item = files[index];
     if (!item) return;

@@ -76,8 +76,8 @@ export interface TrackJourneyProps {
   currentStageIndex: number;
   orderDetails: OrderDetails;
   children?: React.ReactNode; // To allow passing error states or private link buttons
-  onBack?: () => void;
-  onPrintAnother?: () => void;
+  onBack?: (() => void) | undefined;
+  onPrintAnother?: (() => void) | undefined;
 }
 
 import rawCss from "./trackJourney.css?raw";
@@ -867,8 +867,8 @@ function FinishedScreen({
   onPrintAnother,
 }: {
   orderDetails: OrderDetails;
-  onBack?: () => void;
-  onPrintAnother?: () => void;
+  onBack?: (() => void) | undefined;
+  onPrintAnother?: (() => void) | undefined;
 }) {
   const reduceMotion = useReducedMotion() === true;
   const [copied, setCopied] = useState(false);
