@@ -598,35 +598,43 @@ while (-not $proc.HasExited -and $stopwatch.ElapsedMilliseconds -lt 25000) {
     Start-Sleep -Milliseconds 80
     $runningJobs = @(Get-CimInstance Win32_PrintJob -ErrorAction SilentlyContinue | Where-Object {
         $_.Name.StartsWith("$printer,") -and
-        $beforeIds -notcontains [int]$_.JobId -and
-        ($_.Document.Contains($docIdentifier) -or $_.Document.Contains($fileNameWithoutExt) -or $_.Document.Contains($fileName))
+        $beforeIds -notcontains [int]$_.JobId
     })
     if ($runningJobs.Count -gt 0) {
-        $matchedJob = $runningJobs[0]
+        $titleMatch = $runningJobs | Where-Object {
+            $_.Document -and ($_.Document.Contains($docIdentifier) -or $_.Document.Contains($fileNameWithoutExt) -or $_.Document.Contains($fileName))
+        }
+        $matchedJob = if ($titleMatch) { $titleMatch[0] } else { $runningJobs[0] }
         $spoolCapturedAtMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
         break
     }
 }
 
-$exited = $proc.WaitForExit(5000)
+# 4. Wait for SumatraPDF process to complete transmission cleanly
+$waitTimeoutMs = if ($matchedJob) { 45000 } else { 15000 }
+$exited = $proc.WaitForExit($waitTimeoutMs)
 if (-not $exited) {
     $proc.Kill()
-    throw "SumatraPDF print process timed out after 30 seconds."
+    if (-not $matchedJob) {
+        throw "SumatraPDF print process timed out after 30 seconds."
+    }
 }
-if ($proc.ExitCode -ne 0) {
+if ($exited -and $proc.ExitCode -ne 0 -and -not $matchedJob) {
     throw "SumatraPDF exited with error code $($proc.ExitCode)."
 }
 
 # If not caught while running, poll briefly post-exit
 if (-not $matchedJob) {
-    for ($i = 0; $i -lt 10; $i++) {
+    for ($i = 0; $i -lt 15; $i++) {
         $afterJobs = @(Get-CimInstance Win32_PrintJob -ErrorAction SilentlyContinue | Where-Object {
             $_.Name.StartsWith("$printer,") -and
-            $beforeIds -notcontains [int]$_.JobId -and
-            ($_.Document.Contains($docIdentifier) -or $_.Document.Contains($fileNameWithoutExt) -or $_.Document.Contains($fileName))
+            $beforeIds -notcontains [int]$_.JobId
         })
         if ($afterJobs.Count -gt 0) {
-            $matchedJob = $afterJobs[0]
+            $titleMatch = $afterJobs | Where-Object {
+                $_.Document -and ($_.Document.Contains($docIdentifier) -or $_.Document.Contains($fileNameWithoutExt) -or $_.Document.Contains($fileName))
+            }
+            $matchedJob = if ($titleMatch) { $titleMatch[0] } else { $afterJobs[0] }
             $spoolCapturedAtMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
             break
         }

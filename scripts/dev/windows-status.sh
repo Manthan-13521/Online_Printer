@@ -62,11 +62,11 @@ if (Test-Path $statusPath) {
 }
 
 Write-Host "`n--- Printer Discovery ---" -ForegroundColor Cyan
-$printers = Get-Printer -ErrorAction SilentlyContinue
+$printers = Get-CimInstance Win32_Printer -ErrorAction SilentlyContinue
 if ($printers) {
-    $printers | Select-Object Name, Type, DriverName, PortName | Format-Table -AutoSize | Out-String | Write-Host
+    $printers | Select-Object Name, PortName, PrinterStatus, WorkOffline | Format-Table -AutoSize | Out-String | Write-Host
 } else {
-    Write-Host "No printers discovered via Get-Printer." -ForegroundColor Yellow
+    Write-Host "No printers discovered." -ForegroundColor Yellow
 }
 
 Write-Host "--- Latest Log / Error Diagnostic ---" -ForegroundColor Cyan

@@ -99,9 +99,27 @@ if (process.platform === "win32") {
   console.log(
     `[Build Agent] Standalone bundle (bundle.cjs) and sea-prep.blob created.`,
   );
-  console.log(
-    `[Build Agent] Native Windows .exe will be compiled on Windows or via GitHub Actions workflow.`,
-  );
+  // On macOS/Linux, if a Windows PE template/executable exists in dist/windows, inject the updated blob into it!
+  const rootWindowsExe = path.resolve(rootDir, "dist/windows/PrintGo-Agent.exe");
+  if (fs.existsSync(rootWindowsExe)) {
+    console.log(
+      `[Build Agent] Updating Windows binary at ${rootWindowsExe} using postject...`,
+    );
+    try {
+      execSync(
+        `npx --yes postject@1.0.0-alpha.6 "${rootWindowsExe}" NODE_SEA_BLOB "${path.resolve(distDir, "sea-prep.blob")}" --sentinel-fuse NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2 --overwrite`,
+        { stdio: "inherit" },
+      );
+      fs.copyFileSync(rootWindowsExe, exePath);
+      console.log(`[Build Agent] Successfully updated ${rootWindowsExe} with latest bundle.`);
+    } catch (err) {
+      console.warn("[Build Agent] Postject injection warning:", err?.message || err);
+    }
+  } else {
+    console.log(
+      `[Build Agent] Native Windows .exe will be compiled on Windows or via GitHub Actions workflow.`,
+    );
+  }
 }
 
 // Stage distribution package

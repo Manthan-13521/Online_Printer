@@ -244,9 +244,8 @@ export class PaidPrintExecutor {
           .catch(() => undefined);
         await this.journal.clear();
       } else {
-        this.log(
-          "Print submission result is unresolved; human review required.",
-        );
+        const errDetails = error instanceof Error ? (error.stack || error.message) : String(error);
+        this.log(`Print submission result is unresolved (${errDetails}); human review required.`);
         // Keep a positively correlated local spool identity if the server is unreachable.
         const savedSubmission = await this.journal.load();
         try {
