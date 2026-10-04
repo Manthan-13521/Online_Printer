@@ -347,7 +347,7 @@ export function printIdentificationSheet(
       adapter.submitPdfJob({
         printerId: printerName,
         localPdfPath,
-        documentTitle: `printgo-id-${pdfSafeText(data.jobCode, 28)}`,
+        documentTitle: `printgo-id-${pdfSafeText(data.pickupCode ?? data.jobCode, 28)}`,
         copies: 1,
         settings: {
           ...IDENTIFICATION_SHEET_PRINT_SETTINGS,

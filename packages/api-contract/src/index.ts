@@ -495,6 +495,7 @@ export type CustomerFileRetentionStatus =
 
 export interface CustomerTrackingData {
   jobCode: string;
+  pickupCode?: string | null;
   customerName: string;
   paymentStatus: "PAYMENT_RECEIVED";
   orderStatus: CustomerTrackingStatus;

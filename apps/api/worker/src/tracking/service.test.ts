@@ -19,6 +19,7 @@ const token = "T".repeat(43);
 const trackingOrder: CustomerTrackingRecord = {
   orderId,
   jobCode: "PG-ABC234",
+  pickupCode: "PA-001",
   customerName: "Rahul",
   orderStatus: "QUEUED",
   submittedAtMs: now - 60_000,

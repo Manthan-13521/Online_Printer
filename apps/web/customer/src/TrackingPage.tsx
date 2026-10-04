@@ -23,11 +23,9 @@ function isTerminalStatus(status: string): boolean {
 export function TrackingPage({
   jobCode,
   onBack,
-  onPrintAnother,
 }: {
   jobCode: string;
   onBack?: (() => void) | undefined;
-  onPrintAnother?: (() => void) | undefined;
 }) {
   const [data, setData] = useState<CustomerTrackingData | null>(null);
   const [state, setState] = useState<"loading" | "invalid" | "network">(
@@ -173,7 +171,7 @@ export function TrackingPage({
         <section className="tracking-card" role="status">
           <h1>{data.statusLabel}</h1>
           <p>{data.statusMessage}</p>
-          <p>Order {data.jobCode}</p>
+          <p>Order {data.pickupCode ?? data.jobCode}</p>
         </section>
       </main>
     );
@@ -183,13 +181,13 @@ export function TrackingPage({
     <TrackJourney
       currentStageIndex={stageIndex}
       orderDetails={{
-        orderNumber: data.jobCode,
+        orderNumber: data.pickupCode ?? data.jobCode,
+        ...(data.pickupCode ? { pickupCode: data.pickupCode } : {}),
         pages: data.printSummary.selectedPages,
         colorMode: data.printSummary.colorMode === "BW" ? "B&W" : "Color",
         paperSize: data.printSummary.paperSize,
       }}
       onBack={onBack}
-      onPrintAnother={onPrintAnother}
     >
       <h2>{data.statusLabel}</h2>
       <p>{data.statusMessage}</p>

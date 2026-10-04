@@ -86,9 +86,10 @@ export function LiveOrdersPage({
   }
 
   async function handleManualComplete(order: AdminLiveOrder) {
+    const code = order.pickupCode ?? order.jobCode;
     const reason = window
       .prompt(
-        `Confirm every file in ${order.jobCode} was physically printed. Enter who verified it and how:`,
+        `Confirm every file in ${code} was physically printed. Enter who verified it and how:`,
       )
       ?.trim();
     if (!reason) return;
@@ -108,8 +109,8 @@ export function LiveOrdersPage({
         );
         setActionNotice(
           res.data.status === "COMPLETED"
-            ? `Job ${order.jobCode} marked as completed.`
-            : `Job ${order.jobCode} is awaiting finishing in Manual Orders.`,
+            ? `Job ${code} marked as completed.`
+            : `Job ${code} is awaiting finishing in Manual Orders.`,
         );
       }
     } catch (caught: unknown) {
@@ -124,6 +125,7 @@ export function LiveOrdersPage({
   }
 
   async function handleRetry(order: AdminLiveOrder, forceUncertain = false) {
+    const code = order.pickupCode ?? order.jobCode;
     setActionBusyId(`retry-${order.orderId}`);
     setError(null);
     setActionNotice(null);
@@ -138,7 +140,7 @@ export function LiveOrdersPage({
         );
         setConfirmRetryId(null);
         setActionNotice(
-          `Job ${order.jobCode} re-queued. Only unfinished steps will print.`,
+          `Job ${code} re-queued. Only unfinished steps will print.`,
         );
       }
     } catch (caught: unknown) {
@@ -197,23 +199,17 @@ export function LiveOrdersPage({
                           flexWrap: "wrap",
                         }}
                       >
-                        <p className="eyebrow" style={{ margin: 0 }}>
-                          {order.jobCode}
-                        </p>
-                        {order.pickupCode ? (
-                          <span
-                            style={{
-                              fontWeight: 700,
-                              padding: "0.1rem 0.5rem",
-                              borderRadius: "4px",
-                              backgroundColor: "#e0e7ff",
-                              color: "#3730a3",
-                              fontSize: "0.85rem",
-                            }}
-                          >
-                            Pickup: {order.pickupCode}
-                          </span>
-                        ) : null}
+                        <strong
+                          style={{
+                            margin: 0,
+                            fontSize: "1.15rem",
+                            fontWeight: 700,
+                            color: "#166534",
+                            letterSpacing: "0.05em",
+                          }}
+                        >
+                          {order.pickupCode ?? order.jobCode}
+                        </strong>
                         {order.isPriority ? (
                           <span
                             style={{

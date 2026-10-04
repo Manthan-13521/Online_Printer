@@ -73,10 +73,7 @@ export class PaidPrintExecutor {
       return;
     }
 
-    if (
-      job.currentStep.status === "SUBMITTED" ||
-      job.currentStep.status === "BLOCKED"
-    ) {
+    if (job.currentStep.status === "SUBMITTED") {
       const spoolerJobId =
         job.currentStep.spoolerJobId ?? matching?.spoolerJobId;
       if (!spoolerJobId) {
@@ -98,7 +95,18 @@ export class PaidPrintExecutor {
       return;
     }
 
-    if (job.currentStep.status !== "PENDING") return;
+    if (job.currentStep.status === "BLOCKED") {
+      const spoolerJobId =
+        job.currentStep.spoolerJobId ?? matching?.spoolerJobId;
+      if (spoolerJobId) {
+        await this.observe(credentials, job, spoolerJobId);
+        return;
+      }
+      // Step was blocked BEFORE submission (e.g. printer was temporarily offline).
+      // Fall through to preflight and submission check below.
+    } else if (job.currentStep.status !== "PENDING") {
+      return;
+    }
 
     if (typeof this.printer.getStatus === "function") {
       const printerStatus = await this.printer.getStatus(
@@ -173,7 +181,7 @@ export class PaidPrintExecutor {
       const submitted = await this.printer.submitPdfJob({
         printerId: job.windowsPrinterName,
         localPdfPath: localPath,
-        documentTitle: `${isId ? "printgo-id" : "printgo-order"}-${job.jobCode}-${job.currentStep.stepId}`,
+        documentTitle: `${isId ? "printgo-id" : "printgo-order"}-${job.identificationSheet?.pickupCode ?? job.jobCode}-${job.currentStep.stepId}`,
         copies: settings.copies,
         settings: { ...settings, printerName: job.windowsPrinterName },
       });

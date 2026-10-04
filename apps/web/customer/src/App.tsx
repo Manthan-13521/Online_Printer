@@ -811,7 +811,6 @@ export function App() {
         <TrackingPage
           jobCode={trackingJobCode}
           onBack={handleResetToHome}
-          onPrintAnother={handleResetToHome}
         />
       </>
     );

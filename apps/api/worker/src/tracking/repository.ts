@@ -18,6 +18,7 @@ export interface TrackingAuthorizationRecord {
 export interface CustomerTrackingRecord {
   orderId: string;
   jobCode: string;
+  pickupCode: string | null;
   customerName: string;
   orderStatus: OrderStatus;
   submittedAtMs: number;
@@ -55,6 +56,7 @@ interface AuthorizationRow {
 interface TrackingRow {
   id: string;
   public_job_code: string;
+  pickup_code: string | null;
   customer_name: string;
   status: OrderStatus;
   created_at_ms: number;
@@ -160,7 +162,7 @@ export class D1TrackingRepository implements TrackingRepository {
   ): Promise<CustomerTrackingRecord | null> {
     const row = await this.db
       .prepare(
-        `SELECT o.id, o.public_job_code, o.customer_name, o.status,
+        `SELECT o.id, o.public_job_code, o.pickup_code, o.customer_name, o.status,
           o.created_at_ms, o.updated_at_ms, o.paid_at_ms, o.selected_pages,
           o.copies, o.paper_size, o.color_mode, o.sides, o.instructions,
           o.pii_purged_at_ms, o.tracking_expires_at_ms, p.amount_paise, p.currency,
@@ -168,18 +170,19 @@ export class D1TrackingRepository implements TrackingRepository {
         FROM orders o
         JOIN uploads u ON u.order_id = o.id
         JOIN payments p ON p.order_id = o.id AND p.status = 'PAID'
-        WHERE o.public_job_code = ? AND o.tracking_token_hash = ?
+        WHERE (o.public_job_code = ? OR o.pickup_code = ?) AND o.tracking_token_hash = ?
           AND o.tracking_created_at_ms IS NOT NULL
           AND o.tracking_expires_at_ms IS NOT NULL
           AND o.paid_at_ms IS NOT NULL
         ORDER BY p.verified_at_ms DESC LIMIT 1`,
       )
-      .bind(jobCode, tokenHash)
+      .bind(jobCode, jobCode, tokenHash)
       .first<TrackingRow>();
     return row
       ? {
           orderId: row.id,
           jobCode: row.public_job_code,
+          pickupCode: row.pickup_code,
           customerName: row.customer_name,
           orderStatus: row.status,
           submittedAtMs: row.created_at_ms,

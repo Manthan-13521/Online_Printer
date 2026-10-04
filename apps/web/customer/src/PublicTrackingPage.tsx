@@ -161,7 +161,6 @@ export function PublicTrackingPage({
         pickupCode: data.pickupCode,
       }}
       onBack={handleBack}
-      onPrintAnother={handleBack}
     >
       <h2>{data.statusLabel}</h2>
       <p>{data.statusMessage}</p>

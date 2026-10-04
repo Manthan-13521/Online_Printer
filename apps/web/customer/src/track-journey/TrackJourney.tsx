@@ -74,7 +74,6 @@ export interface TrackJourneyProps {
   orderDetails: OrderDetails;
   children?: React.ReactNode; // To allow passing error states or private link buttons
   onBack?: (() => void) | undefined;
-  onPrintAnother?: (() => void) | undefined;
 }
 
 import rawCss from "./trackJourney.css?raw";
@@ -100,7 +99,6 @@ export default function TrackJourney({
   orderDetails,
   children,
   onBack,
-  onPrintAnother,
 }: TrackJourneyProps) {
   const [isMobile, setIsMobile] = useState(false);
   const reduceMotion = useReducedMotion() === true;

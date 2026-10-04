@@ -126,21 +126,12 @@ function ManualOrderCard({
               marginBottom: "0.25rem",
             }}
           >
-            <strong className="job-code">{order.jobCode}</strong>
-            {order.pickupCode ? (
-              <span
-                style={{
-                  fontWeight: 700,
-                  padding: "0.1rem 0.5rem",
-                  borderRadius: "4px",
-                  backgroundColor: "#e0e7ff",
-                  color: "#3730a3",
-                  fontSize: "0.85rem",
-                }}
-              >
-                Pickup: {order.pickupCode}
-              </span>
-            ) : null}
+            <strong
+              className="job-code"
+              style={{ fontSize: "1.1rem", color: "#166534" }}
+            >
+              {order.pickupCode ?? order.jobCode}
+            </strong>
             {order.isPriority ? (
               <span
                 style={{

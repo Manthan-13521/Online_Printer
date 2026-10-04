@@ -141,7 +141,7 @@ export class WindowsPrinterAdapter implements PrinterAdapter {
   ): Promise<boolean | undefined> {
     const host = extractHostFromPortName(portName);
     if (!host) return undefined;
-    return this.socketProbe(host, 9100, 800);
+    return this.socketProbe(host, 9100, 2500);
   }
 
   private ensureWindows(): void {
@@ -390,6 +390,19 @@ Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $printer } | Select-O
         availability: "OFFLINE",
         message: "Printer is offline or stopped",
       };
+    }
+
+    // If Windows explicitly reports the printer is actively Printing (4) or in Warmup (5),
+    // it is actively working; port 9100 may be busy receiving the job.
+    if (p.PrinterStatus === 4 || p.PrinterStatus === 5) {
+      return { availability: "ONLINE" };
+    }
+
+    // If Windows reports Idle (3) or No Error (2), and network probe confirmed or not applicable:
+    if (p.PrinterStatus === 3 || p.DetectedErrorState === 2) {
+      if (isNetworkReachable !== false) {
+        return { availability: "ONLINE" };
+      }
     }
 
     const host = extractHostFromPortName(p.PortName);

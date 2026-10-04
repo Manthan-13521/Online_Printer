@@ -26,7 +26,8 @@ export class TrackingError extends Error {
 }
 
 const TRACKING_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/u;
-const JOB_CODE_PATTERN = /^PG-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{6}$/u;
+const JOB_CODE_PATTERN =
+  /^(?:PG-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{6}|P[A-Z]-\d{3})$/u;
 
 function fileRetentionStatus(
   storageStatus: CustomerTrackingRecord["storageStatus"],
@@ -136,6 +137,7 @@ export class TrackingService {
     const status = toCustomerOrderStatus(order.orderStatus);
     return {
       jobCode: order.jobCode,
+      pickupCode: order.pickupCode ?? null,
       customerName,
       paymentStatus: "PAYMENT_RECEIVED",
       orderStatus: status.code,
