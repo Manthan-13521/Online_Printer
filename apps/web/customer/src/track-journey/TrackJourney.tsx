@@ -7,9 +7,6 @@ import {
   CheckCircle2,
   Check,
   ArrowLeft,
-  Plus,
-  Camera,
-  Copy,
 } from "lucide-react";
 
 const STAGES = [
@@ -123,7 +120,7 @@ export default function TrackJourney({
         <FinishedScreen
           orderDetails={orderDetails}
           onBack={onBack}
-          onPrintAnother={onPrintAnother}
+          
         />
       </div>
     );
@@ -864,24 +861,12 @@ const ReadyVisual = ({ active }: { active: boolean }) => (
 function FinishedScreen({
   orderDetails,
   onBack,
-  onPrintAnother,
 }: {
   orderDetails: OrderDetails;
   onBack?: (() => void) | undefined;
-  onPrintAnother?: (() => void) | undefined;
 }) {
   const reduceMotion = useReducedMotion() === true;
-  const [copied, setCopied] = useState(false);
   const activeCode = orderDetails.pickupCode ?? orderDetails.orderNumber ?? "";
-
-  const handleCopy = () => {
-    if (!activeCode) return;
-    if (typeof navigator !== "undefined" && navigator.clipboard) {
-      void navigator.clipboard.writeText(activeCode);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
 
   const handleBackAction = () => {
     if (onBack) {
@@ -892,33 +877,17 @@ function FinishedScreen({
     }
   };
 
-  const handlePrintAnotherAction = () => {
-    if (onPrintAnother) {
-      onPrintAnother();
-    } else if (onBack) {
-      onBack();
-    } else {
-      window.history.pushState(null, "", "/");
-      window.location.href = "/";
-    }
-  };
-
   return (
-    <div className="fixed inset-0 bg-printgo-green text-printgo-paper flex flex-col justify-between items-center font-sans p-4 md:p-6 text-center overflow-y-auto z-50">
+    <div className="fixed inset-0 bg-printgo-green text-printgo-paper flex flex-col items-center font-sans p-4 md:p-6 text-center overflow-hidden z-50">
       {/* Top Bar with Clean Back Button */}
-      <div className="w-full max-w-lg mx-auto flex items-center justify-between z-20 pt-2 shrink-0">
+      <div className="w-full flex items-center justify-between z-20 pt-2 shrink-0">
         <button
           type="button"
           onClick={handleBackAction}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 md:px-4 md:py-2 text-xs md:text-sm font-medium rounded-full bg-white/10 hover:bg-white/20 active:scale-95 text-white backdrop-blur-md transition-all border border-white/20 focus:outline-none focus:ring-2 focus:ring-white/50"
-          aria-label="Back to home"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 md:px-4 md:py-2 text-[15px] font-medium text-white transition-opacity active:opacity-60"
         >
-          <ArrowLeft className="w-3.5 h-3.5 md:w-4 md:h-4" />
-          <span>Back</span>
+          <ArrowLeft className="w-5 h-5" />
         </button>
-        <span className="text-[11px] md:text-xs font-mono font-medium tracking-wider uppercase text-white/70">
-          Print Complete
-        </span>
       </div>
 
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-white/5 pointer-events-none flex justify-center items-center">
@@ -932,97 +901,36 @@ function FinishedScreen({
         initial={reduceMotion ? false : { opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         transition={{ duration: 0.8, ease: "easeOut" }}
-        className="flex flex-col items-center relative z-10 w-full max-w-[92%] sm:max-w-md md:max-w-lg mx-auto my-auto py-4"
+        className="flex flex-col items-center justify-center h-full relative z-10 w-full max-w-[85%] md:max-w-md mx-auto"
       >
-        <div className="bg-white text-printgo-green rounded-full p-2.5 md:p-4 mb-2 md:mb-4 shadow-xl">
-          <Check className="w-6 h-6 md:w-10 md:h-10" strokeWidth={3.5} />
+        <div className="bg-white text-printgo-green rounded-full p-2.5 md:p-4 mb-2 md:mb-6 shadow-xl">
+          <Check className="w-6 h-6 md:w-12 md:h-12" strokeWidth={4} />
         </div>
 
-        <h1 className="font-serif text-2xl sm:text-4xl md:text-5xl font-medium tracking-tight mb-1 md:mb-2 leading-tight text-white">
+        <h1 className="font-serif text-3xl md:text-5xl lg:text-6xl font-medium tracking-tight mb-1.5 md:mb-2 leading-tight text-printgo-dark">
           Ready for pickup
         </h1>
-        <p className="text-white/90 text-xs sm:text-sm md:text-base mb-4 md:mb-6 font-light">
-          Your order is printed, finished, and ready at the counter.
+        <p className="text-white text-xs md:text-lg mb-5 md:mb-10">
+          Your order is printed, finished, and waiting.
         </p>
 
-        {/* Pickup Code Hero Card */}
-        <div className="border-[1.5px] border-white/30 bg-white/15 rounded-[1.25rem] md:rounded-[1.5rem] p-4 sm:p-6 md:p-8 w-full shadow-2xl backdrop-blur-md relative overflow-hidden">
-          <p className="text-white/80 text-[10px] md:text-xs uppercase tracking-widest font-bold mb-1.5 md:mb-2">
+        <div className="border-[2px] border-white/30 bg-white/10 rounded-[1.25rem] md:rounded-[1.5rem] p-5 md:p-10 w-full shadow-2xl backdrop-blur-md">
+          <p className="text-white text-[10px] md:text-sm uppercase tracking-widest font-bold mb-2 md:mb-4">
             {orderDetails.pickupCode ? "Pickup code" : "Order code"}
           </p>
           <div
-            className="text-4xl sm:text-5xl md:text-6xl font-mono font-bold tracking-widest my-1 md:my-3 text-white select-all"
+            className="text-4xl md:text-7xl font-mono font-bold tracking-widest mb-4 md:mb-8 text-white"
             style={{
-              fontSize: "clamp(2rem, 10vw, 4rem)",
+              fontSize: "clamp(1.5rem, 8vw, 4.5rem)",
               overflowWrap: "anywhere",
             }}
           >
             {activeCode}
           </div>
-
-          {/* Quick Copy / Screenshot helper reminder */}
-          <div className="mt-3 md:mt-4 pt-3 border-t border-white/20 flex flex-col sm:flex-row items-center justify-between gap-2 text-white/90">
-            <div className="flex items-center gap-1.5 text-[11px] md:text-xs text-left">
-              <Camera className="w-3.5 h-3.5 shrink-0 text-white/80" />
-              <span>
-                <strong>Take a screenshot</strong> or remember this code for pickup
-              </span>
-            </div>
-            {activeCode && (
-              <button
-                type="button"
-                onClick={handleCopy}
-                className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium rounded-md bg-white/20 hover:bg-white/30 active:scale-95 text-white transition-colors shrink-0"
-                title="Copy code"
-              >
-                {copied ? (
-                  <>
-                    <Check className="w-3 h-3 text-white" />
-                    <span>Copied</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-3 h-3 text-white/80" />
-                    <span>Copy</span>
-                  </>
-                )}
-              </button>
-            )}
-          </div>
-
-          <div className="flex flex-col items-center text-[11px] md:text-xs gap-1 mt-3 pt-3 border-t border-white/10 text-white/80">
-            {orderDetails.orderNumber && (
-              <span className="font-semibold text-white">
-                Order {orderDetails.orderNumber}
-              </span>
-            )}
-            {(orderDetails.pickupStore || orderDetails.pickupLocation) && (
-              <span className="font-normal">
-                {orderDetails.pickupStore}{" "}
-                {orderDetails.pickupLocation &&
-                  `· ${orderDetails.pickupLocation}`}
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* Primary Call to Action: Print Another Order */}
-        <div className="w-full mt-4 sm:mt-6 flex flex-col gap-2.5">
-          <button
-            type="button"
-            onClick={handlePrintAnotherAction}
-            className="w-full inline-flex items-center justify-center gap-2 px-5 py-3 md:py-3.5 rounded-xl bg-white text-printgo-green font-semibold text-sm md:text-base shadow-lg hover:bg-white/95 active:scale-[0.99] transition-all focus:outline-none focus:ring-4 focus:ring-white/40"
-          >
-            <Plus className="w-4 h-4 md:w-5 md:h-5 stroke-[2.5]" />
-            <span>Print Another Document</span>
-          </button>
+          <div className="h-px bg-white/20 w-full mb-3" />
+          <p className="text-white/80 text-xs mt-2 font-medium">Take a screenshot</p>
         </div>
       </motion.div>
-
-      {/* Subtle bottom note */}
-      <div className="text-[10px] md:text-xs text-white/60 pb-2 z-10 shrink-0">
-        Show this code to shop staff to collect your prints
-      </div>
     </div>
   );
 }
