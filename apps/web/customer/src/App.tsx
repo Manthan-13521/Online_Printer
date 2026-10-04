@@ -1617,7 +1617,9 @@ export function App() {
                   : quote
                     ? "Refresh review"
                     : draftToken
-                      ? "Try upload again"
+                      ? files.some(f => f.uploadStatus === "FAILED") 
+                        ? "Try upload again" 
+                        : "Upload PDF and review"
                       : "Upload PDF and review"}
             </button>
             {quote && !paymentSuccess && (
