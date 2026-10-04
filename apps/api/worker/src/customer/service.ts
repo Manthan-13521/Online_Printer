@@ -313,7 +313,6 @@ export class CustomerService {
   ): Promise<CustomerDraftData> {
     const { tokenHash } = await this.requireSummary(rawToken);
     const files = await this.repository.listFiles(tokenHash);
-    if (files.length <= 1) throw new CustomerError("LAST_FILE_REQUIRED");
     const selected = files.find((file) => file.id === fileId);
     if (!selected) throw new CustomerError("FILE_NOT_FOUND");
     const nowMs = this.now();
