@@ -7,9 +7,9 @@ import {
 } from "./pair-code";
 
 describe("Agent pair code & secret utilities", () => {
-  it("generates a formatted 8-character Crockford code (XXXX-XXXX)", () => {
+  it("generates a formatted 8-digit numeric code (XXXX-XXXX)", () => {
     const code = generatePairCode();
-    expect(code).toMatch(/^[0-9A-HJ-KM-NP-TV-Z]{4}-[0-9A-HJ-KM-NP-TV-Z]{4}$/);
+    expect(code).toMatch(/^[0-9]{4}-[0-9]{4}$/);
   });
 
   it("normalizes pair codes by stripping dashes and mapping ambiguous characters", () => {

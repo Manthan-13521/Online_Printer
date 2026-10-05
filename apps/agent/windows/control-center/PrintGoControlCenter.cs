@@ -570,7 +570,7 @@ namespace PrintGo.ControlCenter
             if (string.IsNullOrEmpty(code) || string.IsNullOrEmpty(server))
             {
                 MessageBox.Show(
-                    "Please enter a valid 8-character pairing code (e.g. 7777-8888) from your shop Admin.",
+                    "Please enter a valid 8-digit pairing code (e.g. 7777-8888) from your shop Admin.",
                     "Invalid Pairing Code",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Warning
