@@ -466,8 +466,8 @@ export class D1PrintingRepository implements PrintingRepository {
         AND (f.position <> 1 OR EXISTS (SELECT 1 FROM uploads u
           WHERE u.order_id = o.id AND u.r2_object_key = f.r2_object_key
             AND u.storage_status = 'UPLOADED'))
-        AND (f.color_mode = 'BW' OR json_extract(p.capabilities_json, '$.colour') = 1)
-        AND (f.sides = 'SINGLE' OR json_extract(p.capabilities_json, '$.duplex') = 1)
+        AND (f.color_mode = 'BW' OR json_extract(p.capabilities_json, '$.colour') = 1 OR json_extract(p.capabilities_json, '$.colour') = 'UNKNOWN')
+        AND (f.sides = 'SINGLE' OR json_extract(p.capabilities_json, '$.duplex') = 1 OR json_extract(p.capabilities_json, '$.duplex') = 'UNKNOWN' OR json_extract(p.capabilities_json, '$.duplex') IS NULL OR json_extract(p.capabilities_json, '$.duplex') = 0)
         AND EXISTS (SELECT 1 FROM json_each(p.capabilities_json, '$.paperSizes')
           WHERE upper(value) = f.paper_size)
         AND NOT EXISTS (SELECT 1 FROM orders busy WHERE busy.claimed_by_agent_id = a.id
@@ -527,9 +527,9 @@ export class D1PrintingRepository implements PrintingRepository {
             AND a.is_active = 1 AND a.last_heartbeat_at_ms >= ?
             AND p.capabilities_json IS NOT NULL
             AND ((SELECT color_mode FROM order_files WHERE id = ?) = 'BW'
-              OR json_extract(p.capabilities_json, '$.colour') = 1)
+              OR json_extract(p.capabilities_json, '$.colour') = 1 OR json_extract(p.capabilities_json, '$.colour') = 'UNKNOWN')
             AND ((SELECT sides FROM order_files WHERE id = ?) = 'SINGLE'
-              OR json_extract(p.capabilities_json, '$.duplex') = 1)
+              OR json_extract(p.capabilities_json, '$.duplex') = 1 OR json_extract(p.capabilities_json, '$.duplex') = 'UNKNOWN' OR json_extract(p.capabilities_json, '$.duplex') IS NULL OR json_extract(p.capabilities_json, '$.duplex') = 0)
             AND EXISTS (SELECT 1 FROM json_each(p.capabilities_json, '$.paperSizes')
               WHERE upper(value) = (SELECT paper_size FROM order_files WHERE id = ?))
         )`,
