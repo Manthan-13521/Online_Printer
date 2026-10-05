@@ -87,6 +87,7 @@ interface CandidateRow {
   remaining_files: number;
   identification_sheet_enabled: number;
   identification_sheet_placement: "FIRST" | "LAST";
+  identification_required: number;
   /** Non-null when the job was routed to a fallback printer. */
   fallback_from_printer_id: string | null;
 }
@@ -418,7 +419,7 @@ export class D1PrintingRepository implements PrintingRepository {
     const candidate = await this.db
       .prepare(
         `SELECT o.id order_id, p.id printer_id, i.identification_sheet_enabled,
-        i.identification_sheet_placement, f.id file_id, f.position file_position,
+        i.identification_sheet_placement, o.identification_required, f.id file_id, f.position file_position,
         (SELECT COUNT(*) FROM order_files all_files WHERE all_files.order_id = o.id) file_count,
         (SELECT COUNT(*) FROM order_files remaining WHERE remaining.order_id = o.id
           AND remaining.print_status <> 'PRINTED') remaining_files,
@@ -489,6 +490,7 @@ export class D1PrintingRepository implements PrintingRepository {
     );
     const needIdStep =
       candidate.identification_sheet_enabled === 1 &&
+      candidate.identification_required === 1 &&
       !succeededSet.has("IDENTIFICATION_SHEET") &&
       ((candidate.identification_sheet_placement === "FIRST" &&
         candidate.file_position === 1) ||
@@ -561,7 +563,7 @@ export class D1PrintingRepository implements PrintingRepository {
           attemptId,
           agentId,
           candidate.printer_id,
-          candidate.identification_sheet_enabled,
+          needIdStep ? 1 : 0,
           nowMs,
           nowMs,
           candidate.file_id,

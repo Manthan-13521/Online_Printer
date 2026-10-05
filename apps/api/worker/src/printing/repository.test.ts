@@ -106,6 +106,7 @@ function seed(
     paid?: boolean;
     uploadStatus?: string;
     capabilities?: object;
+    identificationRequired?: boolean;
   } = {},
 ) {
   const now = 1_000;
@@ -144,10 +145,17 @@ function seed(
     `INSERT INTO orders (id, public_job_code, customer_name, customer_phone,
     original_filename, selected_pages, source_page_count, copies, color_mode, paper_size,
     sides, total_amount_paise, printing_amount_paise, status, created_at_ms, updated_at_ms,
-    paid_at_ms, queued_at_ms) VALUES (?, 'PG-ABC234', 'Customer', '+919876543210',
+    paid_at_ms, queued_at_ms, identification_required) VALUES (?, 'PG-ABC234', 'Customer', '+919876543210',
     'unsafe/name.pdf', '1-2', 2, 10, 'COLOR', 'A4', 'DOUBLE', 5000, 5000,
-    'QUEUED', ?, ?, ?, ?)`,
-  ).run(ids.order, now, now, now, now);
+    'QUEUED', ?, ?, ?, ?, ?)`,
+  ).run(
+    ids.order,
+    now,
+    now,
+    now,
+    now,
+    (options.identificationRequired ?? true) ? 1 : 0,
+  );
   db.prepare(
     `INSERT INTO uploads (id, order_id, r2_object_key, original_filename, size_bytes,
     mime_type, storage_status, created_at_ms, uploaded_at_ms, updated_at_ms, expected_size_bytes)
@@ -249,6 +257,22 @@ describe("paid-print D1 safety", () => {
       ).toHaveLength(1);
     },
   );
+
+  it("does not generate identification sheet if identification_required is 0 even when identification_sheet_enabled is 1", async () => {
+    seed(db, { identificationRequired: false });
+    db.prepare(
+      "UPDATE installation SET identification_sheet_enabled = 1, identification_sheet_placement = 'FIRST'",
+    ).run();
+    const job = await repository.claimOrRenew(ids.agent1, 2_000);
+    expect(job?.currentStep.type).toBe("CUSTOMER_DOCUMENT");
+    expect(job?.identificationSheet).toBeNull();
+    const rows = db
+      .prepare(
+        "SELECT step_type FROM print_attempt_steps ORDER BY sequence_number",
+      )
+      .all() as Array<{ step_type: string }>;
+    expect(rows.map((row) => row.step_type)).toEqual(["CUSTOMER_DOCUMENT"]);
+  });
 
   it("does not multiply step events or metadata writes for simultaneous duplicate requests", async () => {
     seed(db);
