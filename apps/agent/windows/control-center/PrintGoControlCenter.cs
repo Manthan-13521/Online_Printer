@@ -95,13 +95,29 @@ namespace PrintGo.ControlCenter
 
         private string FindAgentExecutable()
         {
-            return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "PrintGo-Agent.exe");
+            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            string direct = Path.Combine(baseDir, "PrintGo-Agent.exe");
+            if (File.Exists(direct)) return direct;
+            string appDataExe = Path.Combine(appDataDir, "PrintGo-Agent.exe");
+            if (File.Exists(appDataExe)) return appDataExe;
+            return direct;
         }
 
         private void OpenAdmin()
         {
-            if (currentServerUrl != null) Process.Start(currentServerUrl);
-            else MessageBox.Show("Open the shop Admin bookmark provided by your installer technician.", "Shop Admin");
+            string url = "https://printgo-admin.pages.dev";
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = url,
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Could not open browser: " + ex.Message + "\n\nPlease visit: " + url, "Shop Admin");
+            }
         }
 
         private void InitializeComponent()
@@ -361,7 +377,8 @@ namespace PrintGo.ControlCenter
                         FileName = agentExePath,
                         CreateNoWindow = true,
                         UseShellExecute = false,
-                        WindowStyle = ProcessWindowStyle.Hidden
+                        WindowStyle = ProcessWindowStyle.Hidden,
+                        WorkingDirectory = Path.GetDirectoryName(agentExePath)
                     };
                     Process.Start(startInfo);
                 }
@@ -371,20 +388,56 @@ namespace PrintGo.ControlCenter
 
         private void RestartAgent()
         {
-            if (MaintenanceBlocked())
+            if (Process.GetProcessesByName("SumatraPDF").Length > 0)
             {
-                MessageBox.Show("PrintGo is running or has an unresolved print. Restart is deferred. Ask your technician to arrange maintenance after all work is reconciled.", "Maintenance deferred");
+                MessageBox.Show(
+                    "A document is actively printing right now. Please wait until printing completes before restarting.",
+                    "Printing in Progress",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information
+                );
                 return;
             }
-            EnsureAgentRunning();
-            RefreshStatus();
-        }
 
-        private bool MaintenanceBlocked()
-        {
-            return Process.GetProcessesByName("PrintGo-Agent").Length > 0 ||
-                Process.GetProcessesByName("SumatraPDF").Length > 0 ||
-                File.Exists(Path.Combine(appDataDir, "active-print.json"));
+            try
+            {
+                string journalPath = Path.Combine(appDataDir, "active-print.json");
+                if (File.Exists(journalPath))
+                {
+                    var info = new FileInfo(journalPath);
+                    if ((DateTime.UtcNow - info.LastWriteTimeUtc).TotalMinutes > 2)
+                    {
+                        File.Delete(journalPath);
+                    }
+                }
+            }
+            catch { }
+
+            var existing = Process.GetProcessesByName("PrintGo-Agent");
+            bool hadRunning = existing.Length > 0;
+            foreach (var proc in existing)
+            {
+                try
+                {
+                    proc.Kill();
+                    proc.WaitForExit(3000);
+                }
+                catch { }
+            }
+
+            EnsureAgentRunning();
+            System.Threading.Thread.Sleep(500);
+            RefreshStatus();
+
+            if (trayIcon != null)
+            {
+                trayIcon.ShowBalloonTip(
+                    2000,
+                    "PrintGo Agent",
+                    hadRunning ? "PrintGo Agent has been restarted." : "PrintGo Agent has started.",
+                    ToolTipIcon.Info
+                );
+            }
         }
 
         private void GenerateSupportPackage()
@@ -420,58 +473,213 @@ namespace PrintGo.ControlCenter
             }
         }
 
+        private string GetActiveServerUrl()
+        {
+            if (!string.IsNullOrEmpty(currentServerUrl)) return currentServerUrl;
+
+            try
+            {
+                if (File.Exists(statusFilePath))
+                {
+                    var data = new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(File.ReadAllText(statusFilePath));
+                    if (data != null && data.ContainsKey("serverUrl") && data["serverUrl"] != null)
+                    {
+                        string s = Convert.ToString(data["serverUrl"]).Trim();
+                        if (!string.IsNullOrEmpty(s)) return s;
+                    }
+                }
+            }
+            catch { }
+
+            foreach (var dir in new[] { AppDomain.CurrentDomain.BaseDirectory, appDataDir })
+            {
+                try
+                {
+                    string cfgPath = Path.Combine(dir, "printgo-config.json");
+                    if (File.Exists(cfgPath))
+                    {
+                        var data = new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(File.ReadAllText(cfgPath));
+                        if (data != null)
+                        {
+                            if (data.ContainsKey("serverUrl") && data["serverUrl"] != null)
+                                return Convert.ToString(data["serverUrl"]).Trim();
+                            if (data.ContainsKey("apiUrl") && data["apiUrl"] != null)
+                                return Convert.ToString(data["apiUrl"]).Trim();
+                        }
+                    }
+                }
+                catch { }
+            }
+
+            return "https://printgo-api.printgo-worker.workers.dev";
+        }
+
         private void PromptPairing()
         {
-            string link = Microsoft.VisualBasic.Interaction.InputBox(
-                "Paste the full Connect Computer link from your shop Admin.", "Connect PrintGo", "");
-            if (!string.IsNullOrWhiteSpace(link)) HandlePairUrl(link.Trim());
+            using (var dialog = new PairingDialog())
+            {
+                if (dialog.ShowDialog(this) == DialogResult.OK)
+                {
+                    HandlePairInput(dialog.EnteredValue);
+                }
+            }
+        }
+
+        private void HandlePairInput(string input)
+        {
+            if (string.IsNullOrWhiteSpace(input)) return;
+            input = input.Trim();
+
+            string code = null;
+            string server = null;
+
+            if (input.StartsWith("printgo://", StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    Uri uri;
+                    if (Uri.TryCreate(input, UriKind.Absolute, out uri) && uri.Scheme == "printgo" && uri.Host == "connect")
+                    {
+                        var servers = Regex.Matches(uri.Query, @"[?&]server=([^&]+)");
+                        var codes = Regex.Matches(uri.Query, @"[?&]code=([^&]+)");
+                        if (servers.Count == 1 && codes.Count == 1)
+                        {
+                            server = Uri.UnescapeDataString(servers[0].Groups[1].Value);
+                            code = Uri.UnescapeDataString(codes[0].Groups[1].Value);
+                        }
+                    }
+                }
+                catch { }
+            }
+
+            if (string.IsNullOrEmpty(code))
+            {
+                string clean = Regex.Replace(input.ToUpperInvariant(), @"[\s\-]", "");
+                if (Regex.IsMatch(clean, @"^[A-Z0-9]{8}$"))
+                {
+                    code = clean.Substring(0, 4) + "-" + clean.Substring(4, 4);
+                    server = GetActiveServerUrl();
+                }
+                else if (Regex.IsMatch(input.ToUpperInvariant(), @"^[A-Z0-9]{4}-[A-Z0-9]{4}$"))
+                {
+                    code = input.ToUpperInvariant();
+                    server = GetActiveServerUrl();
+                }
+            }
+
+            if (string.IsNullOrEmpty(code) || string.IsNullOrEmpty(server))
+            {
+                MessageBox.Show(
+                    "Please enter a valid 8-character pairing code (e.g. 7777-8888) from your shop Admin.",
+                    "Invalid Pairing Code",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning
+                );
+                return;
+            }
+
+            ExecutePairing(code, server);
         }
 
         private void HandlePairUrl(string pairUrl)
         {
-            try
-            {
-                Uri uri;
-                if (!Uri.TryCreate(pairUrl, UriKind.Absolute, out uri) || uri.Scheme != "printgo" ||
-                    uri.Host != "connect" || uri.UserInfo != "" || uri.Fragment != "")
-                    throw new InvalidOperationException();
-                var servers = Regex.Matches(uri.Query, @"[?&]server=([^&]+)");
-                var codes = Regex.Matches(uri.Query, @"[?&]code=([^&]+)");
-                if (servers.Count != 1 || codes.Count != 1) throw new InvalidOperationException();
-                ExecutePairing(Uri.UnescapeDataString(codes[0].Groups[1].Value),
-                    Uri.UnescapeDataString(servers[0].Groups[1].Value));
-            }
-            catch { MessageBox.Show("This connection link is invalid. Create a fresh link in your shop Admin.", "Connection failed"); }
+            HandlePairInput(pairUrl);
         }
 
         private void ExecutePairing(string code, string server)
         {
-            if (!File.Exists(agentExePath)) throw new InvalidOperationException();
-            if (MaintenanceBlocked())
+            if (!File.Exists(agentExePath))
             {
-                MessageBox.Show("Connection changes are deferred while PrintGo is running or a print remains unresolved. Ask your technician to arrange maintenance.", "Maintenance deferred");
+                MessageBox.Show("PrintGo-Agent.exe could not be found at:\n" + agentExePath, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
+
+            if (Process.GetProcessesByName("SumatraPDF").Length > 0)
+            {
+                MessageBox.Show(
+                    "A document is actively printing right now. Please wait until printing completes before pairing.",
+                    "Printing in Progress",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information
+                );
+                return;
+            }
+
+            foreach (var proc in Process.GetProcessesByName("PrintGo-Agent"))
+            {
+                try
+                {
+                    proc.Kill();
+                    proc.WaitForExit(3000);
+                }
+                catch { }
+            }
+
+            try
+            {
+                string journalPath = Path.Combine(appDataDir, "active-print.json");
+                if (File.Exists(journalPath)) File.Delete(journalPath);
+            }
+            catch { }
+
             Uri origin;
-            if (!Regex.IsMatch(code, @"^[A-Z0-9]{4}-?[A-Z0-9]{4}$") ||
+            if (!Regex.IsMatch(code, @"^[A-Z0-9]{4}-[A-Z0-9]{4}$") ||
                 !Uri.TryCreate(server, UriKind.Absolute, out origin) || origin.Scheme != "https" ||
                 origin.UserInfo != "" || origin.AbsolutePath != "/" || origin.Query != "" || origin.Fragment != "")
-                throw new InvalidOperationException();
-            string args = "--pair-only --pair " + code + " --server \"" + origin.GetLeftPart(UriPartial.Authority) + "\"";
-            var psi = new ProcessStartInfo {
-                FileName = agentExePath, Arguments = args, CreateNoWindow = true, UseShellExecute = false
+            {
+                MessageBox.Show("The pairing code or server URL is invalid. Please try again.", "Connection Failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            string cleanServer = origin.GetLeftPart(UriPartial.Authority);
+            string args = "--pair-only --pair " + code + " --server \"" + cleanServer + "\"";
+            var psi = new ProcessStartInfo
+            {
+                FileName = agentExePath,
+                Arguments = args,
+                CreateNoWindow = true,
+                UseShellExecute = false,
+                RedirectStandardError = true,
+                RedirectStandardOutput = true
             };
+
             using (var process = Process.Start(psi))
             {
+                process.StandardOutput.ReadToEnd();
+                process.StandardError.ReadToEnd();
                 if (!process.WaitForExit(60000))
                 {
-                    MessageBox.Show("Connection is still pending. Do not start another pairing attempt until this one finishes.", "Connection pending");
+                    try { process.Kill(); } catch { }
+                    MessageBox.Show("Pairing timed out. Please check your internet connection and try again.", "Pairing Timeout", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    EnsureAgentRunning();
                     return;
                 }
-                if (process.ExitCode != 0) throw new InvalidOperationException();
+
+                if (process.ExitCode != 0)
+                {
+                    MessageBox.Show(
+                        "Pairing failed. The code may have expired (valid for 10 minutes) or has already been used.\n\nGenerate a fresh code from your shop Admin.",
+                        "Pairing Unsuccessful",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning
+                    );
+                    EnsureAgentRunning();
+                    RefreshStatus();
+                    return;
+                }
             }
+
+            currentServerUrl = cleanServer;
             EnsureAgentRunning();
-            MessageBox.Show("Computer connected. Check printer readiness in Admin before accepting orders.", "Connected");
+            System.Threading.Thread.Sleep(1000);
+            RefreshStatus();
+
+            MessageBox.Show(
+                "Computer connected successfully!\n\nPrintGo Agent is now running and ready to receive print orders.",
+                "PrintGo Connected",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information
+            );
         }
 
         private void RefreshStatus()
@@ -482,26 +690,186 @@ namespace PrintGo.ControlCenter
             lblStatusBadge.Text = "Offline / starting";
             lblStatusBadge.ForeColor = Color.FromArgb(239, 68, 68);
             trayIcon.Text = "PrintGo - status unavailable";
+
+            var agentProcs = Process.GetProcessesByName("PrintGo-Agent");
+            btnRestartAgent.Text = agentProcs.Length > 0 ? "Restart PrintGo" : "Start PrintGo";
+
             try
             {
-                var data = new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(File.ReadAllText(statusFilePath));
-                string state = Convert.ToString(data["operationalState"]);
-                double heartbeat = data["lastHeartbeatMs"] == null ? 0 : Convert.ToDouble(data["lastHeartbeatMs"]);
-                double now = (DateTime.UtcNow - new DateTime(1970, 1, 1)).TotalMilliseconds;
-                bool fresh = heartbeat > 0 && now >= heartbeat && now - heartbeat < 90000 &&
-                    Process.GetProcessesByName("PrintGo-Agent").Length > 0;
-                lblStatusBadge.Text = fresh ? state : "Offline / stale status";
-                if (fresh && state == "ONLINE") lblStatusBadge.ForeColor = Color.FromArgb(34, 197, 94);
-                lblShopTitle.Text = Convert.ToString(data["displayName"]) ?? "PrintGo";
-                lblServer.Text = "Single-shop connection";
-                if (heartbeat > 0) lblLastHeartbeat.Text = "Last heartbeat: " +
-                    new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddMilliseconds(heartbeat).ToLocalTime().ToString("g");
-                // A Windows default printer is not necessarily the Admin production printer.
-                lblPrinterStatus.Text = "Production selection: confirm in Admin";
-                string trayText = "PrintGo - " + lblStatusBadge.Text;
-                trayIcon.Text = trayText.Substring(0, Math.Min(63, trayText.Length));
+                if (File.Exists(statusFilePath))
+                {
+                    var data = new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(File.ReadAllText(statusFilePath));
+                    string state = Convert.ToString(data["operationalState"]);
+                    double heartbeat = data["lastHeartbeatMs"] == null ? 0 : Convert.ToDouble(data["lastHeartbeatMs"]);
+                    double now = (DateTime.UtcNow - new DateTime(1970, 1, 1)).TotalMilliseconds;
+                    bool fresh = heartbeat > 0 && now >= heartbeat && now - heartbeat < 90000 &&
+                        agentProcs.Length > 0;
+                    lblStatusBadge.Text = fresh ? state : (agentProcs.Length > 0 ? "Reconnecting..." : "Offline / stopped");
+                    if (fresh && state == "ONLINE")
+                    {
+                        lblStatusBadge.ForeColor = Color.FromArgb(34, 197, 94);
+                    }
+                    else if (fresh)
+                    {
+                        lblStatusBadge.ForeColor = Color.FromArgb(234, 179, 8);
+                    }
+                    else
+                    {
+                        lblStatusBadge.ForeColor = Color.FromArgb(239, 68, 68);
+                    }
+
+                    if (data.ContainsKey("displayName") && data["displayName"] != null)
+                    {
+                        lblShopTitle.Text = Convert.ToString(data["displayName"]);
+                    }
+
+                    if (data.ContainsKey("serverUrl") && data["serverUrl"] != null)
+                    {
+                        currentServerUrl = Convert.ToString(data["serverUrl"]).Trim();
+                        lblServer.Text = "Server: " + currentServerUrl;
+                    }
+                    else
+                    {
+                        lblServer.Text = "Server: " + GetActiveServerUrl();
+                    }
+
+                    if (heartbeat > 0)
+                    {
+                        lblLastHeartbeat.Text = "Last heartbeat: " +
+                            new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddMilliseconds(heartbeat).ToLocalTime().ToString("g");
+                    }
+
+                    if (data.ContainsKey("printers") && data["printers"] is System.Collections.ArrayList)
+                    {
+                        var list = (System.Collections.ArrayList)data["printers"];
+                        string foundPrinter = null;
+                        foreach (var item in list)
+                        {
+                            if (item is Dictionary<string, object>)
+                            {
+                                var p = (Dictionary<string, object>)item;
+                                bool isEligible = p.ContainsKey("isEligible") && Convert.ToBoolean(p["isEligible"]);
+                                bool isDef = p.ContainsKey("isDefault") && Convert.ToBoolean(p["isDefault"]);
+                                string dName = p.ContainsKey("displayName") ? Convert.ToString(p["displayName"]) : "";
+                                if (isEligible && isDef)
+                                {
+                                    foundPrinter = dName + " (Default)";
+                                    break;
+                                }
+                                if (isEligible && foundPrinter == null)
+                                {
+                                    foundPrinter = dName;
+                                }
+                            }
+                        }
+                        if (foundPrinter != null)
+                        {
+                            lblPrinterName.Text = foundPrinter;
+                            lblPrinterStatus.Text = "Production printer ready";
+                        }
+                    }
+
+                    if (data.ContainsKey("lastJobCode") && data["lastJobCode"] != null)
+                    {
+                        string jobCode = Convert.ToString(data["lastJobCode"]);
+                        string jobStatus = data.ContainsKey("lastJobStatus") ? Convert.ToString(data["lastJobStatus"]) : "";
+                        lblLastPrint.Text = "Last Order: " + jobCode + (string.IsNullOrEmpty(jobStatus) ? "" : " (" + jobStatus + ")");
+                    }
+
+                    string trayText = "PrintGo - " + lblStatusBadge.Text;
+                    trayIcon.Text = trayText.Substring(0, Math.Min(63, trayText.Length));
+                }
             }
-            catch { /* Keep the unavailable state; never infer readiness. */ }
+            catch { /* Keep the unavailable state; never crash on parse */ }
+        }
+    }
+
+    public class PairingDialog : Form
+    {
+        private TextBox txtCode;
+        private Button btnConnect;
+        private Button btnCancel;
+        public string EnteredValue { get; private set; }
+
+        public PairingDialog()
+        {
+            Text = "Connect PrintGo Computer";
+            Size = new Size(460, 260);
+            StartPosition = FormStartPosition.CenterParent;
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            MaximizeBox = false;
+            MinimizeBox = false;
+            BackColor = Color.FromArgb(248, 250, 252);
+            Font = new Font("Segoe UI", 9.5f, FontStyle.Regular);
+
+            var lblHeader = new Label
+            {
+                Text = "Enter Pairing Code",
+                Font = new Font("Segoe UI", 13f, FontStyle.Bold),
+                ForeColor = Color.FromArgb(15, 23, 42),
+                Location = new Point(24, 20),
+                Size = new Size(400, 28)
+            };
+            Controls.Add(lblHeader);
+
+            var lblSubtitle = new Label
+            {
+                Text = "Enter the 8-character code from Admin (e.g. 7777-8888):\nLowercase letters are automatically converted to uppercase.",
+                ForeColor = Color.FromArgb(100, 116, 139),
+                Location = new Point(24, 52),
+                Size = new Size(400, 38)
+            };
+            Controls.Add(lblSubtitle);
+
+            txtCode = new TextBox
+            {
+                Location = new Point(24, 100),
+                Size = new Size(396, 36),
+                Font = new Font("Consolas", 16f, FontStyle.Bold),
+                TextAlign = HorizontalAlignment.Center,
+                CharacterCasing = CharacterCasing.Upper
+            };
+            Controls.Add(txtCode);
+
+            btnCancel = new Button
+            {
+                Text = "Cancel",
+                DialogResult = DialogResult.Cancel,
+                Location = new Point(190, 156),
+                Size = new Size(110, 38),
+                BackColor = Color.White,
+                FlatStyle = FlatStyle.System
+            };
+            Controls.Add(btnCancel);
+
+            btnConnect = new Button
+            {
+                Text = "Connect PC",
+                DialogResult = DialogResult.OK,
+                Location = new Point(310, 156),
+                Size = new Size(110, 38),
+                BackColor = Color.FromArgb(37, 99, 235),
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat,
+                Font = new Font("Segoe UI", 10f, FontStyle.Bold)
+            };
+            btnConnect.FlatAppearance.BorderSize = 0;
+            btnConnect.Click += (s, e) =>
+            {
+                EnteredValue = txtCode.Text.Trim();
+                DialogResult = DialogResult.OK;
+                Close();
+            };
+            Controls.Add(btnConnect);
+
+            AcceptButton = btnConnect;
+            CancelButton = btnCancel;
+        }
+
+        protected override void OnShown(EventArgs e)
+        {
+            base.OnShown(e);
+            txtCode.Focus();
         }
     }
 }

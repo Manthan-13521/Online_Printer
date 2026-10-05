@@ -78,6 +78,24 @@ describe("runCli CLI flags", () => {
     expect(start).not.toHaveBeenCalled();
   });
 
+  it("normalizes lowercase pair codes without hyphen and uses default server when --server is omitted", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const pair = vi.spyOn(AgentDaemon.prototype, "pair").mockResolvedValue({
+      agentId: "test",
+      agentSecret: "test-secret",
+      serverUrl: "https://printgo-api.printgo-worker.workers.dev",
+      displayName: "test",
+    });
+    vi.spyOn(AgentDaemon.prototype, "start").mockResolvedValue(true);
+    process.argv = ["node", "index.js", "--pair-only", "--pair", "abcd1234"];
+    await runCli();
+    expect(pair).toHaveBeenCalledWith(
+      "https://printgo-api.printgo-worker.workers.dev",
+      "ABCD-1234",
+      expect.any(String),
+    );
+  });
+
   afterEach(() => {
     process.argv = [...originalArgv];
     vi.restoreAllMocks();

@@ -275,6 +275,13 @@ SumatraPDF:
       ? candidatePairCode
       : protocolPairCode || process.env.PRINTGO_PAIR_CODE;
 
+  if (pairCodeArg) {
+    pairCodeArg = pairCodeArg.trim().toUpperCase();
+    if (/^[A-Z0-9]{8}$/.test(pairCodeArg)) {
+      pairCodeArg = `${pairCodeArg.slice(0, 4)}-${pairCodeArg.slice(4)}`;
+    }
+  }
+
   const serverIndex =
     args.indexOf("--server") !== -1
       ? args.indexOf("--server")
@@ -287,6 +294,8 @@ SumatraPDF:
       : typeof fileConfig.apiUrl === "string"
         ? fileConfig.apiUrl
         : undefined;
+  const DEFAULT_PRODUCTION_SERVER =
+    "https://printgo-api.printgo-worker.workers.dev";
   const serverUrl =
     candidateServerUrl ||
     protocolServerUrl ||
@@ -295,7 +304,7 @@ SumatraPDF:
     configServerUrl ||
     (process.env.NODE_ENV === "development"
       ? "http://127.0.0.1:8787"
-      : undefined);
+      : DEFAULT_PRODUCTION_SERVER);
 
   const nameIndex = args.indexOf("--name");
   const candidateName = nameIndex !== -1 ? args[nameIndex + 1] : undefined;
@@ -356,7 +365,10 @@ SumatraPDF:
       );
       rl.close();
       if (input.trim()) {
-        pairCodeArg = input.trim();
+        pairCodeArg = input.trim().toUpperCase();
+        if (/^[A-Z0-9]{8}$/.test(pairCodeArg)) {
+          pairCodeArg = `${pairCodeArg.slice(0, 4)}-${pairCodeArg.slice(4)}`;
+        }
       }
     } catch {
       // Interactive prompt fallback ignored if stdin is closed/aborted
