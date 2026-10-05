@@ -87,11 +87,20 @@ export function DashboardPage({
   }
 
   const defaultPrinter = printers.find((p) => p.id === defaultPrinterId);
-  const activeAgent = agents.find((a) => a.isActive);
+  const sortedAgents = [...agents].sort((a, b) => {
+    if (a.isOnline && !b.isOnline) return -1;
+    if (!a.isOnline && b.isOnline) return 1;
+    const timeA = a.lastHeartbeatAt ? new Date(a.lastHeartbeatAt).getTime() : 0;
+    const timeB = b.lastHeartbeatAt ? new Date(b.lastHeartbeatAt).getTime() : 0;
+    return timeB - timeA;
+  });
+  const activeAgent = sortedAgents[0] ?? null;
   const agentOnline = Boolean(
-    activeAgent &&
-    activeAgent.lastHeartbeatAt &&
-    Date.now() - new Date(activeAgent.lastHeartbeatAt).getTime() < 90000,
+    activeAgent?.isOnline ||
+      (activeAgent &&
+        activeAgent.isActive &&
+        activeAgent.lastHeartbeatAt &&
+        Date.now() - new Date(activeAgent.lastHeartbeatAt).getTime() < 90000),
   );
   const printerReady = Boolean(
     defaultPrinter &&

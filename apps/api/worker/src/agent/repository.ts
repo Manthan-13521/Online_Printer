@@ -294,6 +294,13 @@ export class D1AgentRepository implements AgentRepository {
         ),
       this.db
         .prepare(
+          `UPDATE agents
+           SET is_active = 0, updated_at_ms = ?
+           WHERE id != ? AND is_active = 1`,
+        )
+        .bind(input.nowMs, input.agentId),
+      this.db
+        .prepare(
           `INSERT INTO audit_logs (
              id, actor_type, actor_id, action, entity_type, entity_id, created_at_ms
            )
@@ -589,7 +596,7 @@ export class D1AgentRepository implements AgentRepository {
       await this.db.batch([
         this.db.prepare(
           `SELECT id, display_name, is_active, paired_at_ms, last_heartbeat_at_ms
-         FROM agents WHERE is_active = 1 ORDER BY created_at_ms ASC`,
+         FROM agents WHERE is_active = 1 ORDER BY last_heartbeat_at_ms DESC, created_at_ms DESC`,
         ),
         this.db.prepare(
           `SELECT id, agent_id, display_name, windows_printer_name, enabled,
