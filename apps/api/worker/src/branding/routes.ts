@@ -7,38 +7,77 @@ import { D1AdminAuthRepository } from "../auth/repository";
 
 export const MAX_LOGO_BYTES = 1024 * 1024;
 
-export function validLogo(bytes: Uint8Array, mime: string): boolean {
-  if (bytes.length === 0 || bytes.length > MAX_LOGO_BYTES) return false;
+export function detectLogoMime(
+  bytes: Uint8Array,
+): "image/png" | "image/jpeg" | "image/webp" | null {
+  if (bytes.length === 0 || bytes.length > MAX_LOGO_BYTES) return null;
   const at = (offset: number, text: string) =>
+    offset + text.length <= bytes.length &&
     [...text].every((c, i) => bytes[offset + i] === c.charCodeAt(0));
-  if (mime === "image/png")
-    return (
-      bytes.length >= 33 &&
-      [137, 80, 78, 71, 13, 10, 26, 10].every((b, i) => bytes[i] === b) &&
-      at(12, "IHDR")
-    );
-  if (mime === "image/jpeg")
-    return (
-      bytes.length >= 4 &&
-      bytes[0] === 255 &&
-      bytes[1] === 216 &&
-      bytes[2] === 255 &&
-      bytes.at(-2) === 255 &&
-      bytes.at(-1) === 217
-    );
-  if (mime === "image/webp")
-    return (
-      bytes.length >= 20 &&
-      at(0, "RIFF") &&
-      at(8, "WEBP") &&
-      (at(12, "VP8 ") || at(12, "VP8L") || at(12, "VP8X")) &&
-      new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(
-        4,
-        true,
-      ) ===
-        bytes.length - 8
-    );
-  return false;
+
+  // PNG: 8-byte signature + IHDR chunk
+  if (
+    bytes.length >= 33 &&
+    bytes[0] === 137 &&
+    bytes[1] === 80 &&
+    bytes[2] === 78 &&
+    bytes[3] === 71 &&
+    bytes[4] === 13 &&
+    bytes[5] === 10 &&
+    bytes[6] === 26 &&
+    bytes[7] === 10 &&
+    at(12, "IHDR")
+  ) {
+    return "image/png";
+  }
+
+  // JPEG: SOI marker (0xFF, 0xD8, 0xFF)
+  if (
+    bytes.length >= 4 &&
+    bytes[0] === 255 &&
+    bytes[1] === 216 &&
+    bytes[2] === 255
+  ) {
+    return "image/jpeg";
+  }
+
+  // WebP: RIFF .... WEBP
+  if (
+    bytes.length >= 20 &&
+    at(0, "RIFF") &&
+    at(8, "WEBP") &&
+    (at(12, "VP8 ") || at(12, "VP8L") || at(12, "VP8X"))
+  ) {
+    return "image/webp";
+  }
+
+  return null;
+}
+
+export function validLogo(bytes: Uint8Array, mime?: string): boolean {
+  const detected = detectLogoMime(bytes);
+  if (!detected) return false;
+  if (!mime) return true;
+  const lower = mime.toLowerCase();
+  if (
+    detected === "image/png" &&
+    (lower.includes("png") || lower.includes("octet-stream"))
+  )
+    return true;
+  if (
+    detected === "image/jpeg" &&
+    (lower.includes("jpeg") ||
+      lower.includes("jpg") ||
+      lower.includes("octet-stream"))
+  )
+    return true;
+  if (
+    detected === "image/webp" &&
+    (lower.includes("webp") || lower.includes("octet-stream"))
+  )
+    return true;
+  // If magic bytes are definitely a supported image, accept it
+  return true;
 }
 
 async function readLogo(request: Request): Promise<Uint8Array | null> {
@@ -137,14 +176,15 @@ export async function handleBrandingRequest(
         );
       let key: string | null = null;
       if (request.method === "PUT") {
-        const mime = request.headers.get("content-type") ?? "";
+        const rawMime = request.headers.get("content-type") ?? "";
         const bytes = await readLogo(request);
         if (!bytes)
           return withAdminCors(
             error(413, "LOGO_TOO_LARGE", "Choose an image up to 1 MB."),
             env.ADMIN_ALLOWED_ORIGIN,
           );
-        if (!validLogo(bytes, mime))
+        const detectedMime = detectLogoMime(bytes);
+        if (!detectedMime || !validLogo(bytes, rawMime))
           return withAdminCors(
             error(
               400,
@@ -155,7 +195,7 @@ export async function handleBrandingRequest(
           );
         key = `branding/${crypto.randomUUID()}`;
         await env.PDF_BUCKET.put(key, bytes, {
-          httpMetadata: { contentType: mime },
+          httpMetadata: { contentType: detectedMime },
         });
       }
       let changed: D1Result[];

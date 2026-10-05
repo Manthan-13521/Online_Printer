@@ -63,14 +63,19 @@ export function friendlyAdminError(caught: unknown): string {
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
+  const headers = new Headers(init?.headers);
+  if (
+    init?.body &&
+    typeof init.body === "string" &&
+    !headers.has("content-type")
+  ) {
+    headers.set("content-type", "application/json");
+  }
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
       ...init,
       credentials: "include",
-      headers: {
-        ...(init?.body ? { "content-type": "application/json" } : {}),
-        ...init?.headers,
-      },
+      headers,
     });
   } catch {
     throw new AdminApiError(
@@ -102,10 +107,17 @@ export const adminApi = {
   uploadLogo(
     file: File,
   ): Promise<ApiResponse<{ logoUrl: string; message: string }>> {
+    const contentType =
+      file.type ||
+      (file.name.toLowerCase().endsWith(".png")
+        ? "image/png"
+        : file.name.toLowerCase().endsWith(".webp")
+          ? "image/webp"
+          : "image/jpeg");
     return request("/api/admin/branding/logo", {
       method: "PUT",
       body: file,
-      headers: { "Content-Type": file.type },
+      headers: { "content-type": contentType },
     });
   },
   removeLogo(): Promise<ApiResponse<{ logoUrl: null; message: string }>> {
