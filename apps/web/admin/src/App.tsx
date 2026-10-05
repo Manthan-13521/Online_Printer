@@ -25,7 +25,6 @@ const navigation = [
   { label: "Failed Jobs", path: "/admin/failed-jobs" },
   { label: "Printer", path: "/admin/printer" },
   { label: "Pricing", path: "/admin/pricing" },
-  { label: "Reports", path: "/admin/reports" },
   { label: "Shop Settings", path: "/admin/shop-settings" },
   { label: "Security", path: "/admin/security" },
 ] as const;
