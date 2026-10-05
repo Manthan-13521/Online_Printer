@@ -444,7 +444,9 @@ function mapCustomerError(caught: unknown, env: WorkerEnv): Response {
     return error(
       statuses[caught.code] ?? 400,
       caught.code,
-      messages[caught.code] ?? "The payment request could not be completed.",
+      caught.message && caught.message !== caught.code
+        ? caught.message
+        : (messages[caught.code] ?? "The payment request could not be completed."),
       corsHeaders(env),
     );
   }

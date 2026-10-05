@@ -113,6 +113,20 @@ function customerErrorMessage(caught: unknown): string {
 
 function paymentErrorMessage(caught: unknown): string {
   const code = caught instanceof Error ? caught.message : "";
+  if (
+    code &&
+    code !== "PRINTER_NOT_READY" &&
+    code !== "REQUEST_FAILED" &&
+    code !== "Failed to fetch" &&
+    code !== "CHECKOUT_LOAD_FAILED" &&
+    code !== "PAYMENT_NOT_CAPTURED" &&
+    code !== "PAYMENT_SIGNATURE_INVALID" &&
+    code !== "PAYMENT_PROVIDER_UNAVAILABLE" &&
+    code !== "TRACKING_ACCESS_UNAVAILABLE" &&
+    code !== "TRACKING_ACCESS_CONFLICT"
+  ) {
+    return code;
+  }
   if (code === "PRINTER_NOT_READY")
     return "Online payment is temporarily unavailable because the shop printer is not ready.";
   if (code === "PAYMENT_NOT_CAPTURED")

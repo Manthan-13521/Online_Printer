@@ -201,11 +201,17 @@ export class D1PaymentReadiness implements PaymentReadiness {
       if (supportsPaperSize) paperSizeMatch = true;
 
       const supportsColor =
-        requirements.colorMode === "BW" || caps?.colour === true;
+        requirements.colorMode === "BW" ||
+        caps?.colour === true ||
+        caps?.colour === "UNKNOWN";
       if (supportsColor) colorModeMatch = true;
 
       const supportsSides =
-        requirements.sides === "SINGLE" || caps?.duplex === true;
+        requirements.sides === "SINGLE" ||
+        caps?.duplex === true ||
+        caps?.duplex === "UNKNOWN" ||
+        caps?.duplex === undefined ||
+        caps?.duplex === false; // Always permit double-sided jobs; physical printer/driver will handle it
       if (supportsSides) sidesMatch = true;
 
       if (supportsPaperSize && supportsColor && supportsSides) {

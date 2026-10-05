@@ -568,21 +568,25 @@ export class D1AgentRepository implements AgentRepository {
         .prepare(
           `UPDATE installation
            SET default_production_printer_id = (
-             SELECT id FROM printers
-             WHERE enabled = 1 AND is_production_eligible = 1 AND is_virtual = 0
-             ORDER BY id ASC LIMIT 1
+             SELECT p.id FROM printers p
+             JOIN agents a ON p.agent_id = a.id
+             WHERE a.is_active = 1 AND p.enabled = 1 AND p.is_production_eligible = 1 AND p.is_virtual = 0
+             ORDER BY p.id ASC LIMIT 1
            ), updated_at_ms = ?
            WHERE id = 1 AND (
              default_production_printer_id IS NULL
              OR NOT EXISTS (
                SELECT 1 FROM printers p
+               JOIN agents a ON p.agent_id = a.id
                WHERE p.id = installation.default_production_printer_id
+                 AND a.is_active = 1
                  AND p.is_production_eligible = 1 AND p.is_virtual = 0
              )
            )
            AND EXISTS (
-             SELECT 1 FROM printers
-             WHERE enabled = 1 AND is_production_eligible = 1 AND is_virtual = 0
+             SELECT 1 FROM printers p
+             JOIN agents a ON p.agent_id = a.id
+             WHERE a.is_active = 1 AND p.enabled = 1 AND p.is_production_eligible = 1 AND p.is_virtual = 0
            )`,
         )
         .bind(input.nowMs),

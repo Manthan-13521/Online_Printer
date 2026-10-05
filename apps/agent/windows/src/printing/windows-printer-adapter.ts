@@ -107,6 +107,8 @@ interface CimPrinterOutput {
   DetectedErrorState?: number;
   ExtendedPrinterStatus?: number;
   Color?: boolean;
+  Duplex?: boolean;
+  Capabilities?: number[];
   CapabilityDescriptions?: string[];
   PrinterPaperNames?: string[];
   PortName?: string;
@@ -275,7 +277,7 @@ export class WindowsPrinterAdapter implements PrinterAdapter {
     const escapedName = printerId.replace(/'/g, "''");
     const psCommand = `
 $printer = '${escapedName}'
-Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $printer } | Select-Object Name, Color, CapabilityDescriptions, PrinterPaperNames | ConvertTo-Json -Compress
+Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $printer } | Select-Object Name, Color, Duplex, Capabilities, CapabilityDescriptions, PrinterPaperNames | ConvertTo-Json -Compress
     `.trim();
 
     try {
@@ -318,19 +320,19 @@ Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $printer } | Select-O
     } else if (
       capsText.includes("monochrome") ||
       capsText.includes("mono") ||
-      capsText.includes("black and white") ||
-      caps.length > 0
+      capsText.includes("black and white")
     ) {
       colour = false;
     }
 
     let duplex: boolean | "UNKNOWN" = "UNKNOWN";
-    if (capsText.includes("duplex") || capsText.includes("two-sided")) {
+    if (typeof p.Duplex === "boolean") {
+      duplex = p.Duplex;
+    } else if (capsText.includes("duplex") || capsText.includes("two-sided")) {
       duplex = true;
     } else if (
       capsText.includes("simplex") ||
-      capsText.includes("single-sided") ||
-      caps.length > 0
+      capsText.includes("single-sided")
     ) {
       duplex = false;
     }

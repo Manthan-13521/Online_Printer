@@ -48,7 +48,7 @@ async function jsonRequest<T>(path: string, init?: RequestInit): Promise<T> {
   });
   const body = (await response.json()) as ApiResponse<T>;
   if (!response.ok || !body.ok)
-    throw new Error(body.ok ? "REQUEST_FAILED" : body.error.code);
+    throw new Error(body.ok ? "REQUEST_FAILED" : (body.error.message || body.error.code));
   return body.data;
 }
 

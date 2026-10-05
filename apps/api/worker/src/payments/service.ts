@@ -49,8 +49,11 @@ export type PaymentErrorCode =
   | "PAYMENT_AMOUNT_INVALID";
 
 export class PaymentError extends Error {
-  constructor(readonly code: PaymentErrorCode) {
-    super(code);
+  constructor(
+    readonly code: PaymentErrorCode,
+    override readonly message: string = code,
+  ) {
+    super(message);
     this.name = "PaymentError";
   }
 }
@@ -304,7 +307,12 @@ export class PaymentService {
         colorMode: file.colorMode,
         sides: file.sides,
       });
-      if (!readiness.ready) throw new PaymentError("PRINTER_NOT_READY");
+      if (!readiness.ready) {
+        throw new PaymentError(
+          "PRINTER_NOT_READY",
+          readiness.message ?? "The shop printer is currently not ready to print.",
+        );
+      }
     }
 
     if (active) {
