@@ -731,11 +731,20 @@ export class D1AgentRepository implements AgentRepository {
       this.db
         .prepare(
           `UPDATE printers
-           SET status = 'OFFLINE', status_reason = 'Agent revoked by administrator',
+           SET status = 'OFFLINE', enabled = 0, status_reason = 'Agent revoked by administrator',
                last_status_at_ms = ?, updated_at_ms = ?
            WHERE agent_id = ?`,
         )
         .bind(input.nowMs, input.nowMs, input.agentId),
+      this.db
+        .prepare(
+          `UPDATE installation
+           SET default_production_printer_id = NULL, updated_at_ms = ?
+           WHERE default_production_printer_id IN (
+             SELECT id FROM printers WHERE agent_id = ?
+           )`,
+        )
+        .bind(input.nowMs, input.agentId),
       this.db
         .prepare(
           `INSERT INTO audit_logs (
