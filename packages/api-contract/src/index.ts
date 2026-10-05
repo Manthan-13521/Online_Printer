@@ -702,6 +702,8 @@ export type AdminLiveOrdersResponse = ApiResponse<{ orders: AdminLiveOrder[] }>;
 export interface AdminOrderHistoryEntry {
   orderId: string;
   pickupCode: string | null;
+  customerName?: string | null;
+  customerPhone?: string | null;
   createdAt: string;
   completedAt: string | null;
   isPriority: boolean;

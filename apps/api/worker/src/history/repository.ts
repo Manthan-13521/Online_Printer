@@ -2,6 +2,8 @@ import type { AdminOrderHistoryEntry } from "@printgo/api-contract";
 
 interface HistoryRow {
   id: string;
+  customer_name: string | null;
+  customer_phone: string | null;
   created_at_ms: number;
   completed_at_ms: number | null;
   pickup_code: string | null;
@@ -43,7 +45,7 @@ export class D1OrderHistoryRepository {
            WHERE (created_at_ms, id) < (?, ?)
            ORDER BY created_at_ms DESC, id DESC LIMIT ?
          )
-         SELECT o.id, o.created_at_ms, o.completed_at_ms, o.pickup_code,
+         SELECT o.id, o.customer_name, o.customer_phone, o.created_at_ms, o.completed_at_ms, o.pickup_code,
            o.is_priority,
            CASE WHEN o.status = 'MANUAL_PRINT' OR EXISTS (
              SELECT 1 FROM order_addon_services s WHERE s.order_id = o.id
@@ -83,6 +85,8 @@ export class D1OrderHistoryRepository {
       orders: rows.map((row) => ({
         orderId: row.id,
         pickupCode: row.pickup_code,
+        customerName: row.customer_name ?? null,
+        customerPhone: row.customer_phone ?? null,
         createdAt: new Date(row.created_at_ms).toISOString(),
         completedAt:
           row.completed_at_ms === null

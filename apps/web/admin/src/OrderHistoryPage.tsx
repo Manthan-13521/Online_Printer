@@ -148,6 +148,26 @@ export function OrderHistoryPage({
                 marginTop: "0.25rem",
               }}
             >
+              {/* Customer Name & Phone */}
+              {(order.customerName || order.customerPhone) && (
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                    gap: "0.4rem 1.5rem",
+                  }}
+                >
+                  <div>
+                    <span style={{ color: "#5E6A63" }}>Customer: </span>
+                    <strong>{order.customerName ?? "—"}</strong>
+                  </div>
+                  <div>
+                    <span style={{ color: "#5E6A63" }}>Phone: </span>
+                    <strong>{order.customerPhone ?? "—"}</strong>
+                  </div>
+                </div>
+              )}
+
               {/* Line 1: Created & Completed in same line */}
               <div
                 style={{
