@@ -546,6 +546,9 @@ describe("D1 cleanup repository", () => {
     const second = "59000000-0000-4000-8000-000000000001";
     seedOrder(first, "QUEUED", 1_000);
     seedOrder(second, "QUEUED", 2_000);
+    db.prepare("UPDATE orders SET pickup_code = 'PA-123' WHERE id = ?").run(
+      first,
+    );
     db.prepare(
       "UPDATE orders SET pickup_code = 'PA-456', is_priority = 1, due_at_pickup_paise = 250 WHERE id = ?",
     ).run(second);

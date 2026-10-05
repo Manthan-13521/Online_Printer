@@ -400,13 +400,6 @@ Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $printer } | Select-O
       return { availability: "ONLINE" };
     }
 
-    // If Windows reports Idle (3) or No Error (2), and network probe confirmed or not applicable:
-    if (p.PrinterStatus === 3 || p.DetectedErrorState === 2) {
-      if (isNetworkReachable !== false) {
-        return { availability: "ONLINE" };
-      }
-    }
-
     const host = extractHostFromPortName(p.PortName);
     if (host !== null) {
       if (isNetworkReachable === false) {
@@ -420,15 +413,14 @@ Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $printer } | Select-O
       }
     }
 
+    // When Windows reports WorkOffline is false, or reports a defined PrinterStatus (such as 2=Unknown/Default,
+    // 3=Idle, 4=Printing, 5=Warmup) or DetectedErrorState is 0/2 (no error detected), the printer is ready.
     if (
-      p.PrinterStatus === 3 ||
-      p.PrinterStatus === 4 ||
-      p.PrinterStatus === 5
+      p.WorkOffline === false ||
+      p.PrinterStatus !== undefined ||
+      p.DetectedErrorState === 0 ||
+      p.DetectedErrorState === 2
     ) {
-      return { availability: "ONLINE" };
-    }
-    if (p.DetectedErrorState === 2) {
-      // No Error
       return { availability: "ONLINE" };
     }
 
@@ -575,9 +567,7 @@ if (-not $sumatra -or -not (Test-Path $sumatra)) {
 # Fresh readiness in this same process, before any physical side effect. Never trust the idle snapshot here.
 $ready = Get-CimInstance Win32_Printer -ErrorAction Stop | Where-Object { $_.Name -eq $printer }
 if (-not $ready -or $ready.WorkOffline -or $ready.PrinterStatus -in @(6,7) -or
-    $ready.DetectedErrorState -in @(4,6,7,8,9,10,11) -or
-    ($ready.PrinterStatus -notin @(3,4,5) -and
-      -not ($ready.PrinterStatus -eq 2 -and $ready.DetectedErrorState -eq 2))) {
+    $ready.DetectedErrorState -in @(4,6,7,8,9,10,11)) {
     throw "Printer readiness could not be confirmed before submission."
 }
 
@@ -670,17 +660,6 @@ if (-not $matchedJob) {
     }
 }
 
-if ($matchedJob) { 45000 } else { 15000 }
-$exited = $proc.WaitForExit($waitTimeoutMs)
-if (-not $exited) {
-    $proc.Kill()
-    if (-not $matchedJob) {
-        throw "SumatraPDF print process timed out after 30 seconds."
-    }
-}
-if ($exited -and $proc.ExitCode -ne 0 -and -not $matchedJob) {
-    throw "SumatraPDF exited with error code $($proc.ExitCode)."
-}
 
 # If not caught while running, poll briefly post-exit
 if (-not $matchedJob) {

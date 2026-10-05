@@ -1427,6 +1427,21 @@ export class D1PrintingRepository implements PrintingRepository {
             FROM orders
             WHERE status IN ('QUEUED','CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED',
               'PRINT_FAILED','ADMIN_ACTION_REQUIRED','RETRY_PENDING','NEEDS_ADMIN','COMPLETION_UNKNOWN')
+              AND cleanup_state = 'ACTIVE'
+              AND (
+                public_job_code IS NOT NULL
+                OR paid_at_ms IS NOT NULL
+                OR EXISTS (SELECT 1 FROM payments p WHERE p.order_id = orders.id AND p.status = 'PAID')
+                OR status = 'MANUAL_PRINT'
+                OR EXISTS (
+                  SELECT 1 FROM order_addon_services s WHERE s.order_id = orders.id
+                    AND s.snapshot_handling_mode = 'MANUAL_PRINT'
+                )
+                OR EXISTS (
+                  SELECT 1 FROM order_events e WHERE e.order_id = orders.id
+                    AND e.event_type IN ('ORDER_MANUALLY_COMPLETED','ORDER_MANUALLY_PRINTED')
+                )
+              )
             UNION ALL
             SELECT id, public_job_code, pickup_code, is_priority, identification_required,
               customer_name, customer_phone,
@@ -1436,6 +1451,21 @@ export class D1PrintingRepository implements PrintingRepository {
               paid_at_ms, updated_at_ms
             FROM orders
             WHERE status = 'PRINTED' AND updated_at_ms >= ?
+              AND cleanup_state = 'ACTIVE'
+              AND (
+                public_job_code IS NOT NULL
+                OR paid_at_ms IS NOT NULL
+                OR EXISTS (SELECT 1 FROM payments p WHERE p.order_id = orders.id AND p.status = 'PAID')
+                OR status = 'MANUAL_PRINT'
+                OR EXISTS (
+                  SELECT 1 FROM order_addon_services s WHERE s.order_id = orders.id
+                    AND s.snapshot_handling_mode = 'MANUAL_PRINT'
+                )
+                OR EXISTS (
+                  SELECT 1 FROM order_events e WHERE e.order_id = orders.id
+                    AND e.event_type IN ('ORDER_MANUALLY_COMPLETED','ORDER_MANUALLY_PRINTED')
+                )
+              )
           )
           ORDER BY updated_at_ms DESC
           LIMIT 100
@@ -1658,14 +1688,43 @@ export class D1PrintingRepository implements PrintingRepository {
     nowMs: number;
   }): Promise<{ orderId: string; status: "QUEUED" }> {
     const order = await this.db
-      .prepare(`SELECT id, status, cleanup_state FROM orders WHERE id = ?`)
+      .prepare(
+        `SELECT id, status, cleanup_state, public_job_code, paid_at_ms,
+           (SELECT 1 FROM payments p WHERE p.order_id = orders.id AND p.status = 'PAID') AS has_paid_payment,
+           EXISTS (
+             SELECT 1 FROM uploads u WHERE u.order_id = orders.id
+               AND u.storage_status = 'UPLOADED' AND u.deleted_at_ms IS NULL
+           ) AS has_printable_file,
+           (SELECT 1 FROM order_events e WHERE e.order_id = orders.id
+              AND e.event_type IN ('ORDER_MANUALLY_COMPLETED','ORDER_MANUALLY_PRINTED')) AS is_manual
+         FROM orders WHERE id = ?`,
+      )
       .bind(input.orderId)
-      .first<{ id: string; status: string; cleanup_state: string }>();
+      .first<{
+        id: string;
+        status: string;
+        cleanup_state: string;
+        public_job_code: string | null;
+        paid_at_ms: number | null;
+        has_paid_payment: number | null;
+        has_printable_file: number;
+        is_manual: number | null;
+      }>();
 
     if (!order) {
       throw new Error("ORDER_NOT_FOUND");
     }
     if (order.cleanup_state !== "ACTIVE") {
+      throw new Error("ORDER_CANNOT_BE_RETRIED");
+    }
+
+    const isValidPaidOrManualOrder =
+      order.public_job_code !== null ||
+      order.paid_at_ms !== null ||
+      order.has_paid_payment === 1 ||
+      order.is_manual === 1;
+
+    if (!isValidPaidOrManualOrder) {
       throw new Error("ORDER_CANNOT_BE_RETRIED");
     }
 
@@ -1678,12 +1737,14 @@ export class D1PrintingRepository implements PrintingRepository {
       "RETRY_PENDING",
       "COMPLETED",
       "PRINTED",
-      "PAYMENT_PENDING",
-      "PAID",
     ];
 
     if (!retriableStatuses.includes(order.status)) {
       throw new Error("ORDER_CANNOT_BE_RETRIED");
+    }
+
+    if (order.has_printable_file !== 1) {
+      throw new Error("ORDER_PDF_EXPIRED");
     }
 
     if (
@@ -1703,7 +1764,7 @@ export class D1PrintingRepository implements PrintingRepository {
                error_category = NULL, raw_error = NULL, attempt_count = 0,
                next_retry_at_ms = NULL, queued_at_ms = ?, updated_at_ms = ?
            WHERE id = ? AND cleanup_state = 'ACTIVE'
-             AND status IN ('ADMIN_ACTION_REQUIRED','PRINT_FAILED','PRINT_BLOCKED','NEEDS_ADMIN','COMPLETION_UNKNOWN','RETRY_PENDING','COMPLETED','PRINTED','PAYMENT_PENDING','PAID')`,
+             AND status IN ('ADMIN_ACTION_REQUIRED','PRINT_FAILED','PRINT_BLOCKED','NEEDS_ADMIN','COMPLETION_UNKNOWN','RETRY_PENDING','COMPLETED','PRINTED')`,
         )
         .bind(input.nowMs, input.nowMs, input.orderId),
       this.db

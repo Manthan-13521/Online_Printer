@@ -112,7 +112,11 @@ export class PaidPrintExecutor {
       const printerStatus = await this.printer.getStatus(
         job.windowsPrinterName,
       );
-      if (printerStatus && printerStatus.availability !== "ONLINE") {
+      if (
+        printerStatus &&
+        (printerStatus.availability === "OFFLINE" ||
+          printerStatus.availability === "BLOCKED")
+      ) {
         this.log(
           `Printer ${job.windowsPrinterName} is not online (${printerStatus.availability}: ${printerStatus.message ?? "Not ready"}). Waiting before print submission.`,
         );
@@ -252,8 +256,11 @@ export class PaidPrintExecutor {
           .catch(() => undefined);
         await this.journal.clear();
       } else {
-        const errDetails = error instanceof Error ? (error.stack || error.message) : String(error);
-        this.log(`Print submission result is unresolved (${errDetails}); human review required.`);
+        const errDetails =
+          error instanceof Error ? error.stack || error.message : String(error);
+        this.log(
+          `Print submission result is unresolved (${errDetails}); human review required.`,
+        );
         // Keep a positively correlated local spool identity if the server is unreachable.
         const savedSubmission = await this.journal.load();
         try {

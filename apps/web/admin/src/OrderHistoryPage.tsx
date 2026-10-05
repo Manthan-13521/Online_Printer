@@ -271,21 +271,32 @@ export function OrderHistoryPage({
                       {orderNotice[order.orderId]}
                     </span>
                   ) : null}
-                  <button
-                    type="button"
-                    className="primary-button compact"
-                    disabled={order.purged || printingOrderId === order.orderId}
-                    onClick={() => void handlePrintAgain(order)}
-                    title={
-                      order.purged
-                        ? "Document purged according to shop privacy policy."
-                        : "Re-queue this order to print again on shop printer."
-                    }
-                  >
-                    {printingOrderId === order.orderId
-                      ? "Queueing…"
-                      : "Print Again"}
-                  </button>
+                  {[
+                    "COMPLETED",
+                    "PRINTED",
+                    "PRINT_FAILED",
+                    "ADMIN_ACTION_REQUIRED",
+                    "NEEDS_ADMIN",
+                    "COMPLETION_UNKNOWN",
+                  ].includes(order.status) ? (
+                    <button
+                      type="button"
+                      className="primary-button compact"
+                      disabled={
+                        order.purged || printingOrderId === order.orderId
+                      }
+                      onClick={() => void handlePrintAgain(order)}
+                      title={
+                        order.purged
+                          ? "Document purged according to shop privacy policy."
+                          : "Re-queue this order to print again on shop printer."
+                      }
+                    >
+                      {printingOrderId === order.orderId
+                        ? "Queueing…"
+                        : "Print Again"}
+                    </button>
+                  ) : null}
                 </div>
               </div>
 

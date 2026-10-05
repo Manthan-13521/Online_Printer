@@ -447,7 +447,8 @@ export class D1AgentRepository implements AgentRepository {
 
       if (existing) {
         const capsChanged = existing.capabilities_json !== capsJson;
-        const statusChanged = existing.status !== p.status;
+        const effectiveStatus = p.status === "UNKNOWN" ? "ONLINE" : p.status;
+        const statusChanged = existing.status !== effectiveStatus;
         const reasonChanged =
           existing.status_reason !== (p.statusReason ?? null);
         const nameChanged = existing.display_name !== p.displayName;
@@ -482,7 +483,7 @@ export class D1AgentRepository implements AgentRepository {
               )
               .bind(
                 p.displayName,
-                p.status,
+                effectiveStatus,
                 p.statusReason,
                 capsJson,
                 p.isProductionEligible ? 1 : 0,
@@ -497,6 +498,7 @@ export class D1AgentRepository implements AgentRepository {
           );
         }
       } else {
+        const effectiveStatus = p.status === "UNKNOWN" ? "ONLINE" : p.status;
         const autoEnable =
           !p.isVirtual && isFirstRegistration && (p.isDefault || index === 0);
         statements.push(
@@ -515,7 +517,7 @@ export class D1AgentRepository implements AgentRepository {
               p.displayName,
               p.windowsPrinterName,
               autoEnable ? 1 : 0,
-              p.status,
+              effectiveStatus,
               p.statusReason,
               capsJson,
               p.isProductionEligible ? 1 : 0,

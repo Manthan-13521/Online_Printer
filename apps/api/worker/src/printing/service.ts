@@ -209,6 +209,9 @@ export class PrintingService {
         if (err.message === "UNCERTAIN_RETRY_CONFIRMATION_REQUIRED") {
           throw new PrintingError("UNCERTAIN_RETRY_CONFIRMATION_REQUIRED");
         }
+        if (err.message === "ORDER_PDF_EXPIRED") {
+          throw new PrintingError("ORDER_PDF_EXPIRED");
+        }
       }
       throw err;
     }

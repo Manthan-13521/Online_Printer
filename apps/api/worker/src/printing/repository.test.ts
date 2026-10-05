@@ -682,4 +682,78 @@ describe("paid-print D1 safety", () => {
         .get(ids.order),
     ).toEqual({ status: "COMPLETED", completed_at_ms: 2_600 });
   });
+
+  it("excludes PAYMENT_PENDING and unpaid orders from listLiveOrders", async () => {
+    seed(db);
+    const unpaidOrderId = "70000000-0000-4000-8000-000000000001";
+    db.prepare(
+      `INSERT INTO orders (id, customer_name, customer_phone,
+       original_filename, selected_pages, source_page_count, copies, color_mode, paper_size,
+       sides, total_amount_paise, printing_amount_paise, status, created_at_ms, updated_at_ms)
+       VALUES (?, 'Unpaid Draft', '+919876543210', 'draft.pdf', 'ALL', 1, 1, 'BW', 'A4',
+       'SINGLE', 500, 500, 'PAYMENT_PENDING', 1000, 1000)`,
+    ).run(unpaidOrderId);
+
+    const live = await repository.listLiveOrders();
+    expect(live.some((o) => o.orderId === unpaidOrderId)).toBe(false);
+    expect(live.some((o) => o.orderId === ids.order)).toBe(true);
+  });
+
+  it("rejects retryOrder on unpaid or PAYMENT_PENDING orders", async () => {
+    seed(db);
+    const unpaidOrderId = "70000000-0000-4000-8000-000000000002";
+    db.prepare(
+      `INSERT INTO orders (id, customer_name, customer_phone,
+       original_filename, selected_pages, source_page_count, copies, color_mode, paper_size,
+       sides, total_amount_paise, printing_amount_paise, status, created_at_ms, updated_at_ms)
+       VALUES (?, 'Unpaid Draft', '+919876543210', 'draft.pdf', 'ALL', 1, 1, 'BW', 'A4',
+       'SINGLE', 500, 500, 'PAYMENT_PENDING', 1000, 1000)`,
+    ).run(unpaidOrderId);
+
+    await expect(
+      repository.retryOrder({
+        orderId: unpaidOrderId,
+        adminId: "admin-1",
+        nowMs: 2_000,
+      }),
+    ).rejects.toThrow("ORDER_CANNOT_BE_RETRIED");
+  });
+
+  it("rejects retryOrder with ORDER_PDF_EXPIRED when printable upload is deleted", async () => {
+    seed(db);
+    db.prepare(
+      "UPDATE orders SET status = 'COMPLETED', completed_at_ms = 1500 WHERE id = ?",
+    ).run(ids.order);
+    db.prepare(
+      "UPDATE uploads SET deleted_at_ms = 1800, storage_status = 'DELETED' WHERE order_id = ?",
+    ).run(ids.order);
+
+    await expect(
+      repository.retryOrder({
+        orderId: ids.order,
+        adminId: "admin-1",
+        nowMs: 2_000,
+      }),
+    ).rejects.toThrow("ORDER_PDF_EXPIRED");
+  });
+
+  it("successfully retries and requeues an eligible completed paid order when upload exists", async () => {
+    seed(db);
+    db.prepare(
+      "UPDATE orders SET status = 'COMPLETED', completed_at_ms = 1500 WHERE id = ?",
+    ).run(ids.order);
+
+    const result = await repository.retryOrder({
+      orderId: ids.order,
+      adminId: "admin-1",
+      nowMs: 2_000,
+    });
+
+    expect(result.status).toBe("QUEUED");
+    const updated = db
+      .prepare("SELECT status, queued_at_ms FROM orders WHERE id = ?")
+      .get(ids.order) as { status: string; queued_at_ms: number };
+    expect(updated.status).toBe("QUEUED");
+    expect(updated.queued_at_ms).toBe(2_000);
+  });
 });

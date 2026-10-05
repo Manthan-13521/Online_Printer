@@ -43,6 +43,22 @@ export class D1OrderHistoryRepository {
         `WITH page AS (
            SELECT id, created_at_ms FROM orders
            WHERE (created_at_ms, id) < (?, ?)
+             AND status NOT IN ('CREATED', 'UPLOADING', 'UPLOADED', 'PAYMENT_PENDING', 'PAYMENT_FAILED', 'PAYMENT_CANCELLED')
+             AND (
+               pickup_code IS NOT NULL
+               OR public_job_code IS NOT NULL
+               OR paid_at_ms IS NOT NULL
+               OR EXISTS (SELECT 1 FROM payments p WHERE p.order_id = orders.id AND p.status = 'PAID')
+               OR status = 'MANUAL_PRINT'
+               OR EXISTS (
+                 SELECT 1 FROM order_addon_services s WHERE s.order_id = orders.id
+                   AND s.snapshot_handling_mode = 'MANUAL_PRINT'
+               )
+               OR EXISTS (
+                 SELECT 1 FROM order_events e WHERE e.order_id = orders.id
+                   AND e.event_type IN ('ORDER_MANUALLY_COMPLETED','ORDER_MANUALLY_PRINTED')
+               )
+             )
            ORDER BY created_at_ms DESC, id DESC LIMIT ?
          )
          SELECT o.id, o.customer_name, o.customer_phone, o.created_at_ms, o.completed_at_ms, o.pickup_code,
@@ -70,15 +86,14 @@ export class D1OrderHistoryRepository {
              'code', st.failure_code, 'at', st.updated_at_ms))
              FROM print_attempt_steps st WHERE st.order_id = o.id
                AND st.status IN ('FAILED','BLOCKED','UNCERTAIN')), '[]') failure_json,
-           0 purged
+           CASE WHEN EXISTS (
+             SELECT 1 FROM uploads u WHERE u.order_id = o.id
+               AND u.storage_status = 'UPLOADED' AND u.deleted_at_ms IS NULL
+           ) THEN 0 ELSE 1 END purged
          FROM page JOIN orders o ON o.id = page.id
          ORDER BY 2 DESC, 1 DESC`,
       )
-      .bind(
-        beforeMs,
-        beforeId,
-        boundedLimit + 1,
-      )
+      .bind(beforeMs, beforeId, boundedLimit + 1)
       .all<HistoryRow>();
     const rows = result.results.slice(0, boundedLimit);
     return {
