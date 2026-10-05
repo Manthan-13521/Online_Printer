@@ -1676,6 +1676,10 @@ export class D1PrintingRepository implements PrintingRepository {
       "NEEDS_ADMIN",
       "COMPLETION_UNKNOWN",
       "RETRY_PENDING",
+      "COMPLETED",
+      "PRINTED",
+      "PAYMENT_PENDING",
+      "PAID",
     ];
 
     if (!retriableStatuses.includes(order.status)) {
@@ -1699,7 +1703,7 @@ export class D1PrintingRepository implements PrintingRepository {
                error_category = NULL, raw_error = NULL, attempt_count = 0,
                next_retry_at_ms = NULL, queued_at_ms = ?, updated_at_ms = ?
            WHERE id = ? AND cleanup_state = 'ACTIVE'
-             AND status IN ('ADMIN_ACTION_REQUIRED','PRINT_FAILED','PRINT_BLOCKED','NEEDS_ADMIN','COMPLETION_UNKNOWN','RETRY_PENDING')`,
+             AND status IN ('ADMIN_ACTION_REQUIRED','PRINT_FAILED','PRINT_BLOCKED','NEEDS_ADMIN','COMPLETION_UNKNOWN','RETRY_PENDING','COMPLETED','PRINTED','PAYMENT_PENDING','PAID')`,
         )
         .bind(input.nowMs, input.nowMs, input.orderId),
       this.db
@@ -1714,9 +1718,13 @@ export class D1PrintingRepository implements PrintingRepository {
         .bind(input.nowMs, input.nowMs, input.orderId, input.orderId),
       this.db
         .prepare(
-          `UPDATE order_files
-           SET print_status = 'PENDING', spooler_job_id = NULL, updated_at_ms = ?
-           WHERE order_id = ? AND print_status <> 'PRINTED'`,
+          order.status === "COMPLETED" || order.status === "PRINTED"
+            ? `UPDATE order_files
+               SET print_status = 'PENDING', spooler_job_id = NULL, updated_at_ms = ?
+               WHERE order_id = ?`
+            : `UPDATE order_files
+               SET print_status = 'PENDING', spooler_job_id = NULL, updated_at_ms = ?
+               WHERE order_id = ? AND print_status <> 'PRINTED'`,
         )
         .bind(input.nowMs, input.orderId),
       this.db
