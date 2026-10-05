@@ -152,6 +152,8 @@ export class D1PaymentReadiness implements PaymentReadiness {
       );
       if (defaultMatch.length > 0) {
         targetPrinters = defaultMatch;
+      } else if (availablePrinters.length > 0) {
+        targetPrinters = availablePrinters;
       } else {
         return {
           ready: false,
