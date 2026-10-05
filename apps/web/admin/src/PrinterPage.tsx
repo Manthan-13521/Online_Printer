@@ -55,6 +55,7 @@ export function PrinterPage({
   const [pairExpiresAt, setPairExpiresAt] = useState<string | null>(null);
   const [generatingCode, setGeneratingCode] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
 
   // Action busy states
   const [revokingAgentId, setRevokingAgentId] = useState<string | null>(null);
@@ -310,7 +311,20 @@ export function PrinterPage({
       )
     : null;
 
-  function copyPairCode() {
+  function copyPairCodeOnly() {
+    if (!pairCode) return;
+    void navigator.clipboard
+      .writeText(pairCode)
+      .then(() => {
+        setCopiedCode(true);
+        setTimeout(() => setCopiedCode(false), 3000);
+      })
+      .catch(() =>
+        setError("The pairing code could not be copied to clipboard."),
+      );
+  }
+
+  function copyConnectionLink() {
     if (!connectionLink) {
       setError(
         "Your technician must configure a secure shop connection before pairing.",
@@ -320,8 +334,8 @@ export function PrinterPage({
     void navigator.clipboard
       .writeText(connectionLink)
       .then(() => {
-        setCopiedCode(true);
-        setTimeout(() => setCopiedCode(false), 3000);
+        setCopiedLink(true);
+        setTimeout(() => setCopiedLink(false), 3000);
       })
       .catch(() =>
         setError(
@@ -484,16 +498,31 @@ export function PrinterPage({
                 fontSize: "1.75rem",
                 fontWeight: "bold",
                 letterSpacing: "0.2em",
+                backgroundColor: "var(--bg-card, #ffffff)",
+                padding: "0.25rem 0.75rem",
+                borderRadius: "6px",
+                border: "1px dashed var(--border, #cbd5e1)",
+                cursor: "pointer",
+                userSelect: "all",
               }}
+              title="Click to copy pairing code"
+              onClick={copyPairCodeOnly}
             >
               {pairCode}
             </span>
             <button
               className="secondary-button"
-              onClick={copyPairCode}
+              onClick={copyPairCodeOnly}
               type="button"
             >
-              {copiedCode ? "Copied!" : "Copy Connection Link"}
+              {copiedCode ? "Code Copied!" : "Copy Code"}
+            </button>
+            <button
+              className="secondary-button"
+              onClick={copyConnectionLink}
+              type="button"
+            >
+              {copiedLink ? "Link Copied!" : "Copy Full Link"}
             </button>
           </div>
           <p className="field-help" style={{ margin: 0 }}>
