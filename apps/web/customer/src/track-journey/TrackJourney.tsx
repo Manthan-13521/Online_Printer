@@ -115,11 +115,7 @@ export default function TrackJourney({
     return (
       <div className="track-journey-root">
         <style>{journeyCss}</style>
-        <FinishedScreen
-          orderDetails={orderDetails}
-          onBack={onBack}
-          
-        />
+        <FinishedScreen orderDetails={orderDetails} onBack={onBack} />
       </div>
     );
   }
@@ -878,12 +874,25 @@ function FinishedScreen({
   return (
     <div className="fixed inset-0 bg-printgo-green text-printgo-paper flex flex-col items-center justify-center font-sans p-4 md:p-6 text-center overflow-hidden z-50">
       {/* Top Left Back Button */}
-      <div className="absolute top-0 left-0 pt-[max(env(safe-area-inset-top),1rem)] pl-4 z-30">
+      <div
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          paddingTop: "max(env(safe-area-inset-top, 16px), 16px)",
+          paddingLeft: "16px",
+          zIndex: 60,
+        }}
+      >
         <button
           type="button"
           onClick={handleBackAction}
           aria-label="Back"
           className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-white/20 active:bg-white/40 text-white transition-opacity shadow-sm"
+          style={{
+            backdropFilter: "blur(4px)",
+            WebkitBackdropFilter: "blur(4px)",
+          }}
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
@@ -926,7 +935,10 @@ function FinishedScreen({
           >
             {activeCode}
           </div>
-          <div className="h-px bg-white/20 w-full" />
+          <div className="h-px bg-white/20 w-full mb-3 md:mb-4" />
+          <p className="text-white/80 text-xs md:text-sm font-medium tracking-wide">
+            Take a screenshot or remember this code for pickup
+          </p>
         </div>
       </motion.div>
     </div>
