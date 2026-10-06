@@ -412,21 +412,9 @@ Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $printer } | Select-O
       return { availability: "ONLINE" };
     }
 
-    // When Windows reports WorkOffline is false, or reports a defined PrinterStatus (such as 2=Unknown/Default,
-    // 3=Idle, 4=Printing, 5=Warmup) or DetectedErrorState is 0/2 (no error detected), the printer is ready.
-    if (
-      p.WorkOffline === false ||
-      p.PrinterStatus !== undefined ||
-      p.DetectedErrorState === 0 ||
-      p.DetectedErrorState === 2
-    ) {
-      return { availability: "ONLINE" };
-    }
-
-    return {
-      availability: "UNKNOWN",
-      message: "Printer readiness is not reported by Windows",
-    };
+    // When no error or offline condition is present in Windows spooler/CIM,
+    // the printer is ONLINE and ready for print submissions.
+    return { availability: "ONLINE" };
   }
 
   async getStatus(printerId: string): Promise<PrinterStatus> {

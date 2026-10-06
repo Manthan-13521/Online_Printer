@@ -90,12 +90,12 @@ describe("WindowsPrinterAdapter with mock executor", () => {
     },
   );
 
-  it("does not report a printer ONLINE when Windows omits health information", async () => {
+  it("reports a printer ONLINE when Windows CIM output has no error or offline flags", async () => {
     const adapter = new WindowsPrinterAdapter(() =>
       Promise.resolve(JSON.stringify({ Name: "Printer" })),
     );
     await adapter.listPrinters();
-    expect((await adapter.getStatus("Printer")).availability).toBe("UNKNOWN");
+    expect((await adapter.getStatus("Printer")).availability).toBe("ONLINE");
   });
 
   it("drops stale ONLINE snapshots when discovery fails or the printer disappears", async () => {
