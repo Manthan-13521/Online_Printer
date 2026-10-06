@@ -296,20 +296,27 @@ export function ShopSettingsPage({
               Controls whether the shop accepts new online work.
             </p>
           </div>
-          <label className="switch-row">
-            <span>{settings.onlinePrintingEnabled ? "On" : "Off"}</span>
-            <input
-              aria-label="Accept online printing"
-              checked={settings.onlinePrintingEnabled}
-              onChange={(event) => {
-                if (!event.target.checked && settings.onlinePrintingEnabled)
-                  setConfirmPause(true);
-                else patch({ onlinePrintingEnabled: event.target.checked });
-              }}
-              role="switch"
-              type="checkbox"
-            />
-          </label>
+          <div
+            style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}
+          >
+            <span style={{ fontWeight: "bold", fontSize: "0.95rem" }}>
+              {settings.onlinePrintingEnabled ? "On" : "Off"}
+            </span>
+            <label className="toggle-switch">
+              <input
+                aria-label="Accept online printing"
+                checked={settings.onlinePrintingEnabled}
+                onChange={(event) => {
+                  if (!event.target.checked && settings.onlinePrintingEnabled)
+                    setConfirmPause(true);
+                  else patch({ onlinePrintingEnabled: event.target.checked });
+                }}
+                role="switch"
+                type="checkbox"
+              />
+              <span className="toggle-slider" />
+            </label>
+          </div>
         </section>
 
         <section className="panel form-section">
@@ -348,18 +355,36 @@ export function ShopSettingsPage({
         </section>
 
         <section className="panel form-section">
-          <h2>Identification Sheet</h2>
-          <label className="checkbox-row">
-            <input
-              checked={settings.identificationSheetEnabled}
-              onChange={(event) =>
-                patch({ identificationSheetEnabled: event.target.checked })
-              }
-              type="checkbox"
-            />
-            <span>Print one identification sheet for each order</span>
-          </label>
-          <p className="field-help">
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              marginBottom: "0.5rem",
+            }}
+          >
+            <h2 style={{ margin: 0 }}>Identification Sheet</h2>
+            <div
+              style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}
+            >
+              <span style={{ fontWeight: "bold", fontSize: "0.95rem" }}>
+                {settings.identificationSheetEnabled ? "On" : "Off"}
+              </span>
+              <label className="toggle-switch">
+                <input
+                  aria-label="Print one identification sheet for each order"
+                  checked={settings.identificationSheetEnabled}
+                  onChange={(event) =>
+                    patch({ identificationSheetEnabled: event.target.checked })
+                  }
+                  role="switch"
+                  type="checkbox"
+                />
+                <span className="toggle-slider" />
+              </label>
+            </div>
+          </div>
+          <p className="field-help" style={{ margin: "0 0 0.75rem 0" }}>
             Adds one shop identification sheet per order for sorting printed
             jobs. Customers are not charged for this sheet.
           </p>

@@ -28,6 +28,40 @@ export function DashboardPage({
     attention: 0,
     completedToday: 0,
   });
+  const [togglingPrinting, setTogglingPrinting] = useState(false);
+  const [confirmPause, setConfirmPause] = useState(false);
+
+  async function handleToggleOnlinePrinting(enabled: boolean) {
+    if (!settings || togglingPrinting) return;
+    if (!enabled && settings.onlinePrintingEnabled) {
+      setConfirmPause(true);
+      return;
+    }
+    await saveOnlinePrinting(enabled);
+  }
+
+  async function saveOnlinePrinting(enabled: boolean) {
+    if (!settings) return;
+    setTogglingPrinting(true);
+    setError(null);
+    try {
+      const response = await adminApi.updateSettings({
+        ...settings,
+        onlinePrintingEnabled: enabled,
+      });
+      if (response.ok) {
+        setSettings(response.data.settings);
+      }
+    } catch (err: unknown) {
+      if (err instanceof AdminApiError && err.status === 401) {
+        onSessionExpired("Your session has expired. Please sign in again.");
+        return;
+      }
+      setError(friendlyAdminError(err));
+    } finally {
+      setTogglingPrinting(false);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -337,6 +371,62 @@ export function DashboardPage({
         </div>
       </section>
 
+      {/* Identification Sheet & Online Printing Controls */}
+      <section
+        className="panel"
+        style={{ padding: "1.25rem", marginBottom: "1.5rem" }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            paddingBottom: "0.75rem",
+            borderBottom: "1px solid #e2e8f0",
+            marginBottom: "0.75rem",
+          }}
+        >
+          <span>
+            Identification sheet:{" "}
+            <strong>
+              {settings?.identificationSheetEnabled ? "ON" : "OFF"}
+            </strong>
+          </span>
+        </div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
+          <span>
+            Online Printing:{" "}
+            <strong style={{ color: onlinePrinting ? "#16a34a" : "#dc2626" }}>
+              {onlinePrinting ? "ON" : "OFF"}
+            </strong>
+          </span>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <span style={{ fontSize: "0.85rem", fontWeight: "bold" }}>
+              {onlinePrinting ? "Accepting" : "Paused"}
+            </span>
+            <label className="toggle-switch">
+              <input
+                aria-label="Toggle Online Printing"
+                checked={onlinePrinting}
+                disabled={togglingPrinting}
+                onChange={(event) => {
+                  void handleToggleOnlinePrinting(event.target.checked);
+                }}
+                role="switch"
+                type="checkbox"
+              />
+              <span className="toggle-slider" />
+            </label>
+          </div>
+        </div>
+      </section>
+
       {/* Customer Readiness Banner */}
       {!canAcceptOrders ? (
         <section
@@ -488,6 +578,42 @@ export function DashboardPage({
           </div>
         </div>
       </section>
+
+      {confirmPause ? (
+        <div className="dialog-backdrop">
+          <section
+            aria-labelledby="dashboard-pause-title"
+            aria-modal="true"
+            className="confirm-dialog"
+            role="dialog"
+          >
+            <h2 id="dashboard-pause-title">Pause new online print orders?</h2>
+            <p>
+              New customers will not be able to upload or pay. Existing paid
+              jobs will continue.
+            </p>
+            <div className="dialog-actions">
+              <button
+                className="secondary-button"
+                onClick={() => setConfirmPause(false)}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                className="danger-button"
+                onClick={() => {
+                  setConfirmPause(false);
+                  void saveOnlinePrinting(false);
+                }}
+                type="button"
+              >
+                Pause Printing
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }

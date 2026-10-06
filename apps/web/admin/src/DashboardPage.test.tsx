@@ -172,4 +172,8 @@ it("renders green readiness banner when agent, printer, and online printing are 
   expect(screen.getByText(/Connect Windows Counter PC/i)).toBeTruthy();
   expect(screen.getByText(/Choose Default Production Printer/i)).toBeTruthy();
   expect(screen.getByText(/Online Customer Orders/i)).toBeTruthy();
+  expect(screen.getByText(/Identification sheet:/i)).toBeTruthy();
+  expect(
+    screen.getByRole("switch", { name: "Toggle Online Printing" }),
+  ).toBeTruthy();
 });
