@@ -16,6 +16,7 @@ import { LiveOrdersPage } from "./LiveOrdersPage";
 import { DashboardPage } from "./DashboardPage";
 import { ManualOrdersPage } from "./ManualOrdersPage";
 import { OrderHistoryPage } from "./OrderHistoryPage";
+import { StoragePrivacySection } from "./StoragePrivacySection";
 
 const navigation = [
   { label: "Dashboard", path: "/admin" },
@@ -165,20 +166,22 @@ function SecurityPage({
   admin: AdminProfile;
   onSignedOut: (message: string) => void;
 }) {
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmNewPassword, setConfirmNewPassword] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [modalError, setModalError] = useState<string | null>(null);
   const [busy, setBusy] = useState<"password" | "all" | "logout" | null>(null);
 
   async function changePassword(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (busy) return;
     setMessage(null);
-    setError(null);
+    setModalError(null);
     if (newPassword !== confirmNewPassword) {
-      setError("New passwords do not match.");
+      setModalError("New passwords do not match.");
       return;
     }
     setBusy("password");
@@ -192,6 +195,7 @@ function SecurityPage({
         setCurrentPassword("");
         setNewPassword("");
         setConfirmNewPassword("");
+        setShowPasswordModal(false);
         setMessage(response.data.message);
       }
     } catch (caught: unknown) {
@@ -199,7 +203,7 @@ function SecurityPage({
         onSignedOut("Your session has expired. Please sign in again.");
         return;
       }
-      setError(friendlyAdminError(caught));
+      setModalError(friendlyAdminError(caught));
     } finally {
       setBusy(null);
     }
@@ -253,58 +257,29 @@ function SecurityPage({
           <dd>{admin.loginIdentifier}</dd>
         </dl>
       </section>
-      <section className="panel">
-        <h2>Change password</h2>
-        <p className="muted">
-          Use {PASSWORD_MIN_LENGTH} to {PASSWORD_MAX_LENGTH} characters.
-          Passphrases are welcome.
-        </p>
-        <form
-          className="security-form"
-          onSubmit={(event) => void changePassword(event)}
+
+      <section className="panel action-row">
+        <div>
+          <h2>Change password</h2>
+          <p className="muted">
+            Use {PASSWORD_MIN_LENGTH} to {PASSWORD_MAX_LENGTH} characters.
+            Passphrases are welcome.
+          </p>
+        </div>
+        <button
+          className="secondary-button"
+          onClick={() => {
+            setShowPasswordModal(true);
+            setModalError(null);
+          }}
+          type="button"
         >
-          <label htmlFor="current-password">Current password</label>
-          <input
-            id="current-password"
-            type="password"
-            autoComplete="current-password"
-            required
-            minLength={PASSWORD_MIN_LENGTH}
-            maxLength={PASSWORD_MAX_LENGTH}
-            value={currentPassword}
-            onChange={(event) => setCurrentPassword(event.target.value)}
-          />
-          <label htmlFor="new-password">New password</label>
-          <input
-            id="new-password"
-            type="password"
-            autoComplete="new-password"
-            required
-            minLength={PASSWORD_MIN_LENGTH}
-            maxLength={PASSWORD_MAX_LENGTH}
-            value={newPassword}
-            onChange={(event) => setNewPassword(event.target.value)}
-          />
-          <label htmlFor="confirm-password">Confirm new password</label>
-          <input
-            id="confirm-password"
-            type="password"
-            autoComplete="new-password"
-            required
-            minLength={PASSWORD_MIN_LENGTH}
-            maxLength={PASSWORD_MAX_LENGTH}
-            value={confirmNewPassword}
-            onChange={(event) => setConfirmNewPassword(event.target.value)}
-          />
-          <button
-            className="primary-button fit"
-            disabled={busy !== null}
-            type="submit"
-          >
-            {busy === "password" ? "Changing…" : "Change password"}
-          </button>
-        </form>
+          Change password
+        </button>
       </section>
+
+      <StoragePrivacySection onSessionExpired={onSignedOut} />
+
       <section className="panel action-row">
         <div>
           <h2>Sessions</h2>
@@ -333,6 +308,97 @@ function SecurityPage({
           {busy === "logout" ? "Signing out…" : "Sign out"}
         </button>
       </section>
+
+      {showPasswordModal ? (
+        <div className="dialog-backdrop">
+          <section
+            aria-labelledby="change-password-dialog-title"
+            aria-modal="true"
+            className="confirm-dialog"
+            role="dialog"
+          >
+            <h2 id="change-password-dialog-title">Change password</h2>
+            <p className="muted">
+              Use {PASSWORD_MIN_LENGTH} to {PASSWORD_MAX_LENGTH} characters.
+              Passphrases are welcome.
+            </p>
+            {modalError ? (
+              <p
+                className="form-error"
+                role="alert"
+                style={{ marginTop: "0.75rem" }}
+              >
+                {modalError}
+              </p>
+            ) : null}
+            <form
+              className="security-form"
+              onSubmit={(event) => void changePassword(event)}
+              style={{ marginTop: "1rem" }}
+            >
+              <label htmlFor="current-password">Current password</label>
+              <input
+                id="current-password"
+                type="password"
+                autoComplete="current-password"
+                required
+                minLength={PASSWORD_MIN_LENGTH}
+                maxLength={PASSWORD_MAX_LENGTH}
+                value={currentPassword}
+                onChange={(event) => setCurrentPassword(event.target.value)}
+              />
+              <label htmlFor="new-password">New password</label>
+              <input
+                id="new-password"
+                type="password"
+                autoComplete="new-password"
+                required
+                minLength={PASSWORD_MIN_LENGTH}
+                maxLength={PASSWORD_MAX_LENGTH}
+                value={newPassword}
+                onChange={(event) => setNewPassword(event.target.value)}
+              />
+              <label htmlFor="confirm-password">Confirm new password</label>
+              <input
+                id="confirm-password"
+                type="password"
+                autoComplete="new-password"
+                required
+                minLength={PASSWORD_MIN_LENGTH}
+                maxLength={PASSWORD_MAX_LENGTH}
+                value={confirmNewPassword}
+                onChange={(event) => setConfirmNewPassword(event.target.value)}
+              />
+              <div
+                className="dialog-actions"
+                style={{
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  gap: "0.75rem",
+                  marginTop: "1.25rem",
+                }}
+              >
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={busy === "password"}
+                  onClick={() => setShowPasswordModal(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="primary-button fit"
+                  disabled={busy === "password"}
+                  type="submit"
+                  style={{ marginTop: 0 }}
+                >
+                  {busy === "password" ? "Changing…" : "Change password"}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }

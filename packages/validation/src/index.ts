@@ -8,6 +8,7 @@ import {
   SIDES_MODES,
   MIN_PRINT_COPIES,
   MAX_PRINT_COPIES,
+  ORDER_RETENTION_HOURS_OPTIONS,
   classifyPrinter,
   type ColorMode,
   type IdentificationSheetPlacement,
@@ -264,6 +265,7 @@ export interface ValidatedShopSettings {
   lastCleanupAt?: string | null;
   nextCleanupAt?: string | null;
   lastCleanupResult?: string | null;
+  orderRetentionHours?: number;
 }
 
 function optionalPlainText(
@@ -432,6 +434,20 @@ export function validateShopSettingsInput(
       });
     }
   }
+  if (record.orderRetentionHours !== undefined) {
+    if (
+      typeof record.orderRetentionHours !== "number" ||
+      !ORDER_RETENTION_HOURS_OPTIONS.includes(
+        record.orderRetentionHours as (typeof ORDER_RETENTION_HOURS_OPTIONS)[number],
+      )
+    ) {
+      issues.push({
+        path: ["orderRetentionHours"],
+        code: "INVALID_RETENTION_HOURS",
+        message: "Order retention hours must be 1, 2, 3, 6, or 12.",
+      });
+    }
+  }
   return issues.length > 0
     ? { ok: false, issues }
     : {
@@ -449,6 +465,12 @@ export function validateShopSettingsInput(
                 nextCleanupAt: null,
                 lastCleanupResult: null,
               }
+            : {}),
+          ...(typeof record.orderRetentionHours === "number" &&
+          ORDER_RETENTION_HOURS_OPTIONS.includes(
+            record.orderRetentionHours as (typeof ORDER_RETENTION_HOURS_OPTIONS)[number],
+          )
+            ? { orderRetentionHours: record.orderRetentionHours }
             : {}),
           ...(typeof record.priorityPrintingEnabled === "boolean"
             ? { priorityPrintingEnabled: record.priorityPrintingEnabled }

@@ -6,12 +6,7 @@ import type {
   ShopSettings,
 } from "@printgo/api-contract";
 import { useEffect, useState } from "react";
-import {
-  adminApi,
-  AdminApiError,
-  friendlyAdminError,
-  brandingUrl,
-} from "./api";
+import { adminApi, AdminApiError, friendlyAdminError } from "./api";
 
 interface DashboardPageProps {
   onSessionExpired: (message: string) => void;
@@ -97,10 +92,10 @@ export function DashboardPage({
   const activeAgent = sortedAgents[0] ?? null;
   const agentOnline = Boolean(
     activeAgent?.isOnline ||
-      (activeAgent &&
-        activeAgent.isActive &&
-        activeAgent.lastHeartbeatAt &&
-        Date.now() - new Date(activeAgent.lastHeartbeatAt).getTime() < 90000),
+    (activeAgent &&
+      activeAgent.isActive &&
+      activeAgent.lastHeartbeatAt &&
+      Date.now() - new Date(activeAgent.lastHeartbeatAt).getTime() < 90000),
   );
   const printerReady = Boolean(
     defaultPrinter &&
@@ -115,37 +110,10 @@ export function DashboardPage({
 
   return (
     <div className="dashboard-page">
-      {settings?.logoUrl ? (
-        <img
-          src={brandingUrl(settings.logoUrl)}
-          alt="Shop logo"
-          style={{ maxWidth: 120, maxHeight: 72, objectFit: "contain" }}
-        />
-      ) : null}
       <header className="page-header" style={{ marginBottom: "1.5rem" }}>
-        <div>
-          <p
-            className="eyebrow"
-            style={{
-              margin: 0,
-              textTransform: "uppercase",
-              fontSize: "0.8rem",
-              letterSpacing: "0.05em",
-              color: "var(--accent, #2563eb)",
-              fontWeight: "bold",
-            }}
-          >
-            Workspace ready
-          </p>
-          <h1 style={{ margin: "0.25rem 0 0 0", fontSize: "1.75rem" }}>
-            {settings?.appName ?? settings?.shopName ?? "PrintGo"}
-          </h1>
-          <p className="muted" style={{ margin: "0.25rem 0 0 0" }}>
-            {settings?.shopName
-              ? `${settings.shopName} — Real-time shop operational overview.`
-              : "Real-time status overview of your physical print shop."}
-          </p>
-        </div>
+        <h1 style={{ margin: 0, fontSize: "1.75rem" }}>
+          {settings?.shopName ?? settings?.appName ?? "PrintGo"}
+        </h1>
       </header>
 
       {error ? (
@@ -354,24 +322,24 @@ export function DashboardPage({
           className="panel"
           style={{
             marginBottom: "1.5rem",
-            backgroundColor: "#fffbeb",
-            border: "1px solid #fde68a",
+            backgroundColor: "#fef2f2",
+            border: "1px solid #fecaca",
             padding: "1.25rem",
           }}
         >
           <h2
             style={{
               margin: "0 0 0.5rem 0",
-              color: "#92400e",
+              color: "#991b1b",
               fontSize: "1.15rem",
             }}
           >
             ⚠️ Online Printing Cannot Accept Payments Yet
           </h2>
-          <p style={{ margin: 0, color: "#78350f" }}>
+          <p style={{ margin: 0, color: "#991b1b" }}>
             Before customers can pay and submit jobs, ensure:
           </p>
-          <ul style={{ margin: "0.5rem 0 0 1.25rem", color: "#78350f" }}>
+          <ul style={{ margin: "0.5rem 0 0 1.25rem", color: "#991b1b" }}>
             {!onlinePrinting ? (
               <li>Online printing is enabled in Shop Settings.</li>
             ) : null}
@@ -379,13 +347,35 @@ export function DashboardPage({
               <li>The PrintGo Windows Agent is running on the shop PC.</li>
             ) : null}
             {!printerReady ? (
-              <li>
-                A physical production printer is selected and reported Online.
-              </li>
+              <li>The production printer is connected and working.</li>
             ) : null}
           </ul>
         </section>
-      ) : null}
+      ) : (
+        <section
+          className="panel"
+          style={{
+            marginBottom: "1.5rem",
+            backgroundColor: "#f0fdf4",
+            border: "1px solid #bbf7d0",
+            padding: "1.25rem",
+          }}
+        >
+          <h2
+            style={{
+              margin: "0 0 0.5rem 0",
+              color: "#166534",
+              fontSize: "1.15rem",
+            }}
+          >
+            ✅ Your Website is Accepting Online Orders
+          </h2>
+          <p style={{ margin: 0, color: "#15803d" }}>
+            All systems ready! The PrintGo Windows Agent is running on the shop
+            PC and your printer is connected and working.
+          </p>
+        </section>
+      )}
 
       {/* First-Run Setup Checklist */}
       <section

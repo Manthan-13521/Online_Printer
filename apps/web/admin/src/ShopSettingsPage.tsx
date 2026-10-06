@@ -1,10 +1,5 @@
 import { applyShopBranding } from "../../branding";
-import type {
-  AdminCleanupPreviewData,
-  AdminCleanupRunData,
-  CleanupScope,
-  ShopSettings,
-} from "@printgo/api-contract";
+import type { ShopSettings } from "@printgo/api-contract";
 import {
   FILE_SIZE_5_MIB,
   FILE_SIZE_10_MIB,
@@ -37,16 +32,6 @@ const PDF_LIMITS = [
   FILE_SIZE_25_MIB,
 ] as const;
 
-function formatCleanupDateTime(iso: string | null | undefined): string {
-  if (!iso) return "Not yet run";
-  const date = new Date(iso);
-  if (isNaN(date.getTime())) return iso;
-  return date.toLocaleString(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
-}
-
 export function ShopSettingsPage({
   onSessionExpired,
 }: {
@@ -60,16 +45,6 @@ export function ShopSettingsPage({
   const [message, setMessage] = useState<string | null>(null);
   const [logoBusy, setLogoBusy] = useState(false);
   const [confirmPause, setConfirmPause] = useState(false);
-  const [cleanupScope, setCleanupScope] = useState<Extract<
-    CleanupScope,
-    "ALL_COMPLETED" | "ALL_PRINT_DATA"
-  > | null>(null);
-  const [cleanupPreview, setCleanupPreview] =
-    useState<AdminCleanupPreviewData | null>(null);
-  const [cleanupResult, setCleanupResult] =
-    useState<AdminCleanupRunData | null>(null);
-  const [cleanupConfirmation, setCleanupConfirmation] = useState("");
-  const [cleanupBusy, setCleanupBusy] = useState(false);
   const [resettingCode, setResettingCode] = useState(false);
 
   const dirty =
@@ -156,69 +131,6 @@ export function ShopSettingsPage({
       else setError(friendlyAdminError(caught));
     } finally {
       setLogoBusy(false);
-    }
-  }
-
-  async function previewCleanup(
-    scope: Extract<CleanupScope, "ALL_COMPLETED" | "ALL_PRINT_DATA">,
-  ) {
-    setCleanupBusy(true);
-    setError(null);
-    try {
-      const response = await adminApi.cleanupPreview(scope);
-      if (response.ok) {
-        setCleanupScope(scope);
-        setCleanupPreview(response.data);
-        setCleanupConfirmation("");
-      }
-    } catch (caught) {
-      if (caught instanceof AdminApiError && caught.status === 401)
-        onSessionExpired(caught.message);
-      else setError(friendlyAdminError(caught));
-    } finally {
-      setCleanupBusy(false);
-    }
-  }
-
-  async function executeCleanup() {
-    if (!cleanupScope || cleanupBusy) return;
-    setCleanupBusy(true);
-    setError(null);
-    try {
-      const response = await adminApi.startCleanup(
-        cleanupScope,
-        cleanupConfirmation,
-      );
-      if (response.ok) {
-        setCleanupResult(response.data);
-        setCleanupPreview(null);
-        setCleanupScope(null);
-        setCleanupConfirmation("");
-        setMessage(
-          "Cleanup run started. Remaining batches continue automatically.",
-        );
-      }
-    } catch (caught) {
-      if (caught instanceof AdminApiError && caught.status === 401)
-        onSessionExpired(caught.message);
-      else setError(friendlyAdminError(caught));
-    } finally {
-      setCleanupBusy(false);
-    }
-  }
-
-  async function refreshCleanup() {
-    if (!cleanupResult || cleanupBusy) return;
-    setCleanupBusy(true);
-    try {
-      const response = await adminApi.getCleanupRun(cleanupResult.runId);
-      if (response.ok) setCleanupResult(response.data);
-    } catch (caught) {
-      if (caught instanceof AdminApiError && caught.status === 401)
-        onSessionExpired(caught.message);
-      else setError(friendlyAdminError(caught));
-    } finally {
-      setCleanupBusy(false);
     }
   }
 
@@ -588,120 +500,6 @@ export function ShopSettingsPage({
           </p>
         </section>
 
-        <section className="panel form-section">
-          <h2>Storage &amp; Privacy</h2>
-          <p className="field-help">
-            Completed orders are automatically purged after 2 hours. Abandoned
-            unpaid uploads are purged after 10 minutes.
-          </p>
-          <label className="checkbox-row">
-            <input
-              checked={settings.automaticDailyCleanupEnabled ?? false}
-              onChange={(event) =>
-                patch({ automaticDailyCleanupEnabled: event.target.checked })
-              }
-              type="checkbox"
-            />
-            <span>Automatic Daily Cleanup</span>
-          </label>
-          <label htmlFor="cleanup-time">Cleanup Time</label>
-          <input
-            id="cleanup-time"
-            type="time"
-            value={settings.dailyCleanupTime ?? "23:30"}
-            onChange={(event) =>
-              patch({ dailyCleanupTime: event.target.value })
-            }
-          />
-          <label htmlFor="cleanup-timezone">Timezone (IANA)</label>
-          <input
-            id="cleanup-timezone"
-            value={settings.timezone ?? "Asia/Kolkata"}
-            onChange={(event) => patch({ timezone: event.target.value })}
-          />
-          <dl className="settings-stat-grid">
-            <div className="stat-card">
-              <dt>Last Cleanup</dt>
-              <dd>{formatCleanupDateTime(settings.lastCleanupAt)}</dd>
-            </div>
-            <div className="stat-card">
-              <dt>Next Cleanup</dt>
-              <dd>
-                {settings.nextCleanupAt
-                  ? formatCleanupDateTime(settings.nextCleanupAt)
-                  : "Calculated after save"}
-              </dd>
-            </div>
-            <div className="stat-card">
-              <dt>Last Result</dt>
-              <dd>{settings.lastCleanupResult ?? "—"}</dd>
-            </div>
-          </dl>
-          <div className="dialog-actions" style={{ marginTop: "0.5rem" }}>
-            <button
-              className="danger-button subtle"
-              disabled={cleanupBusy}
-              onClick={() => void previewCleanup("ALL_COMPLETED")}
-              type="button"
-            >
-              Free Printed Data
-            </button>
-            <button
-              className="danger-button subtle"
-              disabled={cleanupBusy}
-              onClick={() => void previewCleanup("ALL_PRINT_DATA")}
-              type="button"
-            >
-              Free All Print Data
-            </button>
-          </div>
-          {cleanupResult ? (
-            <div
-              className={`notice ${cleanupResult.status === "FAILED" ? "form-error" : ""}`}
-              style={{
-                marginTop: "0.75rem",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                flexWrap: "wrap",
-                gap: "0.75rem",
-              }}
-            >
-              <div>
-                <strong style={{ textTransform: "capitalize" }}>
-                  Cleanup {cleanupResult.status.toLowerCase()}:
-                </strong>{" "}
-                <span>
-                  Deleted {cleanupResult.deletedOrders} orders (
-                  {cleanupResult.deletedFiles} PDFs)
-                  {cleanupResult.activeSkipped > 0
-                    ? ` · ${cleanupResult.activeSkipped} active skipped`
-                    : ""}
-                  {cleanupResult.failures > 0
-                    ? ` · ${cleanupResult.failures} failed`
-                    : ""}
-                  .
-                </span>
-              </div>
-              {cleanupResult.status !== "COMPLETED" ? (
-                <button
-                  type="button"
-                  className="secondary-button"
-                  style={{
-                    minHeight: "2.2rem",
-                    padding: "0.35rem 0.85rem",
-                    fontSize: "0.85rem",
-                  }}
-                  disabled={cleanupBusy}
-                  onClick={() => void refreshCleanup()}
-                >
-                  Refresh cleanup status
-                </button>
-              ) : null}
-            </div>
-          ) : null}
-        </section>
-
         <div className="save-bar">
           <span className={dirty ? "unsaved" : "saved-state"}>
             {dirty ? "Unsaved changes" : "All changes saved"}
@@ -717,77 +515,6 @@ export function ShopSettingsPage({
       </form>
 
       <AdminPwaInstall />
-
-      {cleanupPreview && cleanupScope ? (
-        <div className="dialog-backdrop">
-          <section
-            aria-labelledby="cleanup-dialog-title"
-            aria-modal="true"
-            className="confirm-dialog"
-            role="dialog"
-          >
-            <h2 id="cleanup-dialog-title">
-              {cleanupScope === "ALL_COMPLETED"
-                ? "Free Printed Data"
-                : "Free All Print Data"}
-            </h2>
-            <p>
-              This permanently deletes customer print files and related
-              operational data. This cannot be undone.
-            </p>
-            <p className="field-help" style={{ margin: "0.5rem 0" }}>
-              <strong>{cleanupPreview.orders}</strong> orders ·{" "}
-              <strong>{cleanupPreview.files}</strong> PDFs ·{" "}
-              <strong>{Math.ceil(cleanupPreview.bytes / MIB)} MB</strong>.{" "}
-              {cleanupPreview.active} active orders will be skipped.
-              {cleanupPreview.limited
-                ? " Preview covers the first 100 due orders; cleanup continues in bounded batches."
-                : ""}
-            </p>
-            <label
-              htmlFor="cleanup-confirmation"
-              style={{ display: "block", marginTop: "0.75rem" }}
-            >
-              Type{" "}
-              <strong style={{ color: "#dc2626" }}>
-                {cleanupScope === "ALL_COMPLETED" ? "FREE PRINTED" : "FREE ALL"}
-              </strong>{" "}
-              to confirm
-            </label>
-            <input
-              id="cleanup-confirmation"
-              value={cleanupConfirmation}
-              onChange={(event) => setCleanupConfirmation(event.target.value)}
-              placeholder={
-                cleanupScope === "ALL_COMPLETED" ? "FREE PRINTED" : "FREE ALL"
-              }
-              autoComplete="off"
-            />
-            <div className="dialog-actions" style={{ marginTop: "1.25rem" }}>
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={() => setCleanupPreview(null)}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="danger-button"
-                disabled={
-                  cleanupConfirmation !==
-                    (cleanupScope === "ALL_COMPLETED"
-                      ? "FREE PRINTED"
-                      : "FREE ALL") || cleanupBusy
-                }
-                onClick={() => void executeCleanup()}
-              >
-                {cleanupBusy ? "Deleting…" : "Permanently delete"}
-              </button>
-            </div>
-          </section>
-        </div>
-      ) : null}
 
       {confirmPause ? (
         <div className="dialog-backdrop">

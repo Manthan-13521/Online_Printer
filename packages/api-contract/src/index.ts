@@ -91,6 +91,7 @@ export interface ShopSettings {
   idRequirementMode?: "OFF" | "ALWAYS" | "ABOVE_THRESHOLD";
   idThresholdPaise?: number;
   nextPickupCode?: string;
+  orderRetentionHours?: number;
 }
 
 export interface AdminSettingsData {

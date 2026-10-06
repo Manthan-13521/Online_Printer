@@ -39,7 +39,13 @@ interface LocalOrderFile {
   size: number;
   pageCount: number;
   uploaded: boolean;
-  uploadStatus: "SELECTED" | "VALIDATING" | "UPLOADING" | "FINALIZING" | "UPLOADED" | "FAILED";
+  uploadStatus:
+    | "SELECTED"
+    | "VALIDATING"
+    | "UPLOADING"
+    | "FINALIZING"
+    | "UPLOADED"
+    | "FAILED";
   uploadProgress: number;
   uploadError: string | null;
   pageMode: "ALL" | "CUSTOM";
@@ -100,8 +106,7 @@ function customerErrorMessage(caught: unknown): string {
     return "This upload session expired. Please upload your PDF again.";
   if (code === "UPLOAD_INVALID")
     return "We couldn't read this PDF. Please check the file and try again.";
-  if (code === "UPLOAD_ABORTED")
-    return "Upload was cancelled.";
+  if (code === "UPLOAD_ABORTED") return "Upload was cancelled.";
   if (code === "UPLOAD_HTTP_403" || code === "UPLOAD_HTTP_400")
     return "The secure upload link expired or was rejected. Click 'Try upload again' to get a fresh one.";
   if (code === "UPLOAD_NETWORK_ERROR")
@@ -157,13 +162,15 @@ export function App() {
   useEffect(() => {
     filesRef.current = files;
   }, [files]);
-  
+
   // Helper to synchronously update ref for async functions and trigger re-render
   const updateFile = (clientId: string, updater: Partial<LocalOrderFile>) => {
-    filesRef.current = filesRef.current.map(f => f.clientId === clientId ? { ...f, ...updater } : f);
+    filesRef.current = filesRef.current.map((f) =>
+      f.clientId === clientId ? { ...f, ...updater } : f,
+    );
     setFiles(filesRef.current);
   };
-  
+
   const abortControllers = useRef(new Map<string, AbortController>());
   const [selectedFileIndex, setSelectedFileIndex] = useState(0);
   const [fileError, setFileError] = useState<string | null>(null);
@@ -178,7 +185,8 @@ export function App() {
   const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>([]);
   const [isPriority, setIsPriority] = useState(false);
   const [trackBoxCode, setTrackBoxCode] = useState("");
-  const [showPricingInfo, setShowPricingInfo] = useState(false);
+  const [showPricing, setShowPricing] = useState(false);
+  const [showInfo, setShowInfo] = useState(false);
   const [copyMessage, setCopyMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -224,9 +232,13 @@ export function App() {
             size: remote.sizeBytes ?? 0,
             pageCount: remote.sourcePageCount,
             uploaded: remote.uploadStatus === "UPLOADED",
-            uploadStatus: remote.uploadStatus === "UPLOADED" ? "UPLOADED" : "FAILED",
+            uploadStatus:
+              remote.uploadStatus === "UPLOADED" ? "UPLOADED" : "FAILED",
             uploadProgress: remote.uploadStatus === "UPLOADED" ? 100 : 0,
-            uploadError: remote.uploadStatus === "UPLOADED" ? null : "Upload was interrupted",
+            uploadError:
+              remote.uploadStatus === "UPLOADED"
+                ? null
+                : "Upload was interrupted",
             pageMode: remote.selectedPages === "ALL" ? "ALL" : "CUSTOM",
             customPages:
               remote.selectedPages === "ALL"
@@ -362,19 +374,23 @@ export function App() {
     let errorToReport: Error | null = null;
     try {
       let token = draftToken;
-      
+
       for (let index = 0; index < filesRef.current.length; index++) {
         const clientId = filesRef.current[index]?.clientId;
         if (!clientId) continue;
 
-        const item = filesRef.current.find(f => f.clientId === clientId);
+        const item = filesRef.current.find((f) => f.clientId === clientId);
         if (!item || item.uploadStatus === "UPLOADED") continue;
         if (!item.file) throw new Error("UPLOAD_FILE_REQUIRED");
-        
+
         const uploadFile = item.file;
         let upload;
-        
-        updateFile(clientId, { uploadStatus: "VALIDATING", uploadProgress: 0, uploadError: null });
+
+        updateFile(clientId, {
+          uploadStatus: "VALIDATING",
+          uploadProgress: 0,
+          uploadError: null,
+        });
 
         try {
           if (!token) {
@@ -401,55 +417,67 @@ export function App() {
               sourcePageCount: item.pageCount,
             });
             upload = created.upload;
-            if (created.fileId) updateFile(clientId, { fileId: created.fileId });
+            if (created.fileId)
+              updateFile(clientId, { fileId: created.fileId });
           } else {
             upload = (await customerApi.authorize(token, item.fileId)).upload;
           }
 
-          if (!filesRef.current.find(f => f.clientId === clientId)) continue;
+          if (!filesRef.current.find((f) => f.clientId === clientId)) continue;
 
           updateFile(clientId, { uploadStatus: "UPLOADING" });
-          setStatus(`Uploading File ${index + 1} of ${filesRef.current.length}…`);
-          
+          setStatus(
+            `Uploading File ${index + 1} of ${filesRef.current.length}…`,
+          );
+
           const controller = new AbortController();
           abortControllers.current.set(clientId, controller);
-          
+
           await uploadDirectly(
             uploadFile,
             upload.uploadUrl,
             upload.requiredHeaders,
             (p) => updateFile(clientId, { uploadProgress: p }),
-            controller.signal
+            controller.signal,
           );
-          
+
           abortControllers.current.delete(clientId);
 
-          if (!filesRef.current.find(f => f.clientId === clientId)) continue;
+          if (!filesRef.current.find((f) => f.clientId === clientId)) continue;
 
           updateFile(clientId, { uploadStatus: "FINALIZING" });
           setStatus(`Verifying File ${index + 1}…`);
-          
-          const latestItem = filesRef.current.find(f => f.clientId === clientId);
+
+          const latestItem = filesRef.current.find(
+            (f) => f.clientId === clientId,
+          );
           await customerApi.complete(token, latestItem?.fileId || "");
-          
-          updateFile(clientId, { uploaded: true, uploadStatus: "UPLOADED", uploadProgress: 100 });
+
+          updateFile(clientId, {
+            uploaded: true,
+            uploadStatus: "UPLOADED",
+            uploadProgress: 100,
+          });
         } catch (caught) {
           if (caught instanceof Error && caught.message === "UPLOAD_ABORTED") {
             continue;
           }
           const errMsg = customerErrorMessage(caught);
           updateFile(clientId, { uploadStatus: "FAILED", uploadError: errMsg });
-          errorToReport = caught instanceof Error ? caught : new Error(String(caught));
+          errorToReport =
+            caught instanceof Error ? caught : new Error(String(caught));
           break;
         }
       }
 
       if (errorToReport) throw errorToReport;
 
-      const allUploaded = filesRef.current.every(f => f.uploadStatus === "UPLOADED");
+      const allUploaded = filesRef.current.every(
+        (f) => f.uploadStatus === "UPLOADED",
+      );
       if (!allUploaded || filesRef.current.length === 0) {
-         setBusy(false);
-         return; // User removed a file or something else failed
+        setBusy(false);
+        return; // User removed a file or something else failed
       }
 
       if (!token) throw new Error("DRAFT_INVALID");
@@ -459,9 +487,7 @@ export function App() {
           files: filesRef.current.map((f) => ({
             fileId: f.fileId!,
             selectedPages:
-              f.pageMode === "ALL"
-                ? `1-${f.pageCount}`
-                : f.customPages,
+              f.pageMode === "ALL" ? `1-${f.pageCount}` : f.customPages,
             copies: f.copies,
             paperSize: f.paperSize,
             colorMode: f.colorMode,
@@ -506,9 +532,7 @@ export function App() {
       void customerApi.removeFile(draftToken, item.fileId).catch(() => {});
     }
 
-    setFiles((current) =>
-      current.filter((_, position) => position !== index),
-    );
+    setFiles((current) => current.filter((_, position) => position !== index));
     setSelectedFileIndex((current) =>
       Math.max(
         0,
@@ -600,7 +624,7 @@ export function App() {
       );
       sessionStorage.removeItem(pendingKey);
       sessionStorage.removeItem(DRAFT_TOKEN_KEY);
-      
+
       // Auto-navigate to tracking page
       const code = result.pickupCode ?? result.jobCode;
       window.history.pushState(null, "", `/track/${encodeURIComponent(code)}`);
@@ -715,8 +739,19 @@ export function App() {
 
   const shopHeader = (
     <header className="hero">
-      <div className="hero-top-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-        <div className="hero-branding" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+      <div
+        className="hero-top-row"
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: "1rem",
+        }}
+      >
+        <div
+          className="hero-branding"
+          style={{ display: "flex", alignItems: "center", gap: "1rem" }}
+        >
           {config?.logoUrl ? (
             <img
               src={resolveCustomerApiUrl(config.logoUrl)}
@@ -724,15 +759,29 @@ export function App() {
               style={{ maxWidth: 144, maxHeight: 80, objectFit: "contain" }}
             />
           ) : (
-            <h1 style={{ margin: 0, fontSize: '1.75rem', color: '#123B4A' }}>{config?.shopName ?? "Online printing"}</h1>
+            <h1 style={{ margin: 0, fontSize: "1.75rem", color: "#123B4A" }}>
+              {config?.shopName ?? "Online printing"}
+            </h1>
           )}
         </div>
-        <button
-          type="button"
-          className="pricing-info-button" onClick={() => setShowPricingInfo(true)} style={{ width: "auto", marginTop: 0 }}
-        >
-          Pricing &amp; Info
-        </button>
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+          <button
+            type="button"
+            className="pricing-info-button"
+            onClick={() => setShowPricing(true)}
+            style={{ width: "auto", marginTop: 0 }}
+          >
+            Pricing
+          </button>
+          <button
+            type="button"
+            className="pricing-info-button"
+            onClick={() => setShowInfo(true)}
+            style={{ width: "auto", marginTop: 0 }}
+          >
+            Info
+          </button>
+        </div>
       </div>
       <p>
         {config?.customerNotice ??
@@ -772,14 +821,21 @@ export function App() {
             fontWeight: 600,
             textTransform: "uppercase",
             borderRadius: "6px",
-            border: "1.5px solid #E1E5E2", outline: "none", color: "#123B4A",
+            border: "1.5px solid #E1E5E2",
+            outline: "none",
+            color: "#123B4A",
           }}
         />
         <button
           type="submit"
           className="secondary-button"
           style={{
-            whiteSpace: "nowrap", padding: "0.45rem 0.85rem", fontSize: "0.85rem", fontWeight: 700, marginTop: 0, width: "auto",
+            whiteSpace: "nowrap",
+            padding: "0.45rem 0.85rem",
+            fontSize: "0.85rem",
+            fontWeight: 700,
+            marginTop: 0,
+            width: "auto",
           }}
         >
           Track
@@ -822,10 +878,7 @@ export function App() {
     return (
       <>
         {shopHeader}
-        <TrackingPage
-          jobCode={trackingJobCode}
-          onBack={handleResetToHome}
-        />
+        <TrackingPage jobCode={trackingJobCode} onBack={handleResetToHome} />
       </>
     );
   }
@@ -843,36 +896,28 @@ export function App() {
       {!busy && !paymentBusy && !quote && !paymentSuccess ? (
         <PwaInstallBanner />
       ) : null}
-      {showPricingInfo && config ? (
+      {showPricing && config ? (
         <div
           className="pricing-modal-backdrop"
-          onClick={() => setShowPricingInfo(false)}
+          onClick={() => setShowPricing(false)}
         >
           <div
             className="pricing-modal-content"
             role="dialog"
             aria-modal="true"
-            aria-labelledby="pricing-info-title"
+            aria-labelledby="pricing-modal-title"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="pricing-modal-header">
-              <h2 id="pricing-info-title">Pricing &amp; Info</h2>
+              <h2 id="pricing-modal-title">Pricing &amp; Rates</h2>
               <button
                 type="button"
                 className="close-button"
                 aria-label="Close"
-                onClick={() => setShowPricingInfo(false)}
+                onClick={() => setShowPricing(false)}
               >
                 &times;
               </button>
-            </div>
-
-            <div className="pricing-info-notice">
-              <p>
-                Most standard orders are automatically sent to the printer after
-                successful payment. Orders requiring special/manual services are
-                handled by shop staff and kept ready for collection.
-              </p>
             </div>
 
             {config.availablePrintOptions &&
@@ -964,6 +1009,57 @@ export function App() {
               </section>
             ) : null}
 
+            <div className="pricing-modal-footer">
+              <button
+                type="button"
+                className="primary-button fit"
+                onClick={() => setShowPricing(false)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {showInfo && config ? (
+        <div
+          className="pricing-modal-backdrop"
+          onClick={() => setShowInfo(false)}
+        >
+          <div
+            className="pricing-modal-content"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="info-modal-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="pricing-modal-header">
+              <h2 id="info-modal-title">Shop Information</h2>
+              <button
+                type="button"
+                className="close-button"
+                aria-label="Close"
+                onClick={() => setShowInfo(false)}
+              >
+                &times;
+              </button>
+            </div>
+
+            <div className="pricing-info-notice">
+              <p>
+                Most standard orders are automatically sent to the printer after
+                successful payment. Orders requiring special/manual services are
+                handled by shop staff and kept ready for collection.
+              </p>
+            </div>
+
+            {config.customerNotice ? (
+              <section className="pricing-info-section">
+                <h3>Notice</h3>
+                <p>{config.customerNotice}</p>
+              </section>
+            ) : null}
+
             {config.shopName || config.contactPhone || config.address ? (
               <section className="pricing-info-section">
                 <h3>Shop Details</h3>
@@ -986,7 +1082,7 @@ export function App() {
               <button
                 type="button"
                 className="primary-button fit"
-                onClick={() => setShowPricingInfo(false)}
+                onClick={() => setShowInfo(false)}
               >
                 Close
               </button>
@@ -1099,23 +1195,59 @@ export function App() {
                         {item.pageCount} pages · {humanFileSize(item.size)}
                       </small>
                       {item.uploadStatus === "FAILED" && (
-                        <div style={{ color: "#d32f2f", marginTop: "4px", fontSize: "0.85em", fontWeight: 600 }}>
+                        <div
+                          style={{
+                            color: "#d32f2f",
+                            marginTop: "4px",
+                            fontSize: "0.85em",
+                            fontWeight: 600,
+                          }}
+                        >
                           {item.uploadError}
                         </div>
                       )}
-                      {(item.uploadStatus === "UPLOADING" || item.uploadStatus === "VALIDATING") && (
-                        <div style={{ marginTop: "4px", display: "flex", alignItems: "center", gap: "8px" }}>
-                          <progress value={item.uploadProgress} max="100" style={{ flexGrow: 1 }} />
-                          <span style={{ fontSize: "0.8em" }}>{item.uploadStatus === "VALIDATING" ? "Starting" : `${item.uploadProgress}%`}</span>
+                      {(item.uploadStatus === "UPLOADING" ||
+                        item.uploadStatus === "VALIDATING") && (
+                        <div
+                          style={{
+                            marginTop: "4px",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "8px",
+                          }}
+                        >
+                          <progress
+                            value={item.uploadProgress}
+                            max="100"
+                            style={{ flexGrow: 1 }}
+                          />
+                          <span style={{ fontSize: "0.8em" }}>
+                            {item.uploadStatus === "VALIDATING"
+                              ? "Starting"
+                              : `${item.uploadProgress}%`}
+                          </span>
                         </div>
                       )}
                       {item.uploadStatus === "FINALIZING" && (
-                        <div style={{ marginTop: "4px", fontSize: "0.85em", color: "#0288d1" }}>
+                        <div
+                          style={{
+                            marginTop: "4px",
+                            fontSize: "0.85em",
+                            color: "#0288d1",
+                          }}
+                        >
                           Verifying...
                         </div>
                       )}
                       {item.uploadStatus === "UPLOADED" && (
-                        <div style={{ marginTop: "4px", fontSize: "0.85em", color: "#388e3c", fontWeight: 600 }}>
+                        <div
+                          style={{
+                            marginTop: "4px",
+                            fontSize: "0.85em",
+                            color: "#388e3c",
+                            fontWeight: 600,
+                          }}
+                        >
                           Uploaded ✓
                         </div>
                       )}
@@ -1126,7 +1258,23 @@ export function App() {
                       aria-label={`Remove File ${index + 1}`}
                       disabled={paymentBusy}
                       onClick={() => void removeFile(index)}
-                      style={{ minWidth: "44px", minHeight: "44px", padding: 0, position: "absolute", right: 0, top: 0, bottom: 0, display: "flex", alignItems: "center", justifyContent: "center", border: "none", background: "none", fontSize: "1.5rem", color: "#64748b", cursor: "pointer" }}
+                      style={{
+                        minWidth: "44px",
+                        minHeight: "44px",
+                        padding: 0,
+                        position: "absolute",
+                        right: 0,
+                        top: 0,
+                        bottom: 0,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        border: "none",
+                        background: "none",
+                        fontSize: "1.5rem",
+                        color: "#64748b",
+                        cursor: "pointer",
+                      }}
                     >
                       ×
                     </button>
@@ -1630,8 +1778,8 @@ export function App() {
                   : quote
                     ? "Refresh review"
                     : draftToken
-                      ? files.some(f => f.uploadStatus === "FAILED") 
-                        ? "Try upload again" 
+                      ? files.some((f) => f.uploadStatus === "FAILED")
+                        ? "Try upload again"
                         : "Upload PDF and review"
                       : "Upload PDF and review"}
             </button>

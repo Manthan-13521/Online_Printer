@@ -58,7 +58,8 @@ beforeEach(() => {
   vi.mocked(customerApi.config).mockResolvedValue(enabledConfig);
   vi.mocked(inspectPdf).mockResolvedValue(10);
   vi.mocked(customerApi.tracking).mockResolvedValue({
-    jobCode: "PG-ABC234", instructions: null,
+    jobCode: "PG-ABC234",
+    instructions: null,
     customerName: "Rahul",
     paymentStatus: "PAYMENT_RECEIVED",
     orderStatus: "QUEUED",
@@ -331,7 +332,7 @@ describe("customer upload app", () => {
         .closest("form")!,
     );
     expect(
-      (await screen.findAllByText(/The upload was interrupted/i)).length
+      (await screen.findAllByText(/The upload was interrupted/i)).length,
     ).toBeGreaterThan(0);
     expect(screen.getByLabelText<HTMLInputElement>("Name").value).toBe("Rahul");
     const retry = screen.getByRole("button", { name: "Try upload again" });
@@ -603,5 +604,32 @@ describe("customer upload app", () => {
 
     await user.click(checkbox);
     expect(chip.className).not.toContain("selected");
+  });
+
+  it("opens separate Pricing and Info modals", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    const pricingButton = await screen.findByRole("button", {
+      name: "Pricing",
+    });
+    const infoButton = screen.getByRole("button", { name: "Info" });
+
+    // Open Pricing modal
+    await user.click(pricingButton);
+    expect(
+      screen.getByRole("heading", { name: "Pricing & Rates" }),
+    ).toBeTruthy();
+    await user.click(screen.getAllByRole("button", { name: "Close" })[0]!);
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    // Open Info modal
+    await user.click(infoButton);
+    expect(
+      screen.getByRole("heading", { name: "Shop Information" }),
+    ).toBeTruthy();
+    await user.click(screen.getAllByRole("button", { name: "Close" })[0]!);
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });

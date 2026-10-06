@@ -79,6 +79,10 @@ describe("Admin application", () => {
   beforeEach(() => {
     window.history.replaceState({}, "", "/admin");
     vi.resetAllMocks();
+    mockedApi.getSettings.mockResolvedValue({
+      ok: true,
+      data: { settings },
+    });
     mockedApi.getDashboard.mockResolvedValue({
       ok: true,
       data: {
@@ -160,6 +164,9 @@ describe("Admin application", () => {
     );
     const user = userEvent.setup();
     render(<App />);
+    await user.click(
+      await screen.findByRole("button", { name: "Change password" }),
+    );
     await user.type(
       await screen.findByLabelText("Current password"),
       "current password",
@@ -172,7 +179,10 @@ describe("Admin application", () => {
       screen.getByLabelText("Confirm new password"),
       "new secure password",
     );
-    await user.click(screen.getByRole("button", { name: "Change password" }));
+    const dialog = screen.getByRole("dialog");
+    await user.click(
+      dialog.querySelector("button[type='submit']") as HTMLButtonElement,
+    );
     await waitFor(() =>
       expect(screen.getByRole("heading", { name: "Sign in" })).toBeTruthy(),
     );
@@ -420,5 +430,66 @@ describe("Admin application", () => {
       ),
     ).toBeTruthy();
     expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
+  });
+
+  it("opens Change Password in a floating modal dialog and allows canceling", async () => {
+    window.history.replaceState({}, "", "/admin/security");
+    mockedApi.me.mockResolvedValue({ ok: true, data: { admin } });
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await user.click(
+      await screen.findByRole("button", { name: "Change password" }),
+    );
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(screen.getByLabelText("Current password")).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("renders Storage & Privacy on the Security page and saves storage settings", async () => {
+    window.history.replaceState({}, "", "/admin/security");
+    mockedApi.me.mockResolvedValue({ ok: true, data: { admin } });
+    mockedApi.updateSettings.mockImplementation((input) =>
+      Promise.resolve({
+        ok: true,
+        data: { settings: input, message: "Storage settings saved." },
+      }),
+    );
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(
+      await screen.findByRole("heading", { name: "Storage & Privacy" }),
+    ).toBeTruthy();
+    expect(
+      await screen.findByLabelText("Automatic Daily Cleanup"),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Free Printed Data" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Free All Print Data" }),
+    ).toBeTruthy();
+
+    const cleanupCheckbox = screen.getByLabelText("Automatic Daily Cleanup");
+    await user.click(cleanupCheckbox);
+    const retentionSelect = screen.getByLabelText(
+      "Completed Order & PDF Retention",
+    );
+    await user.selectOptions(retentionSelect, "6");
+    expect(screen.getByText("Unsaved changes")).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "Save Changes" }));
+    await waitFor(() =>
+      expect(mockedApi.updateSettings).toHaveBeenCalledWith({
+        ...settings,
+        automaticDailyCleanupEnabled: true,
+        orderRetentionHours: 6,
+      }),
+    );
+    expect(await screen.findByText("Storage settings saved.")).toBeTruthy();
   });
 });
