@@ -203,7 +203,7 @@ describe("customer upload app", () => {
     await user.clear(screen.getByLabelText("Copies"));
     await user.type(screen.getByLabelText("Copies"), "3");
     await user.click(
-      screen.getByRole("button", { name: "Apply these settings to all files" }),
+      screen.getByRole("button", { name: /Apply these settings to all files/i }),
     );
     await user.selectOptions(screen.getByLabelText("Settings for"), "1");
     expect(screen.getByLabelText<HTMLInputElement>("Copies").value).toBe("3");
