@@ -315,7 +315,7 @@ describe("customer upload app", () => {
       new File(["%PDF"], "notes.pdf", { type: "application/pdf" }),
     );
     await user.click(screen.getByLabelText("Custom"));
-    const pages = await screen.findByPlaceholderText("e.g. 1-5, 8, 11-13");
+    const pages = await screen.findByLabelText("Custom pages");
     fireEvent.change(pages, { target: { value: "10-2" } });
     fireEvent.submit(
       screen
