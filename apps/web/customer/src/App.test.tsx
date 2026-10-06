@@ -189,38 +189,35 @@ describe("customer upload app", () => {
     await screen.findByText("ABC Xerox");
     await user.type(screen.getByLabelText("Name"), "Rahul");
     await user.type(screen.getByLabelText("Phone"), "9876543210");
-    await user.upload(screen.getByLabelText("Choose PDF"), [
+    await user.upload(screen.getByLabelText("Choose Files"), [
       new File(["%PDF"], "one.pdf", { type: "application/pdf" }),
       new File(["%PDF"], "two.pdf", { type: "application/pdf" }),
       new File(["%PDF"], "three.pdf", { type: "application/pdf" }),
     ]);
-    expect(
-      await screen.findByText("one.pdf"),
-    ).toBeTruthy();
+    expect(await screen.findByText("one.pdf")).toBeTruthy();
     expect(screen.getByText("two.pdf")).toBeTruthy();
     expect(screen.getByText("three.pdf")).toBeTruthy();
 
     await user.clear(screen.getByLabelText("Copies"));
     await user.type(screen.getByLabelText("Copies"), "3");
     await user.click(
-      screen.getByRole("button", { name: /Apply these settings to all files/i }),
+      screen.getByRole("button", {
+        name: /Apply these settings to all files/i,
+      }),
     );
-    await user.selectOptions(screen.getByLabelText("Settings for"), "1");
+    await user.selectOptions(screen.getByLabelText("File to configure"), "1");
     expect(screen.getByLabelText<HTMLInputElement>("Copies").value).toBe("3");
     await user.clear(screen.getByLabelText("Copies"));
     await user.type(screen.getByLabelText("Copies"), "2");
-    await user.selectOptions(screen.getByLabelText("Settings for"), "0");
+    await user.selectOptions(screen.getByLabelText("File to configure"), "0");
     expect(screen.getByLabelText<HTMLInputElement>("Copies").value).toBe("3");
 
     fireEvent.submit(
       screen
-        .getByRole("button", { name: "Upload PDF and review" })
+        .getByRole("button", { name: "Review Order" })
         .closest("form")!,
     );
-    const review = (await screen.findByText("3 files")).closest("section")!;
-    expect(within(review).queryByText("one.pdf")).toBeNull();
-    expect(within(review).queryByText("two.pdf")).toBeNull();
-    expect(within(review).queryByText("three.pdf")).toBeNull();
+    const review = (await screen.findByText("Files (3)")).closest("section")!;
     expect(within(review).queryByText(/View files/i)).toBeNull();
   });
 
@@ -239,7 +236,7 @@ describe("customer upload app", () => {
   it("shows PDF limits and the external compression privacy warning", async () => {
     render(<App />);
     expect(await screen.findByText("ABC Xerox")).toBeTruthy();
-    const link = screen.getByRole("link", { name: "Open iLovePDF" });
+    const link = screen.getByRole("link", { name: /Open iLovePDF/i });
     expect(link.getAttribute("target")).toBe("_blank");
     expect(
       screen.getByText(/external site; its privacy terms apply/i),
@@ -252,7 +249,7 @@ describe("customer upload app", () => {
     const file = new File([new Uint8Array(2048)], "large.pdf", {
       type: "application/pdf",
     });
-    await userEvent.upload(screen.getByLabelText("Choose PDF"), file);
+    await userEvent.upload(screen.getByLabelText("Choose Files"), file);
     expect(await screen.findByText(/PDFs must be between 1 byte/)).toBeTruthy();
     expect(inspectPdf).not.toHaveBeenCalled();
   });
@@ -262,7 +259,7 @@ describe("customer upload app", () => {
     render(<App />);
     await screen.findByText("ABC Xerox");
     const file = new File(["%PDF"], "broken.pdf", { type: "application/pdf" });
-    await userEvent.upload(screen.getByLabelText("Choose PDF"), file);
+    await userEvent.upload(screen.getByLabelText("Choose Files"), file);
     expect(
       await screen.findByText("This PDF is corrupted or cannot be read."),
     ).toBeTruthy();
@@ -275,13 +272,13 @@ describe("customer upload app", () => {
     await user.type(screen.getByLabelText("Name"), "Rahul");
     await user.type(screen.getByLabelText("Phone"), "9876543210");
     await user.upload(
-      screen.getByLabelText("Choose PDF"),
+      screen.getByLabelText("Choose Files"),
       new File(["%PDF"], "notes.pdf", { type: "application/pdf" }),
     );
-    expect(await screen.findByText(/10 pages/)).toBeTruthy();
+    expect(await screen.findAllByText(/10 pages/)).toBeTruthy();
     fireEvent.submit(
       screen
-        .getByRole("button", { name: "Upload PDF and review" })
+        .getByRole("button", { name: "Review Order" })
         .closest("form")!,
     );
     await waitFor(() =>
@@ -311,15 +308,15 @@ describe("customer upload app", () => {
     await user.type(screen.getByLabelText("Name"), "Rahul");
     await user.type(screen.getByLabelText("Phone"), "9876543210");
     await user.upload(
-      screen.getByLabelText("Choose PDF"),
+      screen.getByLabelText("Choose Files"),
       new File(["%PDF"], "notes.pdf", { type: "application/pdf" }),
     );
-    await user.click(screen.getByLabelText("Custom"));
+    await user.click(screen.getByLabelText("Custom range"));
     const pages = await screen.findByLabelText("Custom pages");
     fireEvent.change(pages, { target: { value: "10-2" } });
     fireEvent.submit(
       screen
-        .getByRole("button", { name: "Upload PDF and review" })
+        .getByRole("button", { name: "Review Order" })
         .closest("form")!,
     );
     expect(
@@ -328,7 +325,7 @@ describe("customer upload app", () => {
     fireEvent.change(pages, { target: { value: "1-3" } });
     fireEvent.submit(
       screen
-        .getByRole("button", { name: "Upload PDF and review" })
+        .getByRole("button", { name: "Review Order" })
         .closest("form")!,
     );
     expect(
@@ -353,20 +350,20 @@ describe("customer upload app", () => {
     await user.type(screen.getByLabelText("Name"), "Rahul");
     await user.type(screen.getByLabelText("Phone"), "9876543210");
     await user.upload(
-      screen.getByLabelText("Choose PDF"),
+      screen.getByLabelText("Choose Files"),
       new File(["%PDF"], "notes.pdf", { type: "application/pdf" }),
     );
     fireEvent.submit(
       screen
-        .getByRole("button", { name: "Upload PDF and review" })
+        .getByRole("button", { name: "Review Order" })
         .closest("form")!,
     );
-    const pay = await screen.findByRole("button", { name: "Pay ₹21.00" });
+    const pay = await screen.findByRole("button", { name: "🔒 Pay ₹21.00" });
     await user.click(pay);
     expect(
       await screen.findByText(/The price changed\. Review the updated total/),
     ).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Pay ₹22.00" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "🔒 Pay ₹22.00" })).toBeTruthy();
     expect(customerApi.createPayment).toHaveBeenCalledTimes(1);
   });
 
@@ -380,15 +377,15 @@ describe("customer upload app", () => {
     await user.type(screen.getByLabelText("Name"), "Rahul");
     await user.type(screen.getByLabelText("Phone"), "9876543210");
     await user.upload(
-      screen.getByLabelText("Choose PDF"),
+      screen.getByLabelText("Choose Files"),
       new File(["%PDF"], "notes.pdf", { type: "application/pdf" }),
     );
     fireEvent.submit(
       screen
-        .getByRole("button", { name: "Upload PDF and review" })
+        .getByRole("button", { name: "Review Order" })
         .closest("form")!,
     );
-    const pay = await screen.findByRole("button", { name: "Pay ₹21.00" });
+    const pay = await screen.findByRole("button", { name: "🔒 Pay ₹21.00" });
     await user.click(pay);
     expect(
       screen.getByRole("button", { name: "Confirming payment…" }),
@@ -432,15 +429,15 @@ describe("customer upload app", () => {
     await user.type(screen.getByLabelText("Name"), "Rahul");
     await user.type(screen.getByLabelText("Phone"), "9876543210");
     await user.upload(
-      screen.getByLabelText("Choose PDF"),
+      screen.getByLabelText("Choose Files"),
       new File(["%PDF"], "notes.pdf", { type: "application/pdf" }),
     );
     fireEvent.submit(
       screen
-        .getByRole("button", { name: "Upload PDF and review" })
+        .getByRole("button", { name: "Review Order" })
         .closest("form")!,
     );
-    await user.click(await screen.findByRole("button", { name: "Pay ₹21.00" }));
+    await user.click(await screen.findByRole("button", { name: "🔒 Pay ₹21.00" }));
     expect(screen.queryByText("PG-ABC234")).toBeNull();
     checkoutHandler?.({
       razorpay_order_id: "order_server_a",
@@ -491,15 +488,15 @@ describe("customer upload app", () => {
     await user.type(screen.getByLabelText("Name"), "Rahul");
     await user.type(screen.getByLabelText("Phone"), "9876543210");
     await user.upload(
-      screen.getByLabelText("Choose PDF"),
+      screen.getByLabelText("Choose Files"),
       new File(["%PDF"], "notes.pdf", { type: "application/pdf" }),
     );
     fireEvent.submit(
       screen
-        .getByRole("button", { name: "Upload PDF and review" })
+        .getByRole("button", { name: "Review Order" })
         .closest("form")!,
     );
-    await user.click(await screen.findByRole("button", { name: "Pay ₹21.00" }));
+    await user.click(await screen.findByRole("button", { name: "🔒 Pay ₹21.00" }));
     dismiss?.();
     expect(
       await screen.findByText(
@@ -537,15 +534,15 @@ describe("customer upload app", () => {
     await user.type(screen.getByLabelText("Name"), "Rahul");
     await user.type(screen.getByLabelText("Phone"), "9876543210");
     await user.upload(
-      screen.getByLabelText("Choose PDF"),
+      screen.getByLabelText("Choose Files"),
       new File(["%PDF"], "notes.pdf", { type: "application/pdf" }),
     );
     fireEvent.submit(
       screen
-        .getByRole("button", { name: "Upload PDF and review" })
+        .getByRole("button", { name: "Review Order" })
         .closest("form")!,
     );
-    await user.click(await screen.findByRole("button", { name: "Pay ₹21.00" }));
+    await user.click(await screen.findByRole("button", { name: "🔒 Pay ₹21.00" }));
     failed?.();
     expect(
       await screen.findByText(/Payment failed\. No print job was created/),
@@ -564,15 +561,15 @@ describe("customer upload app", () => {
     await user.type(screen.getByLabelText("Name"), "Rahul");
     await user.type(screen.getByLabelText("Phone"), "9876543210");
     await user.upload(
-      screen.getByLabelText("Choose PDF"),
+      screen.getByLabelText("Choose Files"),
       new File(["%PDF"], "notes.pdf", { type: "application/pdf" }),
     );
     fireEvent.submit(
       screen
-        .getByRole("button", { name: "Upload PDF and review" })
+        .getByRole("button", { name: "Review Order" })
         .closest("form")!,
     );
-    await user.click(await screen.findByRole("button", { name: "Pay ₹21.00" }));
+    await user.click(await screen.findByRole("button", { name: "🔒 Pay ₹21.00" }));
     expect(
       await screen.findByText(/payment service could not be reached/i),
     ).toBeTruthy();
@@ -606,28 +603,19 @@ describe("customer upload app", () => {
     expect(chip.className).not.toContain("selected");
   });
 
-  it("opens separate Pricing and Info modals", async () => {
+  it("opens Pricing modal", async () => {
     const user = userEvent.setup();
     render(<App />);
 
     expect(screen.queryByRole("dialog")).toBeNull();
     const pricingButton = await screen.findByRole("button", {
-      name: "Pricing",
+      name: /Pricing & Info/,
     });
-    const infoButton = screen.getByRole("button", { name: "Info" });
 
     // Open Pricing modal
     await user.click(pricingButton);
     expect(
       screen.getByRole("heading", { name: "Pricing & Rates" }),
-    ).toBeTruthy();
-    await user.click(screen.getAllByRole("button", { name: "Close" })[0]!);
-    expect(screen.queryByRole("dialog")).toBeNull();
-
-    // Open Info modal
-    await user.click(infoButton);
-    expect(
-      screen.getByRole("heading", { name: "Shop Information" }),
     ).toBeTruthy();
     await user.click(screen.getAllByRole("button", { name: "Close" })[0]!);
     expect(screen.queryByRole("dialog")).toBeNull();

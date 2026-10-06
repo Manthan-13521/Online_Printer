@@ -22,7 +22,7 @@ import { TrackingPage } from "./TrackingPage";
 import { PublicTrackingPage } from "./PublicTrackingPage";
 import {
   createTrackingToken,
-  privateTrackingUrl,
+  
   trackingStorageKey,
 } from "./tracking-token";
 
@@ -187,7 +187,6 @@ export function App() {
   const [trackBoxCode, setTrackBoxCode] = useState("");
   const [showPricing, setShowPricing] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
-  const [copyMessage, setCopyMessage] = useState<string | null>(null);
 
   useEffect(() => {
     const handlePopState = () => setTrackingJobCode(trackingCodeFromPath());
@@ -711,47 +710,12 @@ export function App() {
     }
   }
 
-  function openTracking() {
-    if (!paymentSuccess) return;
-    const code = paymentSuccess.pickupCode ?? paymentSuccess.jobCode;
-    sessionStorage.setItem(
-      trackingStorageKey(paymentSuccess.jobCode),
-      paymentSuccess.trackingToken,
-    );
-    window.history.pushState(null, "", `/track/${encodeURIComponent(code)}`);
-    setTrackingJobCode(code);
-  }
 
-  async function copyTrackingLink() {
-    if (!paymentSuccess) return;
-    try {
-      await navigator.clipboard.writeText(
-        privateTrackingUrl(
-          paymentSuccess.jobCode,
-          paymentSuccess.trackingToken,
-        ),
-      );
-      setCopyMessage("Private tracking link copied.");
-    } catch {
-      setCopyMessage("The link could not be copied on this device.");
-    }
-  }
 
   const shopHeader = (
     <header className="hero">
-      <div
-        className="hero-top-row"
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: "1rem",
-        }}
-      >
-        <div
-          className="hero-branding"
-          style={{ display: "flex", alignItems: "center", gap: "1rem" }}
-        >
+      <div className="hero-top-row">
+        <div className="hero-branding">
           {config?.logoUrl ? (
             <img
               src={resolveCustomerApiUrl(config.logoUrl)}
@@ -759,88 +723,52 @@ export function App() {
               style={{ maxWidth: 144, maxHeight: 80, objectFit: "contain" }}
             />
           ) : (
-            <h1 style={{ margin: 0, fontSize: "1.75rem", color: "#123B4A" }}>
+            <h1 className="logo-text">
               {config?.shopName ?? "Online printing"}
             </h1>
           )}
         </div>
-        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-          <button
-            type="button"
-            className="pricing-info-button"
-            onClick={() => setShowPricing(true)}
-            style={{ width: "auto", marginTop: 0 }}
-          >
-            Pricing
-          </button>
-          <button
-            type="button"
-            className="pricing-info-button"
-            onClick={() => setShowInfo(true)}
-            style={{ width: "auto", marginTop: 0 }}
-          >
-            Info
+        
+        <form
+          className="track-printing-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const trimmed = trackBoxCode.trim().toUpperCase();
+            if (trimmed) {
+              window.history.pushState(null, "", `/track/${encodeURIComponent(trimmed)}`);
+              setTrackingJobCode(trimmed);
+            }
+          }}
+        >
+          <div className="track-input-wrapper">
+            <span className="track-icon">📦</span>
+            <input
+              placeholder="Track your order (e.g. PA-001)"
+              value={trackBoxCode}
+              onChange={(e) => setTrackBoxCode(e.target.value)}
+            />
+            <button type="submit" className="track-button">Track</button>
+          </div>
+        </form>
+
+        <div className="hero-actions">
+          <button type="button" className="pricing-info-button" onClick={() => setShowPricing(true)}>
+            ⓘ Pricing & Info
           </button>
         </div>
       </div>
-      <p>
-        {config?.customerNotice ??
-          "Upload a PDF and review your print settings."}
-      </p>
-      <form
-        className="track-printing-form"
-        onSubmit={(e) => {
-          e.preventDefault();
-          const trimmed = trackBoxCode.trim().toUpperCase();
-          if (trimmed) {
-            window.history.pushState(
-              null,
-              "",
-              `/track/${encodeURIComponent(trimmed)}`,
-            );
-            setTrackingJobCode(trimmed);
-          }
-        }}
-        style={{
-          marginTop: "0.75rem",
-          display: "flex",
-          gap: "0.5rem",
-          maxWidth: "380px",
-          alignItems: "center",
-        }}
-      >
-        <input
-          type="text"
-          placeholder="Track code (e.g. PA-001)"
-          value={trackBoxCode}
-          onChange={(e) => setTrackBoxCode(e.target.value.toUpperCase())}
-          style={{
-            padding: "0.45rem 0.75rem",
-            fontSize: "0.85rem",
-            letterSpacing: "1px",
-            fontWeight: 600,
-            textTransform: "uppercase",
-            borderRadius: "6px",
-            border: "1.5px solid #E1E5E2",
-            outline: "none",
-            color: "#123B4A",
-          }}
-        />
-        <button
-          type="submit"
-          className="secondary-button"
-          style={{
-            whiteSpace: "nowrap",
-            padding: "0.45rem 0.85rem",
-            fontSize: "0.85rem",
-            fontWeight: 700,
-            marginTop: 0,
-            width: "auto",
-          }}
-        >
-          Track
-        </button>
-      </form>
+      
+      <div className="hero-content">
+        <div className="hero-text">
+          <h1 className="hero-title">Upload & Print Instantly</h1>
+          <p className="hero-subtitle">
+            Upload your PDF files and get high-quality prints without any manual interference.
+          </p>
+        </div>
+        <div className="hero-decoration">
+          <div className="decoration-text">Your files,<br/>our print magic!</div>
+        </div>
+      </div>
     </header>
   );
   if (trackingJobCode) {
@@ -1100,642 +1028,539 @@ export function App() {
         </section>
       ) : (
         <form className="order-layout" onSubmit={(event) => void prepareReview(event)}>
-          <div className="order-main">
-          <section className="step">
-            <div className="step-header"><span className="step-number">1</span><h2>Details</h2></div>
-            <label>
-              Name
-              <input
-                required
-                maxLength={120}
-                value={customerName}
-                onChange={(event) => setCustomerName(event.target.value)}
-              />
-            </label>
-            <label>
-              Phone
-              <input
-                required
-                maxLength={30}
-                inputMode="tel"
-                value={customerPhone}
-                onChange={(event) => setCustomerPhone(event.target.value)}
-              />
-            </label>
-            {config?.addonServices && config.addonServices.length > 0 ? (
-              <div className="addon-selection-group">
-                <span className="addon-group-label">Add-on Services</span>
-                <div className="addon-checkbox-list">
-                  {config.addonServices.map((service) => {
-                    const isSelected = selectedAddonIds.includes(service.id);
-                    return (
-                      <label
-                        key={service.id}
-                        className={`addon-checkbox-item ${isSelected ? "selected" : ""}`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          disabled={busy || paymentBusy || Boolean(draftToken)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedAddonIds([
-                                ...selectedAddonIds,
-                                service.id,
-                              ]);
-                            } else {
-                              setSelectedAddonIds(
-                                selectedAddonIds.filter(
-                                  (id) => id !== service.id,
-                                ),
-                              );
-                            }
-                          }}
-                        />
-                        <span className="addon-name">{service.name}</span>
-                        <span className="addon-price-tag">
-                          {service.pricingType === "STAFF_PRICED"
-                            ? "Price decided by staff"
-                            : service.fixedPricePaise === 0
-                              ? "FREE"
-                              : `+₹${(service.fixedPricePaise / 100).toFixed(2)}`}
-                        </span>
-                      </label>
-                    );
-                  })}
-                </div>
+          <div className="order-left">
+            <section className="step">
+              <div className="step-header">
+                <span className="step-number">1</span>
+                <h2>Customer Details</h2>
+                <p className="step-desc">Tell us a bit about yourself to get started.</p>
               </div>
-            ) : null}
-            <label>
-              Instructions (optional)
-              <textarea
-                maxLength={1000}
-                value={instructions}
-                onChange={(event) => setInstructions(event.target.value)}
-              />
-            </label>
-          </section>
-          <section className="step">
-            <div className="step-header"><span className="step-number">2</span><h2>PDFs</h2></div>
-            <div className="file-list">
-              {files.map((item, index) => (
-                <div 
-                  key={item.clientId}
-                  className={`file-card-compact ${selectedFileIndex === index ? 'active' : ''}`}
-                  onClick={() => setSelectedFileIndex(index)}
-                  role="button"
-                  tabIndex={0}
-                  aria-label={`Settings for File ${index + 1}, ${item.name}`}
-                >
-                  <div className="file-info">
-                    <span className="file-name">{item.name}</span>
-                    <span className="file-meta">
-                      {item.pageCount} pages · {humanFileSize(item.size)}
-                    </span>
-                    {item.uploadStatus === "FAILED" && (
-                      <span className="file-status status-error">{item.uploadError}</span>
-                    )}
-                    {(item.uploadStatus === "UPLOADING" || item.uploadStatus === "VALIDATING") && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
-                        <progress value={item.uploadProgress} max="100" style={{ height: '6px', flexGrow: 1 }} />
-                        <span className="file-status status-uploading">
-                          {item.uploadStatus === "VALIDATING" ? "Starting" : `${item.uploadProgress}%`}
-                        </span>
-                      </div>
-                    )}
-                    {item.uploadStatus === "FINALIZING" && (
-                      <span className="file-status status-uploading">Verifying...</span>
-                    )}
-                    {item.uploadStatus === "UPLOADED" && (
-                      <span className="file-status status-success">Uploaded ✓</span>
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    className="remove-btn"
-                    aria-label={`Remove File ${index + 1}`}
-                    disabled={paymentBusy}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void removeFile(index);
-                    }}
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-            </div>
-            <label className="file-picker">
-              <span className="add-file-plus">+</span>
-              {files.length === 0 ? "Choose PDF" : "Add another PDF"}
-              <input
-                aria-label="Choose PDF"
-                multiple
-                type="file"
-                accept="application/pdf,.pdf"
-                disabled={files.length >= (config.maxOrderFiles ?? 10)}
-                onChange={(event) => {
-                  void chooseFiles(event.target.files);
-                  event.target.value = "";
-                }}
-              />
-            </label>
-            <p className="file-count">
-              {files.length} of {config.maxOrderFiles ?? 10} files
-            </p>
-            {fileError && (
-              <p className="error" role="alert">
-                {fileError}
-              </p>
-            )}
-            <p className="muted">
-              Maximum {config ? humanFileSize(config.maxPdfSizeBytes) : "25 MB"}
-              . PDFs are private and temporary.
-            </p>
-            <p className="external-warning">
-              Need a smaller file?{" "}
-              <a
-                href="https://www.ilovepdf.com/compress_pdf"
-                target="_blank"
-                rel="noreferrer noopener"
-              >
-                Open iLovePDF
-              </a>{" "}
-              (external site; its privacy terms apply).
-            </p>
-          </section>
-          <section className="step">
-            <div className="step-header"><span className="step-number">3</span><h2>Print Settings</h2></div>
-            {selectedFile ? (
-              <>
-                <label htmlFor="settings-file">Settings for</label>
-                <select
-                  id="settings-file"
-                  value={selectedFileIndex}
-                  onChange={(event) =>
-                    setSelectedFileIndex(Number(event.target.value))
-                  }
-                  style={{ marginBottom: "1rem", padding: "0.6rem", borderRadius: "8px", border: "1px solid #cbd5e1" }}
-                >
-                  {files.map((item, index) => (
-                    <option key={item.clientId} value={index}>
-                      File {index + 1} — {item.name}
-                    </option>
-                  ))}
-                </select>
-                
-                <div className="print-setting-row" style={{ marginBottom: "1rem" }}>
-                  <label style={{ margin: 0, fontWeight: 600 }}>Pages</label>
-                  <div className="segmented-control" style={{ width: "fit-content", minWidth: "200px" }}>
-                    <label>
-                      <input
-                        type="radio"
-                        checked={selectedFile.pageMode === "ALL"}
-                        onChange={() => patchSelected({ pageMode: "ALL" })}
-                      />
-                      All pages
-                    </label>
-                    <label>
-                      <input
-                        type="radio"
-                        checked={selectedFile.pageMode === "CUSTOM"}
-                        onChange={() => patchSelected({ pageMode: "CUSTOM" })}
-                      />
-                      Custom
-                    </label>
-                  </div>
-                  {selectedFile.pageMode === "CUSTOM" && (
+              <div className="details-grid">
+                <label>
+                  Name
+                  <div className="input-with-icon">
+                    <span className="icon">👤</span>
                     <input
-                      aria-label="Custom pages"
-                      placeholder="e.g. 1, 3, 5-10"
-                      value={selectedFile.customPages}
-                      onChange={(event) =>
-                        patchSelected({ customPages: event.target.value })
-                      }
-                      style={{ marginTop: "0.5rem", padding: "0.6rem", border: "1px solid #cbd5e1", borderRadius: "8px" }}
+                      required
+                      maxLength={120}
+                      aria-label="Name"
+                      value={customerName}
+                      onChange={(event) => setCustomerName(event.target.value)}
                     />
-                  )}
+                  </div>
+                </label>
+                <label>
+                  Phone
+                  <div className="input-with-icon">
+                    <span className="icon">📞</span>
+                    <input
+                      required
+                      maxLength={30}
+                      aria-label="Phone"
+                      inputMode="tel"
+                      value={customerPhone}
+                      onChange={(event) => setCustomerPhone(event.target.value)}
+                    />
+                  </div>
+                </label>
+              </div>
+              {config?.addonServices && config.addonServices.length > 0 ? (
+                <div className="addon-selection-group">
+                  <span className="addon-group-label">Add-on Services</span>
+                  <div className="addon-checkbox-list">
+                    {config.addonServices.map((service) => {
+                      const isSelected = selectedAddonIds.includes(service.id);
+                      return (
+                        <label
+                          key={service.id}
+                          className={`addon-checkbox-item ${isSelected ? "selected" : ""}`}
+                        >
+                          <div className="addon-info">
+                            <span className="addon-icon">
+                              {service.name.toLowerCase().includes('bind') ? '📖' : service.name.toLowerCase().includes('staple') ? '📎' : '📄'}
+                            </span>
+                            <div>
+                              <span className="addon-name">{service.name}</span>
+                              <span className="addon-price-tag">
+                                {service.pricingType === "STAFF_PRICED"
+                                  ? "Price decided by staff"
+                                  : service.fixedPricePaise === 0
+                                    ? "FREE"
+                                    : `+₹${(service.fixedPricePaise / 100).toFixed(2)}`}
+                              </span>
+                            </div>
+                          </div>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            disabled={busy || paymentBusy || Boolean(draftToken)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedAddonIds([
+                                  ...selectedAddonIds,
+                                  service.id,
+                                ]);
+                              } else {
+                                setSelectedAddonIds(
+                                  selectedAddonIds.filter(
+                                    (id) => id !== service.id,
+                                  ),
+                                );
+                              }
+                            }}
+                          />
+                        </label>
+                      );
+                    })}
+                  </div>
                 </div>
-                <div className="print-settings-group">
-                  <div className="print-setting-row">
-                    <label htmlFor="copies-input" style={{ margin: 0 }}>Copies</label>
-                    <input id="copies-input"
-                      type="number"
-                      min={MIN_PRINT_COPIES}
-                      max={MAX_PRINT_COPIES}
-                      value={selectedFile.copies}
-                      onChange={(event) =>
-                        patchSelected({ copies: Number(event.target.value) })
-                      }
-                      style={{ padding: "0.6rem" }}
-                    />
+              ) : null}
+              <label htmlFor="customer-inst">Instructions (optional)</label>
+                <div className="input-with-icon textarea">
+                  <span className="icon">📝</span>
+                  <textarea
+                    placeholder="Any special instructions for your print job..."
+                    maxLength={500}
+                    aria-label="Instructions"
+                    id="customer-inst"
+                    value={instructions}
+                    onChange={(event) => setInstructions(event.target.value)}
+                  />
+                </div>
+                <div className="char-count">{instructions.length}/500</div>
+            </section>
+
+            <section className="step">
+              <div className="step-header">
+                <span className="step-number">3</span>
+                <h2>Print Settings</h2>
+                <p className="step-desc">Choose how you want your files to be printed.</p>
+              </div>
+              {selectedFile ? (
+                <>
+                  <div className="settings-file-selector">
+                    <label htmlFor="settings-file">File to configure</label>
+                    <div className="select-wrapper">
+                      <span className="icon">📄</span>
+                      <select
+                        id="settings-file"
+                        value={selectedFileIndex}
+                        onChange={(event) =>
+                          setSelectedFileIndex(Number(event.target.value))
+                        }
+                      >
+                        {files.map((item, index) => (
+                          <option key={item.clientId} value={index}>
+                            File {index + 1} — {item.name} ({item.pageCount} pages)
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
                   
-                  <div className="print-setting-row">
-                    <label style={{ margin: 0 }}>Paper Size</label>
-                    <div className="segmented-control">
-                      <label className={!config.availablePrintOptions.some((o) => o.paperSize === "A4") ? 'disabled' : ''}>
+                  <div className="print-settings-grid">
+                    <div className="print-setting-col">
+                      <label style={{ margin: 0, fontWeight: 600 }}>Pages</label>
+                      <div className="visual-options horizontal">
+                        <label className={`visual-option-card ${selectedFile.pageMode === "ALL" ? "selected" : ""}`}>
+                          <input
+                            type="radio"
+                            checked={selectedFile.pageMode === "ALL"}
+                            onChange={() => patchSelected({ pageMode: "ALL" })}
+                          />
+                          <span className="radio-circle"></span>
+                          <span className="label">All pages</span>
+                        </label>
+                        <label className={`visual-option-card ${selectedFile.pageMode === "CUSTOM" ? "selected" : ""}`}>
+                          <input
+                            type="radio"
+                            checked={selectedFile.pageMode === "CUSTOM"}
+                            onChange={() => patchSelected({ pageMode: "CUSTOM" })}
+                          />
+                          <span className="radio-circle"></span>
+                          <span className="label">Custom range</span>
+                        </label>
+                      </div>
+                      {selectedFile.pageMode === "CUSTOM" && (
                         <input
-                          type="radio"
-                          name="paperSize"
-                          value="A4"
-                          checked={selectedFile.paperSize === "A4"}
-                          disabled={!config.availablePrintOptions.some((o) => o.paperSize === "A4")}
-                          onChange={() => patchSelected({ paperSize: "A4" })}
+                          aria-label="Custom pages"
+                          placeholder="e.g. 1, 3, 5-10"
+                          value={selectedFile.customPages}
+                          onChange={(event) =>
+                            patchSelected({ customPages: event.target.value })
+                          }
+                          className="custom-pages-input"
                         />
-                        A4
-                      </label>
-                      <label className={!config.availablePrintOptions.some((o) => o.paperSize === "A3") ? 'disabled' : ''}>
-                        <input
-                          type="radio"
-                          name="paperSize"
-                          value="A3"
-                          checked={selectedFile.paperSize === "A3"}
-                          disabled={!config.availablePrintOptions.some((o) => o.paperSize === "A3")}
-                          onChange={() => patchSelected({ paperSize: "A3" })}
-                        />
-                        A3
-                      </label>
+                      )}
                     </div>
-                  </div>
+                    
+                    <div className="print-setting-col row-layout">
+                      <div className="copies-control">
+                        <label htmlFor="copies-input" style={{ margin: 0 }}>Copies</label>
+                        <div className="number-stepper">
+                          <button type="button" onClick={() => patchSelected({ copies: Math.max(MIN_PRINT_COPIES, selectedFile.copies - 1) })}>-</button>
+                          <input id="copies-input"
+                            type="number"
+                            min={MIN_PRINT_COPIES}
+                            max={MAX_PRINT_COPIES}
+                            value={selectedFile.copies}
+                            onChange={(event) =>
+                              patchSelected({ copies: Number(event.target.value) })
+                            }
+                          />
+                          <button type="button" onClick={() => patchSelected({ copies: Math.min(MAX_PRINT_COPIES, selectedFile.copies + 1) })}>+</button>
+                        </div>
+                      </div>
+                      <div className="paper-size-control">
+                        <label htmlFor="paper-size" style={{ margin: 0 }}>Paper size</label>
+                        <div className="select-wrapper">
+                          <span className="icon">📄</span>
+                          <select id="paper-size"
+                            value={selectedFile.paperSize}
+                            onChange={(event) => patchSelected({ paperSize: event.target.value as PaperSize })}
+                          >
+                            {config.availablePrintOptions.filter((v,i,a)=>a.findIndex(t=>(t.paperSize === v.paperSize))===i).map((o) => (
+                              <option key={o.paperSize} value={o.paperSize}>{o.paperSize}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    </div>
 
-                  <div className="print-setting-row">
-                    <label style={{ margin: 0 }}>Colour</label>
-                    <div className="segmented-control">
-                      <label className={!config.availablePrintOptions.some((o) => o.paperSize === selectedFile.paperSize && o.colorMode === "BW") ? 'disabled' : ''}>
-                        <input
-                          type="radio"
-                          name="colorMode"
-                          value="BW"
-                          checked={selectedFile.colorMode === "BW"}
-                          disabled={!config.availablePrintOptions.some((o) => o.paperSize === selectedFile.paperSize && o.colorMode === "BW")}
-                          onChange={() => patchSelected({ colorMode: "BW" })}
-                        />
-                        B & W
-                      </label>
-                      <label className={!config.availablePrintOptions.some((o) => o.paperSize === selectedFile.paperSize && o.colorMode === "COLOR") ? 'disabled' : ''}>
-                        <input
-                          type="radio"
-                          name="colorMode"
-                          value="COLOR"
-                          checked={selectedFile.colorMode === "COLOR"}
-                          disabled={!config.availablePrintOptions.some((o) => o.paperSize === selectedFile.paperSize && o.colorMode === "COLOR")}
-                          onChange={() => patchSelected({ colorMode: "COLOR" })}
-                        />
-                        Colour
-                      </label>
+                    <div className="print-setting-col">
+                      <label style={{ margin: 0 }}>Colour</label>
+                      <div className="visual-options horizontal">
+                        <label className={`visual-option-card ${selectedFile.colorMode === "BW" ? "selected" : ""} ${!config.availablePrintOptions.some((o) => o.paperSize === selectedFile.paperSize && o.colorMode === "BW") ? 'disabled' : ''}`}>
+                          <input
+                            type="radio"
+                            name="colorMode"
+                            value="BW"
+                            checked={selectedFile.colorMode === "BW"}
+                            disabled={!config.availablePrintOptions.some((o) => o.paperSize === selectedFile.paperSize && o.colorMode === "BW")}
+                            onChange={() => patchSelected({ colorMode: "BW" })}
+                          />
+                          <span className="card-icon bw-icon"></span>
+                          <span className="label">Black & white</span>
+                          <span className="radio-circle"></span>
+                        </label>
+                        <label className={`visual-option-card ${selectedFile.colorMode === "COLOR" ? "selected" : ""} ${!config.availablePrintOptions.some((o) => o.paperSize === selectedFile.paperSize && o.colorMode === "COLOR") ? 'disabled' : ''}`}>
+                          <input
+                            type="radio"
+                            name="colorMode"
+                            value="COLOR"
+                            checked={selectedFile.colorMode === "COLOR"}
+                            disabled={!config.availablePrintOptions.some((o) => o.paperSize === selectedFile.paperSize && o.colorMode === "COLOR")}
+                            onChange={() => patchSelected({ colorMode: "COLOR" })}
+                          />
+                          <span className="card-icon color-icon"></span>
+                          <span className="label">Colour</span>
+                          <span className="radio-circle"></span>
+                        </label>
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="print-setting-row">
-                    <label style={{ margin: 0 }}>Sides</label>
-                    <div className="segmented-control">
-                      <label className={!config.availablePrintOptions.some((o) => o.paperSize === selectedFile.paperSize && o.colorMode === selectedFile.colorMode && o.sides === "SINGLE") ? 'disabled' : ''}>
-                        <input
-                          type="radio"
-                          name="sides"
-                          value="SINGLE"
-                          checked={selectedFile.sides === "SINGLE"}
-                          disabled={!config.availablePrintOptions.some((o) => o.paperSize === selectedFile.paperSize && o.colorMode === selectedFile.colorMode && o.sides === "SINGLE")}
-                          onChange={() => patchSelected({ sides: "SINGLE" })}
-                        />
-                        1-Sided
-                      </label>
-                      <label className={!config.availablePrintOptions.some((o) => o.paperSize === selectedFile.paperSize && o.colorMode === selectedFile.colorMode && o.sides === "DOUBLE") ? 'disabled' : ''}>
-                        <input
-                          type="radio"
-                          name="sides"
-                          value="DOUBLE"
-                          checked={selectedFile.sides === "DOUBLE"}
-                          disabled={!config.availablePrintOptions.some((o) => o.paperSize === selectedFile.paperSize && o.colorMode === selectedFile.colorMode && o.sides === "DOUBLE")}
-                          onChange={() => patchSelected({ sides: "DOUBLE" })}
-                        />
-                        2-Sided
-                      </label>
+                    <div className="print-setting-col">
+                      <label style={{ margin: 0 }}>Sides</label>
+                      <div className="visual-options horizontal">
+                        <label className={`visual-option-card ${selectedFile.sides === "SINGLE" ? "selected" : ""} ${!config.availablePrintOptions.some((o) => o.paperSize === selectedFile.paperSize && o.colorMode === selectedFile.colorMode && o.sides === "SINGLE") ? 'disabled' : ''}`}>
+                          <input
+                            type="radio"
+                            name="sides"
+                            value="SINGLE"
+                            checked={selectedFile.sides === "SINGLE"}
+                            disabled={!config.availablePrintOptions.some((o) => o.paperSize === selectedFile.paperSize && o.colorMode === selectedFile.colorMode && o.sides === "SINGLE")}
+                            onChange={() => patchSelected({ sides: "SINGLE" })}
+                          />
+                          <span className="card-icon single-side-icon">📄</span>
+                          <span className="label">Single-sided</span>
+                          <span className="radio-circle"></span>
+                        </label>
+                        <label className={`visual-option-card ${selectedFile.sides === "DOUBLE" ? "selected" : ""} ${!config.availablePrintOptions.some((o) => o.paperSize === selectedFile.paperSize && o.colorMode === selectedFile.colorMode && o.sides === "DOUBLE") ? 'disabled' : ''}`}>
+                          <input
+                            type="radio"
+                            name="sides"
+                            value="DOUBLE"
+                            checked={selectedFile.sides === "DOUBLE"}
+                            disabled={!config.availablePrintOptions.some((o) => o.paperSize === selectedFile.paperSize && o.colorMode === selectedFile.colorMode && o.sides === "DOUBLE")}
+                            onChange={() => patchSelected({ sides: "DOUBLE" })}
+                          />
+                          <span className="card-icon double-side-icon">📑</span>
+                          <span className="label">Double-sided</span>
+                          <span className="radio-circle"></span>
+                        </label>
+                      </div>
                     </div>
                   </div>
-                </div>
-                {!optionAvailable && (
-                  <p className="error">
-                    That print combination is not currently available.
-                  </p>
-                )}
-                <button
-                  type="button"
-                  onClick={applySettingsToAll}
-                  style={{
-                    background: "none",
-                    border: "1px dashed #cbd5e1",
-                    color: "#0f172a",
-                    fontWeight: 600,
-                    padding: "0.85rem",
-                    borderRadius: "8px",
-                    width: "100%",
-                    cursor: "pointer",
-                    marginTop: "1.5rem"
-                  }}
-                  onMouseOver={(e) => e.currentTarget.style.borderColor = "#94a3b8"}
-                  onMouseOut={(e) => e.currentTarget.style.borderColor = "#cbd5e1"}
-                >
-                  ⚡ Apply these settings to all files
-                </button>
-              </>
-            ) : (
-              <p className="muted">Add a PDF to configure print settings.</p>
-            )}
-          </section>
+                  {!optionAvailable && (
+                    <p className="error">
+                      That print combination is not currently available.
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={applySettingsToAll}
+                    className="apply-all-btn"
+                  >
+                    ⚡ Apply these settings to all files
+                  </button>
+                </>
+              ) : (
+                <p className="muted">Add a PDF to configure print settings.</p>
+              )}
+            </section>
           </div>
-          <div className="order-sidebar">
-          <section className="step review" style={{ position: "sticky", top: "2rem" }}>
-            <div className="step-header"><span className="step-number">4</span><h2>Review & Payment</h2></div>
 
-            {status && <p role="status">{status}</p>}
-            {config?.priorityPrinting?.enabled ? (
-              <div
-                className="priority-selector"
-                style={{
-                  margin: "1rem 0",
-                  padding: "0.85rem 1rem",
-                  backgroundColor: isPriority ? "#fffbeb" : "#f8fafc",
-                  border: isPriority
-                    ? "1.5px solid #f59e0b"
-                    : "1px solid #cbd5e1",
-                  borderRadius: "8px",
-                  transition: "all 0.2s ease",
-                }}
-              >
-                <label
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "0.6rem",
-                    cursor: "pointer",
-                    margin: 0,
-                    fontWeight: 700,
-                    color: "#1e293b",
-                  }}
+          <div className="order-right">
+            <section className="step">
+              <div className="step-header">
+                <span className="step-number">2</span>
+                <h2>Upload PDFs</h2>
+                <p className="step-desc">Upload one or more PDF files. Your printer will print them instantly.</p>
+              </div>
+              <div className="file-list">
+                {files.map((item, index) => (
+                  <div 
+                    key={item.clientId}
+                    className={`file-card-compact ${selectedFileIndex === index ? 'active' : ''}`}
+                    onClick={() => setSelectedFileIndex(index)}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Settings for File ${index + 1}, ${item.name}`}
+                  >
+                    <div className="file-icon-wrapper">
+                      <span className="pdf-icon-doc">PDF</span>
+                    </div>
+                    <div className="file-info">
+                      <span className="file-name" title={item.name}>{item.name.length > 30 ? item.name.substring(0, 30) + "..." : item.name}</span>
+                      <span className="file-meta">
+                        {item.pageCount} pages · {humanFileSize(item.size)}
+                      </span>
+                      {(item.uploadStatus === "UPLOADING" || item.uploadStatus === "VALIDATING") && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+                          <progress value={item.uploadProgress} max="100" style={{ height: '6px', flexGrow: 1 }} />
+                          <span style={{ fontSize: '0.75rem', color: '#64748b' }}>{Math.round(item.uploadProgress)}%</span>
+                        </div>
+                      )}
+                      {item.uploadStatus === "FAILED" && (
+                        <span className="file-status status-error">{item.uploadError}</span>
+                      )}
+                    </div>
+                    <div className="file-actions-right">
+                      {item.uploadStatus === "UPLOADED" && (
+                        <span className="uploaded-badge">✓ Uploaded</span>
+                      )}
+                      <button
+                        type="button"
+                        className="remove-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeFile(index);
+                        }}
+                        aria-label="Remove file"
+                      >
+                        &times;
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              
+              {files.length < (config?.maxOrderFiles ?? 10) && (
+                <label className="drop-zone">
+                  <div className="drop-icon">+</div>
+                  <div className="drop-title">Add another PDF</div>
+                  <div className="drop-subtitle">Choose files or drag and drop</div>
+                  <div className="choose-btn">Choose Files</div>
+                  <input
+                    type="file" aria-label="Choose Files"
+                    accept="application/pdf"
+                    multiple
+                    disabled={busy || paymentBusy || Boolean(draftToken)}
+                    
+                    onChange={(event) => {
+                      if (!event.target.files?.length) return;
+                      void chooseFiles(event.target.files);
+                      event.target.value = "";
+                    }}
+                  />
+                </label>
+              )}
+
+              <div className="upload-footer">
+                <span className="file-count">
+                  {files.length} of {config.maxOrderFiles ?? 10} files | Maximum {config ? humanFileSize(config.maxPdfSizeBytes) : "20.0 MB"} per file.
+                </span>
+                <a
+                  href="https://www.ilovepdf.com/compress_pdf"
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="compress-link"
                 >
+                  Need a smaller file? Open iLovePDF ↗
+                </a>
+                <p className="privacy-warning" style={{ fontSize: '0.75rem', marginTop: '4px', color: '#64748b' }}>
+                  iLovePDF is an external site; its privacy terms apply.
+                </p>
+              </div>
+              {fileError && (
+                <p className="error" role="alert">
+                  {fileError}
+                </p>
+              )}
+            </section>
+            
+            <section className="step review">
+              <div className="step-header">
+                <span className="step-number">4</span>
+                <h2>Review & Payment</h2>
+                <p className="step-desc">Review your order details and pay securely to continue.</p>
+              </div>
+
+              {status && <p role="status" className="status-message" style={{ margin: "0 0 1rem", padding: "0.75rem", background: "#f8fafc", borderRadius: "8px", border: "1px solid #cbd5e1" }}>{status}</p>}
+              
+              {!quote && (
+                <button
+                  type="submit"
+                  className="pay-button"
+                  style={{ width: '100%', marginBottom: '1.5rem', padding: '1rem', fontSize: '1.1rem' }}
+                  disabled={busy || files.length === 0}
+                >
+                  {busy ? "Calculating..." : files.some((f) => f.uploadStatus === "FAILED") ? "Try upload again" : "Review Order"}
+                </button>
+              )}
+              
+              {config?.priorityPrinting?.enabled ? (
+                <div
+                  className={`priority-selector ${isPriority ? 'active' : ''}`}
+                >
+                  <div className="priority-content">
+                    <span className="priority-icon">⚡</span>
+                    <div className="priority-text">
+                      <label>
+                        Priority Printing (+{formatInr(config.priorityPrinting.feePaise)})
+                      </label>
+                      <p>Fast-track your job in the print queue.</p>
+                    </div>
+                  </div>
                   <input
                     type="checkbox"
                     checked={isPriority}
                     disabled={busy || paymentBusy}
                     onChange={(e) => void togglePriority(e.target.checked)}
-                    style={{
-                      width: "1.2rem",
-                      height: "1.2rem",
-                      accentColor: "#d97706",
-                    }}
+                    className="priority-checkbox"
                   />
-                  <span>
-                    ⚡ Priority Printing (+
-                    {formatInr(config.priorityPrinting.feePaise)})
-                  </span>
-                </label>
-                <p
-                  className="muted"
-                  style={{ margin: "0.35rem 0 0 1.8rem", fontSize: "0.85rem" }}
-                >
-                  Fast-track your job in the print queue. Prints ahead of
-                  standard queue jobs.
-                </p>
-              </div>
-            ) : null}
-            {quote && (
-              <dl className="review-summary">
-                <div>
-                  <dt>Customer</dt>
-                  <dd>
-                    {customerName} · {customerPhone}
-                  </dd>
                 </div>
-                <div>
-                  <dt>PDF</dt>
-                  <dd>
-                    {files.length === 1
-                      ? files[0]?.name
-                      : files.length === 2
-                        ? `${files[0]?.name}, ${files[1]?.name}`
-                        : `${files.length} files`}
-                  </dd>
-                </div>
-                {quote.files?.map((quoted, index) => (
-                  <div key={quoted.fileId}>
-                    <dt>File {index + 1}</dt>
-                    <dd>{formatInr(quoted.printingAmountPaise)}</dd>
-                  </div>
-                ))}
-                <div>
-                  <dt>Printing</dt>
-                  <dd>{formatInr(quote.printingAmountPaise)}</dd>
-                </div>
-                <div>
-                  <dt>File service</dt>
-                  <dd>{formatInr(quote.serviceChargePaise)}</dd>
-                </div>
-                {quote.addonServices && quote.addonServices.length > 0 ? (
-                  <div>
-                    <dt>Add-ons</dt>
-                    <dd>
-                      {quote.addonServices.map((s) => (
-                        <div key={s.serviceId}>
-                          {s.serviceName}
-                          {s.pricingType === "STAFF_PRICED"
-                            ? " (Price decided by staff)"
-                            : s.onlinePricePaise === 0
-                              ? " (FREE)"
-                              : ` (${formatInr(s.onlinePricePaise)})`}
-                        </div>
-                      ))}
-                    </dd>
-                  </div>
-                ) : null}
-                {quote.priorityFeePaise && quote.priorityFeePaise > 0 ? (
-                  <div>
-                    <dt>⚡ Priority queue</dt>
-                    <dd>{formatInr(quote.priorityFeePaise)}</dd>
-                  </div>
-                ) : null}
-                {quote.discountAmountPaise && quote.discountAmountPaise > 0 ? (
-                  <div style={{ color: "#16754A" }}>
-                    <dt>
-                      Discount ({quote.appliedDiscount?.discountPercent}% off)
-                    </dt>
-                    <dd>-{formatInr(quote.discountAmountPaise)}</dd>
-                  </div>
-                ) : null}
-                <div className="total-row">
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                    }}
-                  >
-                    <dt style={{ fontWeight: 600, fontSize: "0.95rem" }}>
-                      ONLINE PAYMENT
-                    </dt>
-                    <dd
-                      style={{
-                        fontWeight: 700,
-                        fontSize: "1.1rem",
-                        color: "#123B4A",
-                      }}
-                    >
-                      {formatInr(quote.totalAmountPaise)}
-                    </dd>
-                  </div>
-                  {quote.addonServices?.some(
-                    (s) => s.pricingType === "STAFF_PRICED",
-                  ) ? (
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        backgroundColor: "#fff7ed",
-                        padding: "0.35rem 0.6rem",
-                        borderRadius: "6px",
-                        border: "1px solid #ffedd5",
-                      }}
-                    >
-                      <dt
-                        style={{
-                          fontSize: "0.85rem",
-                          color: "#c2410c",
-                          fontWeight: 600,
-                        }}
-                      >
-                        PAYABLE AT SHOP
-                      </dt>
-                      <dd
-                        style={{
-                          fontSize: "0.85rem",
-                          color: "#c2410c",
-                          fontWeight: 600,
-                        }}
-                      >
-                        Price decided by staff
-                      </dd>
+              ) : null}
+              
+              {quote && (
+                <div className="review-summary">
+                  <div className="summary-section">
+                    <div className="summary-box">
+                      <div className="summary-label">Customer Details</div>
+                      <div className="summary-val"><span className="icon">👤</span> {customerName || "—"}</div>
+                      <div className="summary-val"><span className="icon">📞</span> {customerPhone || "—"}</div>
                     </div>
-                  ) : null}
+                    <div className="summary-box">
+                      <div className="summary-label">Files ({files.length})</div>
+                      <div className="summary-files">
+                        {files.map(f => (
+                          <div key={f.clientId} className="summary-file-row">
+                            <span className="pdf-icon-small">PDF</span>
+                            <div className="summary-file-info">
+                              <span className="name" title={f.name}>{f.name.length > 25 ? f.name.substring(0,25)+"..." : f.name}</span>
+                              <span className="meta">{f.pageCount} pages · {humanFileSize(f.size)}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="summary-order">
+                    <div className="summary-label">Order Summary</div>
+                    {quote.files?.map((quoted, index) => (
+                      <div className="summary-row" key={quoted.fileId}>
+                        <span>File {index + 1}</span>
+                        <span>{formatInr(quoted.printingAmountPaise)}</span>
+                      </div>
+                    ))}
+                    <div className="summary-row">
+                      <span>Printing</span>
+                      <span>{formatInr(quote.printingAmountPaise)}</span>
+                    </div>
+                    {quote.serviceChargePaise ? (
+                      <div className="summary-row">
+                        <span>File service</span>
+                        <span>{formatInr(quote.serviceChargePaise)}</span>
+                      </div>
+                    ) : null}
+                    {quote.addonServices && quote.addonServices.length > 0 ? (
+                      quote.addonServices.map((s) => (
+                        <div className="summary-row" key={s.serviceId}>
+                          <span>{s.serviceName}</span>
+                          <span>{s.pricingType === "STAFF_PRICED"
+                                ? "TBD"
+                                : s.onlinePricePaise === 0
+                                  ? "FREE"
+                                  : formatInr(s.onlinePricePaise)}</span>
+                        </div>
+                      ))
+                    ) : null}
+                    {quote.priorityFeePaise && quote.priorityFeePaise > 0 ? (
+                      <div className="summary-row">
+                        <span>Priority queue</span>
+                        <span>{formatInr(quote.priorityFeePaise)}</span>
+                      </div>
+                    ) : null}
+                    {quote.discountAmountPaise && quote.discountAmountPaise > 0 ? (
+                      <div className="summary-row discount">
+                        <span>Discount ({quote.appliedDiscount?.discountPercent}% off)</span>
+                        <span>-{formatInr(quote.discountAmountPaise)}</span>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="total-box">
+                    <div className="total-label">Total Amount</div>
+                    <div className="total-value">{formatInr(quote.totalAmountPaise)}</div>
+                    
+                    {quote.addonServices?.some(
+                      (s) => s.pricingType === "STAFF_PRICED",
+                    ) && (
+                      <div className="staff-price-warning">
+                        Note: Staff-priced items will be paid at the counter.
+                      </div>
+                    )}
+
+                    {draftToken && (
+                      <button
+                        type="button"
+                        className="pay-button"
+                        onClick={() => void pay()}
+                        disabled={paymentBusy || busy || Boolean(paymentSuccess)}
+                      >
+                        {paymentBusy ? "Confirming payment…" : `🔒 Pay ${formatInr(quote.totalAmountPaise)}`}
+                      </button>
+                    )}
+                    {draftToken && (
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => {
+                          setDraftToken(null);
+                          setStatus(null);
+                        }}
+                        disabled={paymentBusy}
+                        style={{ marginTop: '0.75rem' }}
+                      >
+                        Edit Order
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </dl>
-            )}
-            {paymentSuccess && (
-              <div className="payment-success" role="status">
-                <h3>Payment successful</h3>
-                <div
-                  style={{
-                    margin: "1rem 0",
-                    padding: "1.25rem",
-                    backgroundColor: "#F2F9F5",
-                    border: "2px solid #16754A",
-                    borderRadius: "10px",
-                    textAlign: "center",
-                  }}
-                >
-                  <p
-                    style={{
-                      margin: 0,
-                      fontSize: "0.85rem",
-                      textTransform: "uppercase",
-                      letterSpacing: "1px",
-                      color: "#16754A",
-                      fontWeight: 700,
-                    }}
-                  >
-                    Pickup Code
-                  </p>
-                  <strong
-                    style={{
-                      display: "block",
-                      fontSize: "2.75rem",
-                      letterSpacing: "3px",
-                      color: "#123B4A",
-                      margin: "0.25rem 0",
-                    }}
-                  >
-                    {paymentSuccess.pickupCode ?? paymentSuccess.jobCode}
-                  </strong>
-                  <p
-                    style={{
-                      margin: 0,
-                      fontSize: "0.85rem",
-                      color: "#16754A",
-                    }}
-                  >
-                    Show this code to shop staff to collect your order
-                  </p>
-                </div>
-                <p>Amount paid: {formatInr(paymentSuccess.amountPaidPaise)}</p>
-                <p className="muted">
-                  Keep your pickup code handy until you collect your prints.
-                </p>
-                <div
-                  style={{
-                    display: "flex",
-                    gap: "0.5rem",
-                    flexWrap: "wrap",
-                    marginTop: "1rem",
-                  }}
-                >
-                  <button type="button" onClick={openTracking}>
-                    Track My Print
-                  </button>
-                  <button
-                    className="secondary-button"
-                    type="button"
-                    onClick={() => void copyTrackingLink()}
-                  >
-                    Copy private tracking link
-                  </button>
-                </div>
-                {copyMessage && <p role="status">{copyMessage}</p>}
-              </div>
-            )}
-            <div className="checkout-actions">
-            <button
-              type="submit"
-              className={quote ? "secondary-button" : ""}
-              disabled={
-                busy ||
-                files.length === 0 ||
-                Boolean(fileError) ||
-                !optionAvailable ||
-                Boolean(paymentSuccess)
-              }
-            >
-              {busy
-                ? "Preparing review…"
-                : paymentSuccess
-                  ? "Payment complete"
-                  : quote
-                    ? "Refresh review"
-                    : draftToken
-                      ? files.some((f) => f.uploadStatus === "FAILED")
-                        ? "Try upload again"
-                        : "Upload PDF and review"
-                      : "Upload PDF and review"}
-            </button>
-            {quote && !paymentSuccess && (
-              <button
-                className="pay-button"
-                type="button"
-                disabled={busy || paymentBusy}
-                onClick={() => void pay()}
-              >
-                {paymentBusy
-                  ? "Confirming payment…"
-                  : `Pay ${formatInr(quote.totalAmountPaise)}`}
-              </button>
-            )}
-            </div>
-            <p className="muted">
-              A job is queued only after the shop server verifies a captured
-              payment.
-            </p>
-          </section>
-        </div>
+              )}
+            </section>
+          </div>
         </form>
       )}
       <footer
