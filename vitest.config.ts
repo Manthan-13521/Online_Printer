@@ -26,6 +26,7 @@ export default defineConfig({
     },
   },
   test: {
+    testTimeout: 30000,
     coverage: { reporter: ["text", "html"] },
     include: ["{apps,packages,tests}/**/*.{test,spec}.{ts,tsx}"],
     passWithNoTests: false,
