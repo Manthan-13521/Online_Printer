@@ -13,6 +13,8 @@ export type PrintingErrorCode =
   | "PRINT_STEP_NOT_FOUND"
   | "PRINT_STEP_CONFLICT"
   | "ORDER_NOT_FOUND"
+  | "ORDER_ALREADY_IN_PROGRESS"
+  | "ORDER_IS_UNCERTAIN"
   | "ORDER_CANNOT_BE_RETRIED"
   | "UNCERTAIN_RETRY_CONFIRMATION_REQUIRED"
   | "ORDER_PDF_NOT_FOUND"
@@ -205,6 +207,12 @@ export class PrintingService {
         }
         if (err.message === "ORDER_CANNOT_BE_RETRIED") {
           throw new PrintingError("ORDER_CANNOT_BE_RETRIED");
+        }
+        if (err.message === "ORDER_ALREADY_IN_PROGRESS") {
+          throw new PrintingError("ORDER_ALREADY_IN_PROGRESS");
+        }
+        if (err.message === "ORDER_IS_UNCERTAIN") {
+          throw new PrintingError("ORDER_IS_UNCERTAIN");
         }
         if (err.message === "UNCERTAIN_RETRY_CONFIRMATION_REQUIRED") {
           throw new PrintingError("UNCERTAIN_RETRY_CONFIRMATION_REQUIRED");

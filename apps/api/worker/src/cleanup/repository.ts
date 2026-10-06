@@ -108,6 +108,16 @@ export class D1CleanupRepository {
     return result.meta.changes ?? 0;
   }
 
+
+  async purgeStaleRetainedRecords(nowMs: number): Promise<void> {
+    const cutoffMs = nowMs - 30 * 24 * 60 * 60 * 1000;
+    await this.db.batch([
+      this.db.prepare("DELETE FROM retained_payment_records WHERE payment_created_at_ms <= ?").bind(cutoffMs),
+      this.db.prepare("DELETE FROM retained_provider_events WHERE received_at_ms <= ?").bind(cutoffMs),
+      this.db.prepare("DELETE FROM retained_order_history WHERE created_at_ms <= ?").bind(cutoffMs),
+    ]);
+  }
+
   async hasCandidates(scope: CleanupScope, nowMs: number): Promise<boolean> {
     const where = scopeWhere(scope);
     const guard = safetyGuard(scope, nowMs);

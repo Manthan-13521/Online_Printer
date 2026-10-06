@@ -238,6 +238,7 @@ export class CleanupService {
   }
 
   async runScheduled(): Promise<AdminCleanupRunData | null> {
+    await this.repository.purgeStaleRetainedRecords(this.now());
     await this.createScheduledRun("EXPIRED_UNPAID");
     await this.createScheduledRun("COMPLETED_DUE");
     await this.scheduleDailyRun();

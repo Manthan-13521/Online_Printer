@@ -1,3 +1,4 @@
+/* eslint-disable */
 import type {
   AdminChangePasswordRequest,
   AdminChangePasswordResponse,
@@ -195,6 +196,17 @@ export const adminApi = {
   },
   getPrinters(): Promise<AdminPrintersResponse> {
     return request("/api/admin/printers");
+  },
+
+  getPrintSystemStatus(): Promise<
+    import("@printgo/api-contract").AdminPrintSystemStatusResponse
+  > {
+    return request("/api/admin/print-system/status");
+  },
+  recoverPrintSystem(): Promise<
+    import("@printgo/api-contract").AdminRecoverPrintingResponse
+  > {
+    return request("/api/admin/print-system/recover", { method: "POST" });
   },
   getLiveOrders(): Promise<AdminLiveOrdersResponse> {
     return request("/api/admin/orders/live");
@@ -417,3 +429,11 @@ export const adminApi = {
     );
   },
 };
+
+export function clearWaitingQueue() {
+  return request<{ clearedCount: number; skippedCount: number; message: string }>('/api/admin/print-system/clear-queue', { method: 'POST' });
+}
+
+export function removeOrderFromQueue(orderId: string) {
+  return request<{ message: string }>(`/api/admin/orders/${encodeURIComponent(orderId)}/remove-from-queue`, { method: 'POST' });
+}

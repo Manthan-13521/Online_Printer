@@ -9,14 +9,16 @@
 ## 1. Root Causes Fixed
 
 ### 1. Stuck `CLAIMED` Order & Blocked Queue
+
 - **Root Cause**: When a printer was offline or blocked during preflight check, the Windows Agent returned `"PREFLIGHT_DEFERRED"` silently without notifying the Cloudflare Worker. The Worker interpreted ongoing agent heartbeat pulses as active claim renewals and continually extended the 5-minute lease indefinitely. Because the order remained in `CLAIMED`, the candidate query guard (`NOT EXISTS busy WHERE busy.status IN ('CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED')`) permanently locked all subsequent customer orders in `QUEUED`.
-- **The Fix**: 
+- **The Fix**:
   - The Agent immediately reports `status: "BLOCKED"` with failure reason (`PRINTER_OFFLINE` / `PRINTER_ERROR`) to the Worker before submission.
   - The Worker transitions the order to `PRINT_BLOCKED` and the attempt/step to `BLOCKED`.
   - When the printer recovers online, the Agent automatically resumes the SAME order, moving it from `PRINT_BLOCKED` to `SPOOLING` via `startPrintStep()`, without agent/PC restarts or admin intervention.
   - `recoverExpiredClaims` is now wired into the Cloudflare Worker scheduled cron handler, ensuring dead agent claims expire and recover automatically.
 
 ### 2. Windows Spooler False Completion & Completion Verification Policy
+
 - **Root Cause**: Windows Spooler `REMOVED` or `COMPLETED` was directly mapped to immediate physical success (`SUCCEEDED`), transitioning orders immediately to `COMPLETED` without verifying whether the printer hardware was still operational or had jammed during spool hand-off.
 - **The Fix**:
   - `observed.state === "COMPLETED_OR_REMOVED"` represents **`SPOOL_HANDOFF_COMPLETE`**, NOT guaranteed physical paper exit.

@@ -3,7 +3,8 @@ import type { AdminLiveOrder } from "@printgo/api-contract";
 import { useEffect, useState } from "react";
 
 import { Pagination } from "./Pagination";
-import { adminApi, AdminApiError, friendlyAdminError } from "./api";
+import { SystemStatusPanel } from "./SystemStatusPanel";
+import { adminApi, AdminApiError, friendlyAdminError, removeOrderFromQueue } from "./api";
 
 function money(paise: number): string {
   return new Intl.NumberFormat("en-IN", {
@@ -156,12 +157,23 @@ export function LiveOrdersPage({
 
   return (
     <div className="page-stack">
-      <div>
-        <p className="eyebrow">Shop operations</p>
-        <h1>Live Orders</h1>
-        <p className="page-intro">
-          Observe paid jobs currently waiting, printing, or needing attention.
-        </p>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          flexWrap: "wrap",
+          gap: "1rem",
+        }}
+      >
+        <div>
+          <p className="eyebrow">Shop operations</p>
+          <h1>Live Orders</h1>
+          <p className="page-intro">
+            Observe paid jobs currently waiting, printing, or needing attention.
+          </p>
+        </div>
+        <SystemStatusPanel onSessionExpired={onSessionExpired} />
       </div>
       {actionNotice ? (
         <p className="notice" role="status">
@@ -347,49 +359,46 @@ export function LiveOrdersPage({
                       alignItems: "center",
                     }}
                   >
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      disabled={actionBusyId !== null}
-                      onClick={() => void handleDownloadPdf(order)}
-                    >
-                      {actionBusyId === `pdf-${order.orderId}`
-                        ? "Opening…"
-                        : "Download PDF"}
-                    </button>
+                    {order.status === "QUEUED" && (
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        style={{ color: "#991b1b", borderColor: "#fca5a5", backgroundColor: "#fef2f2" }}
+                        disabled={actionBusyId !== null}
+                        onClick={() => {
+  if (window.confirm("Remove this order from the queue?")) {
+    setActionBusyId(`remove-${order.orderId}`);
+    removeOrderFromQueue(order.orderId)
+      .then(() => {
+        setOrders(prev => prev?.filter(o => o.orderId !== order.orderId) ?? []);
+      })
+      .catch((caught) => {
+        setError(caught instanceof Error ? caught.message : "Failed to remove");
+      })
+      .finally(() => {
+        setActionBusyId(null);
+      });
+  }
+}}
+>
+                        {actionBusyId === `remove-${order.orderId}` ? "Removing..." : "Remove from Queue"}
+                      </button>
+                    )}
 
-                    {[
-                      "ADMIN_ACTION_REQUIRED",
-                      "PRINT_FAILED",
-                      "PRINT_BLOCKED",
-                      "PRINTING",
-                      "SPOOLING",
-                      "CLAIMED",
-                      "NEEDS_ADMIN",
-                      "COMPLETION_UNKNOWN",
-                      "RETRY_PENDING",
-                    ].includes(order.status) ? (
+                    {["QUEUED", "COMPLETED", "PRINTED"].includes(order.status) && (
                       <button
                         type="button"
                         className="secondary-button"
                         disabled={actionBusyId !== null}
-                        onClick={() => void handleManualComplete(order)}
-                        title="Mark order completed if physically printed and handed to customer"
+                        onClick={() => void handleDownloadPdf(order)}
                       >
-                        {actionBusyId === `complete-${order.orderId}`
-                          ? "Marking…"
-                          : "Mark as Printed"}
+                        {actionBusyId === `pdf-${order.orderId}`
+                          ? "Opening…"
+                          : "View/Download PDF"}
                       </button>
-                    ) : null}
+                    )}
 
-                    {[
-                      "ADMIN_ACTION_REQUIRED",
-                      "PRINT_FAILED",
-                      "PRINT_BLOCKED",
-                      "NEEDS_ADMIN",
-                      "COMPLETION_UNKNOWN",
-                      "RETRY_PENDING",
-                    ].includes(order.status) ? (
+                    {["COMPLETED", "PRINTED", "PRINT_FAILED", "RETRY_PENDING", "NEEDS_ADMIN"].includes(order.status) && (
                       confirmRetryId === order.orderId ? (
                         <div
                           style={{
@@ -404,7 +413,7 @@ export function LiveOrdersPage({
                           <span
                             style={{ fontSize: "0.8rem", color: "#92400e" }}
                           >
-                            Check printer output! Confirm retry unprinted pages?
+                            Print this order again?
                           </span>
                           <button
                             type="button"
@@ -414,11 +423,14 @@ export function LiveOrdersPage({
                               padding: "0.2rem 0.5rem",
                             }}
                             disabled={actionBusyId !== null}
-                            onClick={() => void handleRetry(order, true)}
+                            onClick={() => {
+                               setConfirmRetryId(null);
+                               void handleRetry(order, false);
+                            }}
                           >
                             {actionBusyId === `retry-${order.orderId}`
                               ? "Retrying…"
-                              : "Yes, Retry"}
+                              : "Yes, Print Again"}
                           </button>
                           <button
                             type="button"
@@ -435,23 +447,41 @@ export function LiveOrdersPage({
                           className="primary-button"
                           disabled={actionBusyId !== null}
                           onClick={() => {
-                            if (
-                              order.status === "ADMIN_ACTION_REQUIRED" ||
-                              order.status === "COMPLETION_UNKNOWN"
-                            ) {
-                              setConfirmRetryId(order.orderId);
-                            } else {
-                              void handleRetry(order, false);
-                            }
+                             setConfirmRetryId(order.orderId);
                           }}
-                          title="Retry printing remaining unfinished steps"
+                          title="Print this order again"
                         >
                           {actionBusyId === `retry-${order.orderId}`
                             ? "Retrying…"
-                            : "Retry Print"}
+                            : "Print Again"}
                         </button>
                       )
-                    ) : null}
+                    )}
+
+                    {["ADMIN_ACTION_REQUIRED", "COMPLETION_UNKNOWN"].includes(order.status) && (
+                      <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", backgroundColor: "#fff7ed", padding: "0.5rem", borderRadius: "4px", border: "1px solid #fdba74" }}>
+                        <span style={{ fontSize: "0.85rem", color: "#9a3412", fontWeight: 500 }}>
+                          Printing result is uncertain. Some pages may already have printed.
+                        </span>
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          style={{ backgroundColor: "#166534", color: "white" }}
+                          disabled={actionBusyId !== null}
+                          onClick={() => void handleManualComplete(order)}
+                        >
+                           {actionBusyId === `complete-${order.orderId}` ? "Marking..." : "Mark as Printed"}
+                        </button>
+                      </div>
+                    )}
+
+                    {["PRINTING", "CLAIMED", "SPOOLING"].includes(order.status) && (
+                       <span style={{ fontSize: "0.85rem", color: "#4b5563" }}>Printing in progress...</span>
+                    )}
+
+                    {order.status === "PRINT_BLOCKED" && (
+                       <span style={{ fontSize: "0.85rem", color: "#b91c1c" }}>Printer fault. Clear printer error, then Recover.</span>
+                    )}
                   </div>
                 </article>
               ))}

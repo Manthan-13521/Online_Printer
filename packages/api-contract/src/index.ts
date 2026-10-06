@@ -593,7 +593,7 @@ export interface AgentHeartbeatData {
 export type AgentHeartbeatResponse = ApiResponse<AgentHeartbeatData>;
 
 export interface AgentReportCommandRequest {
-  status: "SUBMITTED" | "BLOCKED" | "SUCCEEDED" | "FAILED";
+  status: "SUBMITTED" | "BLOCKED" | "SUCCEEDED" | "FAILED" | "UNCERTAIN";
   spoolerJobId?: string | null;
   failureCode?: string | null;
   failureDetail?: string | null;
@@ -602,7 +602,7 @@ export interface AgentReportCommandRequest {
 export interface AgentReportCommandData {
   acknowledged: true;
   commandId: string;
-  status: "SUBMITTED" | "BLOCKED" | "SUCCEEDED" | "FAILED";
+  status: "SUBMITTED" | "BLOCKED" | "SUCCEEDED" | "FAILED" | "UNCERTAIN";
 }
 
 export type AgentReportCommandResponse = ApiResponse<AgentReportCommandData>;
@@ -972,3 +972,40 @@ export type AdminResetPickupCodeResponse = ApiResponse<{
   message: string;
   nextPickupCode: string;
 }>;
+
+export type PrintSystemRecoverability =
+  | "READY"
+  | "AGENT_OFFLINE"
+  | "AGENT_STALE"
+  | "PRINTER_OFFLINE"
+  | "PAPER_JAM"
+  | "PAPER_OUT"
+  | "PRINTER_ERROR"
+  | "RECOVERY_ALREADY_RUNNING"
+  | "RECOVERY_REQUIRED"
+  | "HEALTHY_PRINTING"
+  | "NO_ACTIVE_ORDER";
+
+export interface AdminPrintSystemStatusData {
+  agentStatus: "ONLINE" | "OFFLINE" | "STALE";
+  printerStatus: "READY" | "OFFLINE" | "PAPER_JAM" | "PAPER_OUT" | "ERROR";
+  printerStatusMessage?: string;
+  currentOrder: {
+    id: string;
+    publicJobCode: string;
+    status: string;
+    isStalled: boolean;
+  } | null;
+  waitingCount: number;
+  recoverability: PrintSystemRecoverability;
+}
+
+export type AdminPrintSystemStatusResponse =
+  ApiResponse<AdminPrintSystemStatusData>;
+
+export interface AdminRecoverPrintingResponseData {
+  recoveredOrderId: string | null;
+  message: string;
+}
+export type AdminRecoverPrintingResponse =
+  ApiResponse<AdminRecoverPrintingResponseData>;

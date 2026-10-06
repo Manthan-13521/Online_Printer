@@ -3,20 +3,20 @@
 **Incident Date**: 2026-10-06  
 **System**: PrintGo V2 Online-to-Offline Print Automation Platform  
 **Target Printer**: HP Laser MFP 131 133 135-138 (`HPF80DACE6151A`)  
-**Agent Host**: `BHAVESH (PrintGo Agent)` Windows PC  
+**Agent Host**: `BHAVESH (PrintGo Agent)` Windows PC
 
 ---
 
 ## 1. Executive Summary & Root Cause Confirmation
 
-| Dimension | Finding / Status |
-| :--- | :--- |
-| **Physical Printer Hardware** | 100% Functional (Windows Test Page printed cleanly). |
-| **Windows Agent Execution** | Verified running latest build (proved by live `PRINT_BLOCKED` emission at 7:03:43 PM). |
-| **First Broken Stage** | **Stage T5 (Preflight Status Evaluation)** in `parsePrinterStatus()` on the Windows Agent. |
-| **The Bug** | On standard USB/WSD HP LaserJet drivers, Windows WMI (`Win32_Printer`) omits `WorkOffline` and `PrinterStatus` when idle/ready with no errors. The agent's strict check required `p.WorkOffline === false` or `p.PrinterStatus !== undefined`, causing healthy printers to be misclassified as `UNKNOWN: "Printer readiness is not reported by Windows"`, which blocked print execution. |
-| **PA-088 Resolution** | PA-088 had a missing spooler identity from the old pre-fix code. When claimed by the new agent, it safely transitioned to `COMPLETION_UNKNOWN` without blindly reprinting. |
-| **PA-090 Resolution** | PA-090 was claimed by the Agent, reached preflight, and got blocked due to the CIM status parsing bug. With the fix, PA-090 preflight passes as `ONLINE` immediately. |
+| Dimension                     | Finding / Status                                                                                                                                                                                                                                                                                                                                                                         |
+| :---------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Physical Printer Hardware** | 100% Functional (Windows Test Page printed cleanly).                                                                                                                                                                                                                                                                                                                                     |
+| **Windows Agent Execution**   | Verified running latest build (proved by live `PRINT_BLOCKED` emission at 7:03:43 PM).                                                                                                                                                                                                                                                                                                   |
+| **First Broken Stage**        | **Stage T5 (Preflight Status Evaluation)** in `parsePrinterStatus()` on the Windows Agent.                                                                                                                                                                                                                                                                                               |
+| **The Bug**                   | On standard USB/WSD HP LaserJet drivers, Windows WMI (`Win32_Printer`) omits `WorkOffline` and `PrinterStatus` when idle/ready with no errors. The agent's strict check required `p.WorkOffline === false` or `p.PrinterStatus !== undefined`, causing healthy printers to be misclassified as `UNKNOWN: "Printer readiness is not reported by Windows"`, which blocked print execution. |
+| **PA-088 Resolution**         | PA-088 had a missing spooler identity from the old pre-fix code. When claimed by the new agent, it safely transitioned to `COMPLETION_UNKNOWN` without blindly reprinting.                                                                                                                                                                                                               |
+| **PA-090 Resolution**         | PA-090 was claimed by the Agent, reached preflight, and got blocked due to the CIM status parsing bug. With the fix, PA-090 preflight passes as `ONLINE` immediately.                                                                                                                                                                                                                    |
 
 ---
 

@@ -311,7 +311,7 @@ describe("Admin application", () => {
     ).toBeTruthy();
     expect(await screen.findByText("PG-ABC234")).toBeTruthy();
     expect(screen.getByText("Paper out", { exact: false })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /retry/iu })).toBeTruthy();
+    expect(screen.getByText(/Printer fault. Clear printer error, then Recover./i)).toBeTruthy();
   });
 
   it("requires confirmation before pausing new online printing", async () => {

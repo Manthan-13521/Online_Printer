@@ -20,11 +20,7 @@ import { inspectPdf } from "./pdf";
 import { PwaInstallBanner } from "./PwaInstallBanner";
 import { TrackingPage } from "./TrackingPage";
 import { PublicTrackingPage } from "./PublicTrackingPage";
-import {
-  createTrackingToken,
-  
-  trackingStorageKey,
-} from "./tracking-token";
+import { createTrackingToken, trackingStorageKey } from "./tracking-token";
 
 const DRAFT_TOKEN_KEY = "printgo.customerDraftToken";
 const PENDING_TRACKING_TOKEN_PREFIX = "printgo.pendingTracking.";
@@ -475,9 +471,7 @@ export function App() {
         if (!filesRef.current.find((f) => f.clientId === clientId)) continue;
 
         updateFile(clientId, { uploadStatus: "UPLOADING" });
-        setStatus(
-          `Uploading File ${index + 1} of ${filesRef.current.length}…`,
-        );
+        setStatus(`Uploading File ${index + 1} of ${filesRef.current.length}…`);
 
         const controller = new AbortController();
         abortControllers.current.set(clientId, controller);
@@ -765,8 +759,6 @@ export function App() {
     }
   }
 
-
-
   const shopHeader = (
     <header className="hero">
       <div className="hero-top-row">
@@ -783,14 +775,18 @@ export function App() {
             </h1>
           )}
         </div>
-        
+
         <form
           className="track-printing-form"
           onSubmit={(e) => {
             e.preventDefault();
             const trimmed = trackBoxCode.trim().toUpperCase();
             if (trimmed) {
-              window.history.pushState(null, "", `/track/${encodeURIComponent(trimmed)}`);
+              window.history.pushState(
+                null,
+                "",
+                `/track/${encodeURIComponent(trimmed)}`,
+              );
               setTrackingJobCode(trimmed);
             }
           }}
@@ -802,26 +798,37 @@ export function App() {
               value={trackBoxCode}
               onChange={(e) => setTrackBoxCode(e.target.value)}
             />
-            <button type="submit" className="track-button">Track</button>
+            <button type="submit" className="track-button">
+              Track
+            </button>
           </div>
         </form>
 
         <div className="hero-actions">
-          <button type="button" className="pricing-info-button" onClick={() => setShowPricing(true)}>
+          <button
+            type="button"
+            className="pricing-info-button"
+            onClick={() => setShowPricing(true)}
+          >
             ⓘ Pricing & Info
           </button>
         </div>
       </div>
-      
+
       <div className="hero-content">
         <div className="hero-text">
           <h1 className="hero-title">Upload & Print Instantly</h1>
           <p className="hero-subtitle">
-            Upload your PDF files and get high-quality prints without any manual interference.
+            Upload your PDF files and get high-quality prints without any manual
+            interference.
           </p>
         </div>
         <div className="hero-decoration">
-          <div className="decoration-text">Your files,<br/>our print magic!</div>
+          <div className="decoration-text">
+            Your files,
+            <br />
+            our print magic!
+          </div>
         </div>
       </div>
     </header>
@@ -1082,13 +1089,18 @@ export function App() {
           </p>
         </section>
       ) : (
-        <form className="order-layout" onSubmit={(event) => void prepareReview(event)}>
+        <form
+          className="order-layout"
+          onSubmit={(event) => void prepareReview(event)}
+        >
           <div className="order-left">
             <section className="step">
               <div className="step-header">
                 <span className="step-number">1</span>
                 <h2>Customer Details</h2>
-                <p className="step-desc">Tell us a bit about yourself to get started.</p>
+                <p className="step-desc">
+                  Tell us a bit about yourself to get started.
+                </p>
               </div>
               <div className="details-grid">
                 <label>
@@ -1132,7 +1144,11 @@ export function App() {
                         >
                           <div className="addon-info">
                             <span className="addon-icon">
-                              {service.name.toLowerCase().includes('bind') ? '📖' : service.name.toLowerCase().includes('staple') ? '📎' : '📄'}
+                              {service.name.toLowerCase().includes("bind")
+                                ? "📖"
+                                : service.name.toLowerCase().includes("staple")
+                                  ? "📎"
+                                  : "📄"}
                             </span>
                             <div>
                               <span className="addon-name">{service.name}</span>
@@ -1148,7 +1164,9 @@ export function App() {
                           <input
                             type="checkbox"
                             checked={isSelected}
-                            disabled={busy || paymentBusy || Boolean(draftToken)}
+                            disabled={
+                              busy || paymentBusy || Boolean(draftToken)
+                            }
                             onChange={(e) => {
                               if (e.target.checked) {
                                 setSelectedAddonIds([
@@ -1171,25 +1189,27 @@ export function App() {
                 </div>
               ) : null}
               <label htmlFor="customer-inst">Instructions (optional)</label>
-                <div className="input-with-icon textarea">
-                  <span className="icon">📝</span>
-                  <textarea
-                    placeholder="Any special instructions for your print job..."
-                    maxLength={500}
-                    aria-label="Instructions"
-                    id="customer-inst"
-                    value={instructions}
-                    onChange={(event) => setInstructions(event.target.value)}
-                  />
-                </div>
-                <div className="char-count">{instructions.length}/500</div>
+              <div className="input-with-icon textarea">
+                <span className="icon">📝</span>
+                <textarea
+                  placeholder="Any special instructions for your print job..."
+                  maxLength={500}
+                  aria-label="Instructions"
+                  id="customer-inst"
+                  value={instructions}
+                  onChange={(event) => setInstructions(event.target.value)}
+                />
+              </div>
+              <div className="char-count">{instructions.length}/500</div>
             </section>
 
             <section className="step">
               <div className="step-header">
                 <span className="step-number">3</span>
                 <h2>Print Settings</h2>
-                <p className="step-desc">Choose how you want your files to be printed.</p>
+                <p className="step-desc">
+                  Choose how you want your files to be printed.
+                </p>
               </div>
               {selectedFile ? (
                 <>
@@ -1205,18 +1225,23 @@ export function App() {
                       >
                         {files.map((item, index) => (
                           <option key={item.clientId} value={index}>
-                            File {index + 1} — {item.name} ({item.pageCount} pages)
+                            File {index + 1} — {item.name} ({item.pageCount}{" "}
+                            pages)
                           </option>
                         ))}
                       </select>
                     </div>
                   </div>
-                  
+
                   <div className="print-settings-grid">
                     <div className="print-setting-col">
-                      <label style={{ margin: 0, fontWeight: 600 }}>Pages</label>
+                      <label style={{ margin: 0, fontWeight: 600 }}>
+                        Pages
+                      </label>
                       <div className="visual-options horizontal">
-                        <label className={`visual-option-card ${selectedFile.pageMode === "ALL" ? "selected" : ""}`}>
+                        <label
+                          className={`visual-option-card ${selectedFile.pageMode === "ALL" ? "selected" : ""}`}
+                        >
                           <input
                             type="radio"
                             checked={selectedFile.pageMode === "ALL"}
@@ -1225,11 +1250,15 @@ export function App() {
                           <span className="radio-circle"></span>
                           <span className="label">All pages</span>
                         </label>
-                        <label className={`visual-option-card ${selectedFile.pageMode === "CUSTOM" ? "selected" : ""}`}>
+                        <label
+                          className={`visual-option-card ${selectedFile.pageMode === "CUSTOM" ? "selected" : ""}`}
+                        >
                           <input
                             type="radio"
                             checked={selectedFile.pageMode === "CUSTOM"}
-                            onChange={() => patchSelected({ pageMode: "CUSTOM" })}
+                            onChange={() =>
+                              patchSelected({ pageMode: "CUSTOM" })
+                            }
                           />
                           <span className="radio-circle"></span>
                           <span className="label">Custom range</span>
@@ -1247,10 +1276,12 @@ export function App() {
                         />
                       )}
                     </div>
-                    
+
                     <div className="print-setting-col row-layout">
                       <div className="copies-control">
-                        <label htmlFor="copies-input" style={{ margin: 0 }}>Copies</label>
+                        <label htmlFor="copies-input" style={{ margin: 0 }}>
+                          Copies
+                        </label>
                         <div className="number-stepper">
                           <button
                             type="button"
@@ -1296,7 +1327,9 @@ export function App() {
                         </div>
                       </div>
                       <div className="paper-size-control">
-                        <label htmlFor="paper-size" style={{ margin: 0 }}>Paper size</label>
+                        <label htmlFor="paper-size" style={{ margin: 0 }}>
+                          Paper size
+                        </label>
                         <div className="select-wrapper">
                           <select
                             id="paper-size"
@@ -1327,27 +1360,45 @@ export function App() {
                     <div className="print-setting-col">
                       <label style={{ margin: 0 }}>Colour</label>
                       <div className="visual-options horizontal">
-                        <label className={`visual-option-card ${selectedFile.colorMode === "BW" ? "selected" : ""} ${!config.availablePrintOptions.some((o) => o.paperSize === selectedFile.paperSize && o.colorMode === "BW") ? 'disabled' : ''}`}>
+                        <label
+                          className={`visual-option-card ${selectedFile.colorMode === "BW" ? "selected" : ""} ${!config.availablePrintOptions.some((o) => o.paperSize === selectedFile.paperSize && o.colorMode === "BW") ? "disabled" : ""}`}
+                        >
                           <input
                             type="radio"
                             name="colorMode"
                             value="BW"
                             checked={selectedFile.colorMode === "BW"}
-                            disabled={!config.availablePrintOptions.some((o) => o.paperSize === selectedFile.paperSize && o.colorMode === "BW")}
+                            disabled={
+                              !config.availablePrintOptions.some(
+                                (o) =>
+                                  o.paperSize === selectedFile.paperSize &&
+                                  o.colorMode === "BW",
+                              )
+                            }
                             onChange={() => patchSelected({ colorMode: "BW" })}
                           />
                           <span className="card-icon bw-icon"></span>
                           <span className="label">Black & white</span>
                           <span className="radio-circle"></span>
                         </label>
-                        <label className={`visual-option-card ${selectedFile.colorMode === "COLOR" ? "selected" : ""} ${!config.availablePrintOptions.some((o) => o.paperSize === selectedFile.paperSize && o.colorMode === "COLOR") ? 'disabled' : ''}`}>
+                        <label
+                          className={`visual-option-card ${selectedFile.colorMode === "COLOR" ? "selected" : ""} ${!config.availablePrintOptions.some((o) => o.paperSize === selectedFile.paperSize && o.colorMode === "COLOR") ? "disabled" : ""}`}
+                        >
                           <input
                             type="radio"
                             name="colorMode"
                             value="COLOR"
                             checked={selectedFile.colorMode === "COLOR"}
-                            disabled={!config.availablePrintOptions.some((o) => o.paperSize === selectedFile.paperSize && o.colorMode === "COLOR")}
-                            onChange={() => patchSelected({ colorMode: "COLOR" })}
+                            disabled={
+                              !config.availablePrintOptions.some(
+                                (o) =>
+                                  o.paperSize === selectedFile.paperSize &&
+                                  o.colorMode === "COLOR",
+                              )
+                            }
+                            onChange={() =>
+                              patchSelected({ colorMode: "COLOR" })
+                            }
                           />
                           <span className="card-icon color-icon"></span>
                           <span className="label">Colour</span>
@@ -1359,26 +1410,44 @@ export function App() {
                     <div className="print-setting-col">
                       <label style={{ margin: 0 }}>Sides</label>
                       <div className="visual-options horizontal">
-                        <label className={`visual-option-card ${selectedFile.sides === "SINGLE" ? "selected" : ""} ${!config.availablePrintOptions.some((o) => o.paperSize === selectedFile.paperSize && o.colorMode === selectedFile.colorMode && o.sides === "SINGLE") ? 'disabled' : ''}`}>
+                        <label
+                          className={`visual-option-card ${selectedFile.sides === "SINGLE" ? "selected" : ""} ${!config.availablePrintOptions.some((o) => o.paperSize === selectedFile.paperSize && o.colorMode === selectedFile.colorMode && o.sides === "SINGLE") ? "disabled" : ""}`}
+                        >
                           <input
                             type="radio"
                             name="sides"
                             value="SINGLE"
                             checked={selectedFile.sides === "SINGLE"}
-                            disabled={!config.availablePrintOptions.some((o) => o.paperSize === selectedFile.paperSize && o.colorMode === selectedFile.colorMode && o.sides === "SINGLE")}
+                            disabled={
+                              !config.availablePrintOptions.some(
+                                (o) =>
+                                  o.paperSize === selectedFile.paperSize &&
+                                  o.colorMode === selectedFile.colorMode &&
+                                  o.sides === "SINGLE",
+                              )
+                            }
                             onChange={() => patchSelected({ sides: "SINGLE" })}
                           />
                           <span className="card-icon single-side-icon">📄</span>
                           <span className="label">Single-sided</span>
                           <span className="radio-circle"></span>
                         </label>
-                        <label className={`visual-option-card ${selectedFile.sides === "DOUBLE" ? "selected" : ""} ${!config.availablePrintOptions.some((o) => o.paperSize === selectedFile.paperSize && o.colorMode === selectedFile.colorMode && o.sides === "DOUBLE") ? 'disabled' : ''}`}>
+                        <label
+                          className={`visual-option-card ${selectedFile.sides === "DOUBLE" ? "selected" : ""} ${!config.availablePrintOptions.some((o) => o.paperSize === selectedFile.paperSize && o.colorMode === selectedFile.colorMode && o.sides === "DOUBLE") ? "disabled" : ""}`}
+                        >
                           <input
                             type="radio"
                             name="sides"
                             value="DOUBLE"
                             checked={selectedFile.sides === "DOUBLE"}
-                            disabled={!config.availablePrintOptions.some((o) => o.paperSize === selectedFile.paperSize && o.colorMode === selectedFile.colorMode && o.sides === "DOUBLE")}
+                            disabled={
+                              !config.availablePrintOptions.some(
+                                (o) =>
+                                  o.paperSize === selectedFile.paperSize &&
+                                  o.colorMode === selectedFile.colorMode &&
+                                  o.sides === "DOUBLE",
+                              )
+                            }
                             onChange={() => patchSelected({ sides: "DOUBLE" })}
                           />
                           <span className="card-icon double-side-icon">📑</span>
@@ -1412,13 +1481,16 @@ export function App() {
               <div className="step-header">
                 <span className="step-number">2</span>
                 <h2>Upload PDFs</h2>
-                <p className="step-desc">Upload one or more PDF files. Your printer will print them instantly.</p>
+                <p className="step-desc">
+                  Upload one or more PDF files. Your printer will print them
+                  instantly.
+                </p>
               </div>
               <div className="file-list">
                 {files.map((item, index) => (
-                  <div 
+                  <div
                     key={item.clientId}
-                    className={`file-card-compact ${selectedFileIndex === index ? 'active' : ''}`}
+                    className={`file-card-compact ${selectedFileIndex === index ? "active" : ""}`}
                     onClick={() => setSelectedFileIndex(index)}
                     role="button"
                     tabIndex={0}
@@ -1428,18 +1500,40 @@ export function App() {
                       <span className="pdf-icon-doc">PDF</span>
                     </div>
                     <div className="file-info">
-                      <span className="file-name" title={item.name}>{item.name.length > 30 ? item.name.substring(0, 30) + "..." : item.name}</span>
+                      <span className="file-name" title={item.name}>
+                        {item.name.length > 30
+                          ? item.name.substring(0, 30) + "..."
+                          : item.name}
+                      </span>
                       <span className="file-meta">
                         {item.pageCount} pages · {humanFileSize(item.size)}
                       </span>
-                      {(item.uploadStatus === "UPLOADING" || item.uploadStatus === "VALIDATING") && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
-                          <progress value={item.uploadProgress} max="100" style={{ height: '6px', flexGrow: 1 }} />
-                          <span style={{ fontSize: '0.75rem', color: '#64748b' }}>{Math.round(item.uploadProgress)}%</span>
+                      {(item.uploadStatus === "UPLOADING" ||
+                        item.uploadStatus === "VALIDATING") && (
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "8px",
+                            marginTop: "4px",
+                          }}
+                        >
+                          <progress
+                            value={item.uploadProgress}
+                            max="100"
+                            style={{ height: "6px", flexGrow: 1 }}
+                          />
+                          <span
+                            style={{ fontSize: "0.75rem", color: "#64748b" }}
+                          >
+                            {Math.round(item.uploadProgress)}%
+                          </span>
                         </div>
                       )}
                       {item.uploadStatus === "FAILED" && (
-                        <span className="file-status status-error">{item.uploadError}</span>
+                        <span className="file-status status-error">
+                          {item.uploadError}
+                        </span>
                       )}
                     </div>
                     <div className="file-actions-right">
@@ -1461,19 +1555,22 @@ export function App() {
                   </div>
                 ))}
               </div>
-              
+
               {files.length < (config?.maxOrderFiles ?? 10) && (
                 <label className="drop-zone">
                   <div className="drop-icon">+</div>
                   <div className="drop-title">Add another PDF</div>
-                  <div className="drop-subtitle">Choose files or drag and drop</div>
+                  <div className="drop-subtitle">
+                    Choose files or drag and drop
+                  </div>
                   <div className="choose-btn">Choose Files</div>
                   <input
-                    type="file" aria-label="Choose Files"
+                    type="file"
+                    aria-label="Choose Files"
                     accept="application/pdf"
                     multiple
                     disabled={busy || paymentBusy || Boolean(draftToken)}
-                    
+
                     onChange={(event) => {
                       if (!event.target.files?.length) return;
                       void chooseFiles(event.target.files);
@@ -1485,7 +1582,9 @@ export function App() {
 
               <div className="upload-footer">
                 <span className="file-count">
-                  {files.length} of {config.maxOrderFiles ?? 10} files | Maximum {config ? humanFileSize(config.maxPdfSizeBytes) : "20.0 MB"} per file.
+                  {files.length} of {config.maxOrderFiles ?? 10} files | Maximum{" "}
+                  {config ? humanFileSize(config.maxPdfSizeBytes) : "20.0 MB"}{" "}
+                  per file.
                 </span>
                 <a
                   href="https://www.ilovepdf.com/compress_pdf"
@@ -1495,7 +1594,14 @@ export function App() {
                 >
                   Need a smaller file? Open iLovePDF ↗
                 </a>
-                <p className="privacy-warning" style={{ fontSize: '0.75rem', marginTop: '4px', color: '#64748b' }}>
+                <p
+                  className="privacy-warning"
+                  style={{
+                    fontSize: "0.75rem",
+                    marginTop: "4px",
+                    color: "#64748b",
+                  }}
+                >
                   iLovePDF is an external site; its privacy terms apply.
                 </p>
               </div>
@@ -1505,39 +1611,65 @@ export function App() {
                 </p>
               )}
             </section>
-            
+
             <section className="step review">
               <div className="step-header">
                 <span className="step-number">4</span>
                 <h2>Review & Payment</h2>
-                <p className="step-desc">Review your order details and pay securely to continue.</p>
+                <p className="step-desc">
+                  Review your order details and pay securely to continue.
+                </p>
               </div>
 
-              {status && <p role="status" className="status-message" style={{ margin: "0 0 1rem", padding: "0.75rem", background: "#f8fafc", borderRadius: "8px", border: "1px solid #cbd5e1" }}>{status}</p>}
-              
+              {status && (
+                <p
+                  role="status"
+                  className="status-message"
+                  style={{
+                    margin: "0 0 1rem",
+                    padding: "0.75rem",
+                    background: "#f8fafc",
+                    borderRadius: "8px",
+                    border: "1px solid #cbd5e1",
+                  }}
+                >
+                  {status}
+                </p>
+              )}
+
               {!quote && (
                 <button
                   type="submit"
                   className="pay-button"
-                  style={{ width: '100%', marginBottom: '1.5rem', padding: '1rem', fontSize: '1.1rem' }}
+                  style={{
+                    width: "100%",
+                    marginBottom: "1.5rem",
+                    padding: "1rem",
+                    fontSize: "1.1rem",
+                  }}
                   disabled={busy || files.length === 0}
                   onClick={(e) => {
                     if (!busy) void prepareReview(e);
                   }}
                 >
-                  {busy ? "Calculating..." : files.some((f) => f.uploadStatus === "FAILED") ? "Try upload again" : "Review Order"}
+                  {busy
+                    ? "Calculating..."
+                    : files.some((f) => f.uploadStatus === "FAILED")
+                      ? "Try upload again"
+                      : "Review Order"}
                 </button>
               )}
-              
+
               {config?.priorityPrinting?.enabled ? (
                 <div
-                  className={`priority-selector ${isPriority ? 'active' : ''}`}
+                  className={`priority-selector ${isPriority ? "active" : ""}`}
                 >
                   <div className="priority-content">
                     <span className="priority-icon">⚡</span>
                     <div className="priority-text">
                       <label>
-                        Priority Printing (+{formatInr(config.priorityPrinting.feePaise)})
+                        Priority Printing (+
+                        {formatInr(config.priorityPrinting.feePaise)})
                       </label>
                       <p>Fast-track your job in the print queue.</p>
                     </div>
@@ -1551,24 +1683,36 @@ export function App() {
                   />
                 </div>
               ) : null}
-              
+
               {quote && (
                 <div className="review-summary">
                   <div className="summary-section">
                     <div className="summary-box">
                       <div className="summary-label">Customer Details</div>
-                      <div className="summary-val"><span className="icon">👤</span> {customerName || "—"}</div>
-                      <div className="summary-val"><span className="icon">📞</span> {customerPhone || "—"}</div>
+                      <div className="summary-val">
+                        <span className="icon">👤</span> {customerName || "—"}
+                      </div>
+                      <div className="summary-val">
+                        <span className="icon">📞</span> {customerPhone || "—"}
+                      </div>
                     </div>
                     <div className="summary-box">
-                      <div className="summary-label">Files ({files.length})</div>
+                      <div className="summary-label">
+                        Files ({files.length})
+                      </div>
                       <div className="summary-files">
-                        {files.map(f => (
+                        {files.map((f) => (
                           <div key={f.clientId} className="summary-file-row">
                             <span className="pdf-icon-small">PDF</span>
                             <div className="summary-file-info">
-                              <span className="name" title={f.name}>{f.name.length > 25 ? f.name.substring(0,25)+"..." : f.name}</span>
-                              <span className="meta">{f.pageCount} pages · {humanFileSize(f.size)}</span>
+                              <span className="name" title={f.name}>
+                                {f.name.length > 25
+                                  ? f.name.substring(0, 25) + "..."
+                                  : f.name}
+                              </span>
+                              <span className="meta">
+                                {f.pageCount} pages · {humanFileSize(f.size)}
+                              </span>
                             </div>
                           </div>
                         ))}
@@ -1594,27 +1738,33 @@ export function App() {
                         <span>{formatInr(quote.serviceChargePaise)}</span>
                       </div>
                     ) : null}
-                    {quote.addonServices && quote.addonServices.length > 0 ? (
-                      quote.addonServices.map((s) => (
-                        <div className="summary-row" key={s.serviceId}>
-                          <span>{s.serviceName}</span>
-                          <span>{s.pricingType === "STAFF_PRICED"
+                    {quote.addonServices && quote.addonServices.length > 0
+                      ? quote.addonServices.map((s) => (
+                          <div className="summary-row" key={s.serviceId}>
+                            <span>{s.serviceName}</span>
+                            <span>
+                              {s.pricingType === "STAFF_PRICED"
                                 ? "TBD"
                                 : s.onlinePricePaise === 0
                                   ? "FREE"
-                                  : formatInr(s.onlinePricePaise)}</span>
-                        </div>
-                      ))
-                    ) : null}
+                                  : formatInr(s.onlinePricePaise)}
+                            </span>
+                          </div>
+                        ))
+                      : null}
                     {quote.priorityFeePaise && quote.priorityFeePaise > 0 ? (
                       <div className="summary-row">
                         <span>Priority queue</span>
                         <span>{formatInr(quote.priorityFeePaise)}</span>
                       </div>
                     ) : null}
-                    {quote.discountAmountPaise && quote.discountAmountPaise > 0 ? (
+                    {quote.discountAmountPaise &&
+                    quote.discountAmountPaise > 0 ? (
                       <div className="summary-row discount">
-                        <span>Discount ({quote.appliedDiscount?.discountPercent}% off)</span>
+                        <span>
+                          Discount ({quote.appliedDiscount?.discountPercent}%
+                          off)
+                        </span>
                         <span>-{formatInr(quote.discountAmountPaise)}</span>
                       </div>
                     ) : null}
@@ -1622,8 +1772,10 @@ export function App() {
 
                   <div className="total-box">
                     <div className="total-label">Total Amount</div>
-                    <div className="total-value">{formatInr(quote.totalAmountPaise)}</div>
-                    
+                    <div className="total-value">
+                      {formatInr(quote.totalAmountPaise)}
+                    </div>
+
                     {quote.addonServices?.some(
                       (s) => s.pricingType === "STAFF_PRICED",
                     ) && (
@@ -1637,9 +1789,13 @@ export function App() {
                         type="button"
                         className="pay-button"
                         onClick={() => void pay()}
-                        disabled={paymentBusy || busy || Boolean(paymentSuccess)}
+                        disabled={
+                          paymentBusy || busy || Boolean(paymentSuccess)
+                        }
                       >
-                        {paymentBusy ? "Confirming payment…" : `🔒 Pay ${formatInr(quote.totalAmountPaise)}`}
+                        {paymentBusy
+                          ? "Confirming payment…"
+                          : `🔒 Pay ${formatInr(quote.totalAmountPaise)}`}
                       </button>
                     )}
                   </div>

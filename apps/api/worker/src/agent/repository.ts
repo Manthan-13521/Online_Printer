@@ -145,7 +145,7 @@ export interface AgentRepository {
   reportTestPrintCommand(input: {
     commandId: string;
     agentId: string;
-    status: "SUBMITTED" | "BLOCKED" | "SUCCEEDED" | "FAILED";
+    status: "SUBMITTED" | "BLOCKED" | "SUCCEEDED" | "FAILED" | "UNCERTAIN";
     spoolerJobId?: string | null;
     failureCode?: string | null;
     failureDetail?: string | null;
@@ -1047,7 +1047,7 @@ export class D1AgentRepository implements AgentRepository {
   async reportTestPrintCommand(input: {
     commandId: string;
     agentId: string;
-    status: "SUBMITTED" | "BLOCKED" | "SUCCEEDED" | "FAILED";
+    status: "SUBMITTED" | "BLOCKED" | "SUCCEEDED" | "FAILED" | "UNCERTAIN";
     spoolerJobId?: string | null;
     failureCode?: string | null;
     failureDetail?: string | null;

@@ -1744,6 +1744,19 @@ export class D1PrintingRepository implements PrintingRepository {
       throw new Error("ORDER_CANNOT_BE_RETRIED");
     }
 
+    
+    const nonRetriableStatuses = [
+      "QUEUED",
+      "CLAIMED",
+      "SPOOLING",
+      "PRINTING",
+      "PRINT_BLOCKED",
+      "RECOVERY_REQUIRED"
+    ];
+    if (nonRetriableStatuses.includes(order.status)) {
+      throw new Error("ORDER_ALREADY_IN_PROGRESS");
+    }
+
     const isValidPaidOrManualOrder =
       order.public_job_code !== null ||
       order.paid_at_ms !== null ||

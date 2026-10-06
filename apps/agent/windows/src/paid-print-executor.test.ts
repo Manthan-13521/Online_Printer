@@ -213,7 +213,7 @@ describe("PaidPrintExecutor duplicate prevention", () => {
       expect.anything(),
       expect.anything(),
       expect.anything(),
-      expect.objectContaining({ status: "SUCCEEDED", spoolerJobId: "42" }),
+      expect.objectContaining({ status: "UNCERTAIN", spoolerJobId: "42" }),
     );
   });
 
@@ -303,7 +303,7 @@ describe("PaidPrintExecutor duplicate prevention", () => {
       expect.anything(),
       expect.anything(),
       expect.anything(),
-      expect.objectContaining({ status: "SUCCEEDED" }),
+      expect.objectContaining({ status: "UNCERTAIN" }),
     );
   });
 

@@ -155,6 +155,18 @@ export async function handleAdminOrdersRequest(
           env.ADMIN_ALLOWED_ORIGIN,
         );
       }
+      if (caught.code === "ORDER_ALREADY_IN_PROGRESS") {
+        return withAdminCors(
+          error(400, "ORDER_ALREADY_IN_PROGRESS", "Already in print queue."),
+          env.ADMIN_ALLOWED_ORIGIN,
+        );
+      }
+      if (caught.code === "ORDER_IS_UNCERTAIN") {
+        return withAdminCors(
+          error(400, "ORDER_IS_UNCERTAIN", "Some pages may already have printed. Reprinting may produce duplicates. Please resolve the uncertainty first."),
+          env.ADMIN_ALLOWED_ORIGIN,
+        );
+      }
       if (caught.code === "ORDER_CANNOT_BE_RETRIED") {
         return withAdminCors(
           error(

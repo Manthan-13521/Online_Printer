@@ -125,19 +125,22 @@ export class PaidPrintExecutor {
           printerStatus.availability === "BLOCKED")
       ) {
         const deferrals = (this.currentDeferralState?.count ?? 0) + 1;
-        this.currentDeferralState = { stepId: job.currentStep.stepId, count: deferrals };
-        
+        this.currentDeferralState = {
+          stepId: job.currentStep.stepId,
+          count: deferrals,
+        };
+
         if (deferrals <= 2) {
           this.log(
             `Printer ${job.windowsPrinterName} is not online (${printerStatus.availability}: ${printerStatus.message ?? "Not ready"}). Waiting before print submission (Deferral ${deferrals}/2).`,
           );
           return "PREFLIGHT_DEFERRED";
         }
-        
+
         this.log(
           `Printer ${job.windowsPrinterName} is persistently not online (${printerStatus.availability}: ${printerStatus.message ?? "Not ready"}). Reporting step BLOCKED before print submission.`,
         );
-        
+
         this.currentDeferralState = null;
         if (job.currentStep.status !== "BLOCKED") {
           await this.client.reportPrintStep(
@@ -414,7 +417,11 @@ export class PaidPrintExecutor {
     if (observed.state === "COMPLETED_OR_REMOVED") {
       if (typeof this.printer.getStatus === "function") {
         const postStatus = await this.printer.getStatus(job.windowsPrinterName);
-        if (postStatus && (postStatus.availability === "BLOCKED" || postStatus.availability === "OFFLINE")) {
+        if (
+          postStatus &&
+          (postStatus.availability === "BLOCKED" ||
+            postStatus.availability === "OFFLINE")
+        ) {
           await this.client.reportPrintStep(
             credentials.serverUrl,
             credentials.agentId,
@@ -423,8 +430,13 @@ export class PaidPrintExecutor {
             {
               status: "BLOCKED",
               spoolerJobId,
-              failureCode: postStatus.availability === "OFFLINE" ? "PRINTER_OFFLINE" : "PRINTER_ERROR",
-              failureDetail: postStatus.message ?? "Printer encountered a hardware fault during print completion.",
+              failureCode:
+                postStatus.availability === "OFFLINE"
+                  ? "PRINTER_OFFLINE"
+                  : "PRINTER_ERROR",
+              failureDetail:
+                postStatus.message ??
+                "Printer encountered a hardware fault during print completion.",
             },
           );
           return;
@@ -437,10 +449,11 @@ export class PaidPrintExecutor {
         credentials.agentSecret,
         job,
         {
-          status: "SUCCEEDED",
+          status: "UNCERTAIN",
           spoolerJobId,
           failureCode: null,
-          failureDetail: observed.message ?? "Spool handoff complete; printer online.",
+          failureDetail:
+            observed.message ?? "Spool handoff complete; print outcome uncertain.",
         },
       );
       await this.journal.clear();

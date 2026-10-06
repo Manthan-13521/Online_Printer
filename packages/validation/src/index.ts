@@ -981,7 +981,7 @@ export function validateAgentHeartbeatInput(
 }
 
 export interface ValidatedReportCommandInput {
-  status: "SUBMITTED" | "BLOCKED" | "SUCCEEDED" | "FAILED";
+  status: "SUBMITTED" | "BLOCKED" | "SUCCEEDED" | "FAILED" | "UNCERTAIN";
   spoolerJobId: string | null;
   failureCode: string | null;
   failureDetail: string | null;
@@ -1009,7 +1009,7 @@ export function validateReportCommandInput(
     status !== "SUBMITTED" &&
     status !== "BLOCKED" &&
     status !== "SUCCEEDED" &&
-    status !== "FAILED"
+    status !== "FAILED" && status !== "UNCERTAIN"
   ) {
     return {
       ok: false,
@@ -1018,7 +1018,7 @@ export function validateReportCommandInput(
           path: ["status"],
           code: "INVALID_STATUS",
           message:
-            "Command report status must be SUBMITTED, BLOCKED, SUCCEEDED, or FAILED.",
+            "Command report status must be SUBMITTED, BLOCKED, SUCCEEDED, FAILED, or UNCERTAIN.",
         },
       ],
     };

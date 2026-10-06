@@ -1,7 +1,8 @@
 # Phase 2: Recovery Foundation Report
 
 ## Overview
-Phase 2 focused on building the backend and state-machine foundation for the queue recovery features designed in Phase 1. 
+
+Phase 2 focused on building the backend and state-machine foundation for the queue recovery features designed in Phase 1.
 
 ## Completed Objectives
 
@@ -17,7 +18,7 @@ Phase 2 focused on building the backend and state-machine foundation for the que
    - Updated `apps/agent/windows/src/paid-print-executor.test.ts` to cover the new bounded deferral logic.
 
 3. **Safe State-Machine Foundation**
-   - Modified `apps/api/worker/src/printing/repository.ts` to respect `claims_paused = 1`. 
+   - Modified `apps/api/worker/src/printing/repository.ts` to respect `claims_paused = 1`.
    - When paused, new orders cannot be claimed by any agent, and the cron tasks (`recoverExpiredClaims`, `autoRetryEligibleOrders`) safely skip execution.
    - Identified and handled the risk of stalled `PENDING` states: `claimOrRenew` now stops renewing leases if the step has been stuck in `PENDING` for over 90 seconds. This allows `recoverExpiredClaims` to safely return the order to `QUEUED` if the agent dies.
    - Wired `last_progress_at_ms` in `print_attempts` to be updated upon meaningful transitions (e.g. `startStep`, `recordSubmission`, `recordResult` for `PRINTING`/`BLOCKED`).
@@ -28,6 +29,7 @@ Phase 2 focused on building the backend and state-machine foundation for the que
    - Ran `pnpm db:validate`, `pnpm test`, `pnpm typecheck`, and `pnpm lint`.
 
 ## Findings & Notes
+
 - Tests explicitly cover `power/restart uncertainty` correctly mapping jobs to `UNCERTAIN` instead of blindly reprinting them, and idempotency logic preventing concurrent operations from creating duplicate attempts.
 - No patches or sleep/timer hacks were added. The logic relies purely on atomic SQL queries and bounded retry state.
 
