@@ -199,13 +199,13 @@ export function StoragePrivacySection({
         </p>
       ) : null}
       <form onSubmit={(event) => void save(event)}>
+        {/* Section 1: Automatic Time-Based Deletion */}
         <section className="panel form-section">
-          <h2>Storage &amp; Privacy</h2>
+          <h2>Completed Order &amp; PDF Retention</h2>
           <p className="field-help">
-            Completed orders are automatically purged after{" "}
-            {settings.orderRetentionHours ?? 2} hour
-            {(settings.orderRetentionHours ?? 2) === 1 ? "" : "s"}. Abandoned
-            unpaid uploads are purged after 10 minutes.
+            Completed orders and customer PDFs are automatically deleted after
+            the selected time. Abandoned unpaid uploads are always purged after
+            10 minutes.
           </p>
           <label htmlFor="order-retention-hours">
             Completed Order &amp; PDF Retention
@@ -224,52 +224,9 @@ export function StoragePrivacySection({
             <option value={12}>12 hours</option>
           </select>
           <p className="field-help">
-            Choose how long completed order details and customer PDFs remain
-            before automatic deletion.
+            After this period, order details and PDFs are permanently purged
+            from storage.
           </p>
-          <label className="checkbox-row">
-            <input
-              checked={settings.automaticDailyCleanupEnabled ?? false}
-              onChange={(event) =>
-                patch({ automaticDailyCleanupEnabled: event.target.checked })
-              }
-              type="checkbox"
-            />
-            <span>Automatic Daily Cleanup</span>
-          </label>
-          <label htmlFor="cleanup-time">Cleanup Time</label>
-          <input
-            id="cleanup-time"
-            type="time"
-            value={settings.dailyCleanupTime ?? "23:30"}
-            onChange={(event) =>
-              patch({ dailyCleanupTime: event.target.value })
-            }
-          />
-          <label htmlFor="cleanup-timezone">Timezone (IANA)</label>
-          <input
-            id="cleanup-timezone"
-            value={settings.timezone ?? "Asia/Kolkata"}
-            onChange={(event) => patch({ timezone: event.target.value })}
-          />
-          <dl className="settings-stat-grid">
-            <div className="stat-card">
-              <dt>Last Cleanup</dt>
-              <dd>{formatCleanupDateTime(settings.lastCleanupAt)}</dd>
-            </div>
-            <div className="stat-card">
-              <dt>Next Cleanup</dt>
-              <dd>
-                {settings.nextCleanupAt
-                  ? formatCleanupDateTime(settings.nextCleanupAt)
-                  : "Calculated after save"}
-              </dd>
-            </div>
-            <div className="stat-card">
-              <dt>Last Result</dt>
-              <dd>{settings.lastCleanupResult ?? "—"}</dd>
-            </div>
-          </dl>
           <div className="dialog-actions" style={{ marginTop: "0.5rem" }}>
             <button
               className="danger-button subtle"
@@ -333,6 +290,52 @@ export function StoragePrivacySection({
               ) : null}
             </div>
           ) : null}
+        </section>
+
+        {/* Section 2: Automatic Daily Cleanup */}
+        <section className="panel form-section">
+          <h2>Automatic Daily Cleanup</h2>
+          <p className="field-help">
+            Run a scheduled cleanup once a day to automatically remove completed
+            orders and PDFs that are past their retention window.
+          </p>
+          <label className="checkbox-row">
+            <input
+              checked={settings.automaticDailyCleanupEnabled ?? false}
+              onChange={(event) =>
+                patch({ automaticDailyCleanupEnabled: event.target.checked })
+              }
+              type="checkbox"
+            />
+            <span>Automatic Daily Cleanup</span>
+          </label>
+          <label htmlFor="cleanup-time">Cleanup Time</label>
+          <input
+            id="cleanup-time"
+            type="time"
+            value={settings.dailyCleanupTime ?? "23:30"}
+            onChange={(event) =>
+              patch({ dailyCleanupTime: event.target.value })
+            }
+          />
+          <dl className="settings-stat-grid">
+            <div className="stat-card">
+              <dt>Last Cleanup</dt>
+              <dd>{formatCleanupDateTime(settings.lastCleanupAt)}</dd>
+            </div>
+            <div className="stat-card">
+              <dt>Next Cleanup</dt>
+              <dd>
+                {settings.nextCleanupAt
+                  ? formatCleanupDateTime(settings.nextCleanupAt)
+                  : "Calculated after save"}
+              </dd>
+            </div>
+            <div className="stat-card">
+              <dt>Last Result</dt>
+              <dd>{settings.lastCleanupResult ?? "—"}</dd>
+            </div>
+          </dl>
         </section>
 
         <div className="save-bar">
