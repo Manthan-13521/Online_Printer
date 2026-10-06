@@ -195,10 +195,10 @@ describe("customer upload app", () => {
       new File(["%PDF"], "three.pdf", { type: "application/pdf" }),
     ]);
     expect(
-      await screen.findByText("File 1", { selector: "strong" }),
+      await screen.findByText("one.pdf", { selector: "strong" }),
     ).toBeTruthy();
-    expect(screen.getByText("File 2", { selector: "strong" })).toBeTruthy();
-    expect(screen.getByText("File 3", { selector: "strong" })).toBeTruthy();
+    expect(screen.getByText("two.pdf", { selector: "strong" })).toBeTruthy();
+    expect(screen.getByText("three.pdf", { selector: "strong" })).toBeTruthy();
 
     await user.clear(screen.getByLabelText("Copies"));
     await user.type(screen.getByLabelText("Copies"), "3");
