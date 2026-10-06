@@ -1099,10 +1099,10 @@ export function App() {
           </p>
         </section>
       ) : (
-        <form className="flow" onSubmit={(event) => void prepareReview(event)}>
+        <form className="order-layout" onSubmit={(event) => void prepareReview(event)}>
+          <div className="order-main">
           <section className="step">
-            <span className="step-number">1</span>
-            <h2>Details</h2>
+            <div className="step-header"><span className="step-number">1</span><h2>Details</h2></div>
             <label>
               Name
               <input
@@ -1176,109 +1176,52 @@ export function App() {
             </label>
           </section>
           <section className="step">
-            <span className="step-number">2</span>
-            <h2>PDFs</h2>
+            <div className="step-header"><span className="step-number">2</span><h2>PDFs</h2></div>
             <div className="file-list">
               {files.map((item, index) => (
-                <div className="file-sequence" key={item.clientId}>
-                  <strong className="file-number">File {index + 1}</strong>
-                  <div className="file-card" style={{ position: "relative" }}>
-                    <button
-                      type="button"
-                      className="file-card-main"
-                      aria-label={`Edit settings for File ${index + 1}, ${item.name}`}
-                      onClick={() => setSelectedFileIndex(index)}
-                      style={{ paddingRight: "44px" }}
-                    >
-                      <span>{item.name}</span>
-                      <small>
-                        {item.pageCount} pages · {humanFileSize(item.size)}
-                      </small>
-                      {item.uploadStatus === "FAILED" && (
-                        <div
-                          style={{
-                            color: "#d32f2f",
-                            marginTop: "4px",
-                            fontSize: "0.85em",
-                            fontWeight: 600,
-                          }}
-                        >
-                          {item.uploadError}
-                        </div>
-                      )}
-                      {(item.uploadStatus === "UPLOADING" ||
-                        item.uploadStatus === "VALIDATING") && (
-                        <div
-                          style={{
-                            marginTop: "4px",
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "8px",
-                          }}
-                        >
-                          <progress
-                            value={item.uploadProgress}
-                            max="100"
-                            style={{ flexGrow: 1 }}
-                          />
-                          <span style={{ fontSize: "0.8em" }}>
-                            {item.uploadStatus === "VALIDATING"
-                              ? "Starting"
-                              : `${item.uploadProgress}%`}
-                          </span>
-                        </div>
-                      )}
-                      {item.uploadStatus === "FINALIZING" && (
-                        <div
-                          style={{
-                            marginTop: "4px",
-                            fontSize: "0.85em",
-                            color: "#0288d1",
-                          }}
-                        >
-                          Verifying...
-                        </div>
-                      )}
-                      {item.uploadStatus === "UPLOADED" && (
-                        <div
-                          style={{
-                            marginTop: "4px",
-                            fontSize: "0.85em",
-                            color: "#388e3c",
-                            fontWeight: 600,
-                          }}
-                        >
-                          Uploaded ✓
-                        </div>
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      className="remove-file"
-                      aria-label={`Remove File ${index + 1}`}
-                      disabled={paymentBusy}
-                      onClick={() => void removeFile(index)}
-                      style={{
-                        minWidth: "44px",
-                        minHeight: "44px",
-                        padding: 0,
-                        position: "absolute",
-                        right: 0,
-                        top: 0,
-                        bottom: 0,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        border: "none",
-                        background: "none",
-                        fontSize: "1.5rem",
-                        color: "#64748b",
-                        cursor: "pointer",
-                      }}
-                    >
-                      ×
-                    </button>
+                <div 
+                  key={item.clientId}
+                  className={`file-card-compact ${selectedFileIndex === index ? 'active' : ''}`}
+                  onClick={() => setSelectedFileIndex(index)}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Settings for File ${index + 1}, ${item.name}`}
+                >
+                  <div className="file-info">
+                    <span className="file-name">{item.name}</span>
+                    <span className="file-meta">
+                      {item.pageCount} pages · {humanFileSize(item.size)}
+                    </span>
+                    {item.uploadStatus === "FAILED" && (
+                      <span className="file-status status-error">{item.uploadError}</span>
+                    )}
+                    {(item.uploadStatus === "UPLOADING" || item.uploadStatus === "VALIDATING") && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+                        <progress value={item.uploadProgress} max="100" style={{ height: '6px', flexGrow: 1 }} />
+                        <span className="file-status status-uploading">
+                          {item.uploadStatus === "VALIDATING" ? "Starting" : `${item.uploadProgress}%`}
+                        </span>
+                      </div>
+                    )}
+                    {item.uploadStatus === "FINALIZING" && (
+                      <span className="file-status status-uploading">Verifying...</span>
+                    )}
+                    {item.uploadStatus === "UPLOADED" && (
+                      <span className="file-status status-success">Uploaded ✓</span>
+                    )}
                   </div>
+                  <button
+                    type="button"
+                    className="remove-btn"
+                    aria-label={`Remove File ${index + 1}`}
+                    disabled={paymentBusy}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void removeFile(index);
+                    }}
+                  >
+                    ×
+                  </button>
                 </div>
               ))}
             </div>
@@ -1322,8 +1265,7 @@ export function App() {
             </p>
           </section>
           <section className="step">
-            <span className="step-number">3</span>
-            <h2>Settings</h2>
+            <div className="step-header"><span className="step-number">3</span><h2>Print Settings</h2></div>
             {selectedFile ? (
               <>
                 <label htmlFor="settings-file">Settings for</label>
@@ -1333,6 +1275,7 @@ export function App() {
                   onChange={(event) =>
                     setSelectedFileIndex(Number(event.target.value))
                   }
+                  style={{ marginBottom: "1rem", padding: "0.6rem", borderRadius: "8px", border: "1px solid #cbd5e1" }}
                 >
                   {files.map((item, index) => (
                     <option key={item.clientId} value={index}>
@@ -1340,38 +1283,42 @@ export function App() {
                     </option>
                   ))}
                 </select>
-                <fieldset>
-                  <legend>Pages</legend>
-                  <label className="inline">
-                    <input
-                      type="radio"
-                      checked={selectedFile.pageMode === "ALL"}
-                      onChange={() => patchSelected({ pageMode: "ALL" })}
-                    />
-                    All pages
-                  </label>
-                  <label className="inline">
-                    <input
-                      type="radio"
-                      checked={selectedFile.pageMode === "CUSTOM"}
-                      onChange={() => patchSelected({ pageMode: "CUSTOM" })}
-                    />
-                    Custom range
-                  </label>
+                
+                <div className="print-setting-row" style={{ marginBottom: "1rem" }}>
+                  <label style={{ margin: 0, fontWeight: 600 }}>Pages</label>
+                  <div className="segmented-control" style={{ width: "fit-content", minWidth: "200px" }}>
+                    <label>
+                      <input
+                        type="radio"
+                        checked={selectedFile.pageMode === "ALL"}
+                        onChange={() => patchSelected({ pageMode: "ALL" })}
+                      />
+                      All pages
+                    </label>
+                    <label>
+                      <input
+                        type="radio"
+                        checked={selectedFile.pageMode === "CUSTOM"}
+                        onChange={() => patchSelected({ pageMode: "CUSTOM" })}
+                      />
+                      Custom
+                    </label>
+                  </div>
                   {selectedFile.pageMode === "CUSTOM" && (
                     <input
                       aria-label="Custom pages"
-                      placeholder="1,3,7-10"
+                      placeholder="e.g. 1, 3, 5-10"
                       value={selectedFile.customPages}
                       onChange={(event) =>
                         patchSelected({ customPages: event.target.value })
                       }
+                      style={{ marginTop: "0.5rem", padding: "0.6rem", border: "1px solid #cbd5e1", borderRadius: "8px" }}
                     />
                   )}
-                </fieldset>
-                <div className="settings-grid">
-                  <label>
-                    Copies
+                </div>
+                <div className="print-settings-group">
+                  <div className="print-setting-row">
+                    <label style={{ margin: 0 }}>Copies</label>
                     <input
                       type="number"
                       min={MIN_PRINT_COPIES}
@@ -1380,112 +1327,93 @@ export function App() {
                       onChange={(event) =>
                         patchSelected({ copies: Number(event.target.value) })
                       }
+                      style={{ padding: "0.6rem" }}
                     />
-                  </label>
-                  <label>
-                    Paper
-                    <select
-                      value={selectedFile.paperSize}
-                      onChange={(event) =>
-                        patchSelected({
-                          paperSize: event.target.value as "A4" | "A3",
-                        })
-                      }
-                    >
-                      <option
-                        disabled={
-                          !config.availablePrintOptions.some(
-                            (option) => option.paperSize === "A4",
-                          )
-                        }
-                      >
+                  </div>
+                  
+                  <div className="print-setting-row">
+                    <label style={{ margin: 0 }}>Paper Size</label>
+                    <div className="segmented-control">
+                      <label className={!config.availablePrintOptions.some((o) => o.paperSize === "A4") ? 'disabled' : ''}>
+                        <input
+                          type="radio"
+                          name="paperSize"
+                          value="A4"
+                          checked={selectedFile.paperSize === "A4"}
+                          disabled={!config.availablePrintOptions.some((o) => o.paperSize === "A4")}
+                          onChange={() => patchSelected({ paperSize: "A4" })}
+                        />
                         A4
-                      </option>
-                      <option
-                        disabled={
-                          !config.availablePrintOptions.some(
-                            (option) => option.paperSize === "A3",
-                          )
-                        }
-                      >
+                      </label>
+                      <label className={!config.availablePrintOptions.some((o) => o.paperSize === "A3") ? 'disabled' : ''}>
+                        <input
+                          type="radio"
+                          name="paperSize"
+                          value="A3"
+                          checked={selectedFile.paperSize === "A3"}
+                          disabled={!config.availablePrintOptions.some((o) => o.paperSize === "A3")}
+                          onChange={() => patchSelected({ paperSize: "A3" })}
+                        />
                         A3
-                      </option>
-                    </select>
-                  </label>
-                  <label>
-                    Colour
-                    <select
-                      value={selectedFile.colorMode}
-                      onChange={(event) =>
-                        patchSelected({
-                          colorMode: event.target.value as "BW" | "COLOR",
-                        })
-                      }
-                    >
-                      <option
-                        value="BW"
-                        disabled={
-                          !config.availablePrintOptions.some(
-                            (option) =>
-                              option.paperSize === selectedFile.paperSize &&
-                              option.colorMode === "BW",
-                          )
-                        }
-                      >
-                        Black &amp; white
-                      </option>
-                      <option
-                        value="COLOR"
-                        disabled={
-                          !config.availablePrintOptions.some(
-                            (option) =>
-                              option.paperSize === selectedFile.paperSize &&
-                              option.colorMode === "COLOR",
-                          )
-                        }
-                      >
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="print-setting-row">
+                    <label style={{ margin: 0 }}>Colour</label>
+                    <div className="segmented-control">
+                      <label className={!config.availablePrintOptions.some((o) => o.paperSize === selectedFile.paperSize && o.colorMode === "BW") ? 'disabled' : ''}>
+                        <input
+                          type="radio"
+                          name="colorMode"
+                          value="BW"
+                          checked={selectedFile.colorMode === "BW"}
+                          disabled={!config.availablePrintOptions.some((o) => o.paperSize === selectedFile.paperSize && o.colorMode === "BW")}
+                          onChange={() => patchSelected({ colorMode: "BW" })}
+                        />
+                        B & W
+                      </label>
+                      <label className={!config.availablePrintOptions.some((o) => o.paperSize === selectedFile.paperSize && o.colorMode === "COLOR") ? 'disabled' : ''}>
+                        <input
+                          type="radio"
+                          name="colorMode"
+                          value="COLOR"
+                          checked={selectedFile.colorMode === "COLOR"}
+                          disabled={!config.availablePrintOptions.some((o) => o.paperSize === selectedFile.paperSize && o.colorMode === "COLOR")}
+                          onChange={() => patchSelected({ colorMode: "COLOR" })}
+                        />
                         Colour
-                      </option>
-                    </select>
-                  </label>
-                  <label>
-                    Sides
-                    <select
-                      value={selectedFile.sides}
-                      onChange={(event) =>
-                        patchSelected({
-                          sides: event.target.value as "SINGLE" | "DOUBLE",
-                        })
-                      }
-                    >
-                      <option
-                        value="SINGLE"
-                        disabled={
-                          !config.availablePrintOptions.some(
-                            (option) =>
-                              option.paperSize === selectedFile.paperSize &&
-                              option.colorMode === selectedFile.colorMode &&
-                              option.sides === "SINGLE",
-                          )
-                        }
-                      >
-                        Single-sided
-                      </option>
-                      <option
-                        value="DOUBLE"
-                        disabled={
-                          !config.availablePrintOptions.some(
-                            (option) =>
-                              option.paperSize === selectedFile.paperSize &&
-                              option.colorMode === selectedFile.colorMode &&
-                              option.sides === "DOUBLE",
-                          )
-                        }
-                      >
-                        Double-sided
-                      </option>
-                    </select>
-                  </label>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="print-setting-row">
+                    <label style={{ margin: 0 }}>Sides</label>
+                    <div className="segmented-control">
+                      <label className={!config.availablePrintOptions.some((o) => o.paperSize === selectedFile.paperSize && o.colorMode === selectedFile.colorMode && o.sides === "SINGLE") ? 'disabled' : ''}>
+                        <input
+                          type="radio"
+                          name="sides"
+                          value="SINGLE"
+                          checked={selectedFile.sides === "SINGLE"}
+                          disabled={!config.availablePrintOptions.some((o) => o.paperSize === selectedFile.paperSize && o.colorMode === selectedFile.colorMode && o.sides === "SINGLE")}
+                          onChange={() => patchSelected({ sides: "SINGLE" })}
+                        />
+                        1-Sided
+                      </label>
+                      <label className={!config.availablePrintOptions.some((o) => o.paperSize === selectedFile.paperSize && o.colorMode === selectedFile.colorMode && o.sides === "DOUBLE") ? 'disabled' : ''}>
+                        <input
+                          type="radio"
+                          name="sides"
+                          value="DOUBLE"
+                          checked={selectedFile.sides === "DOUBLE"}
+                          disabled={!config.availablePrintOptions.some((o) => o.paperSize === selectedFile.paperSize && o.colorMode === selectedFile.colorMode && o.sides === "DOUBLE")}
+                          onChange={() => patchSelected({ sides: "DOUBLE" })}
+                        />
+                        2-Sided
+                      </label>
+                    </div>
+                  </div>
                 </div>
                 {!optionAvailable && (
                   <p className="error">
@@ -1493,20 +1421,33 @@ export function App() {
                   </p>
                 )}
                 <button
-                  className="secondary-button"
                   type="button"
                   onClick={applySettingsToAll}
+                  style={{
+                    background: "none",
+                    border: "1px dashed #cbd5e1",
+                    color: "#0f172a",
+                    fontWeight: 600,
+                    padding: "0.85rem",
+                    borderRadius: "8px",
+                    width: "100%",
+                    cursor: "pointer",
+                    marginTop: "1.5rem"
+                  }}
+                  onMouseOver={(e) => e.currentTarget.style.borderColor = "#94a3b8"}
+                  onMouseOut={(e) => e.currentTarget.style.borderColor = "#cbd5e1"}
                 >
-                  Apply these settings to all files
+                  ⚡ Apply these settings to all files
                 </button>
               </>
             ) : (
               <p className="muted">Add a PDF to configure print settings.</p>
             )}
           </section>
-          <section className="step review">
-            <span className="step-number">4</span>
-            <h2>Review</h2>
+          </div>
+          <div className="order-sidebar">
+          <section className="step review" style={{ position: "sticky", top: "2rem" }}>
+            <div className="step-header"><span className="step-number">4</span><h2>Review & Payment</h2></div>
 
             {status && <p role="status">{status}</p>}
             {config?.priorityPrinting?.enabled ? (
@@ -1560,7 +1501,7 @@ export function App() {
               </div>
             ) : null}
             {quote && (
-              <dl>
+              <dl className="review-summary">
                 <div>
                   <dt>Customer</dt>
                   <dd>
@@ -1622,16 +1563,7 @@ export function App() {
                     <dd>-{formatInr(quote.discountAmountPaise)}</dd>
                   </div>
                 ) : null}
-                <div
-                  className="total"
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "0.4rem",
-                    paddingTop: "0.5rem",
-                    borderTop: "1px solid var(--border-color, #e2e8f0)",
-                  }}
-                >
+                <div className="total-row">
                   <div
                     style={{
                       display: "flex",
@@ -1761,8 +1693,10 @@ export function App() {
                 {copyMessage && <p role="status">{copyMessage}</p>}
               </div>
             )}
+            <div className="checkout-actions">
             <button
               type="submit"
+              className={quote ? "secondary-button" : ""}
               disabled={
                 busy ||
                 files.length === 0 ||
@@ -1795,11 +1729,13 @@ export function App() {
                   : `Pay ${formatInr(quote.totalAmountPaise)}`}
               </button>
             )}
+            </div>
             <p className="muted">
               A job is queued only after the shop server verifies a captured
               payment.
             </p>
           </section>
+        </div>
         </form>
       )}
       <footer
