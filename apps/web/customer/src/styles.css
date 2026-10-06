@@ -942,16 +942,19 @@ label {
   font-weight: 600;
   font-size: 0.95rem;
   color: #1e293b;
-  margin: 0;
 }
-.input-with-icon,
-.select-wrapper {
+.input-with-icon {
   position: relative;
   display: flex;
   align-items: center;
 }
-.input-with-icon .icon,
-.select-wrapper .icon {
+.select-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 42px;
+}
+.input-with-icon .icon {
   position: absolute;
   left: 0.85rem;
   font-size: 1.1rem;
@@ -959,7 +962,6 @@ label {
   pointer-events: none;
 }
 .input-with-icon input,
-.select-wrapper select,
 .input-with-icon textarea {
   width: 100%;
   padding: 0.75rem 1rem 0.75rem 2.5rem;
@@ -970,6 +972,19 @@ label {
   color: #0f172a;
   transition: all 0.2s;
   outline: none;
+}
+.select-wrapper select {
+  width: 100%;
+  height: 42px;
+  padding: 0 0.85rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #ffffff;
+  font-size: 0.95rem;
+  color: #0f172a;
+  transition: all 0.2s;
+  outline: none;
+  cursor: pointer;
 }
 .input-with-icon.textarea .icon {
   top: 0.85rem;
@@ -1316,40 +1331,54 @@ label {
 }
 .number-stepper {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   border: 1px solid #cbd5e1;
   border-radius: 8px;
   overflow: hidden;
   height: 42px;
+  background: #ffffff;
 }
 .number-stepper button {
-  background: #f8fafc;
+  background: #f1f5f9;
   border: none;
-  color: #0f172a;
+  color: #1e293b;
   width: 40px;
+  min-width: 40px;
   height: 100%;
-  font-size: 1.25rem;
+  margin: 0 !important;
+  padding: 0;
+  font-size: 1.3rem;
+  font-weight: 600;
+  line-height: 1;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 0;
-  padding: 0;
+  user-select: none;
+  transition: background 0.15s;
 }
 .number-stepper button:hover {
   background: #e2e8f0;
+}
+.number-stepper button:active {
+  background: #cbd5e1;
 }
 .number-stepper input {
   flex: 1;
   border: none;
   text-align: center;
+  margin: 0;
   padding: 0;
   height: 100%;
-  font-weight: 600;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #0f172a;
   outline: none;
   background: white;
   width: 100%;
   min-width: 0;
+  line-height: 42px;
   -moz-appearance: textfield;
 }
 .number-stepper input::-webkit-outer-spin-button,

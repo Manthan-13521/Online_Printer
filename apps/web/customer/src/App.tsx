@@ -33,7 +33,7 @@ const humanFileSize = (bytes: number) =>
 
 interface LocalOrderFile {
   clientId: string;
-  fileId?: string;
+  fileId?: string | undefined;
   file: File | null;
   name: string;
   size: number;
@@ -102,8 +102,14 @@ function customerErrorMessage(caught: unknown): string {
   const code = caught instanceof Error ? caught.message : "";
   if (code === "ONLINE_PRINTING_DISABLED")
     return "Online printing was switched off. No upload was authorized.";
-  if (code === "DRAFT_EXPIRED")
-    return "This upload session expired. Please upload your PDF again.";
+  if (
+    code === "DRAFT_EXPIRED" ||
+    code === "DRAFT_INVALID" ||
+    code === "DRAFT_NOT_FOUND"
+  )
+    return "This upload session expired. Click 'Try upload again' or 'Review Order' to refresh.";
+  if (code === "UPLOAD_FILE_REQUIRED")
+    return "Please re-select your PDF file to complete the upload.";
   if (code === "UPLOAD_INVALID")
     return "We couldn't read this PDF. Please check the file and try again.";
   if (code === "UPLOAD_ABORTED") return "Upload was cancelled.";
@@ -113,6 +119,9 @@ function customerErrorMessage(caught: unknown): string {
     return "The upload was interrupted. Keep the app open and don't switch tabs while uploading. Check connection and try again.";
   if (code === "Failed to fetch")
     return "Could not reach the shop server. Please check your internet connection.";
+  if (code && code.length > 0 && !code.startsWith("UPLOAD_")) {
+    return code;
+  }
   return "The upload could not be completed. Your selections are preserved; please try again.";
 }
 
@@ -346,15 +355,30 @@ export function App() {
     setSelectedFileIndex(files.length);
   }
 
-  async function prepareReview(event: React.FormEvent) {
-    event.preventDefault();
-    if (
-      !config?.onlinePrintingEnabled ||
-      files.length === 0 ||
-      fileError ||
-      !optionAvailable
-    )
+  async function prepareReview(event?: React.FormEvent) {
+    if (event) event.preventDefault();
+    if (busy) return;
+    if (!config?.onlinePrintingEnabled) {
+      setStatus("Online printing is currently unavailable at this shop.");
       return;
+    }
+    if (files.length === 0) {
+      setStatus("Please add at least one PDF file to print.");
+      return;
+    }
+    if (fileError) return;
+    if (!optionAvailable) {
+      setStatus(
+        "That print combination is not currently available. Please adjust your print settings.",
+      );
+      return;
+    }
+    if (!customerName.trim() || !customerPhone.trim()) {
+      setStatus(
+        "Please enter your name and phone number before reviewing your order.",
+      );
+      return;
+    }
     for (const item of files) {
       const selectedPages =
         item.pageMode === "ALL" ? `1-${item.pageCount}` : item.customPages;
@@ -391,47 +415,75 @@ export function App() {
           uploadError: null,
         });
 
-        try {
-          if (!token) {
-            const draft = await customerApi.createDraft({
-              customerName,
-              customerPhone,
-              instructions: instructions.trim() || null,
-              originalFilename: item.name,
-              expectedSizeBytes: item.size,
-              sourcePageCount: item.pageCount,
-              ...(selectedAddonIds.length > 0
-                ? { addonServiceIds: selectedAddonIds }
-                : {}),
-            });
-            token = draft.draftToken;
-            upload = draft.upload;
-            if (draft.fileId) updateFile(clientId, { fileId: draft.fileId });
-            setDraftToken(token);
-            sessionStorage.setItem(DRAFT_TOKEN_KEY, token);
-          } else if (!item.fileId) {
-            const created = await customerApi.addFile(token, {
-              originalFilename: item.name,
-              expectedSizeBytes: item.size,
-              sourcePageCount: item.pageCount,
-            });
-            upload = created.upload;
-            if (created.fileId)
-              updateFile(clientId, { fileId: created.fileId });
-          } else {
-            upload = (await customerApi.authorize(token, item.fileId)).upload;
+        let uploadAttempt = 0;
+        while (uploadAttempt < 2) {
+          uploadAttempt++;
+          try {
+            if (!token) {
+              const draft = await customerApi.createDraft({
+                customerName: customerName.trim(),
+                customerPhone: customerPhone.trim(),
+                instructions: instructions.trim() || null,
+                originalFilename: item.name,
+                expectedSizeBytes: item.size,
+                sourcePageCount: item.pageCount,
+                ...(selectedAddonIds.length > 0
+                  ? { addonServiceIds: selectedAddonIds }
+                  : {}),
+              });
+              token = draft.draftToken;
+              upload = draft.upload;
+              if (draft.fileId) updateFile(clientId, { fileId: draft.fileId });
+              setDraftToken(token);
+              sessionStorage.setItem(DRAFT_TOKEN_KEY, token);
+            } else if (!item.fileId) {
+              const created = await customerApi.addFile(token, {
+                originalFilename: item.name,
+                expectedSizeBytes: item.size,
+                sourcePageCount: item.pageCount,
+              });
+              upload = created.upload;
+              if (created.fileId)
+                updateFile(clientId, { fileId: created.fileId });
+            } else {
+              upload = (await customerApi.authorize(token, item.fileId)).upload;
+            }
+            break;
+          } catch (authErr) {
+            const msg = authErr instanceof Error ? authErr.message : "";
+            if (
+              uploadAttempt === 1 &&
+              (msg.includes("DRAFT") ||
+                msg.includes("UPLOAD_NOT_FOUND") ||
+                msg.includes("401") ||
+                msg.includes("410"))
+            ) {
+              token = null;
+              setDraftToken(null);
+              sessionStorage.removeItem(DRAFT_TOKEN_KEY);
+              filesRef.current.forEach((f) => {
+                if (f.uploadStatus !== "UPLOADED") {
+                  updateFile(f.clientId, { fileId: undefined });
+                }
+              });
+              continue;
+            }
+            throw authErr;
           }
+        }
 
-          if (!filesRef.current.find((f) => f.clientId === clientId)) continue;
+        if (!filesRef.current.find((f) => f.clientId === clientId)) continue;
 
-          updateFile(clientId, { uploadStatus: "UPLOADING" });
-          setStatus(
-            `Uploading File ${index + 1} of ${filesRef.current.length}…`,
-          );
+        updateFile(clientId, { uploadStatus: "UPLOADING" });
+        setStatus(
+          `Uploading File ${index + 1} of ${filesRef.current.length}…`,
+        );
 
-          const controller = new AbortController();
-          abortControllers.current.set(clientId, controller);
+        const controller = new AbortController();
+        abortControllers.current.set(clientId, controller);
 
+        if (!upload) throw new Error("UPLOAD_FAILED");
+        try {
           await uploadDirectly(
             uploadFile,
             upload.uploadUrl,
@@ -450,7 +502,7 @@ export function App() {
           const latestItem = filesRef.current.find(
             (f) => f.clientId === clientId,
           );
-          await customerApi.complete(token, latestItem?.fileId || "");
+          await customerApi.complete(token!, latestItem?.fileId || "");
 
           updateFile(clientId, {
             uploaded: true,
@@ -502,7 +554,10 @@ export function App() {
     } catch (caught) {
       if (
         caught instanceof Error &&
-        ["DRAFT_EXPIRED", "DRAFT_INVALID"].includes(caught.message)
+        (caught.message.includes("DRAFT") ||
+          ["DRAFT_EXPIRED", "DRAFT_INVALID", "DRAFT_NOT_FOUND"].includes(
+            caught.message,
+          ))
       ) {
         setDraftToken(null);
         sessionStorage.removeItem(DRAFT_TOKEN_KEY);
@@ -1141,7 +1196,6 @@ export function App() {
                   <div className="settings-file-selector">
                     <label htmlFor="settings-file">File to configure</label>
                     <div className="select-wrapper">
-                      <span className="icon">📄</span>
                       <select
                         id="settings-file"
                         value={selectedFileIndex}
@@ -1198,30 +1252,73 @@ export function App() {
                       <div className="copies-control">
                         <label htmlFor="copies-input" style={{ margin: 0 }}>Copies</label>
                         <div className="number-stepper">
-                          <button type="button" onClick={() => patchSelected({ copies: Math.max(MIN_PRINT_COPIES, selectedFile.copies - 1) })}>-</button>
-                          <input id="copies-input"
+                          <button
+                            type="button"
+                            aria-label="Decrease copies"
+                            onClick={() =>
+                              patchSelected({
+                                copies: Math.max(
+                                  MIN_PRINT_COPIES,
+                                  selectedFile.copies - 1,
+                                ),
+                              })
+                            }
+                          >
+                            −
+                          </button>
+                          <input
+                            id="copies-input"
+                            aria-label="Copies"
                             type="number"
                             min={MIN_PRINT_COPIES}
                             max={MAX_PRINT_COPIES}
                             value={selectedFile.copies}
                             onChange={(event) =>
-                              patchSelected({ copies: Number(event.target.value) })
+                              patchSelected({
+                                copies: Number(event.target.value),
+                              })
                             }
                           />
-                          <button type="button" onClick={() => patchSelected({ copies: Math.min(MAX_PRINT_COPIES, selectedFile.copies + 1) })}>+</button>
+                          <button
+                            type="button"
+                            aria-label="Increase copies"
+                            onClick={() =>
+                              patchSelected({
+                                copies: Math.min(
+                                  MAX_PRINT_COPIES,
+                                  selectedFile.copies + 1,
+                                ),
+                              })
+                            }
+                          >
+                            +
+                          </button>
                         </div>
                       </div>
                       <div className="paper-size-control">
                         <label htmlFor="paper-size" style={{ margin: 0 }}>Paper size</label>
                         <div className="select-wrapper">
-                          <span className="icon">📄</span>
-                          <select id="paper-size"
+                          <select
+                            id="paper-size"
                             value={selectedFile.paperSize}
-                            onChange={(event) => patchSelected({ paperSize: event.target.value as PaperSize })}
+                            onChange={(event) =>
+                              patchSelected({
+                                paperSize: event.target.value as PaperSize,
+                              })
+                            }
                           >
-                            {config.availablePrintOptions.filter((v,i,a)=>a.findIndex(t=>(t.paperSize === v.paperSize))===i).map((o) => (
-                              <option key={o.paperSize} value={o.paperSize}>{o.paperSize}</option>
-                            ))}
+                            {config.availablePrintOptions
+                              .filter(
+                                (v, i, a) =>
+                                  a.findIndex(
+                                    (t) => t.paperSize === v.paperSize,
+                                  ) === i,
+                              )
+                              .map((o) => (
+                                <option key={o.paperSize} value={o.paperSize}>
+                                  {o.paperSize}
+                                </option>
+                              ))}
                           </select>
                         </div>
                       </div>
@@ -1424,6 +1521,9 @@ export function App() {
                   className="pay-button"
                   style={{ width: '100%', marginBottom: '1.5rem', padding: '1rem', fontSize: '1.1rem' }}
                   disabled={busy || files.length === 0}
+                  onClick={(e) => {
+                    if (!busy) void prepareReview(e);
+                  }}
                 >
                   {busy ? "Calculating..." : files.some((f) => f.uploadStatus === "FAILED") ? "Try upload again" : "Review Order"}
                 </button>
@@ -1540,20 +1640,6 @@ export function App() {
                         disabled={paymentBusy || busy || Boolean(paymentSuccess)}
                       >
                         {paymentBusy ? "Confirming payment…" : `🔒 Pay ${formatInr(quote.totalAmountPaise)}`}
-                      </button>
-                    )}
-                    {draftToken && (
-                      <button
-                        type="button"
-                        className="secondary-button"
-                        onClick={() => {
-                          setDraftToken(null);
-                          setStatus(null);
-                        }}
-                        disabled={paymentBusy}
-                        style={{ marginTop: '0.75rem' }}
-                      >
-                        Edit Order
                       </button>
                     )}
                   </div>
