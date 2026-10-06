@@ -711,3 +711,243 @@ a {
   width: auto;
   margin-top: 0;
 }
+
+/* ----- FRONTEND AKILL MAX UI/UX OVERRIDES ----- */
+body {
+  background-color: #FAFAFA;
+  color: #1e293b;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+.page-shell {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.hero {
+  background: transparent;
+  border-bottom: none;
+  text-align: center;
+  padding-bottom: 2rem;
+}
+
+.step {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+}
+
+.step-number {
+  background: #0f766e;
+  color: white;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-weight: 700;
+  font-size: 1.1rem;
+  margin-right: 0.75rem;
+  vertical-align: middle;
+}
+
+.step h2 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #0f172a;
+  vertical-align: middle;
+}
+
+/* Two-column form layout for Customer Details */
+.step:nth-of-type(1) > label:nth-of-type(1),
+.step:nth-of-type(1) > label:nth-of-type(2) {
+  display: inline-block;
+  width: calc(50% - 0.5rem);
+  vertical-align: top;
+}
+.step:nth-of-type(1) > label:nth-of-type(1) {
+  margin-right: 1rem;
+}
+
+@media (max-width: 640px) {
+  .step:nth-of-type(1) > label:nth-of-type(1),
+  .step:nth-of-type(1) > label:nth-of-type(2) {
+    display: block;
+    width: 100%;
+    margin-right: 0;
+  }
+}
+
+/* Modern Inputs */
+input, select, textarea {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  font-size: 1rem;
+  transition: all 0.2s;
+  background: #ffffff;
+}
+
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: #0f766e;
+  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.1);
+}
+
+/* Addon Checkboxes as Cards */
+.addon-checkbox-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 1rem;
+}
+
+.addon-checkbox-item {
+  border: 1px solid #cbd5e1 !important;
+  border-radius: 12px !important;
+  padding: 1rem !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: flex-start !important;
+  position: relative;
+  background: #ffffff !important;
+  box-shadow: none !important;
+  width: 100% !important;
+}
+
+.addon-checkbox-item.selected,
+.addon-checkbox-item:has(input:checked) {
+  border-color: #0f766e !important;
+  background: #f0fdfa !important;
+  color: #0f172a !important;
+}
+
+.addon-checkbox-item input[type="checkbox"] {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 4px;
+}
+
+.addon-name {
+  font-weight: 700 !important;
+  color: #0f172a !important;
+  margin-bottom: 0.25rem;
+}
+
+.addon-price-tag {
+  background: transparent !important;
+  color: #0f766e !important;
+  padding: 0 !important;
+  font-size: 0.9rem !important;
+}
+
+/* Settings Radio buttons as segmented controls */
+.step:nth-of-type(3) fieldset {
+  border: none;
+  padding: 0;
+  margin-bottom: 1.5rem;
+}
+.step:nth-of-type(3) legend {
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+.step:nth-of-type(3) label.inline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.75rem 1rem;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  cursor: pointer;
+  border-radius: 8px;
+  margin-right: 0.5rem;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.step:nth-of-type(3) label.inline:has(input:checked) {
+  border-color: #0f766e;
+  background: #f0fdfa;
+  color: #0f766e;
+}
+
+.step:nth-of-type(3) label.inline input[type="radio"] {
+  display: none; /* Hide standard radio buttons */
+}
+
+/* Upload zone */
+.file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.file-item {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #f8fafc;
+}
+
+.drop-zone {
+  border: 2px dashed #cbd5e1;
+  border-radius: 12px;
+  padding: 2rem;
+  text-align: center;
+  background: #fafaf9;
+  transition: all 0.2s;
+  cursor: pointer;
+  margin-top: 1rem;
+}
+.drop-zone:hover {
+  border-color: #0f766e;
+  background: #f0fdfa;
+}
+.drop-zone button {
+  background: #ffffff;
+  color: #0f766e;
+  border: 1px solid #0f766e;
+  padding: 0.5rem 1.5rem;
+  border-radius: 9999px;
+  font-weight: 600;
+  margin-top: 1rem;
+}
+
+/* Buttons */
+button {
+  background: #0f766e;
+  color: white;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+button:hover {
+  background: #115e59;
+}
+button:disabled {
+  background: #94a3b8;
+  cursor: not-allowed;
+}
+button.pay-button {
+  background: #15803d;
+  width: 100%;
+  font-size: 1.1rem;
+  padding: 1rem;
+}
+button.pay-button:hover {
+  background: #166534;
+}
+

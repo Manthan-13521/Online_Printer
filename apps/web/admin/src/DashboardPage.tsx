@@ -380,7 +380,7 @@ export function DashboardPage({
           style={{
             display: "flex",
             alignItems: "center",
-            justifyContent: "space-between",
+            justifyContent: "flex-start", gap: "1rem",
             paddingBottom: "0.75rem",
             borderBottom: "1px solid #e2e8f0",
             marginBottom: "0.75rem",
@@ -397,7 +397,7 @@ export function DashboardPage({
           style={{
             display: "flex",
             alignItems: "center",
-            justifyContent: "space-between",
+            justifyContent: "flex-start", gap: "1rem",
           }}
         >
           <span>
