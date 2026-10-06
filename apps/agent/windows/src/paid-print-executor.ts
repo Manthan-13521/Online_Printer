@@ -118,8 +118,27 @@ export class PaidPrintExecutor {
           printerStatus.availability === "BLOCKED")
       ) {
         this.log(
-          `Printer ${job.windowsPrinterName} is not online (${printerStatus.availability}: ${printerStatus.message ?? "Not ready"}). Waiting before print submission.`,
+          `Printer ${job.windowsPrinterName} is not online (${printerStatus.availability}: ${printerStatus.message ?? "Not ready"}). Reporting step BLOCKED before print submission.`,
         );
+        if (job.currentStep.status !== "BLOCKED") {
+          await this.client.reportPrintStep(
+            credentials.serverUrl,
+            credentials.agentId,
+            credentials.agentSecret,
+            job,
+            {
+              status: "BLOCKED",
+              spoolerJobId: null,
+              failureCode:
+                printerStatus.availability === "OFFLINE"
+                  ? "PRINTER_OFFLINE"
+                  : "PRINTER_ERROR",
+              failureDetail:
+                printerStatus.message ??
+                "Printer is offline or blocked before submission.",
+            },
+          );
+        }
         return "PREFLIGHT_DEFERRED";
       }
     }
@@ -373,8 +392,45 @@ export class PaidPrintExecutor {
       return;
     }
 
-    const status =
-      observed.state === "COMPLETED_OR_REMOVED" ? "SUCCEEDED" : "UNCERTAIN";
+    if (observed.state === "COMPLETED_OR_REMOVED") {
+      if (typeof this.printer.getStatus === "function") {
+        const postStatus = await this.printer.getStatus(job.windowsPrinterName);
+        if (postStatus && (postStatus.availability === "BLOCKED" || postStatus.availability === "OFFLINE")) {
+          await this.client.reportPrintStep(
+            credentials.serverUrl,
+            credentials.agentId,
+            credentials.agentSecret,
+            job,
+            {
+              status: "BLOCKED",
+              spoolerJobId,
+              failureCode: postStatus.availability === "OFFLINE" ? "PRINTER_OFFLINE" : "PRINTER_ERROR",
+              failureDetail: postStatus.message ?? "Printer encountered a hardware fault during print completion.",
+            },
+          );
+          return;
+        }
+      }
+
+      await this.client.reportPrintStep(
+        credentials.serverUrl,
+        credentials.agentId,
+        credentials.agentSecret,
+        job,
+        {
+          status: "SUCCEEDED",
+          spoolerJobId,
+          failureCode: null,
+          failureDetail: observed.message ?? "Spool handoff complete; printer online.",
+        },
+      );
+      await this.journal.clear();
+      this.log(
+        `PRINT_TIMING step=${job.currentStep.stepId} event=step_acknowledged atMs=${Date.now()}`,
+      );
+      this.onStepFinished();
+      return;
+    }
 
     await this.client.reportPrintStep(
       credentials.serverUrl,
@@ -382,19 +438,12 @@ export class PaidPrintExecutor {
       credentials.agentSecret,
       job,
       {
-        status,
+        status: "UNCERTAIN",
         spoolerJobId,
-        failureCode:
-          observed.failureCode ?? (status === "UNCERTAIN" ? "UNKNOWN" : null),
-        failureDetail: observed.message ?? null,
+        failureCode: observed.failureCode ?? "UNKNOWN",
+        failureDetail: observed.message ?? "Spool outcome uncertain.",
       },
     );
     await this.journal.clear();
-    if (status === "SUCCEEDED") {
-      this.log(
-        `PRINT_TIMING step=${job.currentStep.stepId} event=step_acknowledged atMs=${Date.now()}`,
-      );
-      this.onStepFinished();
-    }
   }
 }

@@ -362,7 +362,7 @@ export class D1PrintingRepository implements PrintingRepository {
       WHERE o.claimed_by_agent_id = ?
         AND o.status IN ('CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED')
       ORDER BY 
-        CASE WHEN ps.status IN ('PENDING', 'SUBMISSION_STARTED') THEN 0 ELSE 1 END ASC,
+        CASE WHEN ps.status IN ('PENDING', 'SUBMISSION_STARTED', 'BLOCKED') THEN 0 ELSE 1 END ASC,
         ps.sequence_number ASC 
       LIMIT 1`,
       )
@@ -741,16 +741,23 @@ export class D1PrintingRepository implements PrintingRepository {
     input: Parameters<PrintingRepository["startStep"]>[0],
   ): Promise<StepOwnershipRow | null> {
     const current = await this.findOwnedStep(input);
-    if (!current || current.step_status !== "PENDING") return current;
+    if (
+      !current ||
+      (current.step_status !== "PENDING" && current.step_status !== "BLOCKED")
+    )
+      return current;
     const lease = input.nowMs + PRINT_CLAIM_LEASE_MS;
     const nextOrderStatus =
-      current.order_status === "CLAIMED" ? "SPOOLING" : "PRINTING";
+      current.order_status === "CLAIMED" ||
+      current.order_status === "PRINT_BLOCKED"
+        ? "SPOOLING"
+        : "PRINTING";
     const results = await this.db.batch([
       this.db
         .prepare(
           `UPDATE print_attempt_steps SET status = 'SUBMISSION_STARTED',
           submission_started_at_ms = ?, updated_at_ms = ?
-        WHERE id = ? AND print_attempt_id = ? AND status = 'PENDING'
+        WHERE id = ? AND print_attempt_id = ? AND status IN ('PENDING', 'BLOCKED')
           AND EXISTS (SELECT 1 FROM orders o
             WHERE o.id = print_attempt_steps.order_id AND o.cleanup_state = 'ACTIVE'
               AND o.claim_id = ?)`,
@@ -765,14 +772,14 @@ export class D1PrintingRepository implements PrintingRepository {
       this.db
         .prepare(
           `UPDATE print_attempts SET status = 'SUBMITTING', updated_at_ms = ?
-        WHERE id = ? AND status IN ('CREATED','PRINTING') AND changes() = 1`,
+        WHERE id = ? AND status IN ('CREATED','PRINTING','BLOCKED') AND changes() = 1`,
         )
         .bind(input.nowMs, current.attempt_id),
       this.db
         .prepare(
           `UPDATE orders SET status = ?, print_started_at_ms = COALESCE(print_started_at_ms, ?),
           claim_expires_at_ms = ?, updated_at_ms = ? WHERE id = ? AND claim_id = ?
-          AND status IN ('CLAIMED','PRINTING') AND changes() = 1`,
+          AND status IN ('CLAIMED','PRINTING','PRINT_BLOCKED') AND changes() = 1`,
         )
         .bind(
           nextOrderStatus,

@@ -756,4 +756,85 @@ describe("paid-print D1 safety", () => {
     expect(updated.status).toBe("QUEUED");
     expect(updated.queued_at_ms).toBe(2_000);
   });
+
+  it("handles preflight BLOCKED correctly and resumes to SPOOLING when printer is unblocked", async () => {
+    seed(db);
+    // Claim the job
+    const job = (await repository.claimOrRenew(ids.agent1, 2_000))!;
+    expect(job).not.toBeNull();
+    expect(job.orderId).toBe(ids.order);
+
+    // Agent finds printer offline during preflight, reports BLOCKED
+    const blocked = await repository.recordResult({
+      agentId: ids.agent1,
+      orderId: job.orderId,
+      stepId: job.currentStep.stepId,
+      claimId: job.claimId,
+      status: "BLOCKED",
+      spoolerJobId: null,
+      failureCode: "PRINTER_OFFLINE",
+      failureDetail: "Printer is offline before submission.",
+      nowMs: 2_100,
+    });
+
+    expect(blocked?.step_status).toBe("BLOCKED");
+    const orderInDb = db
+      .prepare("SELECT status, error_category FROM orders WHERE id = ?")
+      .get(ids.order) as { status: string; error_category: string };
+    expect(orderInDb.status).toBe("PRINT_BLOCKED");
+    expect(orderInDb.error_category).toBe("PRINTER_OFFLINE");
+
+    // Later order in queue is safely held
+    const laterOrder = "10000000-0000-4000-8000-000000000009";
+    db.prepare(
+      `INSERT INTO orders (id, customer_name, customer_phone, original_filename,
+       selected_pages, source_page_count, copies, color_mode, paper_size, sides,
+       total_amount_paise, printing_amount_paise, public_job_code, pickup_code,
+       status, created_at_ms, updated_at_ms, queued_at_ms)
+       VALUES (?, 'Next Customer', '+919999999999', 'next.pdf', 'ALL', 1, 1, 'BW',
+       'A4', 'SINGLE', 500, 500, 'PG-NEXT', 'PA-099', 'QUEUED', 2200, 2200, 2200)`,
+    ).run(laterOrder);
+    db.prepare(
+      `INSERT INTO payments (id, order_id, provider_order_id, amount_paise, currency, status,
+       provider, provider_payment_id, verified_at_ms, created_at_ms, updated_at_ms)
+       VALUES ('30000000-0000-4000-8000-000000000009', ?, 'order_provider_99', 500, 'INR', 'PAID',
+       'RAZORPAY', 'pay_next99', 2200, 2200, 2200)`,
+    ).run(laterOrder);
+
+    // Heartbeat pulse while printer is still offline returns the same blocked job
+    const pulseJob = await repository.claimOrRenew(ids.agent1, 2_300);
+    expect(pulseJob?.orderId).toBe(ids.order);
+
+    // Printer comes online: Agent starts the step
+    const started = await repository.startStep({
+      agentId: ids.agent1,
+      orderId: job.orderId,
+      stepId: job.currentStep.stepId,
+      claimId: job.claimId,
+      nowMs: 2_400,
+    });
+
+    expect(started?.step_status).toBe("SUBMISSION_STARTED");
+    expect(started?.order_status).toBe("SPOOLING");
+
+    const orderResumed = db
+      .prepare("SELECT status FROM orders WHERE id = ?")
+      .get(ids.order) as { status: string };
+    expect(orderResumed.status).toBe("SPOOLING");
+  });
+
+  it("recovers unsubmitted expired claims on schedule back to QUEUED", async () => {
+    seed(db);
+    const job = (await repository.claimOrRenew(ids.agent1, 2_000))!;
+    expect(job).not.toBeNull();
+
+    // Expire lease (e.g. agent died)
+    await repository.recoverExpiredClaims(2_000 + PRINT_CLAIM_LEASE_MS + 100);
+
+    const orderAfter = db
+      .prepare("SELECT status, claimed_by_agent_id FROM orders WHERE id = ?")
+      .get(ids.order) as { status: string; claimed_by_agent_id: string | null };
+    expect(orderAfter.status).toBe("QUEUED");
+    expect(orderAfter.claimed_by_agent_id).toBeNull();
+  });
 });

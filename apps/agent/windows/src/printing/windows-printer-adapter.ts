@@ -75,16 +75,15 @@ export function extractHostFromPortName(
   if (!portName) return null;
   const trimmed = portName.trim();
   const ipPrefix =
-    /^IP_([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})$/i.exec(trimmed);
-  if (ipPrefix?.[1]) return ipPrefix[1];
-  const directIp =
-    /^([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})(?::\d+)?$/i.exec(
+    /^(?:IP_|TCP_|WSD_)?([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})(?::\d+)?/i.exec(
       trimmed,
     );
-  if (directIp?.[1]) return directIp[1];
-  const tcpPrefix =
-    /^TCP_([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})$/i.exec(trimmed);
-  if (tcpPrefix?.[1]) return tcpPrefix[1];
+  if (ipPrefix?.[1]) return ipPrefix[1];
+  const urlMatch =
+    /https?:\/\/([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}|[a-zA-Z0-9.-]+)(?::\d+)?/i.exec(
+      trimmed,
+    );
+  if (urlMatch?.[1]) return urlMatch[1];
   return null;
 }
 
@@ -359,6 +358,19 @@ Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $printer } | Select-O
     p: CimPrinterOutput,
     isNetworkReachable?: boolean,
   ): PrinterStatus {
+    if (isNetworkReachable === true) {
+      return { availability: "ONLINE" };
+    }
+    if (isNetworkReachable === false) {
+      const host = extractHostFromPortName(p.PortName);
+      return {
+        availability: "OFFLINE",
+        message: host
+          ? `Network printer unreachable at ${host}`
+          : "Network printer unreachable",
+      };
+    }
+
     if (p.WorkOffline) {
       return {
         availability: "OFFLINE",
@@ -398,19 +410,6 @@ Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $printer } | Select-O
     // it is actively working; port 9100 may be busy receiving the job.
     if (p.PrinterStatus === 4 || p.PrinterStatus === 5) {
       return { availability: "ONLINE" };
-    }
-
-    const host = extractHostFromPortName(p.PortName);
-    if (host !== null) {
-      if (isNetworkReachable === false) {
-        return {
-          availability: "OFFLINE",
-          message: `Network printer unreachable at ${host}`,
-        };
-      }
-      if (isNetworkReachable === true) {
-        return { availability: "ONLINE" };
-      }
     }
 
     // When Windows reports WorkOffline is false, or reports a defined PrinterStatus (such as 2=Unknown/Default,

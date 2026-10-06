@@ -126,7 +126,7 @@ async function journal() {
 }
 
 describe("PaidPrintExecutor duplicate prevention", () => {
-  it("waits before submission while offline, then uses the same pending step when online", async () => {
+  it("reports BLOCKED before submission while offline, then resumes and submits when online", async () => {
     const api = client();
     const printer = adapter();
     vi.mocked(printer.getStatus)
@@ -138,14 +138,32 @@ describe("PaidPrintExecutor duplicate prevention", () => {
     const store = await journal();
     const executor = new PaidPrintExecutor(api, printer, store);
 
-    await executor.handle(credentials, job("IDENTIFICATION_SHEET"));
+    const initialJob = job("IDENTIFICATION_SHEET");
+    await executor.handle(credentials, initialJob);
 
     expect(api.startPrintStep).not.toHaveBeenCalled();
-    expect(api.reportPrintStep).not.toHaveBeenCalled();
+    expect(api.reportPrintStep).toHaveBeenCalledTimes(1);
+    expect(api.reportPrintStep).toHaveBeenCalledWith(
+      credentials.serverUrl,
+      credentials.agentId,
+      credentials.agentSecret,
+      initialJob,
+      expect.objectContaining({
+        status: "BLOCKED",
+        failureCode: "PRINTER_OFFLINE",
+      }),
+    );
     expect(printer.submitPdfJob).not.toHaveBeenCalled();
     expect(await store.load()).toBeNull();
 
-    await executor.handle(credentials, job("IDENTIFICATION_SHEET"));
+    const blockedJob = {
+      ...initialJob,
+      currentStep: {
+        ...initialJob.currentStep,
+        status: "BLOCKED" as const,
+      },
+    };
+    await executor.handle(credentials, blockedJob);
     expect(api.startPrintStep).toHaveBeenCalledTimes(1);
     expect(printer.submitPdfJob).toHaveBeenCalledTimes(1);
   });
@@ -366,6 +384,39 @@ describe("PaidPrintExecutor duplicate prevention", () => {
       expect.anything(),
       expect.anything(),
       expect.objectContaining({ status: "BLOCKED", spoolerJobId: "42" }),
+    );
+  });
+
+  it("prevents SUCCEEDED report if printer enters BLOCKED state upon spool completion", async () => {
+    const api = client();
+    const printer = adapter();
+    // Spool reports removed/despooled
+    vi.mocked(printer.getJobStatus).mockResolvedValue({
+      state: "COMPLETED_OR_REMOVED",
+      spoolJobId: "42",
+    });
+    // But printer hardware reports paper jam / blocked
+    vi.mocked(printer.getStatus).mockResolvedValue({
+      availability: "BLOCKED",
+      message: "Paper Jam",
+    });
+
+    await new PaidPrintExecutor(api, printer, await journal()).handle(
+      credentials,
+      job("CUSTOMER_DOCUMENT", "SUBMITTED"),
+    );
+
+    expect(api.reportPrintStep).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({
+        status: "BLOCKED",
+        spoolerJobId: "42",
+        failureCode: "PRINTER_ERROR",
+        failureDetail: "Paper Jam",
+      }),
     );
   });
 });

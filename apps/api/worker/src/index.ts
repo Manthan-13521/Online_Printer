@@ -51,16 +51,16 @@ export default {
 
     try {
       const printingRepo = new D1PrintingRepository(env.DB);
-      const retryResult = await printingRepo.autoRetryEligibleOrders(
-        Date.now(),
-      );
+      const nowMs = Date.now();
+      await printingRepo.recoverExpiredClaims(nowMs);
+      const retryResult = await printingRepo.autoRetryEligibleOrders(nowMs);
       if (retryResult.retriedCount > 0) {
         console.log("Auto-retry scheduled execution complete", {
           retriedCount: retryResult.retriedCount,
         });
       }
     } catch (err) {
-      console.error("Auto-retry scheduled execution failed", {
+      console.error("Auto-retry / recovery scheduled execution failed", {
         error: err instanceof Error ? err.name : "UnknownError",
       });
     }
