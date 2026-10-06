@@ -29,8 +29,8 @@ Design, animate, structure, debug, optimize, and integrate interactive Rive expe
 
 Rive changes quickly, and copied SDK examples or generic model knowledge can become stale. This skill gives AI agents a maintainable way to approach real Rive work while directing them to current official documentation for version-sensitive behavior.
 
-| Authoring | Interaction | Integration |
-|---|---|---|
+| Authoring                                                  | Interaction                                                      | Integration                                                          |
+| ---------------------------------------------------------- | ---------------------------------------------------------------- | -------------------------------------------------------------------- |
 | Artboards, timelines, rigging, components, Layouts, assets | State Machines, listeners, Data Binding, View Models, converters | Runtimes, renderers, scripting, Rive MCP, performance, accessibility |
 
 It also defines semantic naming, runtime contracts, a practical debugging order, QA expectations, and a developer-handoff format.
@@ -45,34 +45,34 @@ Use the large button above or [download **SKILL.md** directly](https://github.co
 
 ### 2. Install in Codex
 
-~~~bash
+```bash
 # Personal — available in every project
 cp -r rive-skill ~/.codex/skills/rive
 
 # Project-level — available in one repository
 cp -r rive-skill .codex/skills/rive
-~~~
+```
 
 Invoke it explicitly as <code>$rive</code>, or let Codex select it automatically when a request matches the skill description.
 
 ### 3. Use with other AI tools
 
-| Client | Recommended file |
-|---|---|
-| Codex or another Agent Skills client | <code>SKILL.md</code> with the <code>references/</code> and <code>agents/</code> folders |
-| ChatGPT, Cursor, Gemini, or another prompt-based tool | Complete bundled <code>rive-instructions.md</code> |
+| Client                                                | Recommended file                                                                         |
+| ----------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Codex or another Agent Skills client                  | <code>SKILL.md</code> with the <code>references/</code> and <code>agents/</code> folders |
+| ChatGPT, Cursor, Gemini, or another prompt-based tool | Complete bundled <code>rive-instructions.md</code>                                       |
 
 Regenerate the portable instructions after editing <code>SKILL.md</code>:
 
-~~~powershell
+```powershell
 ./scripts/build-portable.ps1
-~~~
+```
 
 The generated portable file contains the main skill and every focused reference, so prompt-based clients do not lose the deeper runtime or debugging guidance.
 
 ## Included files
 
-~~~text
+```text
 rive-skill/
 ├── SKILL.md
 ├── agents/
@@ -95,7 +95,7 @@ rive-skill/
 │   ├── build-portable.ps1
 │   └── validate-skill.ps1
 └── rive-instructions.md
-~~~
+```
 
 ## Why the references are separate
 
@@ -105,16 +105,16 @@ The main skill stays concise and routes the agent to deeper material only when n
 
 Run the deterministic validation suite before committing:
 
-~~~powershell
+```powershell
 ./scripts/build-portable.ps1
 ./scripts/validate-skill.ps1
-~~~
+```
 
 To include a live check of official documentation links:
 
-~~~powershell
+```powershell
 ./scripts/validate-skill.ps1 -CheckExternalLinks
-~~~
+```
 
 The suite checks frontmatter, reference routing, required resources, Codex UI metadata, portable-file drift, and the behavioral-evaluation manifest. The scenarios in [<code>evals/behavioral-cases.md</code>](evals/behavioral-cases.md) test decisions such as honest no-tool fallback, contract preservation, current runtime verification, partial MCP failure, and evidence labeling.
 

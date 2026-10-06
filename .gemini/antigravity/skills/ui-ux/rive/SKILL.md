@@ -118,13 +118,13 @@ Give concrete implementation guidance, not “use a State Machine” without the
 
 For handoff, include a compact table:
 
-| Item | Name | Type | Values / purpose |
-|---|---|---|---|
-| Artboard | `Character` | Artboard | Main runtime artboard |
-| State Machine | `CharacterController` | State Machine | Main interaction logic |
-| View Model | `CharacterVM` | View Model | Runtime data contract |
-| Property | `activity` | Enum | `idle`, `listening`, `thinking`, `speaking` |
-| Property | `celebrate` | Trigger | One-shot celebration |
+| Item          | Name                  | Type          | Values / purpose                            |
+| ------------- | --------------------- | ------------- | ------------------------------------------- |
+| Artboard      | `Character`           | Artboard      | Main runtime artboard                       |
+| State Machine | `CharacterController` | State Machine | Main interaction logic                      |
+| View Model    | `CharacterVM`         | View Model    | Runtime data contract                       |
+| Property      | `activity`            | Enum          | `idle`, `listening`, `thinking`, `speaking` |
+| Property      | `celebrate`           | Trigger       | One-shot celebration                        |
 
 Also state initial values, property directions, runtime and renderer requirements, external assets, responsive fit, reduced-motion behavior, and known platform limitations.
 

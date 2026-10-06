@@ -100,7 +100,10 @@ if (process.platform === "win32") {
     `[Build Agent] Standalone bundle (bundle.cjs) and sea-prep.blob created.`,
   );
   // On macOS/Linux, if a Windows PE template/executable exists in dist/windows, inject the updated blob into it!
-  const rootWindowsExe = path.resolve(rootDir, "dist/windows/PrintGo-Agent.exe");
+  const rootWindowsExe = path.resolve(
+    rootDir,
+    "dist/windows/PrintGo-Agent.exe",
+  );
   if (fs.existsSync(rootWindowsExe)) {
     console.log(
       `[Build Agent] Updating Windows binary at ${rootWindowsExe} using postject...`,
@@ -111,9 +114,14 @@ if (process.platform === "win32") {
         { stdio: "inherit" },
       );
       fs.copyFileSync(rootWindowsExe, exePath);
-      console.log(`[Build Agent] Successfully updated ${rootWindowsExe} with latest bundle.`);
+      console.log(
+        `[Build Agent] Successfully updated ${rootWindowsExe} with latest bundle.`,
+      );
     } catch (err) {
-      console.warn("[Build Agent] Postject injection warning:", err?.message || err);
+      console.warn(
+        "[Build Agent] Postject injection warning:",
+        err?.message || err,
+      );
     }
   } else {
     console.log(

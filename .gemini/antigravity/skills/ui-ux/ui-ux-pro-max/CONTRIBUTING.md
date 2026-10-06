@@ -65,28 +65,36 @@ ui-ux-pro-max-skill/
 ## Ways to Contribute
 
 ### 🐛 Bug Fixes
+
 Check the [Issues tab](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/issues) for bugs labeled `bug`. Comment on the issue before starting so we don't duplicate work.
 
 ### ✨ New UI Styles
+
 Add a new entry to `src/ui-ux-pro-max/data/styles.csv`. Each row needs:
+
 - Style name
 - Description
 - Best for (use cases)
 - Key CSS properties/effects
 
 ### 🎨 New Color Palettes
+
 Add entries to `src/ui-ux-pro-max/data/colors.csv`. Match the existing format (primary, secondary, CTA, background, text, notes).
 
 ### 🏭 New Industry Reasoning Rules
+
 Add rules to `src/ui-ux-pro-max/data/rules.csv`. Each rule needs a product type, recommended pattern, style priority, color mood, typography mood, key effects, and anti-patterns.
 
 ### 🌍 Translations
+
 Translate `README.md` into your language and save it as `README.[lang].md` (e.g., `README.zh.md`, `README.es.md`).
 
 ### 📝 Documentation Improvements
+
 Fix typos, clarify confusing sections, or add missing examples in `README.md` or `docs/`.
 
 ### 🔧 CLI Improvements
+
 Improvements to the `cli/` installer. Run `cd cli && bun run build` to test locally.
 
 ---
@@ -134,6 +142,7 @@ Types:
 ```
 
 **Examples:**
+
 ```
 feat: add Skeuomorphism 2.0 style to general styles
 fix: correct color palette for fintech industry rule

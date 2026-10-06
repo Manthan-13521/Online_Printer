@@ -310,7 +310,8 @@ export class PaymentService {
       if (!readiness.ready) {
         throw new PaymentError(
           "PRINTER_NOT_READY",
-          readiness.message ?? "The shop printer is currently not ready to print.",
+          readiness.message ??
+            "The shop printer is currently not ready to print.",
         );
       }
     }

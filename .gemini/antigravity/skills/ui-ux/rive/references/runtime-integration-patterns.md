@@ -78,14 +78,14 @@ Use this reference when a task needs application code, lifecycle design, loading
 
 Every integration example should define:
 
-| Failure | Required behavior |
-|---|---|
-| File load fails | Show or return a meaningful error; do not silently render an empty canvas |
-| Artboard or View Model missing | Report the expected stable name and stop setup |
-| Property type/name mismatch | Report expected and observed contract |
-| External asset unavailable | Use an intentional fallback or visible error state |
-| Feature unsupported | Name the runtime/package/renderer limitation and the fallback |
-| Initialization is late | Keep a stable loading state and avoid writing through a null instance |
-| Host unmounts | Remove subscriptions and dispose owned resources |
+| Failure                        | Required behavior                                                         |
+| ------------------------------ | ------------------------------------------------------------------------- |
+| File load fails                | Show or return a meaningful error; do not silently render an empty canvas |
+| Artboard or View Model missing | Report the expected stable name and stop setup                            |
+| Property type/name mismatch    | Report expected and observed contract                                     |
+| External asset unavailable     | Use an intentional fallback or visible error state                        |
+| Feature unsupported            | Name the runtime/package/renderer limitation and the fallback             |
+| Initialization is late         | Keep a stable loading state and avoid writing through a null instance     |
+| Host unmounts                  | Remove subscriptions and dispose owned resources                          |
 
 Exact code must come from the current official runtime documentation. Preserve the sequence and failure behavior even when APIs differ.

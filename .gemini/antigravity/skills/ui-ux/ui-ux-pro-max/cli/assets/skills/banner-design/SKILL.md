@@ -30,6 +30,7 @@ This workflow is self-contained: it requires no sibling skills or skill-relative
 ### Step 1: Gather Requirements (AskUserQuestion)
 
 Collect via AskUserQuestion:
+
 1. **Purpose** — social cover, ad banner, website hero, print, or creative asset?
 2. **Platform/size** — which platform or custom dimensions?
 3. **Content** — headline, subtext, CTA, logo placement?
@@ -71,6 +72,7 @@ After designing the HTML banners:
 4. If an exported file exceeds the platform limit, use an available image optimizer or reduce image quality and dimensions within the platform specification.
 
 **Output path convention:**
+
 ```
 assets/banners/{campaign}/
 ├── minimalist-1500x500.png
@@ -87,6 +89,7 @@ assets/banners/{campaign}/
 ### Step 5: Present Options & Iterate
 
 Present all exported images side-by-side. For each option show:
+
 - Art direction style name
 - Exported PNG preview, or an HTML/CSS preview when image capture is unavailable
 - Key design rationale
@@ -96,34 +99,34 @@ Iterate based on user feedback until approved.
 
 ## Banner Size Quick Reference
 
-| Platform | Type | Size (px) | Aspect Ratio |
-|----------|------|-----------|--------------|
-| Facebook | Cover | 820 × 312 | ~2.6:1 |
-| Twitter/X | Header | 1500 × 500 | 3:1 |
-| LinkedIn | Personal | 1584 × 396 | 4:1 |
-| YouTube | Channel art | 2560 × 1440 | 16:9 |
-| Instagram | Story | 1080 × 1920 | 9:16 |
-| Instagram | Post | 1080 × 1080 | 1:1 |
-| Google Ads | Med Rectangle | 300 × 250 | 6:5 |
-| Google Ads | Leaderboard | 728 × 90 | 8:1 |
-| Website | Hero | 1920 × 600-1080 | ~3:1 |
+| Platform   | Type          | Size (px)       | Aspect Ratio |
+| ---------- | ------------- | --------------- | ------------ |
+| Facebook   | Cover         | 820 × 312       | ~2.6:1       |
+| Twitter/X  | Header        | 1500 × 500      | 3:1          |
+| LinkedIn   | Personal      | 1584 × 396      | 4:1          |
+| YouTube    | Channel art   | 2560 × 1440     | 16:9         |
+| Instagram  | Story         | 1080 × 1920     | 9:16         |
+| Instagram  | Post          | 1080 × 1080     | 1:1          |
+| Google Ads | Med Rectangle | 300 × 250       | 6:5          |
+| Google Ads | Leaderboard   | 728 × 90        | 8:1          |
+| Website    | Hero          | 1920 × 600-1080 | ~3:1         |
 
 Full reference: `references/banner-sizes-and-styles.md`
 
 ## Art Direction Styles (Top 10)
 
-| Style | Best For | Key Elements |
-|-------|----------|--------------|
-| Minimalist | SaaS, tech | White space, 1-2 colors, clean type |
-| Bold Typography | Announcements | Oversized type as hero element |
-| Gradient | Modern brands | Mesh gradients, chromatic blends |
-| Photo-Based | Lifestyle, e-com | Full-bleed photo + text overlay |
-| Geometric | Tech, fintech | Shapes, grids, abstract patterns |
-| Retro/Vintage | F&B, craft | Distressed textures, muted colors |
-| Glassmorphism | SaaS, apps | Frosted glass, blur, glow borders |
-| Neon/Cyberpunk | Gaming, events | Dark bg, glowing neon accents |
-| Editorial | Media, luxury | Grid layouts, pull quotes |
-| 3D/Sculptural | Product, tech | Rendered objects, depth, shadows |
+| Style           | Best For         | Key Elements                        |
+| --------------- | ---------------- | ----------------------------------- |
+| Minimalist      | SaaS, tech       | White space, 1-2 colors, clean type |
+| Bold Typography | Announcements    | Oversized type as hero element      |
+| Gradient        | Modern brands    | Mesh gradients, chromatic blends    |
+| Photo-Based     | Lifestyle, e-com | Full-bleed photo + text overlay     |
+| Geometric       | Tech, fintech    | Shapes, grids, abstract patterns    |
+| Retro/Vintage   | F&B, craft       | Distressed textures, muted colors   |
+| Glassmorphism   | SaaS, apps       | Frosted glass, blur, glow borders   |
+| Neon/Cyberpunk  | Gaming, events   | Dark bg, glowing neon accents       |
+| Editorial       | Media, luxury    | Grid layouts, pull quotes           |
+| 3D/Sculptural   | Product, tech    | Rendered objects, depth, shadows    |
 
 Full 22 styles: `references/banner-sizes-and-styles.md`
 

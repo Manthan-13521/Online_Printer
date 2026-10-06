@@ -4,10 +4,10 @@
 
 Only the latest released version of `ui-ux-pro-max-cli` and the latest `main` branch of this skill receive security fixes.
 
-| Version | Supported |
-|---------|-----------|
-| Latest release | ✅ |
-| Older releases | ❌ |
+| Version        | Supported |
+| -------------- | --------- |
+| Latest release | ✅        |
+| Older releases | ❌        |
 
 ## Reporting a Vulnerability
 

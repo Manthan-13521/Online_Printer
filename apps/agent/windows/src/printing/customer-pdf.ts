@@ -103,7 +103,12 @@ export async function downloadAndValidateCustomerPdf(
     await handleCheck.read(prefix, 0, 5, 0);
     const suffixSize = Math.min(2048, input.expectedSizeBytes);
     const suffix = Buffer.alloc(suffixSize);
-    await handleCheck.read(suffix, 0, suffixSize, input.expectedSizeBytes - suffixSize);
+    await handleCheck.read(
+      suffix,
+      0,
+      suffixSize,
+      input.expectedSizeBytes - suffixSize,
+    );
     await handleCheck.close();
 
     if (

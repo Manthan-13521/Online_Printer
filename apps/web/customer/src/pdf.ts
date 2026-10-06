@@ -1,7 +1,7 @@
 export async function inspectPdf(file: File): Promise<number> {
   const [pdfjs, workerUrl] = await Promise.all([
     import("pdfjs-dist"),
-    import("pdfjs-dist/build/pdf.worker.min.mjs?url")
+    import("pdfjs-dist/build/pdf.worker.min.mjs?url"),
   ]);
   pdfjs.GlobalWorkerOptions.workerSrc = workerUrl.default;
 

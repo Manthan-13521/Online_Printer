@@ -13,6 +13,7 @@ python3 src/ui-ux-pro-max/scripts/search.py "<query>" --domain <domain> [-n <max
 ```
 
 **Domain search:**
+
 - `product` - Product type recommendations (SaaS, e-commerce, portfolio)
 - `style` - UI styles (glassmorphism, minimalism, brutalism) + AI prompts and CSS keywords
 - `typography` - Font pairings with Google Fonts imports
@@ -27,15 +28,19 @@ python3 src/ui-ux-pro-max/scripts/search.py "<query>" --domain <domain> [-n <max
 - `gsap` - GSAP animation skeletons by intensity tier (hover, scroll reveal, stagger, page transition, parallax, loading)
 
 **Design dials (optional, only with `--design-system`):**
+
 ```bash
 python3 src/ui-ux-pro-max/scripts/search.py "<query>" --design-system --variance <1-10> --motion <1-10> --density <1-10>
 ```
+
 `--variance` biases style selection (centered/minimal → bold/asymmetric), `--motion` attaches a matching GSAP snippet from `motion.csv`, `--density` overrides the spacing-scale tokens (spacious → dense/dashboard). Any dial left unset behaves exactly as before.
 
 **Stack search:**
+
 ```bash
 python3 src/ui-ux-pro-max/scripts/search.py "<query>" --stack <stack>
 ```
+
 Available stacks: `html-tailwind` (default), `react`, `nextjs`, `astro`, `vue`, `nuxtjs`, `nuxt-ui`, `svelte`, `swiftui`, `react-native`, `flutter`, `shadcn`, `jetpack-compose`, `threejs`, `angular`, `laravel`, `javafx`, `wpf`, `winui`, `avalonia`, `uno`, `uwp`
 
 ## Architecture
@@ -92,11 +97,13 @@ When modifying files:
    - `platforms/*.json` - Platform-specific configs
 
 3. **Sync before publishing / committing data or script changes:**
+
    ```bash
    cd cli
    npm run sync:assets   # mirrors src/ -> cli/assets/ AND src/ -> .claude/skills/ui-ux-pro-max/{data,scripts}
    npm run check:assets  # verify, no npm install required
    ```
+
    `.claude/skills/ui-ux-pro-max/SKILL.md` itself is hand-authored, not
    mirrored or template-generated -- edit it directly.
 

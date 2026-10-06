@@ -26,12 +26,12 @@ The brutal truth: we trusted broad green gates that proved files parsed and fami
 
 ## Decisions Made
 
-| Decision | Rationale | Impact |
-|---|---|---|
-| Preserve legacy chart shape; deprecate in place | Deletion would break downstream CSV consumers | Compatibility retained without preserving misleading semantics |
-| Enforce strict official-source provenance and validation boundaries | Permissive metadata let unsupported claims survive | Volatile claims now fail closed |
-| Expand natural-query and accessibility semantics instead of only adding rows | More rows would amplify retrieval ambiguity | Coverage improved with unchanged relevance |
-| Pause after Phase 6 | User explicitly requested a checkpoint | Phases 7–9 remain pending |
+| Decision                                                                     | Rationale                                          | Impact                                                         |
+| ---------------------------------------------------------------------------- | -------------------------------------------------- | -------------------------------------------------------------- |
+| Preserve legacy chart shape; deprecate in place                              | Deletion would break downstream CSV consumers      | Compatibility retained without preserving misleading semantics |
+| Enforce strict official-source provenance and validation boundaries          | Permissive metadata let unsupported claims survive | Volatile claims now fail closed                                |
+| Expand natural-query and accessibility semantics instead of only adding rows | More rows would amplify retrieval ambiguity        | Coverage improved with unchanged relevance                     |
+| Pause after Phase 6                                                          | User explicitly requested a checkpoint             | Phases 7–9 remain pending                                      |
 
 ## Next Steps
 

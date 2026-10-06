@@ -138,16 +138,16 @@ Tính năng chủ lực của v2.0 là **Trình tạo hệ thống thiết kế*
 
 Bộ máy suy luận có các quy tắc chuyên biệt cho:
 
-| Danh mục | Ví dụ |
-|----------|-------|
-| **Công nghệ & SaaS** | SaaS, Micro SaaS, dịch vụ B2B, công cụ lập trình/IDE, nền tảng AI/chatbot, nền tảng an ninh mạng |
-| **Tài chính** | Fintech/crypto, ngân hàng, bảo hiểm, theo dõi tài chính cá nhân, công cụ hóa đơn & thanh toán |
-| **Chăm sóc sức khỏe** | Phòng khám, nhà thuốc, nha khoa, thú y, sức khỏe tinh thần, nhắc uống thuốc |
-| **Thương mại điện tử** | Tổng hợp, xa xỉ, chợ P2P, hộp đăng ký định kỳ, giao đồ ăn |
-| **Dịch vụ** | Làm đẹp/spa, nhà hàng, khách sạn, pháp lý, dịch vụ gia đình, đặt lịch & cuộc hẹn |
-| **Sáng tạo** | Portfolio, agency, nhiếp ảnh, trò chơi, phát nhạc trực tuyến, trình chỉnh sửa ảnh/video |
-| **Phong cách sống** | Theo dõi thói quen, công thức & nấu ăn, thiền, thời tiết, nhật ký, theo dõi tâm trạng |
-| **Công nghệ mới nổi** | Web3/NFT, điện toán không gian, điện toán lượng tử, đội máy bay không người lái tự hành |
+| Danh mục               | Ví dụ                                                                                            |
+| ---------------------- | ------------------------------------------------------------------------------------------------ |
+| **Công nghệ & SaaS**   | SaaS, Micro SaaS, dịch vụ B2B, công cụ lập trình/IDE, nền tảng AI/chatbot, nền tảng an ninh mạng |
+| **Tài chính**          | Fintech/crypto, ngân hàng, bảo hiểm, theo dõi tài chính cá nhân, công cụ hóa đơn & thanh toán    |
+| **Chăm sóc sức khỏe**  | Phòng khám, nhà thuốc, nha khoa, thú y, sức khỏe tinh thần, nhắc uống thuốc                      |
+| **Thương mại điện tử** | Tổng hợp, xa xỉ, chợ P2P, hộp đăng ký định kỳ, giao đồ ăn                                        |
+| **Dịch vụ**            | Làm đẹp/spa, nhà hàng, khách sạn, pháp lý, dịch vụ gia đình, đặt lịch & cuộc hẹn                 |
+| **Sáng tạo**           | Portfolio, agency, nhiếp ảnh, trò chơi, phát nhạc trực tuyến, trình chỉnh sửa ảnh/video          |
+| **Phong cách sống**    | Theo dõi thói quen, công thức & nấu ăn, thiền, thời tiết, nhật ký, theo dõi tâm trạng            |
+| **Công nghệ mới nổi**  | Web3/NFT, điện toán không gian, điện toán lượng tử, đội máy bay không người lái tự hành          |
 
 Mỗi quy tắc bao gồm:
 
@@ -182,11 +182,11 @@ Hướng dẫn hiện bao quát các lỗi thường gặp trong môi trường 
 
 Danh mục chứa **79 phong cách có thể tìm kiếm**, được hỗ trợ bởi ID và bí danh ổn định:
 
-| Trạng thái | Số lượng | Hành vi tìm kiếm |
-|------------|---------:|------------------|
-| Đang hoạt động | 50 | Có trong các đề xuất thông thường và được hiển thị mặc định trong thư viện |
-| Bổ sung | 29 | Được trả về khi người dùng yêu cầu chính xác hoặc nêu rõ biến thể/hệ thống; có thể xem bằng bộ lọc trạng thái của thư viện |
-| Không còn dùng | 9 | Bị loại khỏi xếp hạng thông thường; tên cũ chuyển hướng đến phong cách chuẩn hoặc mẫu landing page tương ứng |
+| Trạng thái     | Số lượng | Hành vi tìm kiếm                                                                                                           |
+| -------------- | -------: | -------------------------------------------------------------------------------------------------------------------------- |
+| Đang hoạt động |       50 | Có trong các đề xuất thông thường và được hiển thị mặc định trong thư viện                                                 |
+| Bổ sung        |       29 | Được trả về khi người dùng yêu cầu chính xác hoặc nêu rõ biến thể/hệ thống; có thể xem bằng bộ lọc trạng thái của thư viện |
+| Không còn dùng |        9 | Bị loại khỏi xếp hạng thông thường; tên cũ chuyển hướng đến phong cách chuẩn hoặc mẫu landing page tương ứng               |
 
 Nhóm đang hoạt động bao gồm 43 họ phong cách trực quan phổ biến, 2 phong cách riêng cho thiết bị di động, 3 nền tảng/hệ thống thiết kế chính thức, 1 vật liệu nền tảng và 1 phong cách phân tích cốt lõi. Các hệ thống chính thức hiện tại gồm Fluent 2, Shopify Polaris và Adobe Spectrum; Liquid Glass được giới hạn trong phạm vi vật liệu nền tảng Apple, Material 3 Expressive vẫn là một biến thể Material dành cho thiết bị di động, còn Spectrum 2 thuộc nhóm bổ sung. Cấu trúc landing page nằm trong tập dữ liệu riêng gồm 34 mẫu thay vì cạnh tranh với phong cách trực quan trong xếp hạng BM25.
 
@@ -211,7 +211,7 @@ Nhiều người dùng hỏi về sự khác biệt giữa phiên bản mã ngu�
 - **Kiến trúc doanh nghiệp:** Kiến trúc design token toàn diện và có khả năng mở rộng hơn, dành cho việc triển khai trong các nhóm quy mô lớn.
 - **Hỗ trợ ưu tiên:** Hỗ trợ kỹ thuật chuyên biệt cho các nhóm và chuyên gia cần quy trình thiết kế xuyên suốt, không gián đoạn.
 
-👉 *Để biết thêm thông tin về việc nâng cấp lên gói Cao cấp, hãy truy cập [uupm.cc](https://uupm.cc).*
+👉 _Để biết thêm thông tin về việc nâng cấp lên gói Cao cấp, hãy truy cập [uupm.cc](https://uupm.cc)._
 
 ## Cài đặt
 
@@ -341,18 +341,18 @@ Xây dựng ứng dụng ngân hàng fintech với giao diện tối
 
 Kỹ năng cung cấp hướng dẫn riêng cho từng stack:
 
-| Danh mục | Stack |
-|----------|-------|
-| **Web (HTML)** | HTML + Tailwind (mặc định) |
-| **Hệ sinh thái React** | React, Next.js, shadcn/ui |
-| **Hệ sinh thái Vue** | Vue, Nuxt.js, Nuxt UI |
-| **Angular** | Angular |
-| **PHP** | Laravel (Blade, Livewire, Inertia.js) |
-| **Web khác** | Svelte, Astro, Three.js |
-| **Máy tính để bàn** | JavaFX, WPF, WinUI 3, Avalonia, Uno Platform, UWP |
-| **iOS** | SwiftUI |
-| **Android** | Jetpack Compose |
-| **Đa nền tảng** | React Native, Flutter |
+| Danh mục               | Stack                                             |
+| ---------------------- | ------------------------------------------------- |
+| **Web (HTML)**         | HTML + Tailwind (mặc định)                        |
+| **Hệ sinh thái React** | React, Next.js, shadcn/ui                         |
+| **Hệ sinh thái Vue**   | Vue, Nuxt.js, Nuxt UI                             |
+| **Angular**            | Angular                                           |
+| **PHP**                | Laravel (Blade, Livewire, Inertia.js)             |
+| **Web khác**           | Svelte, Astro, Three.js                           |
+| **Máy tính để bàn**    | JavaFX, WPF, WinUI 3, Avalonia, Uno Platform, UWP |
+| **iOS**                | SwiftUI                                           |
+| **Android**            | Jetpack Compose                                   |
+| **Đa nền tảng**        | React Native, Flutter                             |
 
 Chỉ cần nêu stack bạn muốn trong prompt, hoặc để hệ thống dùng HTML + Tailwind theo mặc định.
 

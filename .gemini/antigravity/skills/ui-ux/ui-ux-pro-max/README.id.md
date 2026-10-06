@@ -138,18 +138,19 @@ Fitur unggulan v2.0 adalah **Design System Generator** — mesin penalaran berba
 
 Mesin penalaran ini mencakup aturan khusus untuk:
 
-| Kategori | Contoh |
-|----------|--------|
+| Kategori             | Contoh                                                                                            |
+| -------------------- | ------------------------------------------------------------------------------------------------- |
 | **Teknologi & SaaS** | SaaS, Micro SaaS, layanan B2B, Developer Tool / IDE, platform AI/chatbot, platform keamanan siber |
-| **Keuangan** | Fintech/Crypto, perbankan, asuransi, pelacak keuangan pribadi, alat invoice & billing |
-| **Kesehatan** | Klinik medis, apotek, kedokteran gigi, veteriner, kesehatan mental, pengingat obat |
-| **E-commerce** | Umum, mewah, marketplace (P2P), subscription box, pengantaran makanan |
-| **Layanan** | Kecantikan/spa, restoran, hotel, hukum, layanan rumah, booking & appointment |
-| **Kreatif** | Portofolio, agensi, fotografi, gaming, streaming musik, editor foto/video |
-| **Gaya Hidup** | Pelacak kebiasaan, resep & memasak, meditasi, cuaca, diari, pelacak suasana hati |
-| **Teknologi Baru** | Web3/NFT, Spatial Computing, Quantum Computing, armada drone otonom |
+| **Keuangan**         | Fintech/Crypto, perbankan, asuransi, pelacak keuangan pribadi, alat invoice & billing             |
+| **Kesehatan**        | Klinik medis, apotek, kedokteran gigi, veteriner, kesehatan mental, pengingat obat                |
+| **E-commerce**       | Umum, mewah, marketplace (P2P), subscription box, pengantaran makanan                             |
+| **Layanan**          | Kecantikan/spa, restoran, hotel, hukum, layanan rumah, booking & appointment                      |
+| **Kreatif**          | Portofolio, agensi, fotografi, gaming, streaming musik, editor foto/video                         |
+| **Gaya Hidup**       | Pelacak kebiasaan, resep & memasak, meditasi, cuaca, diari, pelacak suasana hati                  |
+| **Teknologi Baru**   | Web3/NFT, Spatial Computing, Quantum Computing, armada drone otonom                               |
 
 Setiap aturan mencakup:
+
 - **Pola yang Direkomendasikan** - Struktur landing page
 - **Prioritas Gaya** - Gaya UI yang paling cocok
 - **Nuansa Warna** - Palet yang sesuai dengan industri
@@ -190,11 +191,11 @@ chip, badge, dan micro-interaction yang terinterupsi:
 
 Katalog berisi **79 gaya yang dapat dicari** dengan dukungan ID dan alias yang stabil:
 
-| Status | Jumlah | Perilaku pencarian |
-|--------|-------:|--------------------|
-| Aktif | 50 | Disertakan dalam rekomendasi normal dan ditampilkan secara default di gallery |
-| Tambahan | 29 | Dikembalikan untuk intent varian/sistem yang eksplisit atau exact; tersedia melalui filter status gallery |
-| Deprecated | 9 | Dikecualikan dari ranking normal; nama legacy dialihkan ke gaya canonical atau landing pattern |
+| Status     | Jumlah | Perilaku pencarian                                                                                        |
+| ---------- | -----: | --------------------------------------------------------------------------------------------------------- |
+| Aktif      |     50 | Disertakan dalam rekomendasi normal dan ditampilkan secara default di gallery                             |
+| Tambahan   |     29 | Dikembalikan untuk intent varian/sistem yang eksplisit atau exact; tersedia melalui filter status gallery |
+| Deprecated |      9 | Dikecualikan dari ranking normal; nama legacy dialihkan ke gaya canonical atau landing pattern            |
 
 Set aktif mencakup 43 keluarga visual umum, 2 gaya khusus mobile, 3 platform/design system resmi, 1 material platform, dan 1 gaya analitik inti. Sistem resmi saat ini mencakup Fluent 2, Shopify Polaris, dan Adobe Spectrum; Liquid Glass dikategorikan sebagai material platform Apple, Material 3 Expressive tetap menjadi varian Material mobile, dan Spectrum 2 bersifat tambahan. Struktur landing page berada dalam dataset terpisah yang berisi 34 pola landing, sehingga tidak bersaing dengan gaya visual dalam ranking BM25.
 
@@ -205,19 +206,21 @@ Lihat [`styles.csv`](src/ui-ux-pro-max/data/styles.csv) untuk taksonomi lengkap 
 Banyak pengguna bertanya mengenai perbedaan antara versi open-source dan premium. Berikut rincian untuk membantu Anda memilih yang paling sesuai dengan workflow Anda.
 
 ### 🟢 Versi Basic (Repository Ini)
-* **Sepenuhnya Open Source:** Cocok untuk developer individu, hobbyist, dan proyek standar.
-* **Kecerdasan UI/UX Inti:** Akses penuh ke 79 gaya UI yang dapat dicari (50 aktif), 192 jenis produk, palet warna, dan pasangan font pilihan.
-* **Rekomendasi Cerdas:** Mesin pencarian BM25 bawaan untuk pencocokan desain yang sangat akurat.
-* **Dukungan Cross-Platform:** Panduan khusus stack yang mendukung 22 framework utama (React, Vue, Tailwind, iOS, Android, dll.).
-* **Pembuatan Design System:** Buat aturan UI, pola, dan logika yang disesuaikan secara instan melalui CLI.
+
+- **Sepenuhnya Open Source:** Cocok untuk developer individu, hobbyist, dan proyek standar.
+- **Kecerdasan UI/UX Inti:** Akses penuh ke 79 gaya UI yang dapat dicari (50 aktif), 192 jenis produk, palet warna, dan pasangan font pilihan.
+- **Rekomendasi Cerdas:** Mesin pencarian BM25 bawaan untuk pencocokan desain yang sangat akurat.
+- **Dukungan Cross-Platform:** Panduan khusus stack yang mendukung 22 framework utama (React, Vue, Tailwind, iOS, Android, dll.).
+- **Pembuatan Design System:** Buat aturan UI, pola, dan logika yang disesuaikan secara instan melalui CLI.
 
 ### 🟡 Versi Premium
-* **Skill Brand Design yang Diperluas:** Melampaui UI/UX dengan mencakup pembuatan Brand Identity, Logo Design, Corporate Identity Programs (CIP), Banner, Presentation Slides, dan Iconography kustom.
-* **Pembuatan Aset Tingkat Lanjut:** Integrasi mendalam dengan image generation berbasis AI untuk membuat aset visual nyata, bukan sekadar placeholder.
-* **Arsitektur Enterprise:** Arsitektur Design Token yang lebih komprehensif dan scalable untuk deployment tim skala besar.
-* **Priority Support:** Dukungan teknis khusus untuk tim dan profesional yang membutuhkan workflow desain lengkap tanpa gangguan.
 
-👉 *Untuk detail lebih lanjut tentang upgrade ke tier Premium, kunjungi [uupm.cc](https://uupm.cc).*
+- **Skill Brand Design yang Diperluas:** Melampaui UI/UX dengan mencakup pembuatan Brand Identity, Logo Design, Corporate Identity Programs (CIP), Banner, Presentation Slides, dan Iconography kustom.
+- **Pembuatan Aset Tingkat Lanjut:** Integrasi mendalam dengan image generation berbasis AI untuk membuat aset visual nyata, bukan sekadar placeholder.
+- **Arsitektur Enterprise:** Arsitektur Design Token yang lebih komprehensif dan scalable untuk deployment tim skala besar.
+- **Priority Support:** Dukungan teknis khusus untuk tim dan profesional yang membutuhkan workflow desain lengkap tanpa gangguan.
+
+👉 _Untuk detail lebih lanjut tentang upgrade ke tier Premium, kunjungi [uupm.cc](https://uupm.cc)._
 
 ## Instalasi
 
@@ -348,18 +351,18 @@ Build a fintech banking app with dark theme
 
 Skill menyediakan panduan khusus stack untuk:
 
-| Kategori | Stack |
-|----------|-------|
-| **Web (HTML)** | HTML + Tailwind (default) |
-| **Ekosistem React** | React, Next.js, shadcn/ui |
-| **Ekosistem Vue** | Vue, Nuxt.js, Nuxt UI |
-| **Angular** | Angular |
-| **PHP** | Laravel (Blade, Livewire, Inertia.js) |
-| **Web Lainnya** | Svelte, Astro, Three.js |
-| **Desktop** | JavaFX, WPF, WinUI 3, Avalonia, Uno Platform, UWP |
-| **iOS** | SwiftUI |
-| **Android** | Jetpack Compose |
-| **Cross-Platform** | React Native, Flutter |
+| Kategori            | Stack                                             |
+| ------------------- | ------------------------------------------------- |
+| **Web (HTML)**      | HTML + Tailwind (default)                         |
+| **Ekosistem React** | React, Next.js, shadcn/ui                         |
+| **Ekosistem Vue**   | Vue, Nuxt.js, Nuxt UI                             |
+| **Angular**         | Angular                                           |
+| **PHP**             | Laravel (Blade, Livewire, Inertia.js)             |
+| **Web Lainnya**     | Svelte, Astro, Three.js                           |
+| **Desktop**         | JavaFX, WPF, WinUI 3, Avalonia, Uno Platform, UWP |
+| **iOS**             | SwiftUI                                           |
+| **Android**         | Jetpack Compose                                   |
+| **Cross-Platform**  | React Native, Flutter                             |
 
 Cukup sebutkan stack pilihan Anda di prompt, atau biarkan default ke HTML + Tailwind.
 
@@ -420,11 +423,13 @@ design-system/
 ```
 
 **Cara kerja hierarchical retrieval:**
+
 1. Saat membuat halaman tertentu (misalnya, "Checkout"), periksa `design-system/pages/checkout.md` terlebih dahulu
 2. Jika file halaman ada, aturannya **menimpa** file Master
 3. Jika tidak, gunakan `design-system/MASTER.md` saja
 
 **Prompt context-aware retrieval:**
+
 ```
 I am building the [Page Name] page. Please read design-system/MASTER.md.
 Also check if design-system/pages/[page-name].md exists.
@@ -549,7 +554,6 @@ pada repository. Workflow tidak pernah melakukan commit, push, membuka PR, atau 
 laporan perubahan, pengecualian, lisensi, relevance metrics, dan offline gate
 sebelum secara manual mempromosikan file kandidat ke `src/ui-ux-pro-max/data/`.
 
-
 ## Rilis Otomatis
 
 Repository ini menggunakan semantic-release dengan Conventional Commits untuk membuat rilis GitHub secara otomatis:
@@ -659,5 +663,6 @@ Proyek ini dilisensikan di bawah [MIT License](LICENSE).
 ## Agent yang Kompatibel
 
 Skill ini bekerja dengan:
+
 - [Claude Code](https://claude.com/product/claude-code)
 - [AdaL](https://sylph.ai/) - Agent coding yang dapat berkembang secara mandiri ([Dokumentasi](https://docs.sylph.ai/) | [GitHub](https://github.com/SylphAI-Inc/adal-cli))

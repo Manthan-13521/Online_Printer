@@ -359,7 +359,8 @@ export function ShopSettingsPage({
             style={{
               display: "flex",
               alignItems: "center",
-              justifyContent: "flex-start", gap: "1rem",
+              justifyContent: "flex-start",
+              gap: "1rem",
               marginBottom: "0.5rem",
             }}
           >

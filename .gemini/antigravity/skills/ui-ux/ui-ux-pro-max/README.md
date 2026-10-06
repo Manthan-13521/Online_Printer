@@ -167,18 +167,19 @@ The flagship feature of v2.0 is the **Design System Generator** - an AI-powered 
 
 The reasoning engine includes specialized rules for:
 
-| Category | Examples |
-|----------|----------|
-| **Tech & SaaS** | SaaS, Micro SaaS, B2B Service, Developer Tool / IDE, AI/Chatbot Platform, Cybersecurity Platform |
-| **Finance** | Fintech/Crypto, Banking, Insurance, Personal Finance Tracker, Invoice & Billing Tool |
-| **Healthcare** | Medical Clinic, Pharmacy, Dental, Veterinary, Mental Health, Medication Reminder |
-| **E-commerce** | General, Luxury, Marketplace (P2P), Subscription Box, Food Delivery |
-| **Services** | Beauty/Spa, Restaurant, Hotel, Legal, Home Services, Booking & Appointment |
-| **Creative** | Portfolio, Agency, Photography, Gaming, Music Streaming, Photo/Video Editor |
-| **Lifestyle** | Habit Tracker, Recipe & Cooking, Meditation, Weather, Diary, Mood Tracker |
-| **Emerging Tech** | Web3/NFT, Spatial Computing, Quantum Computing, Autonomous Drone Fleet |
+| Category          | Examples                                                                                         |
+| ----------------- | ------------------------------------------------------------------------------------------------ |
+| **Tech & SaaS**   | SaaS, Micro SaaS, B2B Service, Developer Tool / IDE, AI/Chatbot Platform, Cybersecurity Platform |
+| **Finance**       | Fintech/Crypto, Banking, Insurance, Personal Finance Tracker, Invoice & Billing Tool             |
+| **Healthcare**    | Medical Clinic, Pharmacy, Dental, Veterinary, Mental Health, Medication Reminder                 |
+| **E-commerce**    | General, Luxury, Marketplace (P2P), Subscription Box, Food Delivery                              |
+| **Services**      | Beauty/Spa, Restaurant, Hotel, Legal, Home Services, Booking & Appointment                       |
+| **Creative**      | Portfolio, Agency, Photography, Gaming, Music Streaming, Photo/Video Editor                      |
+| **Lifestyle**     | Habit Tracker, Recipe & Cooking, Meditation, Weather, Diary, Mood Tracker                        |
+| **Emerging Tech** | Web3/NFT, Spatial Computing, Quantum Computing, Autonomous Drone Fleet                           |
 
 Each rule includes:
+
 - **Recommended Pattern** - Landing page structure
 - **Style Priority** - Best matching UI styles
 - **Color Mood** - Industry-appropriate palettes
@@ -219,11 +220,11 @@ chips, badges, and interrupted micro-interactions:
 
 The catalog contains **79 searchable styles** backed by stable IDs and aliases:
 
-| Status | Count | Search behavior |
-|--------|------:|-----------------|
-| Active | 50 | Included in normal recommendations and shown by default in the gallery |
-| Supplemental | 29 | Returned for exact or explicit variant/system intent; available through the gallery status filter |
-| Deprecated | 9 | Excluded from normal ranking; legacy names redirect to a canonical style or landing pattern |
+| Status       | Count | Search behavior                                                                                   |
+| ------------ | ----: | ------------------------------------------------------------------------------------------------- |
+| Active       |    50 | Included in normal recommendations and shown by default in the gallery                            |
+| Supplemental |    29 | Returned for exact or explicit variant/system intent; available through the gallery status filter |
+| Deprecated   |     9 | Excluded from normal ranking; legacy names redirect to a canonical style or landing pattern       |
 
 The active set covers 43 general visual families, 2 mobile-specific styles, 3 official platform/design systems, 1 platform material, and 1 core analytics style. Current official systems include Fluent 2, Shopify Polaris, and Adobe Spectrum; Liquid Glass is scoped as an Apple platform material, Material 3 Expressive remains a mobile Material variant, and Spectrum 2 is supplemental. Landing-page structures live in the separate 34-pattern landing dataset rather than competing with visual styles in BM25 ranking.
 
@@ -234,19 +235,21 @@ See [`styles.csv`](src/ui-ux-pro-max/data/styles.csv) for the full taxonomy and 
 Many users ask about the differences between the open-source and premium versions. Here is a detailed breakdown to help you choose the right fit for your workflow.
 
 ### 🟢 Basic Version (This Repository)
-* **Fully Open Source:** Perfect for individual developers, hobbyists, and standard projects.
-* **Core UI/UX Intelligence:** Full access to 79 searchable UI styles (50 active), 192 product types, color palettes, and curated font pairings.
-* **Smart Recommendations:** Built-in BM25 search engine for highly accurate design matching.
-* **Cross-Platform Support:** Stack-specific guidelines supporting 22 major frameworks (React, Vue, Tailwind, iOS, Android, etc.).
-* **Design System Generation:** Instantly generate tailored UI rules, patterns, and logic via CLI.
+
+- **Fully Open Source:** Perfect for individual developers, hobbyists, and standard projects.
+- **Core UI/UX Intelligence:** Full access to 79 searchable UI styles (50 active), 192 product types, color palettes, and curated font pairings.
+- **Smart Recommendations:** Built-in BM25 search engine for highly accurate design matching.
+- **Cross-Platform Support:** Stack-specific guidelines supporting 22 major frameworks (React, Vue, Tailwind, iOS, Android, etc.).
+- **Design System Generation:** Instantly generate tailored UI rules, patterns, and logic via CLI.
 
 ### 🟡 Premium Version
-* **Extended Brand Design Skills:** Goes beyond UI/UX to include Brand Identity generation, Logo Design, Corporate Identity Programs (CIP), Banners, Presentation Slides, and custom Iconography.
-* **Advanced Asset Creation:** Deep integration with AI-powered image generation to create real visual assets, not just placeholders.
-* **Enterprise Architecture:** A more comprehensive and scalable Design Token architecture, built for large-scale team deployments.
-* **Priority Support:** Dedicated technical assistance for teams and professionals who need an uninterrupted full design workflow.
 
-👉 *For more details on upgrading to the Premium tier, visit [uupm.cc](https://uupm.cc).*
+- **Extended Brand Design Skills:** Goes beyond UI/UX to include Brand Identity generation, Logo Design, Corporate Identity Programs (CIP), Banners, Presentation Slides, and custom Iconography.
+- **Advanced Asset Creation:** Deep integration with AI-powered image generation to create real visual assets, not just placeholders.
+- **Enterprise Architecture:** A more comprehensive and scalable Design Token architecture, built for large-scale team deployments.
+- **Priority Support:** Dedicated technical assistance for teams and professionals who need an uninterrupted full design workflow.
+
+👉 _For more details on upgrading to the Premium tier, visit [uupm.cc](https://uupm.cc)._
 
 ## Installation
 
@@ -379,18 +382,18 @@ Build a fintech banking app with dark theme
 
 The skill provides stack-specific guidelines for:
 
-| Category | Stacks |
-|----------|--------|
-| **Web (HTML)** | HTML + Tailwind (default) |
-| **React Ecosystem** | React, Next.js, shadcn/ui |
-| **Vue Ecosystem** | Vue, Nuxt.js, Nuxt UI |
-| **Angular** | Angular |
-| **PHP** | Laravel (Blade, Livewire, Inertia.js) |
-| **Other Web** | Svelte, Astro, Three.js |
-| **Desktop** | JavaFX, WPF, WinUI 3, Avalonia, Uno Platform, UWP |
-| **iOS** | SwiftUI |
-| **Android** | Jetpack Compose |
-| **Cross-Platform** | React Native, Flutter |
+| Category            | Stacks                                            |
+| ------------------- | ------------------------------------------------- |
+| **Web (HTML)**      | HTML + Tailwind (default)                         |
+| **React Ecosystem** | React, Next.js, shadcn/ui                         |
+| **Vue Ecosystem**   | Vue, Nuxt.js, Nuxt UI                             |
+| **Angular**         | Angular                                           |
+| **PHP**             | Laravel (Blade, Livewire, Inertia.js)             |
+| **Other Web**       | Svelte, Astro, Three.js                           |
+| **Desktop**         | JavaFX, WPF, WinUI 3, Avalonia, Uno Platform, UWP |
+| **iOS**             | SwiftUI                                           |
+| **Android**         | Jetpack Compose                                   |
+| **Cross-Platform**  | React Native, Flutter                             |
 
 Just mention your preferred stack in the prompt, or let it default to HTML + Tailwind.
 
@@ -456,11 +459,13 @@ design-system/
 ```
 
 **How hierarchical retrieval works:**
+
 1. When building a specific page (e.g., "Checkout"), first check `design-system/[project-slug]/pages/checkout.md`
 2. If the page file exists, its rules **override** the Master file
 3. If not, use `design-system/[project-slug]/MASTER.md` exclusively
 
 **Context-aware retrieval prompt:**
+
 ```
 I am building the [Page Name] page. Please read design-system/[project-slug]/MASTER.md.
 Also check if design-system/[project-slug]/pages/[page-name].md exists.
@@ -587,7 +592,6 @@ packages, writes candidates and unified diffs to an artifact, and has read-only
 repository permissions. It never commits, pushes, opens a PR, or merges. Review
 the change reports, exclusions, licenses, relevance metrics, and offline gate
 before manually promoting candidate files into `src/ui-ux-pro-max/data/`.
-
 
 ## Automated Releases
 
@@ -718,5 +722,6 @@ This project is licensed under the [MIT License](LICENSE).
 ## Compatible Agents
 
 This skill works with:
+
 - [Claude Code](https://claude.com/product/claude-code)
 - [AdaL](https://sylph.ai/) - Self-evolving AI coding agent ([Docs](https://docs.sylph.ai/) | [GitHub](https://github.com/SylphAI-Inc/adal-cli))

@@ -314,8 +314,8 @@ describe("customer upload app", () => {
       screen.getByLabelText("Choose PDF"),
       new File(["%PDF"], "notes.pdf", { type: "application/pdf" }),
     );
-    await user.click(screen.getByLabelText("Custom range"));
-    const pages = await screen.findByPlaceholderText("1,3,7-10");
+    await user.click(screen.getByLabelText("Custom"));
+    const pages = await screen.findByPlaceholderText("e.g. 1-5, 8, 11-13");
     fireEvent.change(pages, { target: { value: "10-2" } });
     fireEvent.submit(
       screen

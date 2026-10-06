@@ -119,7 +119,7 @@ function colorDistance(color1, color2) {
   return Math.sqrt(
     Math.pow(rgb1.r - rgb2.r, 2) +
       Math.pow(rgb1.g - rgb2.g, 2) +
-      Math.pow(rgb1.b - rgb2.b, 2)
+      Math.pow(rgb1.b - rgb2.b, 2),
   );
 }
 
@@ -239,7 +239,7 @@ function main() {
     brandFileIdx !== -1 ? args[brandFileIdx + 1] : DEFAULT_GUIDELINES_PATH;
   const brandFileValue = brandFileIdx !== -1 ? args[brandFileIdx + 1] : null;
   const imagePath = args.find(
-    (a) => !a.startsWith("--") && a !== brandFileValue
+    (a) => !a.startsWith("--") && a !== brandFileValue,
   );
 
   // Load brand palette
@@ -262,7 +262,9 @@ function main() {
         console.log("To extract colors from an image:");
         console.log("  node extract-colors.cjs <image-path>");
         console.log("\nOr use ImageMagick directly:");
-        console.log('  magick image.png -colors 10 -depth 8 -format "%c" histogram:info:');
+        console.log(
+          '  magick image.png -colors 10 -depth 8 -format "%c" histogram:info:',
+        );
       }
     }
     return;

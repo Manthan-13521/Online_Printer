@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 
-import { spawnSync } from 'node:child_process';
-import { platform } from 'node:os';
+import { spawnSync } from "node:child_process";
+import { platform } from "node:os";
 
-const cmd = platform() === 'win32' ? 'python' : 'python3';
+const cmd = platform() === "win32" ? "python" : "python3";
 const args = process.argv.slice(2);
 
 const result = spawnSync(cmd, args, {
-  stdio: 'inherit',
-  cwd: process.cwd()
+  stdio: "inherit",
+  cwd: process.cwd(),
 });
 
 if (result.error) {

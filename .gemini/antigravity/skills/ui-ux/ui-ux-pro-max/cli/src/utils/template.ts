@@ -1,22 +1,32 @@
-import { existsSync } from 'node:fs';
-import { readFile, mkdir, writeFile, cp, access, readdir, lstat, rm } from 'node:fs/promises';
-import { join, dirname } from 'node:path';
-import { homedir } from 'node:os';
-import { fileURLToPath } from 'node:url';
+import { existsSync } from "node:fs";
+import {
+  readFile,
+  mkdir,
+  writeFile,
+  cp,
+  access,
+  readdir,
+  lstat,
+  rm,
+} from "node:fs/promises";
+import { join, dirname } from "node:path";
+import { homedir } from "node:os";
+import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ASSETS_CANDIDATES = [
   // Bun bundle: dist/index.js
-  join(__dirname, '..', 'assets'),
+  join(__dirname, "..", "assets"),
   // TypeScript fallback: dist/utils/template.js
-  join(__dirname, '..', '..', 'assets'),
+  join(__dirname, "..", "..", "assets"),
 ];
-const ASSETS_DIR = ASSETS_CANDIDATES.find(path => existsSync(path)) ?? ASSETS_CANDIDATES[0];
+const ASSETS_DIR =
+  ASSETS_CANDIDATES.find((path) => existsSync(path)) ?? ASSETS_CANDIDATES[0];
 
 export interface PlatformConfig {
   platform: string;
   displayName: string;
-  installType: 'full' | 'reference';
+  installType: "full" | "reference";
   folderStructure: {
     root: string;
     skillPath: string;
@@ -35,27 +45,27 @@ export interface PlatformConfig {
 
 // Map AIType to platform config file name
 const AI_TO_PLATFORM: Record<string, string> = {
-  claude: 'claude',
-  cursor: 'cursor',
-  windsurf: 'windsurf',
-  antigravity: 'agent',
-  copilot: 'copilot',
-  kiro: 'kiro',
-  opencode: 'opencode',
-  roocode: 'roocode',
-  codex: 'codex',
-  qoder: 'qoder',
-  gemini: 'gemini',
-  trae: 'trae',
-  continue: 'continue',
-  codebuddy: 'codebuddy',
-  droid: 'droid',
-  kilocode: 'kilocode',
-  warp: 'warp',
-  augment: 'augment',
-  codewhale: 'codewhale',
-  zcode: 'zcode',
-  universal: 'universal',
+  claude: "claude",
+  cursor: "cursor",
+  windsurf: "windsurf",
+  antigravity: "agent",
+  copilot: "copilot",
+  kiro: "kiro",
+  opencode: "opencode",
+  roocode: "roocode",
+  codex: "codex",
+  qoder: "qoder",
+  gemini: "gemini",
+  trae: "trae",
+  continue: "continue",
+  codebuddy: "codebuddy",
+  droid: "droid",
+  kilocode: "kilocode",
+  warp: "warp",
+  augment: "augment",
+  codewhale: "codewhale",
+  zcode: "zcode",
+  universal: "universal",
 };
 
 async function exists(path: string): Promise<boolean> {
@@ -70,21 +80,30 @@ async function exists(path: string): Promise<boolean> {
 /**
  * Load platform configuration from JSON file
  */
-export async function loadPlatformConfig(aiType: string): Promise<PlatformConfig> {
+export async function loadPlatformConfig(
+  aiType: string,
+): Promise<PlatformConfig> {
   const platformName = AI_TO_PLATFORM[aiType];
   if (!platformName) {
     throw new Error(`Unknown AI type: ${aiType}`);
   }
 
-  const configPath = join(ASSETS_DIR, 'templates', 'platforms', `${platformName}.json`);
-  const content = await readFile(configPath, 'utf-8');
+  const configPath = join(
+    ASSETS_DIR,
+    "templates",
+    "platforms",
+    `${platformName}.json`,
+  );
+  const content = await readFile(configPath, "utf-8");
   return JSON.parse(content) as PlatformConfig;
 }
 
 /**
  * Load all available platform configs
  */
-export async function loadAllPlatformConfigs(): Promise<Map<string, PlatformConfig>> {
+export async function loadAllPlatformConfigs(): Promise<
+  Map<string, PlatformConfig>
+> {
   const configs = new Map<string, PlatformConfig>();
 
   for (const [aiType, platformName] of Object.entries(AI_TO_PLATFORM)) {
@@ -103,56 +122,66 @@ export async function loadAllPlatformConfigs(): Promise<Map<string, PlatformConf
  * Load a template file
  */
 async function loadTemplate(templateName: string): Promise<string> {
-  const templatePath = join(ASSETS_DIR, 'templates', templateName);
-  return readFile(templatePath, 'utf-8');
+  const templatePath = join(ASSETS_DIR, "templates", templateName);
+  return readFile(templatePath, "utf-8");
 }
 
 /**
  * Render frontmatter section
  */
 function renderFrontmatter(frontmatter: Record<string, string> | null): string {
-  if (!frontmatter) return '';
+  if (!frontmatter) return "";
 
-  const lines = ['---'];
+  const lines = ["---"];
   for (const [key, value] of Object.entries(frontmatter)) {
     // Quote values that contain special characters
-    if (value.includes(':') || value.includes('"') || value.includes('\n')) {
+    if (value.includes(":") || value.includes('"') || value.includes("\n")) {
       lines.push(`${key}: "${value.replace(/"/g, '\\"')}"`);
     } else {
       lines.push(`${key}: ${value}`);
     }
   }
-  lines.push('---', '');
-  return lines.join('\n');
+  lines.push("---", "");
+  return lines.join("\n");
 }
 
 /**
  * Render skill file content from template
  * When isGlobal=true, rewrites script paths to use ~/{root}/ prefix
  */
-export async function renderSkillFile(config: PlatformConfig, isGlobal = false): Promise<string> {
+export async function renderSkillFile(
+  config: PlatformConfig,
+  isGlobal = false,
+): Promise<string> {
   // Load base template
-  let content = await loadTemplate('base/skill-content.md');
+  let content = await loadTemplate("base/skill-content.md");
 
   // Load quick reference if needed
-  let quickReferenceContent = '';
+  let quickReferenceContent = "";
   if (config.sections.quickReference) {
-    quickReferenceContent = await loadTemplate('base/quick-reference.md');
+    quickReferenceContent = await loadTemplate("base/quick-reference.md");
   }
 
   // scriptPath is relative to the platform root. Generated commands run from
   // the user's project root, so local installs need the platform root prefix;
   // global installs need the same path anchored at the user's home directory.
-  const rootedScriptPath = `${config.folderStructure.root}/${config.scriptPath}`
-    .replace(/\/{2,}/g, '/');
-  const commandScriptPath = isGlobal ? `~/${rootedScriptPath}` : rootedScriptPath;
+  const rootedScriptPath =
+    `${config.folderStructure.root}/${config.scriptPath}`.replace(
+      /\/{2,}/g,
+      "/",
+    );
+  const commandScriptPath = isGlobal
+    ? `~/${rootedScriptPath}`
+    : rootedScriptPath;
 
   // Build the final content
   const frontmatter = renderFrontmatter(config.frontmatter);
 
   // Replace placeholders
   // Add newline before quick reference content if it exists
-  const quickRefWithNewline = quickReferenceContent ? '\n' + quickReferenceContent : '';
+  const quickRefWithNewline = quickReferenceContent
+    ? "\n" + quickReferenceContent
+    : "";
 
   content = content
     .replace(/\{\{TITLE\}\}/g, config.title)
@@ -185,11 +214,11 @@ async function ensureCleanDir(path: string): Promise<void> {
  * Copy data and scripts to target directory
  */
 async function copyDataAndScripts(targetSkillDir: string): Promise<void> {
-  const dataSource = join(ASSETS_DIR, 'data');
-  const scriptsSource = join(ASSETS_DIR, 'scripts');
+  const dataSource = join(ASSETS_DIR, "data");
+  const scriptsSource = join(ASSETS_DIR, "scripts");
 
-  const dataTarget = join(targetSkillDir, 'data');
-  const scriptsTarget = join(targetSkillDir, 'scripts');
+  const dataTarget = join(targetSkillDir, "data");
+  const scriptsTarget = join(targetSkillDir, "scripts");
 
   // Copy data
   if (await exists(dataSource)) {
@@ -211,23 +240,29 @@ async function copyDataAndScripts(targetSkillDir: string): Promise<void> {
  * the template-rendered orchestrator). Empty if the package predates bundling.
  */
 export async function listBundledSubSkills(): Promise<string[]> {
-  const skillsSource = join(ASSETS_DIR, 'skills');
+  const skillsSource = join(ASSETS_DIR, "skills");
   if (!(await exists(skillsSource))) return [];
   const entries = await readdir(skillsSource, { withFileTypes: true });
-  return entries.filter(e => e.isDirectory()).map(e => e.name).sort();
+  return entries
+    .filter((e) => e.isDirectory())
+    .map((e) => e.name)
+    .sort();
 }
 
 /**
  * Install the bundled sub-skills as siblings of the orchestrator skill, so a
  * single `uipro init` delivers all 7 skills instead of only ui-ux-pro-max.
  */
-async function copySubSkills(skillsParentDir: string, force: boolean): Promise<void> {
-  const skillsSource = join(ASSETS_DIR, 'skills');
+async function copySubSkills(
+  skillsParentDir: string,
+  force: boolean,
+): Promise<void> {
+  const skillsSource = join(ASSETS_DIR, "skills");
   if (!(await exists(skillsSource))) return;
 
   for (const name of await listBundledSubSkills()) {
     const target = join(skillsParentDir, name);
-    if (await exists(target) && !force) continue;
+    if ((await exists(target)) && !force) continue;
     await mkdir(target, { recursive: true });
     await cp(join(skillsSource, name), target, { recursive: true });
   }
@@ -241,7 +276,7 @@ async function copySubSkills(skillsParentDir: string, force: boolean): Promise<v
 function resolveInstallPaths(
   config: PlatformConfig,
   targetDir: string,
-  isGlobal: boolean
+  isGlobal: boolean,
 ): {
   skillDir: string;
   skillFilePath: string;
@@ -255,13 +290,17 @@ function resolveInstallPaths(
   const skillDir = join(
     effectiveDir,
     config.folderStructure.root,
-    config.folderStructure.skillPath
+    config.folderStructure.skillPath,
   );
   const skillFilePath = join(skillDir, config.folderStructure.filename);
 
   // Copy data and scripts into the data directory (may differ from skill file location)
   const dataDir = config.folderStructure.dataPath
-    ? join(effectiveDir, config.folderStructure.root, config.folderStructure.dataPath)
+    ? join(
+        effectiveDir,
+        config.folderStructure.root,
+        config.folderStructure.dataPath,
+      )
     : skillDir;
 
   // The skills parent is the orchestrator's parent dir (skills/ for most
@@ -273,7 +312,7 @@ function resolveInstallPaths(
     config.folderStructure.root,
     config.folderStructure.dataPath
       ? dirname(config.folderStructure.dataPath)
-      : dirname(config.folderStructure.skillPath)
+      : dirname(config.folderStructure.skillPath),
   );
 
   return { skillDir, skillFilePath, dataDir, skillsParentDir };
@@ -288,15 +327,12 @@ export async function generatePlatformFiles(
   targetDir: string,
   aiType: string,
   isGlobal = false,
-  force = false
+  force = false,
 ): Promise<string[]> {
   const config = await loadPlatformConfig(aiType);
   const createdFolders: string[] = [];
-  const { skillDir, skillFilePath, dataDir, skillsParentDir } = resolveInstallPaths(
-    config,
-    targetDir,
-    isGlobal
-  );
+  const { skillDir, skillFilePath, dataDir, skillsParentDir } =
+    resolveInstallPaths(config, targetDir, isGlobal);
 
   // Create directory structure
   await mkdir(skillDir, { recursive: true });
@@ -306,11 +342,13 @@ export async function generatePlatformFiles(
 
   const fileAlreadyExists = await exists(skillFilePath);
   if (fileAlreadyExists && !force) {
-    console.log(`  Skipped (already exists): ${skillFilePath} — use --force to overwrite`);
+    console.log(
+      `  Skipped (already exists): ${skillFilePath} — use --force to overwrite`,
+    );
     return [];
   }
 
-  await writeFile(skillFilePath, skillContent, 'utf-8');
+  await writeFile(skillFilePath, skillContent, "utf-8");
   createdFolders.push(config.folderStructure.root);
 
   await mkdir(dataDir, { recursive: true });
@@ -331,24 +369,28 @@ export async function planPlatformInstallActions(
   targetDir: string,
   aiType: string,
   isGlobal = false,
-  force = false
+  force = false,
 ): Promise<string[]> {
   const config = await loadPlatformConfig(aiType);
-  const { skillFilePath, dataDir, skillsParentDir } = resolveInstallPaths(config, targetDir, isGlobal);
+  const { skillFilePath, dataDir, skillsParentDir } = resolveInstallPaths(
+    config,
+    targetDir,
+    isGlobal,
+  );
 
   const actions: string[] = [];
   const skillFileExists = await exists(skillFilePath);
   actions.push(
     skillFileExists && !force
       ? `Would skip (exists, use --force): ${skillFilePath}`
-      : `Would write: ${skillFilePath}`
+      : `Would write: ${skillFilePath}`,
   );
   actions.push(`Would copy data + scripts: ${dataDir}`);
 
   const subSkills = await listBundledSubSkills();
   if (subSkills.length > 0) {
     actions.push(
-      `Would copy ${subSkills.length} sub-skills (${subSkills.join(', ')}): ${skillsParentDir}`
+      `Would copy ${subSkills.length} sub-skills (${subSkills.join(", ")}): ${skillsParentDir}`,
     );
   }
 
@@ -362,7 +404,7 @@ export async function planPlatformInstallActions(
 export async function planAllPlatformInstallActions(
   targetDir: string,
   isGlobal = false,
-  force = false
+  force = false,
 ): Promise<Map<string, string[]>> {
   const planned = new Map<string, string[]>();
   const generatedSkillFiles = new Set<string>();
@@ -373,12 +415,15 @@ export async function planAllPlatformInstallActions(
       const skillFile = join(
         config.folderStructure.root,
         config.folderStructure.skillPath,
-        config.folderStructure.filename
+        config.folderStructure.filename,
       );
       if (generatedSkillFiles.has(skillFile)) continue;
       generatedSkillFiles.add(skillFile);
 
-      planned.set(aiType, await planPlatformInstallActions(targetDir, aiType, isGlobal, force));
+      planned.set(
+        aiType,
+        await planPlatformInstallActions(targetDir, aiType, isGlobal, force),
+      );
     } catch {
       // Skip if config doesn't exist
     }
@@ -390,7 +435,11 @@ export async function planAllPlatformInstallActions(
 /**
  * Generate files for all AI types
  */
-export async function generateAllPlatformFiles(targetDir: string, isGlobal = false, force = false): Promise<string[]> {
+export async function generateAllPlatformFiles(
+  targetDir: string,
+  isGlobal = false,
+  force = false,
+): Promise<string[]> {
   const allFolders = new Set<string>();
   const generatedSkillFiles = new Set<string>();
 
@@ -400,13 +449,18 @@ export async function generateAllPlatformFiles(targetDir: string, isGlobal = fal
       const skillFile = join(
         config.folderStructure.root,
         config.folderStructure.skillPath,
-        config.folderStructure.filename
+        config.folderStructure.filename,
       );
       if (generatedSkillFiles.has(skillFile)) continue;
 
-      const folders = await generatePlatformFiles(targetDir, aiType, isGlobal, force);
+      const folders = await generatePlatformFiles(
+        targetDir,
+        aiType,
+        isGlobal,
+        force,
+      );
       generatedSkillFiles.add(skillFile);
-      folders.forEach(f => allFolders.add(f));
+      folders.forEach((f) => allFolders.add(f));
     } catch {
       // Skip if generation fails for a platform
     }
