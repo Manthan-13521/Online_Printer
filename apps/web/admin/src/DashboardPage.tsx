@@ -302,20 +302,41 @@ export function DashboardPage({
             View live queue →
           </button>
         </div>
+
+        {/* Card 5: Today's Orders */}
+        <div className="panel" style={{ padding: "1.25rem" }}>
+          <p
+            className="muted"
+            style={{ margin: 0, fontSize: "0.85rem", fontWeight: "bold" }}
+          >
+            TODAY'S ORDERS
+          </p>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "baseline",
+              gap: "0.5rem",
+              marginTop: "0.5rem",
+            }}
+          >
+            <span style={{ fontSize: "1.75rem", fontWeight: "bold" }}>
+              {counts.completedToday}
+            </span>
+            <span className="muted" style={{ fontSize: "0.9rem" }}>
+              completed
+            </span>
+          </div>
+          <button
+            className="text-button"
+            onClick={() => onNavigate("/admin/order-history")}
+            style={{ marginTop: "0.75rem", padding: 0 }}
+            type="button"
+          >
+            View history →
+          </button>
+        </div>
       </section>
 
-      <section
-        className="panel"
-        style={{ padding: "1.25rem", marginBottom: "1.5rem" }}
-      >
-        <p>
-          Today’s completed orders: <strong>{counts.completedToday}</strong>
-        </p>
-        <p>
-          Identification sheet:{" "}
-          <strong>{settings?.identificationSheetEnabled ? "ON" : "OFF"}</strong>
-        </p>
-      </section>
       {/* Customer Readiness Banner */}
       {!canAcceptOrders ? (
         <section
@@ -389,43 +410,14 @@ export function DashboardPage({
           <div
             style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}
           >
-            <span style={{ fontSize: "1.25rem" }}>✓</span>
-            <div>
-              <strong>Shop Profile & Contact</strong> —{" "}
-              {settings?.shopName ?? "Set up"}
-            </div>
-            <button
-              className="text-button"
-              onClick={() => onNavigate("/admin/shop-settings")}
-              style={{ marginLeft: "auto" }}
-              type="button"
+            <span
+              style={{
+                fontSize: "1.25rem",
+                color: agentOnline ? "#16a34a" : "#dc2626",
+                fontWeight: "bold",
+              }}
             >
-              Edit
-            </button>
-          </div>
-
-          <div
-            style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}
-          >
-            <span style={{ fontSize: "1.25rem" }}>✓</span>
-            <div>
-              <strong>Print Rates & Surcharges</strong> — Configured server-side
-            </div>
-            <button
-              className="text-button"
-              onClick={() => onNavigate("/admin/pricing")}
-              style={{ marginLeft: "auto" }}
-              type="button"
-            >
-              Configure
-            </button>
-          </div>
-
-          <div
-            style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}
-          >
-            <span style={{ fontSize: "1.25rem" }}>
-              {agentOnline ? "✓" : "○"}
+              {agentOnline ? "✓" : "✕"}
             </span>
             <div>
               <strong>Connect Windows Counter PC</strong> —{" "}
@@ -444,8 +436,14 @@ export function DashboardPage({
           <div
             style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}
           >
-            <span style={{ fontSize: "1.25rem" }}>
-              {printerReady ? "✓" : "○"}
+            <span
+              style={{
+                fontSize: "1.25rem",
+                color: printerReady ? "#16a34a" : "#dc2626",
+                fontWeight: "bold",
+              }}
+            >
+              {printerReady ? "✓" : "✕"}
             </span>
             <div>
               <strong>Choose Default Production Printer</strong> —{" "}
@@ -466,8 +464,14 @@ export function DashboardPage({
           <div
             style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}
           >
-            <span style={{ fontSize: "1.25rem" }}>
-              {onlinePrinting ? "✓" : "○"}
+            <span
+              style={{
+                fontSize: "1.25rem",
+                color: onlinePrinting ? "#16a34a" : "#dc2626",
+                fontWeight: "bold",
+              }}
+            >
+              {onlinePrinting ? "✓" : "✕"}
             </span>
             <div>
               <strong>Online Customer Orders</strong> —{" "}

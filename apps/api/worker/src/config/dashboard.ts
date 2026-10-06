@@ -27,6 +27,7 @@ export async function handleDashboard(
     // Shop business date is India Standard Time, consistent with customer INR flow.
     const midnight =
       Math.floor((now + 19_800_000) / 86_400_000) * 86_400_000 - 19_800_000;
+    const dateKey = new Date(now + 19_800_000).toISOString().slice(0, 10);
     const agentsRepo = new D1AgentRepository(env.DB);
     const [settings, agents, defaultProductionPrinterId, counts] =
       await Promise.all([
@@ -41,8 +42,11 @@ export async function handleDashboard(
             "SELECT COUNT(*) n FROM orders WHERE status IN ('ADMIN_ACTION_REQUIRED','PRINT_BLOCKED')",
           ),
           env.DB.prepare(
-            "SELECT COUNT(*) n FROM orders WHERE status = 'COMPLETED' AND completed_at_ms >= ? AND completed_at_ms < ?",
-          ).bind(midnight, midnight + 86_400_000),
+            `SELECT MAX(
+              COALESCE((SELECT completed_count FROM daily_order_stats WHERE date_key = ?), 0),
+              COALESCE((SELECT COUNT(*) FROM orders WHERE status = 'COMPLETED' AND completed_at_ms >= ? AND completed_at_ms < ?), 0)
+            ) AS n`,
+          ).bind(dateKey, midnight, midnight + 86_400_000),
         ]),
       ]);
     response = ok(

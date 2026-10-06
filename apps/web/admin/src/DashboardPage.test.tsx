@@ -166,4 +166,10 @@ it("renders green readiness banner when agent, printer, and online printing are 
   expect(
     screen.queryByText("⚠️ Online Printing Cannot Accept Payments Yet"),
   ).toBeNull();
+  expect(screen.getByText("TODAY'S ORDERS")).toBeTruthy();
+  expect(screen.queryByText(/Shop Profile & Contact/i)).toBeNull();
+  expect(screen.queryByText(/Print Rates & Surcharges/i)).toBeNull();
+  expect(screen.getByText(/Connect Windows Counter PC/i)).toBeTruthy();
+  expect(screen.getByText(/Choose Default Production Printer/i)).toBeTruthy();
+  expect(screen.getByText(/Online Customer Orders/i)).toBeTruthy();
 });
