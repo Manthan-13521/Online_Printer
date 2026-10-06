@@ -1318,7 +1318,7 @@ export function App() {
                 </div>
                 <div className="print-settings-group">
                   <div className="print-setting-row">
-                    <label style={{ margin: 0 }}>Copies</label>
+                    <label htmlFor="copies-input" style={{ margin: 0 }}>Copies</label>
                     <input
                       type="number"
                       min={MIN_PRINT_COPIES}
