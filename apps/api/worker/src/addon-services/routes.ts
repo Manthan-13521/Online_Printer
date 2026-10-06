@@ -393,11 +393,22 @@ export async function handleAdminManualOrdersRequest(
           ]);
 
           if (result?.meta.changes !== 1) {
-            response = error(
-              409,
-              "INVALID_TRANSITION",
-              "Order is not in MANUAL_PRINT status.",
-            );
+            const existing = await db
+              .prepare("SELECT status FROM orders WHERE id = ?")
+              .bind(orderId)
+              .first<{ status: string }>();
+            if (
+              existing?.status === "AWAITING_FINISHING" ||
+              existing?.status === "COMPLETED"
+            ) {
+              response = ok({ orderId, status: existing.status });
+            } else {
+              response = error(
+                409,
+                "INVALID_TRANSITION",
+                "Order is not in MANUAL_PRINT status.",
+              );
+            }
           } else {
             response = ok({ orderId, status: nextStatus });
           }
@@ -426,11 +437,19 @@ export async function handleAdminManualOrdersRequest(
           ]);
 
           if (result?.meta.changes !== 1) {
-            response = error(
-              409,
-              "INVALID_TRANSITION",
-              "Order is not in AWAITING_FINISHING status.",
-            );
+            const existing = await db
+              .prepare("SELECT status FROM orders WHERE id = ?")
+              .bind(orderId)
+              .first<{ status: string }>();
+            if (existing?.status === "COMPLETED") {
+              response = ok({ orderId, status: "COMPLETED" });
+            } else {
+              response = error(
+                409,
+                "INVALID_TRANSITION",
+                "Order is not in AWAITING_FINISHING status.",
+              );
+            }
           } else {
             response = ok({ orderId, status: "COMPLETED" });
           }
