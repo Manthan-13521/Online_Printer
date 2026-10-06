@@ -21,6 +21,7 @@ export interface ClaimedPrintJobRecord {
   attemptId: string;
   claimId: string;
   leaseExpiresAtMs: number;
+  attemptCreatedAtMs?: number;
   jobCode: string;
   fileId?: string;
   filePosition?: number;
@@ -43,6 +44,7 @@ export interface ClaimedPrintJobRecord {
 interface JobRow {
   order_id: string;
   attempt_id: string;
+  attempt_created_at_ms: number;
   claim_id: string;
   claim_expires_at_ms: number;
   public_job_code: string;
@@ -128,6 +130,7 @@ function mapJob(row: JobRow | null): ClaimedPrintJobRecord | null {
   return {
     orderId: row.order_id,
     attemptId: row.attempt_id,
+    attemptCreatedAtMs: row.attempt_created_at_ms,
     claimId: row.claim_id,
     leaseExpiresAtMs: row.claim_expires_at_ms,
     jobCode: row.public_job_code,
@@ -253,6 +256,9 @@ export class D1PrintingRepository implements PrintingRepository {
   }
 
   async recoverExpiredClaims(nowMs: number): Promise<void> {
+    const pausedRow = await this.db.prepare("SELECT claims_paused FROM installation WHERE id = 1").first<{ claims_paused: number }>();
+    if (pausedRow?.claims_paused === 1) return;
+
     const activeStatuses = "'CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED'";
     await this.db.batch([
       this.db
@@ -335,7 +341,7 @@ export class D1PrintingRepository implements PrintingRepository {
   ): Promise<ClaimedPrintJobRecord | null> {
     const row = await this.db
       .prepare(
-        `SELECT o.id order_id, pa.id attempt_id, o.claim_id, o.claim_expires_at_ms,
+        `SELECT o.id order_id, pa.id attempt_id, pa.created_at_ms attempt_created_at_ms, o.claim_id, o.claim_expires_at_ms,
         o.public_job_code, o.pickup_code, o.due_at_pickup_paise, o.printer_id, p.windows_printer_name, f.r2_object_key,
         f.size_bytes, f.source_page_count, f.selected_pages, f.copies,
         f.paper_size, f.color_mode, f.sides, o.customer_name, o.customer_phone,
@@ -391,6 +397,16 @@ export class D1PrintingRepository implements PrintingRepository {
     await this.finishOrphanedSuccess(agentId, nowMs);
     const existing = await this.findCurrent(agentId);
     if (existing && existing.leaseExpiresAtMs > nowMs) {
+      // Do not renew if the agent has been stuck in PREFLIGHT_DEFERRED for too long
+      if (
+        existing.currentStep.status === "PENDING" &&
+        existing.attemptCreatedAtMs !== undefined &&
+        nowMs - existing.attemptCreatedAtMs > 90_000
+      ) {
+        // Let it expire so recoverExpiredClaims can clean it up
+        return existing;
+      }
+
       // Leave fast jobs alone; renew only in the last third of the configured lease.
       if (existing.leaseExpiresAtMs - nowMs > PRINT_CLAIM_LEASE_MS / 3)
         return existing;
@@ -442,7 +458,7 @@ export class D1PrintingRepository implements PrintingRepository {
         AND COALESCE(p.is_paused, 0) = 0
         AND p.is_production_eligible = 1 AND p.is_virtual = 0
         AND p.capabilities_json IS NOT NULL
-      JOIN installation i ON i.id = 1
+      JOIN installation i ON i.id = 1 AND i.claims_paused = 0
         AND (
           i.default_production_printer_id IS NULL
           OR p.id = i.default_production_printer_id
@@ -554,9 +570,9 @@ export class D1PrintingRepository implements PrintingRepository {
         .prepare(
           `INSERT INTO print_attempts (id, order_id, attempt_number, agent_id, printer_id,
           status, identification_sheet_included, created_at_ms, updated_at_ms,
-          order_file_id, file_position, fallback_from_printer_id)
+          last_progress_at_ms, order_file_id, file_position, fallback_from_printer_id)
         SELECT ?, id, COALESCE((SELECT MAX(attempt_number) + 1 FROM print_attempts
-          WHERE order_id = orders.id), 1), ?, ?, 'CREATED', ?, ?, ?, ?, ?, ?
+          WHERE order_id = orders.id), 1), ?, ?, 'CREATED', ?, ?, ?, ?, ?, ?, ?
         FROM orders WHERE id = ? AND claim_id = ? AND claimed_by_agent_id = ?`,
         )
         .bind(
@@ -564,6 +580,7 @@ export class D1PrintingRepository implements PrintingRepository {
           agentId,
           candidate.printer_id,
           needIdStep ? 1 : 0,
+          nowMs,
           nowMs,
           nowMs,
           candidate.file_id,
@@ -771,10 +788,10 @@ export class D1PrintingRepository implements PrintingRepository {
         ),
       this.db
         .prepare(
-          `UPDATE print_attempts SET status = 'SUBMITTING', updated_at_ms = ?
+          `UPDATE print_attempts SET status = 'SUBMITTING', updated_at_ms = ?, last_progress_at_ms = ?
         WHERE id = ? AND status IN ('CREATED','PRINTING','BLOCKED') AND changes() = 1`,
         )
-        .bind(input.nowMs, current.attempt_id),
+        .bind(input.nowMs, input.nowMs, current.attempt_id),
       this.db
         .prepare(
           `UPDATE orders SET status = ?, print_started_at_ms = COALESCE(print_started_at_ms, ?),
@@ -859,11 +876,12 @@ export class D1PrintingRepository implements PrintingRepository {
       this.db
         .prepare(
           `UPDATE print_attempts SET status = 'PRINTING', windows_job_id = COALESCE(windows_job_id, ?),
-          submitted_at_ms = COALESCE(submitted_at_ms, ?), last_observed_at_ms = ?, updated_at_ms = ?
+          submitted_at_ms = COALESCE(submitted_at_ms, ?), last_observed_at_ms = ?, updated_at_ms = ?, last_progress_at_ms = ?
         WHERE id = ? AND changes() = 1`,
         )
         .bind(
           input.spoolerJobId,
+          input.nowMs,
           input.nowMs,
           input.nowMs,
           input.nowMs,
@@ -1013,11 +1031,12 @@ export class D1PrintingRepository implements PrintingRepository {
       const statements: D1PreparedStatement[] = [
         this.db
           .prepare(
-            "UPDATE print_attempts SET status = 'BLOCKED', failure_code = ?, failure_detail = ?, last_observed_at_ms = ?, updated_at_ms = ? WHERE id = ?",
+            "UPDATE print_attempts SET status = 'BLOCKED', failure_code = ?, failure_detail = ?, last_observed_at_ms = ?, updated_at_ms = ?, last_progress_at_ms = ? WHERE id = ?",
           )
           .bind(
             stepFailureCode,
             input.failureDetail,
+            input.nowMs,
             input.nowMs,
             input.nowMs,
             current.attempt_id,
@@ -1210,9 +1229,9 @@ export class D1PrintingRepository implements PrintingRepository {
         await this.db.batch([
           this.db
             .prepare(
-              "UPDATE print_attempts SET status = 'PRINTING', failure_code = NULL, failure_detail = NULL, last_observed_at_ms = ?, updated_at_ms = ? WHERE id = ? AND (status <> 'PRINTING' OR failure_code IS NOT NULL OR failure_detail IS NOT NULL)",
+              "UPDATE print_attempts SET status = 'PRINTING', failure_code = NULL, failure_detail = NULL, last_observed_at_ms = ?, updated_at_ms = ?, last_progress_at_ms = ? WHERE id = ? AND (status <> 'PRINTING' OR failure_code IS NOT NULL OR failure_detail IS NOT NULL)",
             )
-            .bind(input.nowMs, input.nowMs, current.attempt_id),
+            .bind(input.nowMs, input.nowMs, input.nowMs, current.attempt_id),
           this.db
             .prepare(
               "UPDATE orders SET status = 'PRINTING', claim_expires_at_ms = ?, updated_at_ms = ? WHERE id = ? AND claim_id = ? AND (status <> 'PRINTING' OR claim_expires_at_ms <= ?)",
@@ -1831,6 +1850,9 @@ export class D1PrintingRepository implements PrintingRepository {
   async autoRetryEligibleOrders(
     nowMs: number,
   ): Promise<{ retriedCount: number }> {
+    const pausedRow = await this.db.prepare("SELECT claims_paused FROM installation WHERE id = 1").first<{ claims_paused: number }>();
+    if (pausedRow?.claims_paused === 1) return { retriedCount: 0 };
+
     const candidates = await this.db
       .prepare(
         `SELECT id, status FROM orders

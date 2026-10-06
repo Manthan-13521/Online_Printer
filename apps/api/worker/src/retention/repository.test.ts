@@ -16,6 +16,17 @@ const migrations = [
   "0009_retention_and_pii_purge.sql",
   "0010_efficiency_and_branding.sql",
   "0011_retention_retry_schedule.sql",
+  "0012_multi_file_cleanup_and_app_branding.sql",
+  "0013_d1_usage_optimization.sql",
+  "0014_addon_services.sql",
+  "0015_phase3_priority_tracking_discounts.sql",
+  "0016_phase4_failure_recovery_and_pause.sql",
+  "0017_phase5_fallback_and_reprint_protection.sql",
+  "0018_phase6_history_cleanup.sql",
+  "0019_phase7_restore_hot_indexes.sql",
+  "0020_order_retention_duration.sql",
+  "0021_daily_order_stats.sql",
+  "0022_phase2_recovery_foundation.sql",
 ].map((name) =>
   readFileSync(
     new URL(`../../../../../database/migrations/${name}`, import.meta.url),

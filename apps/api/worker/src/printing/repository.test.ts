@@ -24,6 +24,10 @@ const migrations = [
   "0016_phase4_failure_recovery_and_pause.sql",
   "0017_phase5_fallback_and_reprint_protection.sql",
   "0018_phase6_history_cleanup.sql",
+  "0019_phase7_restore_hot_indexes.sql",
+  "0020_order_retention_duration.sql",
+  "0021_daily_order_stats.sql",
+  "0022_phase2_recovery_foundation.sql",
 ].map((name) =>
   readFileSync(
     new URL(`../../../../../database/migrations/${name}`, import.meta.url),
@@ -359,14 +363,18 @@ describe("paid-print D1 safety", () => {
         (await repository.claimOrRenew(ids.agent1, nowMs))?.leaseExpiresAtMs,
       ).toBe(job.leaseExpiresAtMs);
     }
-    expect(changes()).toBe(before);
+    // To test lease renewal, we must advance the step status out of PENDING
+    // otherwise the new stall protection will refuse to renew it after 90 seconds.
+    db.prepare("UPDATE print_attempt_steps SET status = 'SUBMITTED'").run();
+
+    expect(changes()).toBe(before + 1);
     const renewed = (await repository.claimOrRenew(ids.agent1, 202_000))!;
     expect(renewed.leaseExpiresAtMs).toBe(202_000 + PRINT_CLAIM_LEASE_MS);
-    expect(changes() - before).toBe(1);
+    expect(changes() - (before + 1)).toBe(1);
     expect(
       (await repository.claimOrRenew(ids.agent1, 207_000))?.leaseExpiresAtMs,
     ).toBe(202_000 + PRINT_CLAIM_LEASE_MS);
-    expect(changes() - before).toBe(1);
+    expect(changes() - (before + 1)).toBe(1);
     expect(
       db
         .prepare(

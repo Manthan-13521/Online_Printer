@@ -134,12 +134,25 @@ describe("PaidPrintExecutor duplicate prevention", () => {
         availability: "OFFLINE",
         message: "Printer is offline",
       })
+      .mockResolvedValueOnce({
+        availability: "OFFLINE",
+        message: "Printer is offline",
+      })
+      .mockResolvedValueOnce({
+        availability: "OFFLINE",
+        message: "Printer is offline",
+      })
       .mockResolvedValueOnce({ availability: "ONLINE" });
     const store = await journal();
     const executor = new PaidPrintExecutor(api, printer, store);
 
     const initialJob = job("IDENTIFICATION_SHEET");
-    await executor.handle(credentials, initialJob);
+    const r1 = await executor.handle(credentials, initialJob);
+    expect(r1).toBe("PREFLIGHT_DEFERRED");
+    const r2 = await executor.handle(credentials, initialJob);
+    expect(r2).toBe("PREFLIGHT_DEFERRED");
+    const r3 = await executor.handle(credentials, initialJob);
+    expect(r3).toBe("PREFLIGHT_DEFERRED");
 
     expect(api.startPrintStep).not.toHaveBeenCalled();
     expect(api.reportPrintStep).toHaveBeenCalledTimes(1);

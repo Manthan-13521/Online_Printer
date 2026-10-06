@@ -32,6 +32,10 @@ function createTestDatabase(): DatabaseSync {
     "0016_phase4_failure_recovery_and_pause.sql",
     "0017_phase5_fallback_and_reprint_protection.sql",
     "0018_phase6_history_cleanup.sql",
+    "0019_phase7_restore_hot_indexes.sql",
+    "0020_order_retention_duration.sql",
+    "0021_daily_order_stats.sql",
+    "0022_phase2_recovery_foundation.sql",
   ];
   for (const name of migrationFiles) {
     db.exec(

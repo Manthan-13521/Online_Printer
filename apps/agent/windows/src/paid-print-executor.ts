@@ -27,6 +27,8 @@ export class PaidPrintExecutor {
     private readonly onStepFinished: () => void = () => undefined,
   ) {}
 
+  private currentDeferralState: { stepId: string; count: number } | null = null;
+
   async handle(
     credentials: AgentCredentials,
     job: AgentPrintJob,
@@ -36,6 +38,11 @@ export class PaidPrintExecutor {
         `PRINT_TIMING step=${job.currentStep.stepId} event=${event} atMs=${atMs}`,
       );
     timing("preparation_start");
+
+    if (this.currentDeferralState?.stepId !== job.currentStep.stepId) {
+      this.currentDeferralState = null;
+    }
+
     const saved = await this.journal.load();
     const matching =
       saved?.orderId === job.orderId &&
@@ -117,9 +124,21 @@ export class PaidPrintExecutor {
         (printerStatus.availability === "OFFLINE" ||
           printerStatus.availability === "BLOCKED")
       ) {
+        const deferrals = (this.currentDeferralState?.count ?? 0) + 1;
+        this.currentDeferralState = { stepId: job.currentStep.stepId, count: deferrals };
+        
+        if (deferrals <= 2) {
+          this.log(
+            `Printer ${job.windowsPrinterName} is not online (${printerStatus.availability}: ${printerStatus.message ?? "Not ready"}). Waiting before print submission (Deferral ${deferrals}/2).`,
+          );
+          return "PREFLIGHT_DEFERRED";
+        }
+        
         this.log(
-          `Printer ${job.windowsPrinterName} is not online (${printerStatus.availability}: ${printerStatus.message ?? "Not ready"}). Reporting step BLOCKED before print submission.`,
+          `Printer ${job.windowsPrinterName} is persistently not online (${printerStatus.availability}: ${printerStatus.message ?? "Not ready"}). Reporting step BLOCKED before print submission.`,
         );
+        
+        this.currentDeferralState = null;
         if (job.currentStep.status !== "BLOCKED") {
           await this.client.reportPrintStep(
             credentials.serverUrl,
