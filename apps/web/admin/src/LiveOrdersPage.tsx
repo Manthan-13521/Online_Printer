@@ -236,7 +236,7 @@ export function LiveOrdersPage({
                             ⚡ Priority
                           </span>
                         ) : null}
-                        {order.identificationRequired ? (
+                        {false ? (
                           <span
                             style={{
                               fontWeight: 600,
@@ -316,7 +316,7 @@ export function LiveOrdersPage({
                     <div>
                       <dt>ID Check</dt>
                       <dd>
-                        {order.identificationRequired
+                        {false
                           ? "Required at pickup"
                           : "Not required"}
                       </dd>

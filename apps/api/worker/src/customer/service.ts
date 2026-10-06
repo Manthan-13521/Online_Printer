@@ -22,7 +22,6 @@ import {
 import {
   calculateDiscount,
   calculatePrintPrice,
-  isIdentificationRequired,
   PricingError,
 } from "@printgo/pricing";
 
@@ -512,7 +511,7 @@ export class CustomerService {
       ? await this.repository.getOrderAddonSnapshots(orderId)
       : [];
 
-    const { priorityPrinting, identificationPolicy, discountRules } =
+    const { priorityPrinting, discountRules } =
       await this.repository.getPricingRulesAndPolicy();
 
     const isPriority = Boolean(input.isPriority && priorityPrinting.enabled);
@@ -530,12 +529,7 @@ export class CustomerService {
     const discountAmountPaise = calculatedDiscount.discountAmountPaise;
     const totalAmountPaise = subtotalAmountPaise - discountAmountPaise;
 
-    const identificationRequired = isIdentificationRequired({
-      mode: identificationPolicy.mode,
-      thresholdPaise: identificationPolicy.thresholdPaise,
-      onlineAmountPaise: totalAmountPaise,
-    });
-
+    
     const expiresAtMs = this.now() + UNPAID_RETENTION_MS;
     if (
       !(await this.repository.saveOrderQuote({
@@ -560,7 +554,7 @@ export class CustomerService {
         snapshotDiscountThresholdPaise:
           calculatedDiscount.discountThresholdPaise,
         snapshotDiscountPercent: calculatedDiscount.discountPercent,
-        identificationRequired,
+        
         nowMs: this.now(),
         expiresAtMs,
       }))
@@ -595,7 +589,7 @@ export class CustomerService {
               discountPercent: calculatedDiscount.discountPercent,
             }
           : null,
-      identificationRequired,
+      
     };
   }
 

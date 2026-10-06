@@ -1,7 +1,6 @@
 import type {
   ColorMode,
   CustomerOrderStatus,
-  IdentificationSheetPlacement,
   PaperSize,
   SidesMode,
 } from "@printgo/domain";
@@ -78,8 +77,6 @@ export interface ShopSettings {
   onlinePrintingEnabled: boolean;
   maxPdfSizeBytes: number;
   maxOrderUploadBytes?: number;
-  identificationSheetEnabled: boolean;
-  identificationSheetPlacement: IdentificationSheetPlacement;
   automaticDailyCleanupEnabled?: boolean;
   dailyCleanupTime?: string;
   timezone?: string;
@@ -286,7 +283,6 @@ export interface AdminManualOrder {
   hasPostPrint: boolean;
   pickupCode?: string | null;
   isPriority?: boolean;
-  identificationRequired?: boolean;
 }
 
 export type AdminManualOrdersResponse = ApiResponse<{
@@ -418,7 +414,6 @@ export interface CustomerQuoteData {
     minSubtotalPaise: number;
     discountPercent: number;
   } | null;
-  identificationRequired?: boolean;
 }
 
 export type CustomerQuoteResponse = ApiResponse<CustomerQuoteData>;
@@ -469,7 +464,6 @@ export interface CustomerPaymentSuccessData {
   trackingToken: string;
   trackingExpiresAt: string;
   isPriority?: boolean;
-  identificationRequired?: boolean;
 }
 
 export type VerifyCustomerPaymentResponse =
@@ -691,7 +685,6 @@ export interface AdminLiveOrder {
   updatedAt: string;
   pickupCode?: string | null;
   isPriority?: boolean;
-  identificationRequired?: boolean;
   errorCategory?: string | null;
   rawError?: string | null;
   attemptCount?: number;
@@ -961,7 +954,6 @@ export interface PublicOrderTrackingData {
   isPriority: boolean;
   totalFiles: number;
   completedFiles: number;
-  identificationRequired: boolean;
   createdAt: string;
   completedAt?: string | null;
 }

@@ -257,8 +257,6 @@ export interface ValidatedShopSettings {
   onlinePrintingEnabled: boolean;
   maxPdfSizeBytes: number;
   maxOrderUploadBytes?: number;
-  identificationSheetEnabled: boolean;
-  identificationSheetPlacement: IdentificationSheetPlacement;
   automaticDailyCleanupEnabled?: boolean;
   dailyCleanupTime?: string;
   timezone?: string;
@@ -383,20 +381,6 @@ export function validateShopSettingsInput(
         "Choose an order upload limit between the per-PDF limit and 100 MB.",
     });
   }
-  if (typeof record.identificationSheetEnabled !== "boolean") {
-    issues.push({
-      path: ["identificationSheetEnabled"],
-      code: "INVALID_BOOLEAN",
-      message: "Choose whether identification sheets are on or off.",
-    });
-  }
-  if (!isIdentificationSheetPlacement(record.identificationSheetPlacement)) {
-    issues.push({
-      path: ["identificationSheetPlacement"],
-      code: "INVALID_PLACEMENT",
-      message: "Choose before or after the document.",
-    });
-  }
   if (
     hasExtendedSettings &&
     typeof record.automaticDailyCleanupEnabled !== "boolean"
@@ -496,10 +480,6 @@ export function validateShopSettingsInput(
           customerNotice,
           onlinePrintingEnabled: record.onlinePrintingEnabled as boolean,
           maxPdfSizeBytes: record.maxPdfSizeBytes as number,
-          identificationSheetEnabled:
-            record.identificationSheetEnabled as boolean,
-          identificationSheetPlacement:
-            record.identificationSheetPlacement as IdentificationSheetPlacement,
         },
       };
 }

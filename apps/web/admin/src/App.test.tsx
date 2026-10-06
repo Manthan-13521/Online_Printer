@@ -52,8 +52,6 @@ const settings: ShopSettings = {
   customerNotice: "Collect before 8 PM.",
   onlinePrintingEnabled: true,
   maxPdfSizeBytes: FILE_SIZE_10_MIB,
-  identificationSheetEnabled: true,
-  identificationSheetPlacement: "FIRST",
 };
 
 const pricing: AdminPricingConfiguration = {

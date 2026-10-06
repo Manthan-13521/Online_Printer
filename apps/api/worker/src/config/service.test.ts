@@ -24,8 +24,6 @@ const settings: ShopSettings = {
   customerNotice: null,
   onlinePrintingEnabled: true,
   maxPdfSizeBytes: FILE_SIZE_10_MIB,
-  identificationSheetEnabled: true,
-  identificationSheetPlacement: "FIRST",
 };
 
 const storedPricing: StoredPricingConfiguration = {

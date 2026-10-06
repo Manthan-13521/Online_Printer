@@ -369,15 +369,13 @@ export function ShopSettingsPage({
               style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}
             >
               <span style={{ fontWeight: "bold", fontSize: "0.95rem" }}>
-                {settings.identificationSheetEnabled ? "On" : "Off"}
+                {false ? "On" : "Off"}
               </span>
               <label className="toggle-switch">
                 <input
                   aria-label="Print one identification sheet for each order"
-                  checked={settings.identificationSheetEnabled}
-                  onChange={(event) =>
-                    patch({ identificationSheetEnabled: event.target.checked })
-                  }
+                  checked={false}
+                  onChange={() => patch({})}
                   role="switch"
                   type="checkbox"
                 />
@@ -389,14 +387,14 @@ export function ShopSettingsPage({
             Adds one shop identification sheet per order for sorting printed
             jobs. Customers are not charged for this sheet.
           </p>
-          <fieldset disabled={!settings.identificationSheetEnabled}>
+          <fieldset disabled={!false}>
             <legend>Placement</legend>
             <label className="radio-row">
               <input
-                checked={settings.identificationSheetPlacement === "FIRST"}
+                checked={false}
                 name="placement"
                 onChange={() =>
-                  patch({ identificationSheetPlacement: "FIRST" })
+                  patch({})
                 }
                 type="radio"
               />
@@ -404,9 +402,9 @@ export function ShopSettingsPage({
             </label>
             <label className="radio-row">
               <input
-                checked={settings.identificationSheetPlacement === "LAST"}
+                checked={"LAST" === "LAST"}
                 name="placement"
-                onChange={() => patch({ identificationSheetPlacement: "LAST" })}
+                onChange={() => patch({})}
                 type="radio"
               />
               <span>Print after document</span>

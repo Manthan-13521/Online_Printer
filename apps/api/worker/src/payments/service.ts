@@ -13,7 +13,6 @@ import {
 import {
   calculateDiscount,
   calculatePrintPrice,
-  isIdentificationRequired,
   PricingError,
 } from "@printgo/pricing";
 
@@ -194,7 +193,7 @@ export class PaymentService {
       const addonAmountPaise = await this.customer.getOrderAddonAmountPaise(
         draft.orderId,
       );
-      const { priorityPrinting, identificationPolicy, discountRules } =
+      const { priorityPrinting, discountRules } =
         await this.customer.getPricingRulesAndPolicy();
       const isPriority = draft.isPriority && priorityPrinting.enabled;
       const priorityFeePaise = isPriority ? priorityPrinting.feePaise : 0;
@@ -208,12 +207,7 @@ export class PaymentService {
       );
       const totalAmountPaise =
         subtotalAmountPaise - discount.discountAmountPaise;
-      const identificationRequired = isIdentificationRequired({
-        mode: identificationPolicy.mode,
-        thresholdPaise: identificationPolicy.thresholdPaise,
-        onlineAmountPaise: totalAmountPaise,
-      });
-      return {
+            return {
         normalizedSelectedPages: first.selectedPages,
         selectedPageCount: first.selectedPageCount,
         copies: first.copies,
@@ -239,7 +233,7 @@ export class PaymentService {
                 discountPercent: discount.discountPercent,
               }
             : null,
-        identificationRequired,
+        
       };
     } catch (caught) {
       if (
@@ -268,7 +262,7 @@ export class PaymentService {
       snapshotDiscountThresholdPaise:
         quote.appliedDiscount?.minSubtotalPaise ?? null,
       snapshotDiscountPercent: quote.appliedDiscount?.discountPercent ?? null,
-      identificationRequired: quote.identificationRequired ?? false,
+      
       nowMs: this.now(),
     });
     if (!saved) throw new PaymentError("PAYMENT_STATE_INVALID");
@@ -574,9 +568,7 @@ export class PaymentService {
       ...(payment.isPriority !== undefined
         ? { isPriority: payment.isPriority }
         : {}),
-      ...(payment.identificationRequired !== undefined
-        ? { identificationRequired: payment.identificationRequired }
-        : {}),
+      
     };
   }
 }

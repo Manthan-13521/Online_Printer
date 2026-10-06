@@ -152,8 +152,7 @@ export interface CustomerRepository {
     discountAmountPaise: number;
     snapshotDiscountThresholdPaise: number | null;
     snapshotDiscountPercent: number | null;
-    identificationRequired: boolean;
-    nowMs: number;
+      nowMs: number;
     expiresAtMs: number;
   }): Promise<boolean>;
   getPricingRulesAndPolicy(): Promise<{
@@ -504,7 +503,7 @@ export class D1CustomerRepository implements CustomerRepository {
       isPriority: row.is_priority === 1,
       totalFiles,
       completedFiles,
-      identificationRequired: row.identification_required === 1,
+      
       createdAt: new Date(row.created_at_ms).toISOString(),
       completedAt: row.completed_at_ms
         ? new Date(row.completed_at_ms).toISOString()
@@ -1097,7 +1096,7 @@ export class D1CustomerRepository implements CustomerRepository {
           input.discountAmountPaise,
           input.snapshotDiscountThresholdPaise,
           input.snapshotDiscountPercent,
-          input.identificationRequired ? 1 : 0,
+          0,
           input.expiresAtMs,
           input.nowMs,
           input.tokenHash,

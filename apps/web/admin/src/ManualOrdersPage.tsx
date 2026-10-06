@@ -146,7 +146,7 @@ function ManualOrderCard({
                 ⚡ Priority
               </span>
             ) : null}
-            {order.identificationRequired ? (
+            {false ? (
               <span
                 style={{
                   fontWeight: 600,

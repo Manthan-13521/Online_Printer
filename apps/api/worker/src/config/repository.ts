@@ -150,8 +150,6 @@ export class D1ConfigurationRepository implements ConfigurationRepository {
           onlinePrintingEnabled: row.online_printing_enabled === 1,
           maxPdfSizeBytes: row.max_pdf_size_bytes,
           maxOrderUploadBytes: row.max_order_upload_bytes,
-          identificationSheetEnabled: row.identification_sheet_enabled === 1,
-          identificationSheetPlacement: row.identification_sheet_placement,
           automaticDailyCleanupEnabled:
             row.automatic_daily_cleanup_enabled === 1,
           dailyCleanupTime: row.daily_cleanup_time,
@@ -207,8 +205,6 @@ export class D1ConfigurationRepository implements ConfigurationRepository {
           input.settings.onlinePrintingEnabled ? 1 : 0,
           input.settings.maxPdfSizeBytes,
           input.settings.maxOrderUploadBytes ?? input.settings.maxPdfSizeBytes,
-          input.settings.identificationSheetEnabled ? 1 : 0,
-          input.settings.identificationSheetPlacement,
           input.settings.automaticDailyCleanupEnabled ? 1 : 0,
           input.settings.dailyCleanupTime ?? "23:30",
           input.settings.timezone ?? "Asia/Kolkata",

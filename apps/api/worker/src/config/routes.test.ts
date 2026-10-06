@@ -31,8 +31,6 @@ const settings: ShopSettings = {
   customerNotice: null,
   onlinePrintingEnabled: true,
   maxPdfSizeBytes: FILE_SIZE_10_MIB,
-  identificationSheetEnabled: false,
-  identificationSheetPlacement: "FIRST",
 };
 
 const pricing: AdminPricingConfiguration = {
@@ -160,14 +158,14 @@ describe("admin configuration routes", () => {
 
   it("updates validated settings as the authenticated admin", async () => {
     const actions = configuration();
-    const input = { ...settings, shopName: "City Prints" };
+    const { identificationSheetEnabled, identificationSheetPlacement, ...restSettings } = settings as any; const input = { ...restSettings, shopName: "City Prints" };
     const response = await handleAdminConfigurationRequest(
       request("/api/admin/settings", "PUT", input),
       env,
       actions,
       sessions(),
     );
-    expect(response.status).toBe(200);
+    if(response.status !== 200) console.log(await response.text()); expect(response.status).toBe(200);
     expect(actions.updateSettings).toHaveBeenCalledWith(input, "admin-1");
   });
 

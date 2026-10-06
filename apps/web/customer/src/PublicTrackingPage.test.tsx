@@ -20,7 +20,6 @@ const tracking: PublicOrderTrackingData = {
   isPriority: false,
   totalFiles: 1,
   completedFiles: 1,
-  identificationRequired: false,
   createdAt: "2026-10-04T00:00:00.000Z",
 };
 
