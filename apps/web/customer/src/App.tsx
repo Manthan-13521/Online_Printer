@@ -1319,7 +1319,7 @@ export function App() {
                 <div className="print-settings-group">
                   <div className="print-setting-row">
                     <label htmlFor="copies-input" style={{ margin: 0 }}>Copies</label>
-                    <input
+                    <input id="copies-input"
                       type="number"
                       min={MIN_PRINT_COPIES}
                       max={MAX_PRINT_COPIES}
