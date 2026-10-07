@@ -206,7 +206,11 @@ describe("PaymentService", () => {
     });
     const razorpay = provider();
     await expect(
-      makeService({ payments, provider: razorpay }).createCheckout("token", 2_100, "test-tracking-token"),
+      makeService({ payments, provider: razorpay }).createCheckout(
+        "token",
+        2_100,
+        "test-tracking-token",
+      ),
     ).rejects.toEqual(expect.objectContaining({ code: "DRAFT_EXPIRED" }));
     expect(razorpay.createOrder).not.toHaveBeenCalled();
   });
@@ -218,7 +222,11 @@ describe("PaymentService", () => {
       deleteAfterMs: now,
     });
     await expect(
-      makeService({ payments }).createCheckout("token", 2_100, "test-tracking-token"),
+      makeService({ payments }).createCheckout(
+        "token",
+        2_100,
+        "test-tracking-token",
+      ),
     ).rejects.toEqual(expect.objectContaining({ code: "DRAFT_EXPIRED" }));
   });
 
@@ -234,7 +242,11 @@ describe("PaymentService", () => {
     });
     const razorpay = provider();
     await expect(
-      makeService({ customer, provider: razorpay }).createCheckout("token", 2_100, "test-tracking-token"),
+      makeService({ customer, provider: razorpay }).createCheckout(
+        "token",
+        2_100,
+        "test-tracking-token",
+      ),
     ).rejects.toEqual(
       expect.objectContaining({ code: "ONLINE_PRINTING_DISABLED" }),
     );
@@ -312,7 +324,11 @@ describe("PaymentService", () => {
       identificationPolicy: { mode: "OFF", thresholdPaise: 0 },
       discountRules: [],
     });
-    const result = await makeService({ payments, customer }).createCheckout("token", 2_100, "test-tracking-token");
+    const result = await makeService({ payments, customer }).createCheckout(
+      "token",
+      2_100,
+      "test-tracking-token",
+    );
     expect(result.status).toBe("PRICE_CHANGED");
     if (result.status !== "PRICE_CHANGED") throw new Error("Unexpected result");
     expect(result.quote.totalAmountPaise).toBe(2_600);
@@ -342,7 +358,11 @@ describe("PaymentService", () => {
     const razorpay = provider();
     const payments = paymentRepository();
     await expect(
-      makeService({ payments, provider: razorpay }).createCheckout("token", 2_100, "test-tracking-token"),
+      makeService({ payments, provider: razorpay }).createCheckout(
+        "token",
+        2_100,
+        "test-tracking-token",
+      ),
     ).resolves.toEqual(
       expect.objectContaining({
         status: "CHECKOUT_READY",
@@ -540,9 +560,10 @@ describe("PaymentService", () => {
       "token",
       "order_server_a",
     );
-    if (result.status === "PAYMENT_CANCELLED") expect(result.retainedUntil).toBe(
-      new Date(now + 30 * 60_000).toISOString(),
-    );
+    if (result.status === "PAYMENT_CANCELLED")
+      expect(result.retainedUntil).toBe(
+        new Date(now + 30 * 60_000).toISOString(),
+      );
     expect(payments.cancelPayment).toHaveBeenCalledWith(
       expect.objectContaining({ retainedUntilMs: now + 30 * 60_000 }),
     );

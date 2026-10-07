@@ -19,6 +19,7 @@
 Submitted but unconfirmed `print_attempts` are correctly evaluated and explicitly transitioned to `COMPLETION_UNKNOWN` instead of blindly retrying.
 
 ## Final Verification
+
 - **ESLint Cleanup:** Replaced the file-wide `eslint-disable` with strictly typed D1 row interfaces (e.g., `OrderRow`, `AttemptRow`).
 - **Cost Audit:** `getSystemStatus` executes exactly two batches of pure `SELECT` queries with ZERO writes.
 - **Healthy Status:** Correctly reports `HEALTHY_PRINTING` or `NO_ACTIVE_ORDER`, keeping the Recover Printing UI button cleanly disabled unless there is genuine stalling, completion uncertainty, or offline faults.

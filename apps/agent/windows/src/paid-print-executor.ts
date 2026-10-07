@@ -453,7 +453,8 @@ export class PaidPrintExecutor {
           spoolerJobId,
           failureCode: null,
           failureDetail:
-            observed.message ?? "Spool handoff complete; print outcome uncertain.",
+            observed.message ??
+            "Spool handoff complete; print outcome uncertain.",
         },
       );
       await this.journal.clear();

@@ -122,7 +122,11 @@ function actionsFromEnv(env: WorkerEnv): CustomerActions {
     quote: (token, input) => service.quote(token, input),
     quoteOrder: (token, input) => service.quoteOrder(token, input),
     createPayment: (token, input) =>
-      paymentService.createCheckout(token, input.acknowledgedTotalPaise, input.trackingToken),
+      paymentService.createCheckout(
+        token,
+        input.acknowledgedTotalPaise,
+        input.trackingToken,
+      ),
     verifyPayment: (token, input) => paymentService.verify(token, input),
     cancelPayment: (token, input) =>
       paymentService.cancel(token, input.razorpayOrderId, input.trackingToken),
@@ -333,16 +337,18 @@ function validateCreatePayment(
 ): CreateCustomerPaymentRequest | null {
   if (
     !isPlainRecord(value) ||
-    Object.keys(value).some((key) => key !== "acknowledgedTotalPaise" && key !== "trackingToken") ||
+    Object.keys(value).some(
+      (key) => key !== "acknowledgedTotalPaise" && key !== "trackingToken",
+    ) ||
     !Number.isSafeInteger(value.acknowledgedTotalPaise) ||
     (value.acknowledgedTotalPaise as number) < 0 ||
     typeof value.trackingToken !== "string"
   ) {
     return null;
   }
-  return { 
+  return {
     acknowledgedTotalPaise: value.acknowledgedTotalPaise as number,
-    trackingToken: value.trackingToken as string
+    trackingToken: value.trackingToken,
   };
 }
 
@@ -393,14 +399,20 @@ function validateCancelPayment(
 ): CancelCustomerPaymentRequest | null {
   if (
     !isPlainRecord(value) ||
-    Object.keys(value).some((key) => key !== "razorpayOrderId" && key !== "trackingToken") ||
+    Object.keys(value).some(
+      (key) => key !== "razorpayOrderId" && key !== "trackingToken",
+    ) ||
     !validProviderId(value.razorpayOrderId, "order_") ||
-    (value.trackingToken !== undefined && typeof value.trackingToken !== "string")
+    (value.trackingToken !== undefined &&
+      typeof value.trackingToken !== "string")
   ) {
     return null;
   }
-  const result: CancelCustomerPaymentRequest = { razorpayOrderId: value.razorpayOrderId };
-  if (value.trackingToken !== undefined) result.trackingToken = value.trackingToken as string;
+  const result: CancelCustomerPaymentRequest = {
+    razorpayOrderId: value.razorpayOrderId,
+  };
+  if (value.trackingToken !== undefined)
+    result.trackingToken = value.trackingToken;
   return result;
 }
 

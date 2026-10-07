@@ -707,19 +707,32 @@ export function App() {
         ondismiss: () => {
           setPaymentBusy(true);
           setStatus("Recording payment cancellation…");
-          const savedToken = sessionStorage.getItem(`${PENDING_TRACKING_TOKEN_PREFIX}${checkout.razorpayOrderId}`);
+          const savedToken = sessionStorage.getItem(
+            `${PENDING_TRACKING_TOKEN_PREFIX}${checkout.razorpayOrderId}`,
+          );
           void customerApi
             .cancelPayment(token, {
               razorpayOrderId: checkout.razorpayOrderId,
-              ...(savedToken ? { trackingToken: savedToken } : {})
+              ...(savedToken ? { trackingToken: savedToken } : {}),
             })
             .then((result) => {
-              if (result && "status" in result && result.status === "ALREADY_PAID") {
-                 const code = result.pickupCode ?? result.jobCode;
-                 const temporaryTrackingToken = sessionStorage.getItem(`${PENDING_TRACKING_TOKEN_PREFIX}${checkout.razorpayOrderId}`) ?? "";
-                 window.history.pushState(null, "", `/track/${encodeURIComponent(code)}#${temporaryTrackingToken}`);
-                 setTrackingJobCode(code);
-                 return;
+              if (
+                result &&
+                "status" in result &&
+                result.status === "ALREADY_PAID"
+              ) {
+                const code = result.pickupCode ?? result.jobCode;
+                const temporaryTrackingToken =
+                  sessionStorage.getItem(
+                    `${PENDING_TRACKING_TOKEN_PREFIX}${checkout.razorpayOrderId}`,
+                  ) ?? "";
+                window.history.pushState(
+                  null,
+                  "",
+                  `/track/${encodeURIComponent(code)}#${temporaryTrackingToken}`,
+                );
+                setTrackingJobCode(code);
+                return;
               }
               setStatus(
                 "Payment was cancelled. Your PDF is retained briefly so you can retry.",
@@ -756,7 +769,11 @@ export function App() {
       });
       if (result.status === "ALREADY_PAID") {
         const code = result.pickupCode ?? result.jobCode;
-        window.history.pushState(null, "", `/track/${encodeURIComponent(code)}#${temporaryTrackingToken}`);
+        window.history.pushState(
+          null,
+          "",
+          `/track/${encodeURIComponent(code)}#${temporaryTrackingToken}`,
+        );
         setTrackingJobCode(code);
         return;
       }
@@ -771,7 +788,7 @@ export function App() {
       // Store token for verifyCheckoutPayment
       const pendingKey = `${PENDING_TRACKING_TOKEN_PREFIX}${result.razorpayOrderId}`;
       sessionStorage.setItem(pendingKey, temporaryTrackingToken);
-      
+
       setStatus("Opening secure Razorpay checkout…");
       await openCheckout(draftToken, result);
     } catch (caught) {

@@ -63,7 +63,10 @@ function createTrackingToken(): string {
   crypto.getRandomValues(bytes);
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/u, "");
+  return btoa(binary)
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replace(/=+$/u, "");
 }
 
 export interface PaymentServiceConfiguration {
@@ -114,7 +117,6 @@ export class PaymentService {
       throw new PaymentError("PAYMENT_STATE_INVALID");
     }
   }
-
 
   private files(draft: PayableDraftRecord): PayableFileRecord[] {
     return draft.files && draft.files.length > 0
@@ -280,15 +282,15 @@ export class PaymentService {
       throw new PaymentError("PAYMENT_CONFIGURATION_MISSING");
     }
     const draft = await this.findDraft(rawToken);
-    
+
     const paidPayment = await this.payments.findPaidPayment(draft.orderId);
     if (paidPayment && paidPayment.publicJobCode) {
       const successData = await this.successData(paidPayment, trackingToken);
       return { ...successData, status: "ALREADY_PAID" };
     }
-    
+
     this.validateDraftState(draft);
-    
+
     const draftFiles = this.files(draft);
     const quote = await this.reprice(draft);
     const active = await this.payments.findActivePayment(draft.orderId);
@@ -534,14 +536,14 @@ export class PaymentService {
     const draft = await this.findDraft(rawToken);
     const payment =
       await this.payments.findPaymentByProviderOrderId(providerOrderId);
-      
+
     if (payment && payment.status === "PAID" && payment.publicJobCode) {
       const tokenToUse = trackingToken ?? createTrackingToken();
       const successData = await this.successData(payment, tokenToUse);
       return { ...successData, status: "ALREADY_PAID" };
     }
     this.validateDraftState(draft);
-    
+
     if (!payment || payment.orderId !== draft.orderId)
       throw new PaymentError("PAYMENT_ORDER_MISMATCH");
     if (payment.status === "CANCELLED" && draft.deleteAfterMs) {

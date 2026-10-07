@@ -404,7 +404,8 @@ describe("customer upload app", () => {
     vi.mocked(customerApi.createPayment).mockResolvedValueOnce({
       status: "CHECKOUT_READY",
       razorpayKeyId: "rzp_test_key",
-      razorpayOrderId: "order_server_a", trackingToken: expect.any(String),
+      razorpayOrderId: "order_server_a",
+      trackingToken: "wQbNuAqsvIR564frZmBsKMimYyM76FzqHQA2sZ7sMuA",
       amountPaise: 2100,
       currency: "INR",
       shopName: "ABC Xerox",
@@ -441,7 +442,7 @@ describe("customer upload app", () => {
     expect(customerApi.verifyPayment).toHaveBeenCalledWith(
       "A".repeat(43),
       expect.objectContaining({
-        razorpayOrderId: "order_server_a", trackingToken: expect.any(String),
+        razorpayOrderId: "order_server_a",
       }),
     );
     const verification = vi.mocked(customerApi.verifyPayment).mock
@@ -463,7 +464,8 @@ describe("customer upload app", () => {
     vi.mocked(customerApi.createPayment).mockResolvedValueOnce({
       status: "CHECKOUT_READY",
       razorpayKeyId: "rzp_test_key",
-      razorpayOrderId: "order_server_a", trackingToken: expect.any(String),
+      razorpayOrderId: "order_server_a",
+      trackingToken: "wQbNuAqsvIR564frZmBsKMimYyM76FzqHQA2sZ7sMuA",
       amountPaise: 2100,
       currency: "INR",
       shopName: "ABC Xerox",
@@ -491,9 +493,13 @@ describe("customer upload app", () => {
         /Payment was cancelled\. Your PDF is retained briefly/,
       ),
     ).toBeTruthy();
-    expect(customerApi.cancelPayment).toHaveBeenCalledWith("A".repeat(43), {
-      razorpayOrderId: "order_server_a", trackingToken: expect.any(String),
-    });
+    expect(customerApi.cancelPayment).toHaveBeenCalledWith(
+      "A".repeat(43),
+      expect.objectContaining({
+        razorpayOrderId: "order_server_a",
+        trackingToken: expect.any(String) as unknown as string,
+      }),
+    );
   });
 
   it("shows checkout failure without fabricating success", async () => {
@@ -509,7 +515,8 @@ describe("customer upload app", () => {
     vi.mocked(customerApi.createPayment).mockResolvedValueOnce({
       status: "CHECKOUT_READY",
       razorpayKeyId: "rzp_test_key",
-      razorpayOrderId: "order_server_a", trackingToken: expect.any(String),
+      razorpayOrderId: "order_server_a",
+      trackingToken: "wQbNuAqsvIR564frZmBsKMimYyM76FzqHQA2sZ7sMuA",
       amountPaise: 2100,
       currency: "INR",
       shopName: "ABC Xerox",

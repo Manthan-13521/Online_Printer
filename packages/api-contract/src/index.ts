@@ -526,7 +526,7 @@ export interface CustomerPaymentCancelledData {
   retainedUntil: string;
 }
 
-export type CancelCustomerPaymentData = 
+export type CancelCustomerPaymentData =
   | CustomerPaymentCancelledData
   | (Omit<CustomerPaymentSuccessData, "status"> & { status: "ALREADY_PAID" });
 
