@@ -21,8 +21,6 @@ function acquireSingleInstanceLock(): Promise<net.Server> {
     });
   });
 }
-
-import * as net from "node:net";
 import {
   AgentApiError,
   AgentAuthError,

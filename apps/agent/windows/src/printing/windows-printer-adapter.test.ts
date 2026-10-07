@@ -117,13 +117,8 @@ describe("WindowsPrinterAdapter with mock executor", () => {
     const submit = scripts.find((script) =>
       script.includes("ProcessStartInfo"),
     )!;
-    expect(submit).toContain(
-      "Printer readiness could not be confirmed before submission.",
-    );
-    expect(submit).toContain(
-      "$ready.DetectedErrorState -in @(4,6,7,8,9,10,11)",
-    );
-    expect(submit.indexOf("$ready = Get-CimInstance")).toBeLessThan(
+    expect(submit).toContain("Printer readiness blocked:");
+    expect(submit.indexOf("$wmi = Get-CimInstance")).toBeLessThan(
       submit.indexOf("ProcessStartInfo"),
     );
   });

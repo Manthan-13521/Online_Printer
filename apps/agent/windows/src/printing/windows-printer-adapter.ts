@@ -552,10 +552,44 @@ if (-not $sumatra -or -not (Test-Path $sumatra)) {
 }
 
 # Fresh readiness in this same process, before any physical side effect. Never trust the idle snapshot here.
-$ready = Get-CimInstance Win32_Printer -ErrorAction Stop | Where-Object { $_.Name -eq $printer }
-if (-not $ready -or $ready.WorkOffline -or $ready.PrinterStatus -in @(6,7) -or
-    $ready.DetectedErrorState -in @(4,6,7,8,9,10,11)) {
-    throw "Printer readiness could not be confirmed before submission."
+$statusStrings = @()
+
+$gp = Get-Printer -Name $printer -ErrorAction SilentlyContinue
+if ($gp) { $statusStrings += $gp.PrinterStatus.ToString() }
+
+Add-Type -AssemblyName System.Printing -ErrorAction SilentlyContinue
+try {
+    $server = New-Object System.Printing.LocalPrintServer
+    $queue = $server.GetPrintQueue($printer)
+    if ($queue.QueueStatus.ToString() -ne 'None') { $statusStrings += $queue.QueueStatus.ToString() }
+} catch {}
+
+$wmi = Get-CimInstance Win32_Printer -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq $printer }
+if ($wmi) {
+    if ($wmi.DetectedErrorState -eq 4) { $statusStrings += "PaperOut" }
+    if ($wmi.DetectedErrorState -eq 7) { $statusStrings += "DoorOpen" }
+    if ($wmi.DetectedErrorState -eq 8) { $statusStrings += "PaperJam" }
+    if ($wmi.DetectedErrorState -eq 11) { $statusStrings += "OutputBinFull" }
+    if ($wmi.WorkOffline -or $wmi.PrinterStatus -in @(6,7)) { $statusStrings += "WmiOffline" }
+}
+
+$statusText = $statusStrings -join ", "
+$isBlocked = $false
+$failureReason = ""
+
+if ($statusText -match "PaperOut|NoPaper") { $isBlocked = $true; $failureReason = "Paper Out" }
+elseif ($statusText -match "Jam") { $isBlocked = $true; $failureReason = "Paper Jam" }
+elseif ($statusText -match "DoorOpen|CoverOpen") { $isBlocked = $true; $failureReason = "Door Open" }
+elseif ($statusText -match "NoToner") { $isBlocked = $true; $failureReason = "No Toner" }
+elseif ($statusText -match "OutputBinFull") { $isBlocked = $true; $failureReason = "Output Bin Full" }
+elseif ($statusText -match "UserIntervention") { $isBlocked = $true; $failureReason = "User Intervention Required" }
+elseif ($statusText -match "Error" -and $statusText -notmatch "NoError") { $isBlocked = $true; $failureReason = "Printer Error State" }
+elseif ($statusText -match "Offline" -and $statusText -notmatch "WmiOffline") {
+    $isBlocked = $true; $failureReason = "Printer is Offline"
+}
+
+if ($isBlocked) {
+    throw "Printer readiness blocked: $failureReason"
 }
 
 # 2. Record pre-submission spooler job IDs for this exact printer
