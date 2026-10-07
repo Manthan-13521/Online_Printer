@@ -1,4 +1,5 @@
 import type {
+  CancelCustomerPaymentData,
   CreateCustomerPaymentData,
   CustomerFileQuoteData,
   CustomerPaymentSuccessData,
@@ -57,6 +58,14 @@ export class PaymentError extends Error {
   }
 }
 
+function createTrackingToken(): string {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/u, "");
+}
+
 export interface PaymentServiceConfiguration {
   keyId: string;
   keySecret: string;
@@ -106,11 +115,6 @@ export class PaymentService {
     }
   }
 
-  private async requireDraft(rawToken: string): Promise<PayableDraftRecord> {
-    const draft = await this.findDraft(rawToken);
-    this.validateDraftState(draft);
-    return draft;
-  }
 
   private files(draft: PayableDraftRecord): PayableFileRecord[] {
     return draft.files && draft.files.length > 0
@@ -270,11 +274,21 @@ export class PaymentService {
   async createCheckout(
     rawToken: string,
     acknowledgedTotalPaise: number,
+    trackingToken: string,
   ): Promise<CreateCustomerPaymentData> {
     if (!this.configuration.keyId || !this.configuration.keySecret) {
       throw new PaymentError("PAYMENT_CONFIGURATION_MISSING");
     }
-    const draft = await this.requireDraft(rawToken);
+    const draft = await this.findDraft(rawToken);
+    
+    const paidPayment = await this.payments.findPaidPayment(draft.orderId);
+    if (paidPayment && paidPayment.publicJobCode) {
+      const successData = await this.successData(paidPayment, trackingToken);
+      return { ...successData, status: "ALREADY_PAID" };
+    }
+    
+    this.validateDraftState(draft);
+    
     const draftFiles = this.files(draft);
     const quote = await this.reprice(draft);
     const active = await this.payments.findActivePayment(draft.orderId);
@@ -512,14 +526,24 @@ export class PaymentService {
     throw new Error("Could not allocate a unique public job code.");
   }
 
-  async cancel(rawToken: string, providerOrderId: string) {
-    const draft = await this.requireDraft(rawToken);
+  async cancel(
+    rawToken: string,
+    providerOrderId: string,
+    trackingToken?: string,
+  ): Promise<CancelCustomerPaymentData> {
+    const draft = await this.findDraft(rawToken);
     const payment =
       await this.payments.findPaymentByProviderOrderId(providerOrderId);
+      
+    if (payment && payment.status === "PAID" && payment.publicJobCode) {
+      const tokenToUse = trackingToken ?? createTrackingToken();
+      const successData = await this.successData(payment, tokenToUse);
+      return { ...successData, status: "ALREADY_PAID" };
+    }
+    this.validateDraftState(draft);
+    
     if (!payment || payment.orderId !== draft.orderId)
       throw new PaymentError("PAYMENT_ORDER_MISMATCH");
-    if (payment.status === "PAID")
-      throw new PaymentError("PAYMENT_STATE_INVALID");
     if (payment.status === "CANCELLED" && draft.deleteAfterMs) {
       return {
         status: "PAYMENT_CANCELLED" as const,

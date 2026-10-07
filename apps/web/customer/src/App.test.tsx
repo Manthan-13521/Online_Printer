@@ -404,7 +404,7 @@ describe("customer upload app", () => {
     vi.mocked(customerApi.createPayment).mockResolvedValueOnce({
       status: "CHECKOUT_READY",
       razorpayKeyId: "rzp_test_key",
-      razorpayOrderId: "order_server_a",
+      razorpayOrderId: "order_server_a", trackingToken: expect.any(String),
       amountPaise: 2100,
       currency: "INR",
       shopName: "ABC Xerox",
@@ -441,7 +441,7 @@ describe("customer upload app", () => {
     expect(customerApi.verifyPayment).toHaveBeenCalledWith(
       "A".repeat(43),
       expect.objectContaining({
-        razorpayOrderId: "order_server_a",
+        razorpayOrderId: "order_server_a", trackingToken: expect.any(String),
       }),
     );
     const verification = vi.mocked(customerApi.verifyPayment).mock
@@ -463,7 +463,7 @@ describe("customer upload app", () => {
     vi.mocked(customerApi.createPayment).mockResolvedValueOnce({
       status: "CHECKOUT_READY",
       razorpayKeyId: "rzp_test_key",
-      razorpayOrderId: "order_server_a",
+      razorpayOrderId: "order_server_a", trackingToken: expect.any(String),
       amountPaise: 2100,
       currency: "INR",
       shopName: "ABC Xerox",
@@ -492,7 +492,7 @@ describe("customer upload app", () => {
       ),
     ).toBeTruthy();
     expect(customerApi.cancelPayment).toHaveBeenCalledWith("A".repeat(43), {
-      razorpayOrderId: "order_server_a",
+      razorpayOrderId: "order_server_a", trackingToken: expect.any(String),
     });
   });
 
@@ -509,7 +509,7 @@ describe("customer upload app", () => {
     vi.mocked(customerApi.createPayment).mockResolvedValueOnce({
       status: "CHECKOUT_READY",
       razorpayKeyId: "rzp_test_key",
-      razorpayOrderId: "order_server_a",
+      razorpayOrderId: "order_server_a", trackingToken: expect.any(String),
       amountPaise: 2100,
       currency: "INR",
       shopName: "ABC Xerox",

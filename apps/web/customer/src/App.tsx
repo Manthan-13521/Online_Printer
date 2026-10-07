@@ -707,11 +707,20 @@ export function App() {
         ondismiss: () => {
           setPaymentBusy(true);
           setStatus("Recording payment cancellation…");
+          const savedToken = sessionStorage.getItem(`${PENDING_TRACKING_TOKEN_PREFIX}${checkout.razorpayOrderId}`);
           void customerApi
             .cancelPayment(token, {
               razorpayOrderId: checkout.razorpayOrderId,
+              ...(savedToken ? { trackingToken: savedToken } : {})
             })
-            .then(() => {
+            .then((result) => {
+              if (result && "status" in result && result.status === "ALREADY_PAID") {
+                 const code = result.pickupCode ?? result.jobCode;
+                 const temporaryTrackingToken = sessionStorage.getItem(`${PENDING_TRACKING_TOKEN_PREFIX}${checkout.razorpayOrderId}`) ?? "";
+                 window.history.pushState(null, "", `/track/${encodeURIComponent(code)}#${temporaryTrackingToken}`);
+                 setTrackingJobCode(code);
+                 return;
+              }
               setStatus(
                 "Payment was cancelled. Your PDF is retained briefly so you can retry.",
               );
@@ -739,10 +748,18 @@ export function App() {
     if (!quote || !draftToken || paymentBusy || paymentSuccess) return;
     setPaymentBusy(true);
     setStatus("Rechecking the current price and printer readiness…");
+    const temporaryTrackingToken = createTrackingToken();
     try {
       const result = await customerApi.createPayment(draftToken, {
         acknowledgedTotalPaise: quote.totalAmountPaise,
+        trackingToken: temporaryTrackingToken,
       });
+      if (result.status === "ALREADY_PAID") {
+        const code = result.pickupCode ?? result.jobCode;
+        window.history.pushState(null, "", `/track/${encodeURIComponent(code)}#${temporaryTrackingToken}`);
+        setTrackingJobCode(code);
+        return;
+      }
       if (result.status === "PRICE_CHANGED") {
         setQuote(result.quote);
         setStatus(
@@ -751,6 +768,10 @@ export function App() {
         setPaymentBusy(false);
         return;
       }
+      // Store token for verifyCheckoutPayment
+      const pendingKey = `${PENDING_TRACKING_TOKEN_PREFIX}${result.razorpayOrderId}`;
+      sessionStorage.setItem(pendingKey, temporaryTrackingToken);
+      
       setStatus("Opening secure Razorpay checkout…");
       await openCheckout(draftToken, result);
     } catch (caught) {

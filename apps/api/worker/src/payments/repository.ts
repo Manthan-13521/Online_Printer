@@ -135,6 +135,7 @@ function mapPayment(row: PaymentRow | null): PaymentRecord | null {
 
 export interface PaymentRepository {
   findDraft(tokenHash: string): Promise<PayableDraftRecord | null>;
+  findPaidPayment(orderId: string): Promise<PaymentRecord | null>;
   saveRecalculatedQuote(input: {
     orderId: string;
     selectedPages: string;
@@ -397,6 +398,22 @@ export class D1PaymentRepository implements PaymentRepository {
           o.status AS order_status, o.pickup_code, o.is_priority
         FROM payments p JOIN orders o ON o.id = p.order_id
         WHERE p.order_id = ? AND p.status IN ('CREATED', 'PENDING')
+        ORDER BY p.created_at_ms DESC LIMIT 1`,
+      )
+      .bind(orderId)
+      .first<PaymentRow>();
+    return mapPayment(row);
+  }
+
+  async findPaidPayment(orderId: string): Promise<PaymentRecord | null> {
+    const row = await this.db
+      .prepare(
+        `SELECT p.id, p.order_id, p.provider_order_id, p.provider_payment_id,
+          p.amount_paise, o.total_amount_paise AS order_amount_paise,
+          p.currency, p.status, o.public_job_code,
+          o.status AS order_status, o.pickup_code, o.is_priority
+        FROM payments p JOIN orders o ON o.id = p.order_id
+        WHERE p.order_id = ? AND p.status = 'PAID'
         ORDER BY p.created_at_ms DESC LIMIT 1`,
       )
       .bind(orderId)

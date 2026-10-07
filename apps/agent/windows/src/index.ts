@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import * as net from "node:net";
 import {
   AgentApiError,
   AgentAuthError,
@@ -120,6 +121,22 @@ export {
   runCli,
 };
 export type { AgentCredentials, CredentialStore };
+
+function acquireSingleInstanceLock(): Promise<net.Server> {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.once("error", (err: NodeJS.ErrnoException) => {
+      if (err.code === "EADDRINUSE") {
+        reject(new Error("Another instance of PrintGo Agent is already running."));
+      } else {
+        reject(err);
+      }
+    });
+    server.listen(43210, "127.0.0.1", () => {
+      resolve(server);
+    });
+  });
+}
 
 async function runCli(): Promise<void> {
   const args = process.argv.slice(2);
@@ -376,6 +393,14 @@ SumatraPDF:
   }
 
   let authErrorCleared = false;
+
+  try {
+    if (process.env.NODE_ENV !== "test") await acquireSingleInstanceLock();
+  } catch (err) {
+    console.error("[PrintGo Agent] ❌ Another instance of PrintGo Agent is already running.");
+    console.error("Only one agent daemon can run per computer to prevent print duplication.");
+    process.exit(1);
+  }
 
   const log = new RotatingLog(
     path.join(path.dirname(getDefaultStatusFilePath()), "daemon.log"),
