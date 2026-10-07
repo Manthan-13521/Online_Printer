@@ -207,7 +207,7 @@ export class PaymentService {
       );
       const totalAmountPaise =
         subtotalAmountPaise - discount.discountAmountPaise;
-            return {
+      return {
         normalizedSelectedPages: first.selectedPages,
         selectedPageCount: first.selectedPageCount,
         copies: first.copies,
@@ -233,7 +233,6 @@ export class PaymentService {
                 discountPercent: discount.discountPercent,
               }
             : null,
-        
       };
     } catch (caught) {
       if (
@@ -262,7 +261,7 @@ export class PaymentService {
       snapshotDiscountThresholdPaise:
         quote.appliedDiscount?.minSubtotalPaise ?? null,
       snapshotDiscountPercent: quote.appliedDiscount?.discountPercent ?? null,
-      
+
       nowMs: this.now(),
     });
     if (!saved) throw new PaymentError("PAYMENT_STATE_INVALID");
@@ -568,7 +567,6 @@ export class PaymentService {
       ...(payment.isPriority !== undefined
         ? { isPriority: payment.isPriority }
         : {}),
-      
     };
   }
 }

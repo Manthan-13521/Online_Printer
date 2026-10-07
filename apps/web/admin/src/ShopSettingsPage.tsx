@@ -369,13 +369,15 @@ export function ShopSettingsPage({
               style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}
             >
               <span style={{ fontWeight: "bold", fontSize: "0.95rem" }}>
-                {false ? "On" : "Off"}
+                {settings.identificationSheetEnabled ? "On" : "Off"}
               </span>
               <label className="toggle-switch">
                 <input
                   aria-label="Print one identification sheet for each order"
-                  checked={false}
-                  onChange={() => patch({})}
+                  checked={Boolean(settings.identificationSheetEnabled)}
+                  onChange={(event) =>
+                    patch({ identificationSheetEnabled: event.target.checked })
+                  }
                   role="switch"
                   type="checkbox"
                 />
@@ -387,14 +389,14 @@ export function ShopSettingsPage({
             Adds one shop identification sheet per order for sorting printed
             jobs. Customers are not charged for this sheet.
           </p>
-          <fieldset disabled={!false}>
+          <fieldset disabled={!settings.identificationSheetEnabled}>
             <legend>Placement</legend>
             <label className="radio-row">
               <input
-                checked={false}
+                checked={settings.identificationSheetPlacement === "FIRST"}
                 name="placement"
                 onChange={() =>
-                  patch({})
+                  patch({ identificationSheetPlacement: "FIRST" })
                 }
                 type="radio"
               />
@@ -402,21 +404,27 @@ export function ShopSettingsPage({
             </label>
             <label className="radio-row">
               <input
-                checked={"LAST" === "LAST"}
+                checked={settings.identificationSheetPlacement === "LAST"}
                 name="placement"
-                onChange={() => patch({})}
+                onChange={() => patch({ identificationSheetPlacement: "LAST" })}
                 type="radio"
               />
               <span>Print after document</span>
             </label>
           </fieldset>
 
-          <div
+          <fieldset
+            disabled={!settings.identificationSheetEnabled}
             style={{
+              border: 0,
+              padding: 0,
+              margin: 0,
+              minInlineSize: 0,
               display: "grid",
               gap: "0.35rem",
               paddingTop: "1rem",
               borderTop: "1px solid #e2e8f0",
+              opacity: settings.identificationSheetEnabled ? 1 : 0.6,
             }}
           >
             <h3
@@ -436,6 +444,7 @@ export function ShopSettingsPage({
             <label htmlFor="id-requirement-mode">Identification policy</label>
             <select
               id="id-requirement-mode"
+              disabled={!settings.identificationSheetEnabled}
               value={settings.idRequirementMode ?? "ALWAYS"}
               onChange={(event) =>
                 patch({
@@ -462,6 +471,7 @@ export function ShopSettingsPage({
                   type="number"
                   min="1"
                   step="1"
+                  disabled={!settings.identificationSheetEnabled}
                   value={
                     settings.idThresholdPaise !== undefined
                       ? formatPaiseAsRupeesInput(settings.idThresholdPaise)
@@ -480,7 +490,7 @@ export function ShopSettingsPage({
                 </p>
               </div>
             ) : null}
-          </div>
+          </fieldset>
         </section>
 
         <section className="panel form-section">

@@ -158,14 +158,14 @@ describe("admin configuration routes", () => {
 
   it("updates validated settings as the authenticated admin", async () => {
     const actions = configuration();
-    const { identificationSheetEnabled, identificationSheetPlacement, ...restSettings } = settings as any; const input = { ...restSettings, shopName: "City Prints" };
+    const input = { ...settings, shopName: "City Prints" };
     const response = await handleAdminConfigurationRequest(
       request("/api/admin/settings", "PUT", input),
       env,
       actions,
       sessions(),
     );
-    if(response.status !== 200) console.log(await response.text()); expect(response.status).toBe(200);
+    expect(response.status).toBe(200);
     expect(actions.updateSettings).toHaveBeenCalledWith(input, "admin-1");
   });
 

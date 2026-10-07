@@ -163,7 +163,11 @@ export async function handleAdminOrdersRequest(
       }
       if (caught.code === "ORDER_IS_UNCERTAIN") {
         return withAdminCors(
-          error(400, "ORDER_IS_UNCERTAIN", "Some pages may already have printed. Reprinting may produce duplicates. Please resolve the uncertainty first."),
+          error(
+            400,
+            "ORDER_IS_UNCERTAIN",
+            "Some pages may already have printed. Reprinting may produce duplicates. Please resolve the uncertainty first.",
+          ),
           env.ADMIN_ALLOWED_ORIGIN,
         );
       }

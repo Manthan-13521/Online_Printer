@@ -132,7 +132,10 @@ describe("RecoveryController", () => {
   });
 
   it("safe pre-submission recovery requeues correctly", async () => {
-    const nowMs = 100 + 6 * 60 * 1000; db.prepare(`UPDATE agents SET last_heartbeat_at_ms = ${nowMs} WHERE id = \'00000000-0000-0000-0000-000000000001\'`).run();
+    const nowMs = 100 + 6 * 60 * 1000;
+    db.prepare(
+      `UPDATE agents SET last_heartbeat_at_ms = ${nowMs} WHERE id = \'00000000-0000-0000-0000-000000000001\'`,
+    ).run();
     db.prepare(
       `INSERT INTO orders (id, public_job_code, status, claimed_by_agent_id, claim_id, claim_expires_at_ms, claimed_at_ms, printer_id, updated_at_ms, customer_name, customer_phone, original_filename, selected_pages, copies, paper_size, color_mode, sides, total_amount_paise, currency, cleanup_state, created_at_ms) VALUES ('00000000-0000-0000-0000-000000000003', 'O1', 'PRINTING', '00000000-0000-0000-0000-000000000001', 'claim1', 10000, 100, '00000000-0000-0000-0000-000000000002', 100, 'Test', '1234567890', 'file.pdf', '1', 1, 'A4', 'BW', 'SINGLE', 0, 'INR', 'ACTIVE', 100)`,
     ).run();
@@ -155,7 +158,10 @@ describe("RecoveryController", () => {
   });
 
   it("submitted/unknown marks as COMPLETION_UNKNOWN and NEVER automatically reprints", async () => {
-    const nowMs = 100 + 6 * 60 * 1000; db.prepare(`UPDATE agents SET last_heartbeat_at_ms = ${nowMs} WHERE id = \'00000000-0000-0000-0000-000000000001\'`).run();
+    const nowMs = 100 + 6 * 60 * 1000;
+    db.prepare(
+      `UPDATE agents SET last_heartbeat_at_ms = ${nowMs} WHERE id = \'00000000-0000-0000-0000-000000000001\'`,
+    ).run();
     db.prepare(
       `INSERT INTO orders (id, public_job_code, status, claimed_by_agent_id, claim_id, claim_expires_at_ms, claimed_at_ms, printer_id, updated_at_ms, customer_name, customer_phone, original_filename, selected_pages, copies, paper_size, color_mode, sides, total_amount_paise, currency, cleanup_state, created_at_ms) VALUES ('00000000-0000-0000-0000-000000000003', 'O1', 'PRINTING', '00000000-0000-0000-0000-000000000001', 'claim1', 10000, 100, '00000000-0000-0000-0000-000000000002', 100, 'Test', '1234567890', 'file.pdf', '1', 1, 'A4', 'BW', 'SINGLE', 0, 'INR', 'ACTIVE', 100)`,
     ).run();

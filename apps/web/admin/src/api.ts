@@ -431,9 +431,16 @@ export const adminApi = {
 };
 
 export function clearWaitingQueue() {
-  return request<{ clearedCount: number; skippedCount: number; message: string }>('/api/admin/print-system/clear-queue', { method: 'POST' });
+  return request<{
+    clearedCount: number;
+    skippedCount: number;
+    message: string;
+  }>("/api/admin/print-system/clear-queue", { method: "POST" });
 }
 
 export function removeOrderFromQueue(orderId: string) {
-  return request<{ message: string }>(`/api/admin/orders/${encodeURIComponent(orderId)}/remove-from-queue`, { method: 'POST' });
+  return request<{ message: string }>(
+    `/api/admin/orders/${encodeURIComponent(orderId)}/remove-from-queue`,
+    { method: "POST" },
+  );
 }

@@ -120,7 +120,6 @@ describe("shop settings validation", () => {
     });
   });
 
-
   it.each([
     [{ ...validSettings, shopName: "" }, "shopName"],
     [{ ...validSettings, shopName: "x".repeat(101) }, "shopName"],

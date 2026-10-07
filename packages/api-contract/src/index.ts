@@ -1,6 +1,7 @@
 import type {
   ColorMode,
   CustomerOrderStatus,
+  IdentificationSheetPlacement,
   PaperSize,
   SidesMode,
 } from "@printgo/domain";
@@ -77,6 +78,8 @@ export interface ShopSettings {
   onlinePrintingEnabled: boolean;
   maxPdfSizeBytes: number;
   maxOrderUploadBytes?: number;
+  identificationSheetEnabled?: boolean;
+  identificationSheetPlacement?: IdentificationSheetPlacement;
   automaticDailyCleanupEnabled?: boolean;
   dailyCleanupTime?: string;
   timezone?: string;

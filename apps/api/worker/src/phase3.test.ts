@@ -476,7 +476,6 @@ describe("Phase 3: Customer Public Tracking & Status Mapping", () => {
     expect(tracking?.status).toBe("WAITING_FOR_STAFF");
     expect(tracking?.statusLabel).toBe("Waiting for Staff");
     expect(tracking?.isPriority).toBe(true);
-    
 
     // Verify privacy: safe fields only
     const record = tracking as unknown as Record<string, unknown>;

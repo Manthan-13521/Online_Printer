@@ -250,8 +250,8 @@ describe("D1PaymentRepository webhook claim & stale event recovery", () => {
     expect(saved).toEqual({
       total_amount_paise: 2080,
       priority_fee_paise: 500,
-      discount_amount_paise: 520, identification_required: 0,
-      
+      discount_amount_paise: 520,
+      identification_required: 0,
     });
     await db
       .prepare(

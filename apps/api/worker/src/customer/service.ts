@@ -529,7 +529,6 @@ export class CustomerService {
     const discountAmountPaise = calculatedDiscount.discountAmountPaise;
     const totalAmountPaise = subtotalAmountPaise - discountAmountPaise;
 
-    
     const expiresAtMs = this.now() + UNPAID_RETENTION_MS;
     if (
       !(await this.repository.saveOrderQuote({
@@ -554,7 +553,7 @@ export class CustomerService {
         snapshotDiscountThresholdPaise:
           calculatedDiscount.discountThresholdPaise,
         snapshotDiscountPercent: calculatedDiscount.discountPercent,
-        
+
         nowMs: this.now(),
         expiresAtMs,
       }))
@@ -589,7 +588,6 @@ export class CustomerService {
               discountPercent: calculatedDiscount.discountPercent,
             }
           : null,
-      
     };
   }
 

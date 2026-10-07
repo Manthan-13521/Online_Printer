@@ -257,6 +257,8 @@ export interface ValidatedShopSettings {
   onlinePrintingEnabled: boolean;
   maxPdfSizeBytes: number;
   maxOrderUploadBytes?: number;
+  identificationSheetEnabled?: boolean;
+  identificationSheetPlacement?: IdentificationSheetPlacement;
   automaticDailyCleanupEnabled?: boolean;
   dailyCleanupTime?: string;
   timezone?: string;
@@ -480,6 +482,17 @@ export function validateShopSettingsInput(
           customerNotice,
           onlinePrintingEnabled: record.onlinePrintingEnabled as boolean,
           maxPdfSizeBytes: record.maxPdfSizeBytes as number,
+          ...(typeof record.identificationSheetEnabled === "boolean"
+            ? { identificationSheetEnabled: record.identificationSheetEnabled }
+            : {}),
+          ...(isIdentificationSheetPlacement(
+            record.identificationSheetPlacement,
+          )
+            ? {
+                identificationSheetPlacement:
+                  record.identificationSheetPlacement,
+              }
+            : {}),
         },
       };
 }
@@ -989,7 +1002,8 @@ export function validateReportCommandInput(
     status !== "SUBMITTED" &&
     status !== "BLOCKED" &&
     status !== "SUCCEEDED" &&
-    status !== "FAILED" && status !== "UNCERTAIN"
+    status !== "FAILED" &&
+    status !== "UNCERTAIN"
   ) {
     return {
       ok: false,

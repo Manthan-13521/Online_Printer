@@ -66,7 +66,8 @@ describe("scheduled cleanup cost gates", () => {
     const hasCandidates = vi.fn();
     const preview = vi.fn();
     const repository = {
-      hasOpenRun, purgeStaleRetainedRecords: vi.fn().mockResolvedValue(undefined),
+      hasOpenRun,
+      purgeStaleRetainedRecords: vi.fn().mockResolvedValue(undefined),
       hasCandidates,
       preview,
       dailySettings: vi.fn().mockResolvedValue({

@@ -1,7 +1,5 @@
 import { UNRESOLVED_PAID_FAILURE_RETENTION_MS } from "@printgo/domain";
-import {
-  WEBHOOK_PROCESSING_STALE_TIMEOUT_MS,
-} from "@printgo/domain";
+import { WEBHOOK_PROCESSING_STALE_TIMEOUT_MS } from "@printgo/domain";
 
 export interface PayableDraftRecord {
   orderId: string;
@@ -131,7 +129,6 @@ function mapPayment(row: PaymentRow | null): PaymentRecord | null {
         orderStatus: row.order_status,
         pickupCode: row.pickup_code ?? null,
         isPriority: row.is_priority === 1,
-        
       }
     : null;
 }
@@ -149,7 +146,7 @@ export interface PaymentRepository {
     discountAmountPaise: number;
     snapshotDiscountThresholdPaise: number | null;
     snapshotDiscountPercent: number | null;
-        nowMs: number;
+    nowMs: number;
   }): Promise<boolean>;
   findActivePayment(orderId: string): Promise<PaymentRecord | null>;
   reservePayment(input: {
@@ -559,7 +556,7 @@ export class D1PaymentRepository implements PaymentRepository {
            WHERE id = ? AND cleanup_state = 'ACTIVE' AND (
              status IN ('PAYMENT_PENDING', 'PAYMENT_FAILED', 'PAYMENT_CANCELLED', 'PAID')
              OR (status = 'QUEUED' AND public_job_code = ?)
-           )`
+           )`,
         )
         .bind(
           input.jobCode,
@@ -578,7 +575,7 @@ export class D1PaymentRepository implements PaymentRepository {
               FROM orders WHERE id = ?
             ),
             updated_at_ms = ?
-          WHERE id = 1 AND EXISTS (SELECT 1 FROM orders WHERE id = ? AND paid_at_ms = ?)`
+          WHERE id = 1 AND EXISTS (SELECT 1 FROM orders WHERE id = ? AND paid_at_ms = ?)`,
         )
         .bind(before.orderId, input.nowMs, before.orderId, input.nowMs),
       this.db
@@ -597,12 +594,12 @@ export class D1PaymentRepository implements PaymentRepository {
       this.db
         .prepare(
           `UPDATE uploads SET retention_reason = 'UNRESOLVED_PAID_FAILURE', delete_after_ms = ?,
-            updated_at_ms = ? WHERE order_id = ?`
+            updated_at_ms = ? WHERE order_id = ?`,
         )
         .bind(
           input.nowMs + UNRESOLVED_PAID_FAILURE_RETENTION_MS,
           input.nowMs,
-          before.orderId
+          before.orderId,
         ),
       this.db
         .prepare(

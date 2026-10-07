@@ -390,7 +390,7 @@ export function DashboardPage({
           <span>
             Identification sheet:{" "}
             <strong>
-              {false ? "ON" : "OFF"}
+              {settings?.identificationSheetEnabled ? "ON" : "OFF"}
             </strong>
           </span>
         </div>

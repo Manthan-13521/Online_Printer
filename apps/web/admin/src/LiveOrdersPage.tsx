@@ -4,7 +4,12 @@ import { useEffect, useState } from "react";
 
 import { Pagination } from "./Pagination";
 import { SystemStatusPanel } from "./SystemStatusPanel";
-import { adminApi, AdminApiError, friendlyAdminError, removeOrderFromQueue } from "./api";
+import {
+  adminApi,
+  AdminApiError,
+  friendlyAdminError,
+  removeOrderFromQueue,
+} from "./api";
 
 function money(paise: number): string {
   return new Intl.NumberFormat("en-IN", {
@@ -236,20 +241,6 @@ export function LiveOrdersPage({
                             ⚡ Priority
                           </span>
                         ) : null}
-                        {false ? (
-                          <span
-                            style={{
-                              fontWeight: 600,
-                              padding: "0.1rem 0.5rem",
-                              borderRadius: "4px",
-                              backgroundColor: "#fee2e2",
-                              color: "#991b1b",
-                              fontSize: "0.85rem",
-                            }}
-                          >
-                            🪪 ID Required
-                          </span>
-                        ) : null}
                       </div>
                       <h2>{order.customerName}</h2>
                     </div>
@@ -314,14 +305,6 @@ export function LiveOrdersPage({
                       <dd>{order.isPriority ? "Priority Queue" : "Normal"}</dd>
                     </div>
                     <div>
-                      <dt>ID Check</dt>
-                      <dd>
-                        {false
-                          ? "Required at pickup"
-                          : "Not required"}
-                      </dd>
-                    </div>
-                    <div>
                       <dt>Phone</dt>
                       <dd>{order.customerPhone}</dd>
                     </div>
@@ -363,29 +346,48 @@ export function LiveOrdersPage({
                       <button
                         type="button"
                         className="secondary-button"
-                        style={{ color: "#991b1b", borderColor: "#fca5a5", backgroundColor: "#fef2f2" }}
+                        style={{
+                          color: "#991b1b",
+                          borderColor: "#fca5a5",
+                          backgroundColor: "#fef2f2",
+                        }}
                         disabled={actionBusyId !== null}
                         onClick={() => {
-  if (window.confirm("Remove this order from the queue?")) {
-    setActionBusyId(`remove-${order.orderId}`);
-    removeOrderFromQueue(order.orderId)
-      .then(() => {
-        setOrders(prev => prev?.filter(o => o.orderId !== order.orderId) ?? []);
-      })
-      .catch((caught) => {
-        setError(caught instanceof Error ? caught.message : "Failed to remove");
-      })
-      .finally(() => {
-        setActionBusyId(null);
-      });
-  }
-}}
->
-                        {actionBusyId === `remove-${order.orderId}` ? "Removing..." : "Remove from Queue"}
+                          if (
+                            window.confirm("Remove this order from the queue?")
+                          ) {
+                            setActionBusyId(`remove-${order.orderId}`);
+                            removeOrderFromQueue(order.orderId)
+                              .then(() => {
+                                setOrders(
+                                  (prev) =>
+                                    prev?.filter(
+                                      (o) => o.orderId !== order.orderId,
+                                    ) ?? [],
+                                );
+                              })
+                              .catch((caught) => {
+                                setError(
+                                  caught instanceof Error
+                                    ? caught.message
+                                    : "Failed to remove",
+                                );
+                              })
+                              .finally(() => {
+                                setActionBusyId(null);
+                              });
+                          }
+                        }}
+                      >
+                        {actionBusyId === `remove-${order.orderId}`
+                          ? "Removing..."
+                          : "Remove from Queue"}
                       </button>
                     )}
 
-                    {["QUEUED", "COMPLETED", "PRINTED"].includes(order.status) && (
+                    {["QUEUED", "COMPLETED", "PRINTED"].includes(
+                      order.status,
+                    ) && (
                       <button
                         type="button"
                         className="secondary-button"
@@ -398,8 +400,14 @@ export function LiveOrdersPage({
                       </button>
                     )}
 
-                    {["COMPLETED", "PRINTED", "PRINT_FAILED", "RETRY_PENDING", "NEEDS_ADMIN"].includes(order.status) && (
-                      confirmRetryId === order.orderId ? (
+                    {[
+                      "COMPLETED",
+                      "PRINTED",
+                      "PRINT_FAILED",
+                      "RETRY_PENDING",
+                      "NEEDS_ADMIN",
+                    ].includes(order.status) &&
+                      (confirmRetryId === order.orderId ? (
                         <div
                           style={{
                             display: "flex",
@@ -424,8 +432,8 @@ export function LiveOrdersPage({
                             }}
                             disabled={actionBusyId !== null}
                             onClick={() => {
-                               setConfirmRetryId(null);
-                               void handleRetry(order, false);
+                              setConfirmRetryId(null);
+                              void handleRetry(order, false);
                             }}
                           >
                             {actionBusyId === `retry-${order.orderId}`
@@ -447,7 +455,7 @@ export function LiveOrdersPage({
                           className="primary-button"
                           disabled={actionBusyId !== null}
                           onClick={() => {
-                             setConfirmRetryId(order.orderId);
+                            setConfirmRetryId(order.orderId);
                           }}
                           title="Print this order again"
                         >
@@ -455,13 +463,31 @@ export function LiveOrdersPage({
                             ? "Retrying…"
                             : "Print Again"}
                         </button>
-                      )
-                    )}
+                      ))}
 
-                    {["ADMIN_ACTION_REQUIRED", "COMPLETION_UNKNOWN"].includes(order.status) && (
-                      <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", backgroundColor: "#fff7ed", padding: "0.5rem", borderRadius: "4px", border: "1px solid #fdba74" }}>
-                        <span style={{ fontSize: "0.85rem", color: "#9a3412", fontWeight: 500 }}>
-                          Printing result is uncertain. Some pages may already have printed.
+                    {["ADMIN_ACTION_REQUIRED", "COMPLETION_UNKNOWN"].includes(
+                      order.status,
+                    ) && (
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: "0.5rem",
+                          alignItems: "center",
+                          backgroundColor: "#fff7ed",
+                          padding: "0.5rem",
+                          borderRadius: "4px",
+                          border: "1px solid #fdba74",
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontSize: "0.85rem",
+                            color: "#9a3412",
+                            fontWeight: 500,
+                          }}
+                        >
+                          Printing result is uncertain. Some pages may already
+                          have printed.
                         </span>
                         <button
                           type="button"
@@ -470,17 +496,25 @@ export function LiveOrdersPage({
                           disabled={actionBusyId !== null}
                           onClick={() => void handleManualComplete(order)}
                         >
-                           {actionBusyId === `complete-${order.orderId}` ? "Marking..." : "Mark as Printed"}
+                          {actionBusyId === `complete-${order.orderId}`
+                            ? "Marking..."
+                            : "Mark as Printed"}
                         </button>
                       </div>
                     )}
 
-                    {["PRINTING", "CLAIMED", "SPOOLING"].includes(order.status) && (
-                       <span style={{ fontSize: "0.85rem", color: "#4b5563" }}>Printing in progress...</span>
+                    {["PRINTING", "CLAIMED", "SPOOLING"].includes(
+                      order.status,
+                    ) && (
+                      <span style={{ fontSize: "0.85rem", color: "#4b5563" }}>
+                        Printing in progress...
+                      </span>
                     )}
 
                     {order.status === "PRINT_BLOCKED" && (
-                       <span style={{ fontSize: "0.85rem", color: "#b91c1c" }}>Printer fault. Clear printer error, then Recover.</span>
+                      <span style={{ fontSize: "0.85rem", color: "#b91c1c" }}>
+                        Printer fault. Clear printer error, then Recover.
+                      </span>
                     )}
                   </div>
                 </article>

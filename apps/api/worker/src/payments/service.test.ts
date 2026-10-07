@@ -301,7 +301,7 @@ describe("PaymentService", () => {
         discountAmountPaise: 580,
         snapshotDiscountThresholdPaise: 2_500,
         snapshotDiscountPercent: 20,
-              }),
+      }),
     );
   });
 

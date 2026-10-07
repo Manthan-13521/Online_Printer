@@ -1094,7 +1094,7 @@ export function App() {
           onSubmit={(event) => void prepareReview(event)}
         >
           <div className="order-left">
-            <section className="step">
+            <section className="step step-1">
               <div className="step-header">
                 <span className="step-number">1</span>
                 <h2>Customer Details</h2>
@@ -1203,7 +1203,7 @@ export function App() {
               <div className="char-count">{instructions.length}/500</div>
             </section>
 
-            <section className="step">
+            <section className="step step-3">
               <div className="step-header">
                 <span className="step-number">3</span>
                 <h2>Print Settings</h2>
@@ -1477,7 +1477,7 @@ export function App() {
           </div>
 
           <div className="order-right">
-            <section className="step">
+            <section className="step step-2">
               <div className="step-header">
                 <span className="step-number">2</span>
                 <h2>Upload PDFs</h2>
@@ -1612,7 +1612,7 @@ export function App() {
               )}
             </section>
 
-            <section className="step review">
+            <section className="step step-4 review">
               <div className="step-header">
                 <span className="step-number">4</span>
                 <h2>Review & Payment</h2>

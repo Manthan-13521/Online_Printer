@@ -1,5 +1,10 @@
 import { useEffect, useState } from "react";
-import { adminApi, AdminApiError, friendlyAdminError, clearWaitingQueue } from "./api";
+import {
+  adminApi,
+  AdminApiError,
+  friendlyAdminError,
+  clearWaitingQueue,
+} from "./api";
 import { startVisiblePolling } from "../../polling";
 import type { AdminPrintSystemStatusData } from "@printgo/api-contract";
 
@@ -62,7 +67,6 @@ export function SystemStatusPanel({
     };
   }, [onSessionExpired, pollIntervalMs]);
 
-  
   async function handleClearQueue() {
     setIsClearing(true);
     setRecoveryNotice(null);

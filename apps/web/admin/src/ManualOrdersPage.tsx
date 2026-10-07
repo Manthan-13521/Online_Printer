@@ -146,20 +146,6 @@ function ManualOrderCard({
                 ⚡ Priority
               </span>
             ) : null}
-            {false ? (
-              <span
-                style={{
-                  fontWeight: 600,
-                  padding: "0.1rem 0.5rem",
-                  borderRadius: "4px",
-                  backgroundColor: "#fee2e2",
-                  color: "#991b1b",
-                  fontSize: "0.85rem",
-                }}
-              >
-                🪪 ID Required
-              </span>
-            ) : null}
             <span
               className={`status-badge status-${order.status.toLowerCase().replace(/_/g, "-")}`}
             >

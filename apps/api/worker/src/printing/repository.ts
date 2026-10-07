@@ -256,7 +256,9 @@ export class D1PrintingRepository implements PrintingRepository {
   }
 
   async recoverExpiredClaims(nowMs: number): Promise<void> {
-    const pausedRow = await this.db.prepare("SELECT claims_paused FROM installation WHERE id = 1").first<{ claims_paused: number }>();
+    const pausedRow = await this.db
+      .prepare("SELECT claims_paused FROM installation WHERE id = 1")
+      .first<{ claims_paused: number }>();
     if (pausedRow?.claims_paused === 1) return;
 
     const activeStatuses = "'CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED'";
@@ -1744,14 +1746,13 @@ export class D1PrintingRepository implements PrintingRepository {
       throw new Error("ORDER_CANNOT_BE_RETRIED");
     }
 
-    
     const nonRetriableStatuses = [
       "QUEUED",
       "CLAIMED",
       "SPOOLING",
       "PRINTING",
       "PRINT_BLOCKED",
-      "RECOVERY_REQUIRED"
+      "RECOVERY_REQUIRED",
     ];
     if (nonRetriableStatuses.includes(order.status)) {
       throw new Error("ORDER_ALREADY_IN_PROGRESS");
@@ -1863,7 +1864,9 @@ export class D1PrintingRepository implements PrintingRepository {
   async autoRetryEligibleOrders(
     nowMs: number,
   ): Promise<{ retriedCount: number }> {
-    const pausedRow = await this.db.prepare("SELECT claims_paused FROM installation WHERE id = 1").first<{ claims_paused: number }>();
+    const pausedRow = await this.db
+      .prepare("SELECT claims_paused FROM installation WHERE id = 1")
+      .first<{ claims_paused: number }>();
     if (pausedRow?.claims_paused === 1) return { retriedCount: 0 };
 
     const candidates = await this.db
