@@ -227,6 +227,17 @@ export interface PrintingRepository {
     reason?: string;
     nowMs: number;
   }): Promise<{ orderId: string; status: "COMPLETED" | "AWAITING_FINISHING" }>;
+  cancelOrder(input: {
+    orderId: string;
+    adminId: string;
+    reason: string;
+    nowMs: number;
+  }): Promise<{ orderId: string; status: "CANCELLED" }>;
+  removeFromQueue(input: {
+    orderId: string;
+    adminId: string;
+    nowMs: number;
+  }): Promise<{ orderId: string; status: "CANCELLED" }>;
   retryOrder(input: {
     orderId: string;
     adminId: string;
@@ -1594,6 +1605,112 @@ export class D1PrintingRepository implements PrintingRepository {
       }>();
   }
 
+  async removeFromQueue(input: {
+    orderId: string;
+    adminId: string;
+    nowMs: number;
+  }) {
+    const order = await this.db
+      .prepare(`SELECT id, status FROM orders WHERE id = ?`)
+      .bind(input.orderId)
+      .first<{ id: string; status: string }>();
+
+    if (!order) throw new Error("ORDER_NOT_FOUND");
+    let isSafe = false;
+    
+    if (order.status === "QUEUED") {
+        isSafe = true;
+    } else if (order.status === "RETRY_PENDING") {
+        const attempts = await this.db
+          .prepare(`SELECT count(*) as count FROM print_attempts WHERE order_id = ? AND submitted_at_ms IS NOT NULL`)
+          .bind(order.id)
+          .first<{ count: number }>();
+        if (attempts && attempts.count === 0) {
+            isSafe = true;
+        }
+    }
+    
+    if (!isSafe) {
+      throw new Error("ORDER_ALREADY_IN_PROGRESS");
+    }
+
+    const result = await this.db.batch([
+      this.db
+        .prepare(
+          `UPDATE orders SET status = 'CANCELLED', updated_at_ms = ? WHERE id = ? AND status IN ('QUEUED', 'RETRY_PENDING')`,
+        )
+        .bind(input.nowMs, input.orderId),
+      this.db
+        .prepare(
+          `INSERT INTO order_events (id, order_id, event_type, from_status, to_status, actor_type, actor_id, created_at_ms, details_json)
+          VALUES (?, ?, 'ADMIN_MANUAL_CANCEL', ?, 'CANCELLED', 'ADMIN', ?, ?, ?)`,
+        )
+        .bind(
+          crypto.randomUUID(),
+          input.orderId,
+          order.status,
+          input.adminId,
+          input.nowMs,
+          JSON.stringify({ reason: "Removed from queue by admin" }),
+        ),
+    ]);
+
+    if (result[0]?.meta?.changes !== 1) {
+      throw new Error("ORDER_ALREADY_IN_PROGRESS");
+    }
+
+    return { orderId: input.orderId, status: "CANCELLED" as const };
+  }
+
+
+  async cancelOrder(input: {
+    orderId: string;
+    adminId: string;
+    reason: string;
+    nowMs: number;
+  }): Promise<{ orderId: string; status: "CANCELLED" }> {
+    const order = await this.db
+      .prepare(`SELECT id, status FROM orders WHERE id = ?`)
+      .bind(input.orderId)
+      .first<{ id: string; status: string }>();
+
+    if (!order) throw new Error("ORDER_NOT_FOUND");
+    if (!input.reason || input.reason.length > 500) {
+      throw new Error("ORDER_CONFIRMATION_REQUIRED");
+    }
+
+    if (!["COMPLETION_UNKNOWN", "ADMIN_ACTION_REQUIRED", "RETRY_PENDING", "PRINT_FAILED"].includes(order.status)) {
+      throw new Error("ORDER_ALREADY_IN_PROGRESS");
+    }
+
+    const result = await this.db.batch([
+      this.db
+        .prepare(
+          `UPDATE orders SET status = 'CANCELLED', updated_at_ms = ? WHERE id = ? AND status = ?`
+        )
+        .bind(input.nowMs, input.orderId, order.status),
+      this.db
+        .prepare(
+          `INSERT INTO order_events (id, order_id, event_type, from_status, to_status, actor_type, actor_id, created_at_ms, details_json)
+          VALUES (?, ?, 'ADMIN_MANUAL_CANCEL', ?, 'CANCELLED', 'ADMIN', ?, ?, ?)`
+        )
+        .bind(
+          crypto.randomUUID(),
+          input.orderId,
+          order.status,
+          input.adminId,
+          input.nowMs,
+          JSON.stringify({ reason: input.reason })
+        ),
+    ]);
+
+    if (result[0]?.meta?.changes !== 1) {
+      throw new Error("ORDER_ALREADY_IN_PROGRESS");
+    }
+
+    return { orderId: input.orderId, status: "CANCELLED" as const };
+  }
+
   async manualComplete(input: {
     orderId: string;
     adminId: string;
@@ -1647,9 +1764,7 @@ export class D1PrintingRepository implements PrintingRepository {
          WHERE id = ? AND cleanup_state = 'ACTIVE'
            AND status IN ('NEEDS_ADMIN','COMPLETION_UNKNOWN','RETRY_PENDING',
              'PRINT_FAILED','ADMIN_ACTION_REQUIRED','PRINTED')
-           AND EXISTS (SELECT 1 FROM order_files WHERE order_id = orders.id)
-           AND NOT EXISTS (SELECT 1 FROM print_attempt_steps
-             WHERE order_id = orders.id AND status IN ('SUBMISSION_STARTED','SUBMITTED'))`,
+           AND EXISTS (SELECT 1 FROM order_files WHERE order_id = orders.id)`,
         )
         .bind(
           nextStatus,

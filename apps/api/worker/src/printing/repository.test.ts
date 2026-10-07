@@ -846,3 +846,39 @@ describe("paid-print D1 safety", () => {
     expect(orderAfter.claimed_by_agent_id).toBeNull();
   });
 });
+describe("Remove From Queue Regression Tests", () => {
+  let sqlite: DatabaseSync;
+  let repo: D1PrintingRepository;
+
+  beforeEach(() => {
+    sqlite = new DatabaseSync(":memory:");
+    for (const sql of migrations) {
+      sqlite.exec(sql);
+    }
+    repo = new D1PrintingRepository(asD1(sqlite));
+  });
+
+  afterEach(() => {
+    sqlite.close();
+  });
+
+  it("denies removal of COMPLETION_UNKNOWN order", async () => {
+    seed(sqlite, { paid: true });
+    sqlite.exec(`UPDATE orders SET status = 'COMPLETION_UNKNOWN'`);
+    await expect(repo.removeFromQueue({ orderId: ids.order, adminId: 'admin1', nowMs: 2000 })).rejects.toThrow("ORDER_ALREADY_IN_PROGRESS");
+  });
+
+  it("denies removal of RETRY_PENDING order if submitted_at_ms is present", async () => {
+    seed(sqlite, { paid: true });
+    sqlite.exec(`UPDATE orders SET status = 'RETRY_PENDING'`);
+    sqlite.exec(`INSERT INTO print_attempts (id, order_id, agent_id, printer_id, attempt_number, status, submitted_at_ms, created_at_ms, updated_at_ms) VALUES ('${crypto.randomUUID()}', '${ids.order}', '${ids.agent1}', '${ids.printer1}', 1, 'FAILED', 1, 1, 1)`);
+    await expect(repo.removeFromQueue({ orderId: ids.order, adminId: 'admin1', nowMs: 2000 })).rejects.toThrow("ORDER_ALREADY_IN_PROGRESS");
+  });
+
+  it("allows removal of QUEUED order", async () => {
+    seed(sqlite, { paid: true });
+    sqlite.exec(`UPDATE orders SET status = 'QUEUED'`);
+    const res = await repo.removeFromQueue({ orderId: ids.order, adminId: 'admin1', nowMs: 2000 });
+    expect(res.status).toBe("CANCELLED");
+  });
+});

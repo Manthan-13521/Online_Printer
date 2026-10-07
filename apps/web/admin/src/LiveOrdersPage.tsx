@@ -406,6 +406,8 @@ export function LiveOrdersPage({
                       "PRINT_FAILED",
                       "RETRY_PENDING",
                       "NEEDS_ADMIN",
+                      "COMPLETION_UNKNOWN",
+                      "ADMIN_ACTION_REQUIRED"
                     ].includes(order.status) &&
                       (confirmRetryId === order.orderId ? (
                         <div
@@ -433,7 +435,8 @@ export function LiveOrdersPage({
                             disabled={actionBusyId !== null}
                             onClick={() => {
                               setConfirmRetryId(null);
-                              void handleRetry(order, false);
+                              const isUncertain = order.status === "COMPLETION_UNKNOWN" || order.status === "ADMIN_ACTION_REQUIRED";
+                              void handleRetry(order, isUncertain);
                             }}
                           >
                             {actionBusyId === `retry-${order.orderId}`
@@ -489,17 +492,77 @@ export function LiveOrdersPage({
                           Printing result is uncertain. Some pages may already
                           have printed.
                         </span>
-                        <button
-                          type="button"
-                          className="secondary-button"
-                          style={{ backgroundColor: "#166534", color: "white" }}
-                          disabled={actionBusyId !== null}
-                          onClick={() => void handleManualComplete(order)}
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: "0.25rem",
+                            flexWrap: "wrap",
+                          }}
                         >
-                          {actionBusyId === `complete-${order.orderId}`
-                            ? "Marking..."
-                            : "Mark as Printed"}
-                        </button>
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            style={{
+                              backgroundColor: "#166534",
+                              color: "white",
+                            }}
+                            disabled={actionBusyId !== null}
+                            onClick={() => void handleManualComplete(order)}
+                          >
+                            {actionBusyId === `complete-${order.orderId}`
+                              ? "Marking..."
+                              : "Mark Physically Printed"}
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            style={{
+                              backgroundColor: "#b91c1c",
+                              color: "white",
+                            }}
+                            disabled={actionBusyId !== null}
+                            onClick={() => {
+                              if (
+                                window.confirm(
+                                  "Cancel this order? This cannot be undone.",
+                                )
+                              ) {
+                                setActionBusyId(`remove-${order.orderId}`);
+                                removeOrderFromQueue(order.orderId)
+                                  .then(() => {
+                                    setOrders(
+                                      (prev) =>
+                                        prev?.filter(
+                                          (o) => o.orderId !== order.orderId,
+                                        ) ?? [],
+                                    );
+                                  })
+                                  .catch((caught) => {
+                                    setError(
+                                      caught instanceof Error
+                                        ? caught.message
+                                        : "Failed to cancel",
+                                    );
+                                  })
+                                  .finally(() => setActionBusyId(null));
+                              }
+                            }}
+                          >
+                            Cancel Order
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            style={{
+                              backgroundColor: "#ca8a04",
+                              color: "white",
+                            }}
+                            disabled={actionBusyId !== null}
+                            onClick={() => void handleRetry(order, true)}
+                          >
+                            Reprint Whole Order
+                          </button>
+                        </div>
                       </div>
                     )}
 
