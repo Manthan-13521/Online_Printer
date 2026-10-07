@@ -29,7 +29,31 @@ export function DashboardPage({
     completedToday: 0,
   });
   const [togglingPrinting, setTogglingPrinting] = useState(false);
+  const [togglingIdSheet, setTogglingIdSheet] = useState(false);
   const [confirmPause, setConfirmPause] = useState(false);
+
+  async function handleToggleIdentificationSheet(enabled: boolean) {
+    if (!settings || togglingIdSheet) return;
+    setTogglingIdSheet(true);
+    setError(null);
+    try {
+      const response = await adminApi.updateSettings({
+        ...settings,
+        identificationSheetEnabled: enabled,
+      });
+      if (response.ok) {
+        setSettings(response.data.settings);
+      }
+    } catch (err: unknown) {
+      if (err instanceof AdminApiError && err.status === 401) {
+        onSessionExpired("Your session has expired. Please sign in again.");
+        return;
+      }
+      setError(friendlyAdminError(err));
+    } finally {
+      setTogglingIdSheet(false);
+    }
+  }
 
   async function handleToggleOnlinePrinting(enabled: boolean) {
     if (!settings || togglingPrinting) return;
@@ -389,10 +413,31 @@ export function DashboardPage({
         >
           <span>
             Identification sheet:{" "}
-            <strong>
+            <strong
+              style={{
+                color: settings?.identificationSheetEnabled
+                  ? "#16a34a"
+                  : "#64748b",
+              }}
+            >
               {settings?.identificationSheetEnabled ? "ON" : "OFF"}
             </strong>
           </span>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <label className="toggle-switch">
+              <input
+                aria-label="Toggle Identification Sheet"
+                checked={Boolean(settings?.identificationSheetEnabled)}
+                disabled={togglingIdSheet}
+                onChange={(event) => {
+                  void handleToggleIdentificationSheet(event.target.checked);
+                }}
+                role="switch"
+                type="checkbox"
+              />
+              <span className="toggle-slider" />
+            </label>
+          </div>
         </div>
         <div
           style={{
