@@ -289,34 +289,42 @@ export function ShopSettingsPage({
           <p className="field-help">Plain text only. Shown to customers.</p>
         </section>
 
-        <section className="panel setting-card important-setting">
-          <div>
-            <h2>Online Printing</h2>
-            <p className="muted">
-              Controls whether the shop accepts new online work.
-            </p>
-          </div>
+        <section className="panel form-section">
           <div
-            style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "flex-start",
+              gap: "1rem",
+              marginBottom: "0.5rem",
+            }}
           >
-            <span style={{ fontWeight: "bold", fontSize: "0.95rem" }}>
-              {settings.onlinePrintingEnabled ? "On" : "Off"}
-            </span>
-            <label className="toggle-switch">
-              <input
-                aria-label="Accept online printing"
-                checked={settings.onlinePrintingEnabled}
-                onChange={(event) => {
-                  if (!event.target.checked && settings.onlinePrintingEnabled)
-                    setConfirmPause(true);
-                  else patch({ onlinePrintingEnabled: event.target.checked });
-                }}
-                role="switch"
-                type="checkbox"
-              />
-              <span className="toggle-slider" />
-            </label>
+            <h2 style={{ margin: 0 }}>Online Printing</h2>
+            <div
+              style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}
+            >
+              <span style={{ fontWeight: "bold", fontSize: "0.95rem" }}>
+                {settings.onlinePrintingEnabled ? "On" : "Off"}
+              </span>
+              <label className="toggle-switch">
+                <input
+                  aria-label="Accept online printing"
+                  checked={settings.onlinePrintingEnabled}
+                  onChange={(event) => {
+                    if (!event.target.checked && settings.onlinePrintingEnabled)
+                      setConfirmPause(true);
+                    else patch({ onlinePrintingEnabled: event.target.checked });
+                  }}
+                  role="switch"
+                  type="checkbox"
+                />
+                <span className="toggle-slider" />
+              </label>
+            </div>
           </div>
+          <p className="field-help" style={{ margin: "0 0 0.75rem 0" }}>
+            Controls whether the shop accepts new online work.
+          </p>
         </section>
 
         <section className="panel form-section">
