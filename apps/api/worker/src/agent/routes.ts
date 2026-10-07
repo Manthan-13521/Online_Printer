@@ -33,7 +33,7 @@ async function readJson(request: Request): Promise<unknown> {
 function mapAgentError(caught: unknown): Response {
   if (caught instanceof AgentError) {
     if (caught.code === "AGENT_UNAUTHORIZED") {
-      return error(
+      console.error("AGENT_REQUEST_FAILED:", caught); return error(
         401,
         "AGENT_UNAUTHORIZED",
         "Agent authentication failed. The agent may have been revoked.",
@@ -45,7 +45,7 @@ function mapAgentError(caught: unknown): Response {
       caught.code === "PAIR_CODE_EXPIRED" ||
       caught.code === "PAIR_CODE_ALREADY_USED"
     ) {
-      return error(
+      console.error("AGENT_REQUEST_FAILED:", caught); return error(
         400,
         caught.code,
         "The pairing code is invalid, expired, or has already been used.",
@@ -57,13 +57,13 @@ function mapAgentError(caught: unknown): Response {
       caught.code === "PRINTER_NOT_FOUND" ||
       caught.code === "COMMAND_NOT_FOUND"
     ) {
-      return error(404, caught.code, "Requested resource not found.", NO_STORE);
+      console.error("AGENT_REQUEST_FAILED:", caught); return error(404, caught.code, "Requested resource not found.", NO_STORE);
     }
   }
   if (caught instanceof SyntaxError) {
-    return error(400, "INVALID_JSON", "Malformed JSON request body.", NO_STORE);
+    console.error("AGENT_REQUEST_FAILED:", caught); return error(400, "INVALID_JSON", "Malformed JSON request body.", NO_STORE);
   }
-  return error(
+  console.error("AGENT_REQUEST_FAILED:", caught); return error(
     500,
     "AGENT_REQUEST_FAILED",
     "Agent request could not be completed.",
@@ -87,7 +87,7 @@ export async function handleAgentRequest(
       const rawBody = await readJson(request);
       const validation = validateAgentPairInput(rawBody);
       if (!validation.ok) {
-        return error(
+        console.error("AGENT_REQUEST_FAILED:", caught); return error(
           400,
           "VALIDATION_ERROR",
           validation.issues[0]?.message ?? "Invalid pair request.",
@@ -107,7 +107,7 @@ export async function handleAgentRequest(
   ) {
     const token = bearerToken(request);
     if (!token) {
-      return error(
+      console.error("AGENT_REQUEST_FAILED:", caught); return error(
         401,
         "AGENT_UNAUTHORIZED",
         "Agent authentication token required.",
@@ -123,7 +123,7 @@ export async function handleAgentRequest(
           : rawBody,
       );
       if (!validation.ok) {
-        return error(
+        console.error("AGENT_REQUEST_FAILED:", caught); return error(
           400,
           "VALIDATION_ERROR",
           validation.issues[0]?.message ?? "Invalid heartbeat payload.",
@@ -147,7 +147,7 @@ export async function handleAgentRequest(
   if (request.method === "POST" && reportMatch) {
     const token = bearerToken(request);
     if (!token) {
-      return error(
+      console.error("AGENT_REQUEST_FAILED:", caught); return error(
         401,
         "AGENT_UNAUTHORIZED",
         "Agent authentication token required.",
@@ -159,7 +159,7 @@ export async function handleAgentRequest(
       const rawBody = await readJson(request);
       const validation = validateReportCommandInput(rawBody);
       if (!validation.ok) {
-        return error(
+        console.error("AGENT_REQUEST_FAILED:", caught); return error(
           400,
           "VALIDATION_ERROR",
           validation.issues[0]?.message ?? "Invalid command report payload.",
@@ -177,5 +177,5 @@ export async function handleAgentRequest(
     }
   }
 
-  return error(404, "NOT_FOUND", "Endpoint not found.", NO_STORE);
+  console.error("AGENT_REQUEST_FAILED:", caught); return error(404, "NOT_FOUND", "Endpoint not found.", NO_STORE);
 }
