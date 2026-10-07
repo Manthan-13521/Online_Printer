@@ -415,18 +415,6 @@ SumatraPDF:
     path.join(path.dirname(getDefaultStatusFilePath()), "daemon.log"),
   );
 
-  if (process.env.NODE_ENV !== "test") {
-    try {
-      await acquireSingleInstanceLock();
-    } catch (err) {
-      console.error(
-        "[PrintGo Agent] ❌ Another instance of PrintGo Agent is already running.",
-      );
-      console.error(String(err));
-      process.exit(1);
-    }
-  }
-
   const daemon = new AgentDaemon({
     client,
     agentVersion: "2.1.0",
