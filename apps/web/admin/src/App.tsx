@@ -8,7 +8,12 @@ import {
   type MouseEvent,
 } from "react";
 
-import { adminApi, AdminApiError, friendlyAdminError } from "./api";
+import {
+  adminApi,
+  AdminApiError,
+  friendlyAdminError,
+  setAdminToken,
+} from "./api";
 import { PricingPage } from "./PricingPage";
 import { PrinterPage } from "./PrinterPage";
 import { ShopSettingsPage } from "./ShopSettingsPage";
@@ -575,7 +580,10 @@ export function App() {
           setState({ status: "signed-in", admin: response.data.admin });
       })
       .catch(() => {
-        if (active) setState({ status: "signed-out" });
+        if (active) {
+          setAdminToken(null);
+          setState({ status: "signed-out" });
+        }
       });
     return () => {
       active = false;
@@ -592,7 +600,10 @@ export function App() {
   return (
     <AdminShell
       admin={state.admin}
-      onSignedOut={(notice) => setState({ status: "signed-out", notice })}
+      onSignedOut={(notice) => {
+        setAdminToken(null);
+        setState({ status: "signed-out", notice });
+      }}
     />
   );
 }

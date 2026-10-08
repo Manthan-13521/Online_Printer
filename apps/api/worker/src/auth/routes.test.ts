@@ -71,7 +71,10 @@ describe("admin auth routes", () => {
       "__Host-printgo_admin=new-raw-token",
     );
     expect(response.headers.get("set-cookie")).toContain("Secure");
-    expect(await response.json()).toEqual({ ok: true, data: { admin } });
+    expect(await response.json()).toEqual({
+      ok: true,
+      data: { admin, token: "new-raw-token" },
+    });
     expect(actions.login).toHaveBeenCalledWith("admin", "correct password");
   });
 
@@ -88,7 +91,56 @@ describe("admin auth routes", () => {
       actions,
     );
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ ok: true, data: { admin } });
+    expect(await response.json()).toEqual({
+      ok: true,
+      data: { admin, token: "raw-token" },
+    });
+  });
+
+  it("restores an authenticated profile via Authorization Bearer header without cookies", async () => {
+    const actions = service();
+    const response = await handleAdminAuthRequest(
+      new Request("https://api.example.test/api/admin/auth/me", {
+        headers: {
+          origin: env.ADMIN_ALLOWED_ORIGIN,
+          authorization: "Bearer bearer-raw-token",
+        },
+      }),
+      env,
+      actions,
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      ok: true,
+      data: { admin, token: "bearer-raw-token" },
+    });
+    expect(actions.requireSession).toHaveBeenCalledWith("bearer-raw-token");
+  });
+
+  it("handles OPTIONS preflight with Authorization header and appropriate CORS methods", async () => {
+    const actions = service();
+    const response = await handleAdminAuthRequest(
+      new Request("https://api.example.test/api/admin/auth/login", {
+        method: "OPTIONS",
+        headers: {
+          origin: env.ADMIN_ALLOWED_ORIGIN,
+          "access-control-request-headers": "authorization, content-type",
+          "access-control-request-method": "POST",
+        },
+      }),
+      env,
+      actions,
+    );
+    expect(response.status).toBe(204);
+    expect(response.headers.get("access-control-allow-headers")).toContain(
+      "Authorization",
+    );
+    expect(response.headers.get("access-control-allow-methods")).toContain(
+      "POST",
+    );
+    expect(response.headers.get("access-control-allow-origin")).toBe(
+      env.ADMIN_ALLOWED_ORIGIN,
+    );
   });
 
   it.each(["/api/admin/auth/logout", "/api/admin/auth/change-password"])(

@@ -61,9 +61,47 @@ export function friendlyAdminError(caught: unknown): string {
     : "PrintGo could not complete that action. Please try again.";
 }
 
+const TOKEN_STORAGE_KEY = "printgo_admin_token";
+let inMemoryToken: string | null = null;
+
+export function getAdminToken(): string | null {
+  if (inMemoryToken) return inMemoryToken;
+  try {
+    const stored =
+      window.sessionStorage.getItem(TOKEN_STORAGE_KEY) ||
+      window.localStorage.getItem(TOKEN_STORAGE_KEY);
+    if (stored) {
+      inMemoryToken = stored;
+      return stored;
+    }
+  } catch {
+    // Ignore storage errors in restricted contexts
+  }
+  return null;
+}
+
+export function setAdminToken(token: string | null): void {
+  inMemoryToken = token;
+  try {
+    if (token) {
+      window.sessionStorage.setItem(TOKEN_STORAGE_KEY, token);
+      window.localStorage.setItem(TOKEN_STORAGE_KEY, token);
+    } else {
+      window.sessionStorage.removeItem(TOKEN_STORAGE_KEY);
+      window.localStorage.removeItem(TOKEN_STORAGE_KEY);
+    }
+  } catch {
+    // Ignore storage errors
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   const headers = new Headers(init?.headers);
+  const token = getAdminToken();
+  if (token && !headers.has("authorization")) {
+    headers.set("authorization", `Bearer ${token}`);
+  }
   if (
     init?.body &&
     typeof init.body === "string" &&
@@ -87,6 +125,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const body = (await response.json()) as T | ApiFailure;
   if (!response.ok || (body as ApiFailure).ok === false) {
     const failure = body as ApiFailure;
+    if (response.status === 401) {
+      setAdminToken(null);
+    }
     throw new AdminApiError(
       failure.error?.code ?? "SERVICE_ERROR",
       response.status,
@@ -126,31 +167,60 @@ export const adminApi = {
       body: "{}",
     });
   },
-  login(input: AdminLoginRequest): Promise<AdminLoginResponse> {
-    return request("/api/admin/auth/login", {
-      method: "POST",
-      body: JSON.stringify(input),
-    });
+  async login(input: AdminLoginRequest): Promise<AdminLoginResponse> {
+    const response = await request<AdminLoginResponse>(
+      "/api/admin/auth/login",
+      {
+        method: "POST",
+        body: JSON.stringify(input),
+      },
+    );
+    if (response.ok && response.data.token) {
+      setAdminToken(response.data.token);
+    }
+    return response;
   },
-  me(): Promise<AdminMeResponse> {
-    return request("/api/admin/auth/me");
+  async me(): Promise<AdminMeResponse> {
+    const response = await request<AdminMeResponse>("/api/admin/auth/me");
+    if (response.ok && response.data.token) {
+      setAdminToken(response.data.token);
+    }
+    return response;
   },
-  logout(): Promise<AdminLogoutResponse> {
-    return request("/api/admin/auth/logout", { method: "POST", body: "{}" });
+  async logout(): Promise<AdminLogoutResponse> {
+    try {
+      return await request("/api/admin/auth/logout", {
+        method: "POST",
+        body: "{}",
+      });
+    } finally {
+      setAdminToken(null);
+    }
   },
-  revokeAllSessions(): Promise<AdminLogoutResponse> {
-    return request("/api/admin/auth/sessions/revoke-all", {
-      method: "POST",
-      body: "{}",
-    });
+  async revokeAllSessions(): Promise<AdminLogoutResponse> {
+    try {
+      return await request("/api/admin/auth/sessions/revoke-all", {
+        method: "POST",
+        body: "{}",
+      });
+    } finally {
+      setAdminToken(null);
+    }
   },
-  changePassword(
+  async changePassword(
     input: AdminChangePasswordRequest,
   ): Promise<AdminChangePasswordResponse> {
-    return request("/api/admin/auth/change-password", {
-      method: "POST",
-      body: JSON.stringify(input),
-    });
+    const response = await request<AdminChangePasswordResponse>(
+      "/api/admin/auth/change-password",
+      {
+        method: "POST",
+        body: JSON.stringify(input),
+      },
+    );
+    if (response.ok && response.data.token) {
+      setAdminToken(response.data.token);
+    }
+    return response;
   },
   getSettings(): Promise<AdminSettingsResponse> {
     return request("/api/admin/settings");

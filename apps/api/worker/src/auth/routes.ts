@@ -9,6 +9,7 @@ import {
   adminRequestErrorResponse,
   guardAdminOrigin,
   readAdminJson,
+  resolveAdminCorsOrigin,
   withAdminCors,
 } from "../admin/http";
 import {
@@ -72,6 +73,11 @@ export async function handleAdminAuthRequest(
   const originGuard = guardAdminOrigin(request, allowedOrigin);
   if (originGuard) return originGuard;
 
+  const corsOrigin = resolveAdminCorsOrigin(
+    request.headers.get("origin"),
+    allowedOrigin,
+  );
+
   const url = new URL(request.url);
   const rawToken = readAdminCookie(request, isProduction);
   let response: Response;
@@ -92,21 +98,31 @@ export async function handleAdminAuthRequest(
           input.value.loginIdentifier,
           input.value.password,
         );
-        response = ok({ admin: session.admin }, 200, {
-          "set-cookie": createAdminCookie(
-            session.rawToken,
-            session.expiresAtMs,
-            Date.now(),
-            isProduction,
-          ),
-        });
+        response = ok(
+          {
+            admin: session.admin,
+            token: session.rawToken,
+          },
+          200,
+          {
+            "set-cookie": createAdminCookie(
+              session.rawToken,
+              session.expiresAtMs,
+              Date.now(),
+              isProduction,
+            ),
+          },
+        );
       }
     } else if (
       request.method === "GET" &&
       url.pathname === "/api/admin/auth/me"
     ) {
       const required = await service.requireSession(rawToken);
-      response = ok({ admin: required.admin });
+      response = ok({
+        admin: required.admin,
+        token: rawToken ?? undefined,
+      });
     } else if (
       request.method === "POST" &&
       url.pathname === "/api/admin/auth/logout"
@@ -147,6 +163,7 @@ export async function handleAdminAuthRequest(
         response = ok(
           {
             admin: session.admin,
+            token: session.rawToken,
             message: "Your password has been changed.",
           },
           200,
@@ -171,5 +188,5 @@ export async function handleAdminAuthRequest(
     response = authErrorResponse(caught, clearCookie);
   }
 
-  return withAdminCors(response, allowedOrigin);
+  return withAdminCors(response, corsOrigin);
 }

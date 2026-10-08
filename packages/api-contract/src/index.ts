@@ -44,6 +44,7 @@ export interface AdminLoginRequest {
 
 export interface AdminLoginData {
   admin: AdminProfile;
+  token?: string;
 }
 
 export type AdminLoginResponse = ApiResponse<AdminLoginData>;
@@ -57,6 +58,7 @@ export interface AdminChangePasswordRequest {
 
 export interface AdminChangePasswordData {
   admin: AdminProfile;
+  token?: string;
   message: string;
 }
 

@@ -8,9 +8,65 @@ export function adminCorsHeaders(origin: string): Record<string, string> {
   };
 }
 
-export function withAdminCors(response: Response, origin: string): Response {
+export function isAllowedAdminOrigin(
+  origin: string,
+  configuredOrigin: string,
+): boolean {
+  if (origin === configuredOrigin) return true;
+  try {
+    const parsed = new URL(origin);
+    const parsedConfigured = new URL(configuredOrigin);
+    if (parsed.origin === parsedConfigured.origin) return true;
+
+    if (
+      parsed.protocol === "https:" &&
+      (parsed.hostname === "printgo-admin.pages.dev" ||
+        parsed.hostname.endsWith(".printgo-admin.pages.dev"))
+    ) {
+      return true;
+    }
+
+    if (
+      (parsed.protocol === "http:" || parsed.protocol === "https:") &&
+      (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1")
+    ) {
+      return true;
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
+export function resolveAdminCorsOrigin(
+  requestOrOrigin: Request | string | null | undefined,
+  configuredOrigin: string,
+): string {
+  const origin =
+    typeof requestOrOrigin === "string"
+      ? requestOrOrigin
+      : requestOrOrigin instanceof Request
+        ? requestOrOrigin.headers.get("origin")
+        : null;
+
+  if (origin && isAllowedAdminOrigin(origin, configuredOrigin)) {
+    return origin;
+  }
+  return configuredOrigin;
+}
+
+export function withAdminCors(
+  response: Response,
+  origin: string,
+  request?: Request,
+): Response {
+  const effectiveOrigin = request
+    ? resolveAdminCorsOrigin(request.headers.get("origin"), origin)
+    : origin;
   const headers = new Headers(response.headers);
-  for (const [name, value] of Object.entries(adminCorsHeaders(origin))) {
+  for (const [name, value] of Object.entries(
+    adminCorsHeaders(effectiveOrigin),
+  )) {
     headers.set(name, value);
   }
   return new Response(response.body, {
@@ -26,25 +82,25 @@ export function guardAdminOrigin(
 ): Response | null {
   const origin = request.headers.get("origin");
   if (request.method === "OPTIONS") {
-    if (origin !== allowedOrigin) {
+    if (!origin || !isAllowedAdminOrigin(origin, allowedOrigin)) {
       return error(403, "ORIGIN_NOT_ALLOWED", "This request is not allowed.");
     }
     return new Response(null, {
       status: 204,
       headers: {
-        ...adminCorsHeaders(allowedOrigin),
-        "access-control-allow-headers": "Content-Type",
-        "access-control-allow-methods": "GET, POST, PUT, OPTIONS",
+        ...adminCorsHeaders(origin),
+        "access-control-allow-headers": "Content-Type, Authorization",
+        "access-control-allow-methods": "GET, POST, PUT, DELETE, OPTIONS",
         "access-control-max-age": "600",
       },
     });
   }
-  if (origin && origin !== allowedOrigin) {
+  if (origin && !isAllowedAdminOrigin(origin, allowedOrigin)) {
     return error(403, "ORIGIN_NOT_ALLOWED", "This request is not allowed.");
   }
   if (
     ["POST", "PUT", "PATCH", "DELETE"].includes(request.method) &&
-    origin !== allowedOrigin
+    (!origin || !isAllowedAdminOrigin(origin, allowedOrigin))
   ) {
     return error(403, "ORIGIN_REQUIRED", "This request is not allowed.");
   }
