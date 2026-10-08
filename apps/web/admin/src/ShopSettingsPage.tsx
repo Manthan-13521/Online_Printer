@@ -13,7 +13,6 @@ import {
   CUSTOMER_NOTICE_MAX_LENGTH,
   SHOP_NAME_MAX_LENGTH,
 } from "@printgo/validation";
-import { formatPaiseAsRupeesInput, parseRupeesToPaise } from "@printgo/pricing";
 import { useEffect, useState, type FormEvent } from "react";
 
 import {
@@ -412,77 +411,6 @@ export function ShopSettingsPage({
               <span>Print after document</span>
             </label>
           </fieldset>
-
-          <div
-            style={{
-              display: "grid",
-              gap: "0.35rem",
-              paddingTop: "1rem",
-              borderTop: "1px solid #e2e8f0",
-            }}
-          >
-            <h3
-              style={{
-                margin: "0.25rem 0",
-                fontSize: "1.05rem",
-                color: "#1e293b",
-              }}
-            >
-              Customer Identification at Pickup
-            </h3>
-            <p className="field-help">
-              Require customer identification when collecting their orders. No
-              sensitive identity documents, Aadhaar numbers, or photos are ever
-              collected or stored.
-            </p>
-            <label htmlFor="id-requirement-mode">Identification policy</label>
-            <select
-              id="id-requirement-mode"
-              value={settings.idRequirementMode ?? "ALWAYS"}
-              onChange={(event) =>
-                patch({
-                  idRequirementMode: event.target.value as
-                    "ALWAYS" | "ABOVE_THRESHOLD",
-                })
-              }
-            >
-              <option value="ALWAYS">Always required</option>
-              <option value="ABOVE_THRESHOLD">
-                Required only above order amount
-              </option>
-            </select>
-
-            {settings.idRequirementMode === "ABOVE_THRESHOLD" ? (
-              <div
-                style={{ display: "grid", gap: "0.35rem", marginTop: "0.5rem" }}
-              >
-                <label htmlFor="id-threshold-amount">
-                  Minimum order amount (₹)
-                </label>
-                <input
-                  id="id-threshold-amount"
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={
-                    settings.idThresholdPaise !== undefined
-                      ? formatPaiseAsRupeesInput(settings.idThresholdPaise)
-                      : "500"
-                  }
-                  onChange={(event) =>
-                    patch({
-                      idThresholdPaise:
-                        parseRupeesToPaise(event.target.value || "0") ?? 0,
-                    })
-                  }
-                />
-                <p className="field-help">
-                  Orders with online printing total equal to or above this
-                  amount will require customer ID at pickup.
-                </p>
-              </div>
-            ) : null}
-          </div>
         </section>
 
         <section className="panel form-section">

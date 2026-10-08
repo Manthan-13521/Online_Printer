@@ -258,6 +258,8 @@ function SecurityPage({
         </dl>
       </section>
 
+      <StoragePrivacySection onSessionExpired={onSignedOut} />
+
       <section className="panel action-row">
         <div>
           <h2>Change password</h2>
@@ -277,8 +279,6 @@ function SecurityPage({
           Change password
         </button>
       </section>
-
-      <StoragePrivacySection onSessionExpired={onSignedOut} />
 
       <section className="panel action-row">
         <div>

@@ -149,196 +149,237 @@ export function OrderHistoryPage({
       {loaded && orders.length === 0 ? <p>No orders yet.</p> : null}
       <div className="history-list">
         {paginatedOrders.map((order) => (
-          <article className="manual-order-card" key={order.orderId}>
-            <div className="manual-order-header">
+          <article className="panel live-order" key={order.orderId}>
+            <div className="live-order-heading">
               <div>
-                <strong>
-                  {order.pickupCode
-                    ? `Pickup ${order.pickupCode}`
-                    : order.purged
-                      ? "Privacy cleared"
-                      : "No pickup code"}
-                </strong>
-                <span className="status-badge">
-                  {order.status.replaceAll("_", " ")}
-                </span>
-              </div>
-              <span>
-                {order.isPriority ? "Priority" : "Normal"} ·{" "}
-                {order.isManual ? "Manual" : "Auto"}
-              </span>
-            </div>
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: "0.55rem",
-                fontSize: "0.9rem",
-                marginTop: "0.25rem",
-              }}
-            >
-              {/* Customer Name & Phone */}
-              {(order.customerName || order.customerPhone) && (
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                    gap: "0.4rem 1.5rem",
-                  }}
-                >
-                  <div>
-                    <span style={{ color: "#5E6A63" }}>Customer: </span>
-                    <strong>{order.customerName ?? "—"}</strong>
-                  </div>
-                  <div>
-                    <span style={{ color: "#5E6A63" }}>Phone: </span>
-                    <strong>{order.customerPhone ?? "—"}</strong>
-                  </div>
-                </div>
-              )}
-
-              {/* Line 1: Created & Completed in same line */}
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                  gap: "0.4rem 1.5rem",
-                }}
-              >
-                <div>
-                  <span style={{ color: "#5E6A63" }}>Created: </span>
-                  <strong>{time(order.createdAt)}</strong>
-                </div>
-                <div>
-                  <span style={{ color: "#5E6A63" }}>Completed: </span>
-                  <strong>{time(order.completedAt)}</strong>
-                </div>
-              </div>
-
-              {/* Line 2: Online paid & Due at pickup in same line */}
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                  gap: "0.4rem 1.5rem",
-                }}
-              >
-                <div>
-                  <span style={{ color: "#5E6A63" }}>Online paid: </span>
-                  <strong>{amount(order.onlinePaidPaise)}</strong>
-                </div>
-                <div>
-                  <span style={{ color: "#5E6A63" }}>Due at pickup: </span>
-                  <strong>{amount(order.dueAtPickupPaise)}</strong>
-                </div>
-              </div>
-
-              {/* Line 3: Add-on services */}
-              <div>
-                <span style={{ color: "#5E6A63" }}>Add-on services: </span>
-                <strong>
-                  {order.addonServices.length
-                    ? order.addonServices
-                        .map((service) => service.name)
-                        .join(", ")
-                    : "None"}
-                </strong>
-              </div>
-
-              {/* Line 4: Printer used & Fallback printer in same line */}
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                  gap: "0.4rem 1.5rem",
-                }}
-              >
-                <div>
-                  <span style={{ color: "#5E6A63" }}>Printer used: </span>
-                  <strong>{order.printerUsed ?? "—"}</strong>
-                </div>
-                <div>
-                  <span style={{ color: "#5E6A63" }}>Fallback printer: </span>
-                  <strong>{order.fallbackPrinter ?? "—"}</strong>
-                </div>
-              </div>
-
-              {/* Line 5: Attempts (left) & Print Again option (right bottom) */}
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  flexWrap: "wrap",
-                  gap: "0.75rem",
-                  paddingTop: "0.5rem",
-                  borderTop: "1px solid #f1f5f9",
-                  marginTop: "0.25rem",
-                }}
-              >
-                <div>
-                  <span style={{ color: "#5E6A63" }}>Attempts: </span>
-                  <strong>{order.attemptCount}</strong>
-                </div>
-
                 <div
                   style={{
                     display: "flex",
                     alignItems: "center",
-                    gap: "0.75rem",
-                    marginLeft: "auto",
+                    gap: "0.5rem",
+                    flexWrap: "wrap",
                   }}
                 >
-                  {orderNotice[order.orderId] ? (
+                  <strong
+                    style={{
+                      margin: 0,
+                      fontSize: "1.15rem",
+                      fontWeight: 700,
+                      color: "#166534",
+                      letterSpacing: "0.05em",
+                    }}
+                  >
+                    {order.pickupCode
+                      ? `Pickup ${order.pickupCode}`
+                      : order.purged
+                        ? "Privacy cleared"
+                        : `Order #${order.orderId.slice(0, 8)}`}
+                  </strong>
+                  {order.isPriority ? (
                     <span
                       style={{
+                        fontWeight: 700,
+                        padding: "0.1rem 0.5rem",
+                        borderRadius: "4px",
+                        backgroundColor: "#fef3c7",
+                        color: "#92400e",
                         fontSize: "0.85rem",
-                        color: "#16a34a",
-                        fontWeight: 600,
                       }}
                     >
-                      {orderNotice[order.orderId]}
+                      ⚡ Priority
                     </span>
                   ) : null}
-                  {[
-                    "COMPLETED",
-                    "PRINTED",
-                    "PRINT_FAILED",
-                    "ADMIN_ACTION_REQUIRED",
-                    "NEEDS_ADMIN",
-                    "COMPLETION_UNKNOWN",
-                  ].includes(order.status) ? (
-                    <button
-                      type="button"
-                      className="primary-button compact"
-                      disabled={
-                        order.purged || printingOrderId === order.orderId
-                      }
-                      onClick={() => void handlePrintAgain(order)}
-                      title={
-                        order.purged
-                          ? "Document purged according to shop privacy policy."
-                          : "Re-queue this order to print again on shop printer."
-                      }
+                  {order.isManual ? (
+                    <span
+                      style={{
+                        fontWeight: 600,
+                        padding: "0.1rem 0.5rem",
+                        borderRadius: "4px",
+                        backgroundColor: "#e0e7ff",
+                        color: "#3730a3",
+                        fontSize: "0.85rem",
+                      }}
                     >
-                      {printingOrderId === order.orderId
-                        ? "Queueing…"
-                        : "Print Again"}
-                    </button>
+                      Manual
+                    </span>
                   ) : null}
-
-                  <button
-                    type="button"
-                    className="secondary-button compact"
-                    style={{ color: "#dc2626", borderColor: "#fca5a5" }}
-                    disabled={deletingOrderId === order.orderId}
-                    onClick={() => void handleDeleteOrder(order)}
-                    title="Permanently delete order and associated customer data"
-                  >
-                    {deletingOrderId === order.orderId ? "Deleting…" : "Delete"}
-                  </button>
                 </div>
+                <h2 style={{ margin: "0.25rem 0 0", fontSize: "1.2rem" }}>
+                  {order.customerName ||
+                    (order.purged ? "Anonymous" : "Customer")}
+                </h2>
               </div>
+              <strong
+                className="status-pill"
+                style={{
+                  backgroundColor:
+                    order.status === "COMPLETED" || order.status === "PRINTED"
+                      ? "#dcfce7"
+                      : order.status === "PRINT_FAILED" ||
+                          order.status === "NEEDS_ADMIN" ||
+                          order.status === "ADMIN_ACTION_REQUIRED"
+                        ? "#fee2e2"
+                        : order.status === "COMPLETION_UNKNOWN"
+                          ? "#fef3c7"
+                          : "#e0e7ff",
+                  color:
+                    order.status === "COMPLETED" || order.status === "PRINTED"
+                      ? "#166534"
+                      : order.status === "PRINT_FAILED" ||
+                          order.status === "NEEDS_ADMIN" ||
+                          order.status === "ADMIN_ACTION_REQUIRED"
+                        ? "#991b1b"
+                        : order.status === "COMPLETION_UNKNOWN"
+                          ? "#92400e"
+                          : "#3730a3",
+                  fontSize: "0.85rem",
+                  padding: "0.35rem 0.75rem",
+                }}
+              >
+                {order.status === "COMPLETION_UNKNOWN"
+                  ? "Completion Unknown"
+                  : order.status === "NEEDS_ADMIN"
+                    ? "Needs Admin"
+                    : order.status.replaceAll("_", " ")}
+              </strong>
+            </div>
+
+            <dl
+              className="live-order-details"
+              style={{
+                marginTop: "0.85rem",
+                gap: "0.85rem 1.25rem",
+              }}
+            >
+              {order.customerPhone ? (
+                <div>
+                  <dt style={{ fontSize: "0.86rem" }}>Phone</dt>
+                  <dd style={{ fontSize: "1.0rem" }}>{order.customerPhone}</dd>
+                </div>
+              ) : null}
+              <div>
+                <dt style={{ fontSize: "0.86rem" }}>Online Paid</dt>
+                <dd style={{ fontSize: "1.0rem", fontWeight: 600 }}>
+                  {amount(order.onlinePaidPaise)}
+                </dd>
+              </div>
+              {order.dueAtPickupPaise > 0 ? (
+                <div>
+                  <dt style={{ fontSize: "0.86rem" }}>Due at Pickup</dt>
+                  <dd
+                    style={{
+                      fontSize: "1.0rem",
+                      color: "#b91c1c",
+                      fontWeight: 600,
+                    }}
+                  >
+                    {amount(order.dueAtPickupPaise)}
+                  </dd>
+                </div>
+              ) : null}
+              <div>
+                <dt style={{ fontSize: "0.86rem" }}>Created</dt>
+                <dd style={{ fontSize: "1.0rem" }}>{time(order.createdAt)}</dd>
+              </div>
+              {order.completedAt ? (
+                <div>
+                  <dt style={{ fontSize: "0.86rem" }}>Completed</dt>
+                  <dd style={{ fontSize: "1.0rem" }}>
+                    {time(order.completedAt)}
+                  </dd>
+                </div>
+              ) : null}
+              {order.addonServices && order.addonServices.length > 0 ? (
+                <div>
+                  <dt style={{ fontSize: "0.86rem" }}>Add-on Services</dt>
+                  <dd style={{ fontSize: "1.0rem" }}>
+                    {order.addonServices
+                      .map((service) => service.name)
+                      .join(", ")}
+                  </dd>
+                </div>
+              ) : null}
+              {order.printerUsed ? (
+                <div>
+                  <dt style={{ fontSize: "0.86rem" }}>Printer</dt>
+                  <dd style={{ fontSize: "1.0rem" }}>{order.printerUsed}</dd>
+                </div>
+              ) : null}
+              {order.fallbackPrinter ? (
+                <div>
+                  <dt style={{ fontSize: "0.86rem" }}>Fallback Printer</dt>
+                  <dd style={{ fontSize: "1.0rem" }}>
+                    {order.fallbackPrinter}
+                  </dd>
+                </div>
+              ) : null}
+              {order.attemptCount && order.attemptCount > 0 ? (
+                <div>
+                  <dt style={{ fontSize: "0.86rem" }}>Attempts</dt>
+                  <dd style={{ fontSize: "1.0rem" }}>{order.attemptCount}</dd>
+                </div>
+              ) : null}
+            </dl>
+
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                alignItems: "center",
+                gap: "0.75rem",
+                marginTop: "0.85rem",
+                paddingTop: "0.75rem",
+                borderTop: "1px solid #f1f5f9",
+                flexWrap: "wrap",
+              }}
+            >
+              {orderNotice[order.orderId] ? (
+                <span
+                  style={{
+                    fontSize: "0.9rem",
+                    color: "#16a34a",
+                    fontWeight: 600,
+                    marginRight: "auto",
+                  }}
+                >
+                  {orderNotice[order.orderId]}
+                </span>
+              ) : null}
+              {[
+                "COMPLETED",
+                "PRINTED",
+                "PRINT_FAILED",
+                "ADMIN_ACTION_REQUIRED",
+                "NEEDS_ADMIN",
+                "COMPLETION_UNKNOWN",
+              ].includes(order.status) ? (
+                <button
+                  type="button"
+                  className="primary-button compact"
+                  disabled={order.purged || printingOrderId === order.orderId}
+                  onClick={() => void handlePrintAgain(order)}
+                  title={
+                    order.purged
+                      ? "Document purged according to shop privacy policy."
+                      : "Re-queue this order to print again on shop printer."
+                  }
+                >
+                  {printingOrderId === order.orderId
+                    ? "Queueing…"
+                    : "Print Again"}
+                </button>
+              ) : null}
+
+              <button
+                type="button"
+                className="secondary-button compact"
+                style={{ color: "#dc2626", borderColor: "#fca5a5" }}
+                disabled={deletingOrderId === order.orderId}
+                onClick={() => void handleDeleteOrder(order)}
+                title="Permanently delete order and associated customer data"
+              >
+                {deletingOrderId === order.orderId ? "Deleting…" : "Delete"}
+              </button>
             </div>
           </article>
         ))}

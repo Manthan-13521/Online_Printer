@@ -258,10 +258,10 @@ describe("paid-print D1 safety", () => {
     },
   );
 
-  it("does not generate identification sheet if identification_required is 0 even when identification_sheet_enabled is 1", async () => {
-    seed(db, { identificationRequired: false });
+  it("does not generate identification sheet when identification_sheet_enabled is 0", async () => {
+    seed(db);
     db.prepare(
-      "UPDATE installation SET identification_sheet_enabled = 1, identification_sheet_placement = 'FIRST'",
+      "UPDATE installation SET identification_sheet_enabled = 0, identification_sheet_placement = 'FIRST'",
     ).run();
     const job = await repository.claimOrRenew(ids.agent1, 2_000);
     expect(job?.currentStep.type).toBe("CUSTOMER_DOCUMENT");
@@ -755,5 +755,49 @@ describe("paid-print D1 safety", () => {
       .get(ids.order) as { status: string; queued_at_ms: number };
     expect(updated.status).toBe("QUEUED");
     expect(updated.queued_at_ms).toBe(2_000);
+  });
+
+  it("allows deleting orders in error states such as COMPLETION_UNKNOWN and PRINT_FAILED", async () => {
+    seed(db);
+    db.prepare(
+      "UPDATE orders SET status = 'COMPLETION_UNKNOWN' WHERE id = ?",
+    ).run(ids.order);
+
+    const mockBucket = {
+      delete: async () => {},
+    } as unknown as R2Bucket;
+
+    const result = await repository.deleteOrder({
+      orderId: ids.order,
+      adminId: "admin-1",
+      bucket: mockBucket,
+      nowMs: 2_000,
+    });
+
+    expect(result.deleted).toBe(true);
+    const order = db
+      .prepare("SELECT * FROM orders WHERE id = ?")
+      .get(ids.order);
+    expect(order).toBeUndefined();
+  });
+
+  it("blocks deleting orders when actively printing", async () => {
+    seed(db);
+    db.prepare(
+      "UPDATE orders SET status = 'PRINTING', claimed_by_agent_id = ?, claim_id = 'claim-1', claimed_at_ms = 1000, claim_expires_at_ms = 9999 WHERE id = ?",
+    ).run(ids.agent1, ids.order);
+
+    const mockBucket = {
+      delete: async () => {},
+    } as unknown as R2Bucket;
+
+    await expect(
+      repository.deleteOrder({
+        orderId: ids.order,
+        adminId: "admin-1",
+        bucket: mockBucket,
+        nowMs: 2_000,
+      }),
+    ).rejects.toThrow("ORDER_CANNOT_BE_DELETED");
   });
 });

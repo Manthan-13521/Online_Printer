@@ -250,20 +250,6 @@ export function LiveOrdersPage({
                             ⚡ Priority
                           </span>
                         ) : null}
-                        {order.identificationRequired ? (
-                          <span
-                            style={{
-                              fontWeight: 600,
-                              padding: "0.1rem 0.5rem",
-                              borderRadius: "4px",
-                              backgroundColor: "#fee2e2",
-                              color: "#991b1b",
-                              fontSize: "0.85rem",
-                            }}
-                          >
-                            🪪 ID Required
-                          </span>
-                        ) : null}
                       </div>
                       <h2>{order.customerName}</h2>
                     </div>
@@ -326,14 +312,6 @@ export function LiveOrdersPage({
                     <div>
                       <dt>Priority</dt>
                       <dd>{order.isPriority ? "Priority Queue" : "Normal"}</dd>
-                    </div>
-                    <div>
-                      <dt>ID Check</dt>
-                      <dd>
-                        {order.identificationRequired
-                          ? "Required at pickup"
-                          : "Not required"}
-                      </dd>
                     </div>
                     <div>
                       <dt>Phone</dt>

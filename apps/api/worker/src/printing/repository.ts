@@ -497,7 +497,6 @@ export class D1PrintingRepository implements PrintingRepository {
     );
     const needIdStep =
       candidate.identification_sheet_enabled === 1 &&
-      candidate.identification_required === 1 &&
       !succeededSet.has("IDENTIFICATION_SHEET") &&
       ((candidate.identification_sheet_placement === "FIRST" &&
         candidate.file_position === 1) ||
@@ -1936,12 +1935,8 @@ export class D1PrintingRepository implements PrintingRepository {
       throw new Error("ORDER_NOT_FOUND");
     }
 
-    // Block deletion if printing is active, submitted or uncertain
-    if (
-      ["CLAIMED", "SPOOLING", "PRINTING", "COMPLETION_UNKNOWN"].includes(
-        order.status,
-      )
-    ) {
+    // Block deletion if printing is actively in-flight
+    if (["CLAIMED", "SPOOLING", "PRINTING"].includes(order.status)) {
       throw new Error("ORDER_CANNOT_BE_DELETED");
     }
 
@@ -2047,8 +2042,8 @@ export class D1PrintingRepository implements PrintingRepository {
       this.db.prepare("DELETE FROM orders WHERE id = ?").bind(input.orderId),
       this.db
         .prepare(
-          `INSERT INTO audit_logs (id, admin_id, action, entity_type, entity_id, metadata_json, created_at_ms)
-           VALUES (?, ?, 'ORDER_DELETED', 'ORDER', NULL, ?, ?)`,
+          `INSERT INTO audit_logs (id, actor_type, actor_id, action, entity_type, entity_id, metadata_json, created_at_ms)
+           VALUES (?, 'ADMIN', ?, 'ORDER_DELETED', 'ORDER', NULL, ?, ?)`,
         )
         .bind(
           crypto.randomUUID(),
