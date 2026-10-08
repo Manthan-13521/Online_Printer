@@ -24,10 +24,6 @@ const migrations = [
   "0016_phase4_failure_recovery_and_pause.sql",
   "0017_phase5_fallback_and_reprint_protection.sql",
   "0018_phase6_history_cleanup.sql",
-  "0019_phase7_restore_hot_indexes.sql",
-  "0020_order_retention_duration.sql",
-  "0021_daily_order_stats.sql",
-  "0022_phase2_recovery_foundation.sql",
 ].map((name) =>
   readFileSync(
     new URL(`../../../../../database/migrations/${name}`, import.meta.url),
@@ -363,18 +359,14 @@ describe("paid-print D1 safety", () => {
         (await repository.claimOrRenew(ids.agent1, nowMs))?.leaseExpiresAtMs,
       ).toBe(job.leaseExpiresAtMs);
     }
-    // To test lease renewal, we must advance the step status out of PENDING
-    // otherwise the new stall protection will refuse to renew it after 90 seconds.
-    db.prepare("UPDATE print_attempt_steps SET status = 'SUBMITTED'").run();
-
-    expect(changes()).toBe(before + 1);
+    expect(changes()).toBe(before);
     const renewed = (await repository.claimOrRenew(ids.agent1, 202_000))!;
     expect(renewed.leaseExpiresAtMs).toBe(202_000 + PRINT_CLAIM_LEASE_MS);
-    expect(changes() - (before + 1)).toBe(1);
+    expect(changes() - before).toBe(1);
     expect(
       (await repository.claimOrRenew(ids.agent1, 207_000))?.leaseExpiresAtMs,
     ).toBe(202_000 + PRINT_CLAIM_LEASE_MS);
-    expect(changes() - (before + 1)).toBe(1);
+    expect(changes() - before).toBe(1);
     expect(
       db
         .prepare(
@@ -763,122 +755,5 @@ describe("paid-print D1 safety", () => {
       .get(ids.order) as { status: string; queued_at_ms: number };
     expect(updated.status).toBe("QUEUED");
     expect(updated.queued_at_ms).toBe(2_000);
-  });
-
-  it("handles preflight BLOCKED correctly and resumes to SPOOLING when printer is unblocked", async () => {
-    seed(db);
-    // Claim the job
-    const job = (await repository.claimOrRenew(ids.agent1, 2_000))!;
-    expect(job).not.toBeNull();
-    expect(job.orderId).toBe(ids.order);
-
-    // Agent finds printer offline during preflight, reports BLOCKED
-    const blocked = await repository.recordResult({
-      agentId: ids.agent1,
-      orderId: job.orderId,
-      stepId: job.currentStep.stepId,
-      claimId: job.claimId,
-      status: "BLOCKED",
-      spoolerJobId: null,
-      failureCode: "PRINTER_OFFLINE",
-      failureDetail: "Printer is offline before submission.",
-      nowMs: 2_100,
-    });
-
-    expect(blocked?.step_status).toBe("BLOCKED");
-    const orderInDb = db
-      .prepare("SELECT status, error_category FROM orders WHERE id = ?")
-      .get(ids.order) as { status: string; error_category: string };
-    expect(orderInDb.status).toBe("PRINT_BLOCKED");
-    expect(orderInDb.error_category).toBe("PRINTER_OFFLINE");
-
-    // Later order in queue is safely held
-    const laterOrder = "10000000-0000-4000-8000-000000000009";
-    db.prepare(
-      `INSERT INTO orders (id, customer_name, customer_phone, original_filename,
-       selected_pages, source_page_count, copies, color_mode, paper_size, sides,
-       total_amount_paise, printing_amount_paise, public_job_code, pickup_code,
-       status, created_at_ms, updated_at_ms, queued_at_ms)
-       VALUES (?, 'Next Customer', '+919999999999', 'next.pdf', 'ALL', 1, 1, 'BW',
-       'A4', 'SINGLE', 500, 500, 'PG-NEXT', 'PA-099', 'QUEUED', 2200, 2200, 2200)`,
-    ).run(laterOrder);
-    db.prepare(
-      `INSERT INTO payments (id, order_id, provider_order_id, amount_paise, currency, status,
-       provider, provider_payment_id, verified_at_ms, created_at_ms, updated_at_ms)
-       VALUES ('30000000-0000-4000-8000-000000000009', ?, 'order_provider_99', 500, 'INR', 'PAID',
-       'RAZORPAY', 'pay_next99', 2200, 2200, 2200)`,
-    ).run(laterOrder);
-
-    // Heartbeat pulse while printer is still offline returns the same blocked job
-    const pulseJob = await repository.claimOrRenew(ids.agent1, 2_300);
-    expect(pulseJob?.orderId).toBe(ids.order);
-
-    // Printer comes online: Agent starts the step
-    const started = await repository.startStep({
-      agentId: ids.agent1,
-      orderId: job.orderId,
-      stepId: job.currentStep.stepId,
-      claimId: job.claimId,
-      nowMs: 2_400,
-    });
-
-    expect(started?.step_status).toBe("SUBMISSION_STARTED");
-    expect(started?.order_status).toBe("SPOOLING");
-
-    const orderResumed = db
-      .prepare("SELECT status FROM orders WHERE id = ?")
-      .get(ids.order) as { status: string };
-    expect(orderResumed.status).toBe("SPOOLING");
-  });
-
-  it("recovers unsubmitted expired claims on schedule back to QUEUED", async () => {
-    seed(db);
-    const job = (await repository.claimOrRenew(ids.agent1, 2_000))!;
-    expect(job).not.toBeNull();
-
-    // Expire lease (e.g. agent died)
-    await repository.recoverExpiredClaims(2_000 + PRINT_CLAIM_LEASE_MS + 100);
-
-    const orderAfter = db
-      .prepare("SELECT status, claimed_by_agent_id FROM orders WHERE id = ?")
-      .get(ids.order) as { status: string; claimed_by_agent_id: string | null };
-    expect(orderAfter.status).toBe("QUEUED");
-    expect(orderAfter.claimed_by_agent_id).toBeNull();
-  });
-});
-describe("Remove From Queue Regression Tests", () => {
-  let sqlite: DatabaseSync;
-  let repo: D1PrintingRepository;
-
-  beforeEach(() => {
-    sqlite = new DatabaseSync(":memory:");
-    for (const sql of migrations) {
-      sqlite.exec(sql);
-    }
-    repo = new D1PrintingRepository(asD1(sqlite));
-  });
-
-  afterEach(() => {
-    sqlite.close();
-  });
-
-  it("denies removal of COMPLETION_UNKNOWN order", async () => {
-    seed(sqlite, { paid: true });
-    sqlite.exec(`UPDATE orders SET status = 'COMPLETION_UNKNOWN'`);
-    await expect(repo.removeFromQueue({ orderId: ids.order, adminId: 'admin1', nowMs: 2000 })).rejects.toThrow("ORDER_ALREADY_IN_PROGRESS");
-  });
-
-  it("denies removal of RETRY_PENDING order if submitted_at_ms is present", async () => {
-    seed(sqlite, { paid: true });
-    sqlite.exec(`UPDATE orders SET status = 'RETRY_PENDING'`);
-    sqlite.exec(`INSERT INTO print_attempts (id, order_id, agent_id, printer_id, attempt_number, status, submitted_at_ms, created_at_ms, updated_at_ms) VALUES ('${crypto.randomUUID()}', '${ids.order}', '${ids.agent1}', '${ids.printer1}', 1, 'FAILED', 1, 1, 1)`);
-    await expect(repo.removeFromQueue({ orderId: ids.order, adminId: 'admin1', nowMs: 2000 })).rejects.toThrow("ORDER_ALREADY_IN_PROGRESS");
-  });
-
-  it("allows removal of QUEUED order", async () => {
-    seed(sqlite, { paid: true });
-    sqlite.exec(`UPDATE orders SET status = 'QUEUED'`);
-    const res = await repo.removeFromQueue({ orderId: ids.order, adminId: 'admin1', nowMs: 2000 });
-    expect(res.status).toBe("CANCELLED");
   });
 });

@@ -13,8 +13,6 @@ export type PrintingErrorCode =
   | "PRINT_STEP_NOT_FOUND"
   | "PRINT_STEP_CONFLICT"
   | "ORDER_NOT_FOUND"
-  | "ORDER_ALREADY_IN_PROGRESS"
-  | "ORDER_IS_UNCERTAIN"
   | "ORDER_CANNOT_BE_RETRIED"
   | "UNCERTAIN_RETRY_CONFIRMATION_REQUIRED"
   | "ORDER_PDF_NOT_FOUND"
@@ -192,37 +190,6 @@ export class PrintingService {
     }
   }
 
-  async cancelOrder(orderId: string, adminId: string, reason: string) {
-    try {
-      return await this.repository.cancelOrder({
-        orderId,
-        adminId,
-        reason,
-        nowMs: Date.now(),
-      });
-    } catch (caught: any) {
-      throw this.mapError(caught);
-    }
-  }
-
-  async removeFromQueue(orderId: string, adminId: string) {
-    try {
-      return await this.repository.removeFromQueue({
-        orderId,
-        adminId,
-        nowMs: this.now(),
-      });
-    } catch (err) {
-      if (err instanceof Error) {
-        if (err.message === "ORDER_NOT_FOUND")
-          throw new PrintingError("ORDER_NOT_FOUND");
-        if (err.message === "ORDER_ALREADY_IN_PROGRESS")
-          throw new PrintingError("ORDER_ALREADY_IN_PROGRESS");
-      }
-      throw err;
-    }
-  }
-
   async retryOrder(orderId: string, adminId: string, forceUncertain?: boolean) {
     try {
       return await this.repository.retryOrder({
@@ -238,12 +205,6 @@ export class PrintingService {
         }
         if (err.message === "ORDER_CANNOT_BE_RETRIED") {
           throw new PrintingError("ORDER_CANNOT_BE_RETRIED");
-        }
-        if (err.message === "ORDER_ALREADY_IN_PROGRESS") {
-          throw new PrintingError("ORDER_ALREADY_IN_PROGRESS");
-        }
-        if (err.message === "ORDER_IS_UNCERTAIN") {
-          throw new PrintingError("ORDER_IS_UNCERTAIN");
         }
         if (err.message === "UNCERTAIN_RETRY_CONFIRMATION_REQUIRED") {
           throw new PrintingError("UNCERTAIN_RETRY_CONFIRMATION_REQUIRED");

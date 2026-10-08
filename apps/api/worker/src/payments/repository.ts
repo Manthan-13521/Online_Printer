@@ -1,5 +1,9 @@
-import { UNRESOLVED_PAID_FAILURE_RETENTION_MS } from "@printgo/domain";
-import { WEBHOOK_PROCESSING_STALE_TIMEOUT_MS } from "@printgo/domain";
+import {
+  indexToPickupCode,
+  TOTAL_PICKUP_CODES,
+  UNRESOLVED_PAID_FAILURE_RETENTION_MS,
+  WEBHOOK_PROCESSING_STALE_TIMEOUT_MS,
+} from "@printgo/domain";
 
 export interface PayableDraftRecord {
   orderId: string;
@@ -129,13 +133,13 @@ function mapPayment(row: PaymentRow | null): PaymentRecord | null {
         orderStatus: row.order_status,
         pickupCode: row.pickup_code ?? null,
         isPriority: row.is_priority === 1,
+        identificationRequired: row.identification_required === 1,
       }
     : null;
 }
 
 export interface PaymentRepository {
   findDraft(tokenHash: string): Promise<PayableDraftRecord | null>;
-  findPaidPayment(orderId: string): Promise<PaymentRecord | null>;
   saveRecalculatedQuote(input: {
     orderId: string;
     selectedPages: string;
@@ -147,6 +151,7 @@ export interface PaymentRepository {
     discountAmountPaise: number;
     snapshotDiscountThresholdPaise: number | null;
     snapshotDiscountPercent: number | null;
+    identificationRequired: boolean;
     nowMs: number;
   }): Promise<boolean>;
   findActivePayment(orderId: string): Promise<PaymentRecord | null>;
@@ -330,7 +335,7 @@ export class D1PaymentRepository implements PaymentRepository {
         input.discountAmountPaise,
         input.snapshotDiscountThresholdPaise,
         input.snapshotDiscountPercent,
-        0,
+        input.identificationRequired ? 1 : 0,
         input.nowMs,
         input.orderId,
         input.selectedPages,
@@ -342,7 +347,7 @@ export class D1PaymentRepository implements PaymentRepository {
         input.discountAmountPaise,
         input.snapshotDiscountThresholdPaise,
         input.snapshotDiscountPercent,
-        0,
+        input.identificationRequired ? 1 : 0,
       )
       .run();
     if (result.meta.changes === 1) return true;
@@ -368,7 +373,7 @@ export class D1PaymentRepository implements PaymentRepository {
           input.discountAmountPaise,
           input.snapshotDiscountThresholdPaise,
           input.snapshotDiscountPercent,
-          0,
+          input.identificationRequired ? 1 : 0,
         )
         .first(),
     );
@@ -380,7 +385,7 @@ export class D1PaymentRepository implements PaymentRepository {
         `SELECT p.id, p.order_id, p.provider_order_id, p.provider_payment_id,
           p.amount_paise, o.total_amount_paise AS order_amount_paise,
           p.currency, p.status, o.public_job_code,
-          o.status AS order_status, o.pickup_code, o.is_priority
+          o.status AS order_status, o.pickup_code, o.is_priority, o.identification_required
         FROM payments p JOIN orders o ON o.id = p.order_id
         WHERE p.provider = 'RAZORPAY' AND ${where} = ? ORDER BY p.created_at_ms DESC LIMIT 1`,
       )
@@ -395,25 +400,9 @@ export class D1PaymentRepository implements PaymentRepository {
         `SELECT p.id, p.order_id, p.provider_order_id, p.provider_payment_id,
           p.amount_paise, o.total_amount_paise AS order_amount_paise,
           p.currency, p.status, o.public_job_code,
-          o.status AS order_status, o.pickup_code, o.is_priority
+          o.status AS order_status, o.pickup_code, o.is_priority, o.identification_required
         FROM payments p JOIN orders o ON o.id = p.order_id
         WHERE p.order_id = ? AND p.status IN ('CREATED', 'PENDING')
-        ORDER BY p.created_at_ms DESC LIMIT 1`,
-      )
-      .bind(orderId)
-      .first<PaymentRow>();
-    return mapPayment(row);
-  }
-
-  async findPaidPayment(orderId: string): Promise<PaymentRecord | null> {
-    const row = await this.db
-      .prepare(
-        `SELECT p.id, p.order_id, p.provider_order_id, p.provider_payment_id,
-          p.amount_paise, o.total_amount_paise AS order_amount_paise,
-          p.currency, p.status, o.public_job_code,
-          o.status AS order_status, o.pickup_code, o.is_priority
-        FROM payments p JOIN orders o ON o.id = p.order_id
-        WHERE p.order_id = ? AND p.status = 'PAID'
         ORDER BY p.created_at_ms DESC LIMIT 1`,
       )
       .bind(orderId)
@@ -536,6 +525,41 @@ export class D1PaymentRepository implements PaymentRepository {
       : null;
   }
 
+  private async allocatePickupCode(nowMs: number): Promise<string> {
+    const row = await this.db
+      .prepare(`SELECT next_pickup_code_index FROM installation WHERE id = 1`)
+      .first<{ next_pickup_code_index: number }>();
+    const startIndex = row?.next_pickup_code_index ?? 0;
+
+    for (let offset = 0; offset < TOTAL_PICKUP_CODES; offset++) {
+      const candidateIndex = (startIndex + offset) % TOTAL_PICKUP_CODES;
+      const candidateCode = indexToPickupCode(candidateIndex);
+
+      const active = await this.db
+        .prepare(
+          `SELECT 1 FROM orders
+           WHERE pickup_code = ?
+             AND cleanup_state = 'ACTIVE'
+             AND (status NOT IN ('COMPLETED', 'CANCELLED') OR (purge_at_ms IS NOT NULL AND purge_at_ms > ?))
+           LIMIT 1`,
+        )
+        .bind(candidateCode, nowMs)
+        .first();
+
+      if (!active) {
+        const nextIndex = (candidateIndex + 1) % TOTAL_PICKUP_CODES;
+        await this.db
+          .prepare(
+            `UPDATE installation SET next_pickup_code_index = ?, updated_at_ms = ? WHERE id = 1`,
+          )
+          .bind(nextIndex, nowMs)
+          .run();
+        return candidateCode;
+      }
+    }
+    return indexToPickupCode(startIndex);
+  }
+
   async finalizePaid(
     input: Parameters<PaymentRepository["finalizePaid"]>[0],
   ): Promise<PaymentRecord> {
@@ -543,58 +567,37 @@ export class D1PaymentRepository implements PaymentRepository {
     if (!before) throw new Error("Payment record missing.");
     if (before.status === "PAID" && before.publicJobCode) return before;
 
-    // Use a single batch to allocate pickup code atomically, update order, update payment, and record events.
+    const orderRow = await this.db
+      .prepare(`SELECT pickup_code FROM orders WHERE id = ?`)
+      .bind(before.orderId)
+      .first<{ pickup_code: string | null }>();
+    const pickupCode =
+      orderRow?.pickup_code || (await this.allocatePickupCode(input.nowMs));
+
+    const orderUpdate = await this.db
+      .prepare(
+        `UPDATE orders SET public_job_code = COALESCE(public_job_code, ?),
+          pickup_code = COALESCE(pickup_code, ?),
+          status = 'QUEUED', paid_at_ms = COALESCE(paid_at_ms, ?),
+          queued_at_ms = COALESCE(queued_at_ms, ?), updated_at_ms = ?
+         WHERE id = ? AND cleanup_state = 'ACTIVE' AND (
+           status IN ('PAYMENT_PENDING', 'PAYMENT_FAILED', 'PAYMENT_CANCELLED', 'PAID')
+           OR (status = 'QUEUED' AND public_job_code = ?)
+         )`,
+      )
+      .bind(
+        input.jobCode,
+        pickupCode,
+        input.nowMs,
+        input.nowMs,
+        input.nowMs,
+        before.orderId,
+        input.jobCode,
+      )
+      .run();
+    if (orderUpdate.meta.changes !== 1)
+      throw new Error("Payment order is no longer eligible for finalization.");
     await this.db.batch([
-      this.db
-        .prepare(
-          `UPDATE orders SET 
-            public_job_code = COALESCE(public_job_code, ?),
-            pickup_code = COALESCE(pickup_code, (
-              SELECT candidateCode FROM (
-                 WITH RECURSIVE seq(idx) AS (
-                   SELECT next_pickup_code_index FROM installation WHERE id = 1
-                   UNION ALL
-                   SELECT (idx + 1) % 25974 FROM seq LIMIT 25974
-                 )
-                 SELECT 
-                   'P' || char(65 + (idx / 999)) || '-' || substr('000' || ((idx % 999) + 1), -3, 3) AS candidateCode
-                 FROM seq 
-                 WHERE NOT EXISTS (
-                   SELECT 1 FROM orders o2 
-                   WHERE o2.pickup_code = 'P' || char(65 + (idx / 999)) || '-' || substr('000' || ((idx % 999) + 1), -3, 3)
-                     AND o2.cleanup_state = 'ACTIVE'
-                     AND (o2.status NOT IN ('COMPLETED', 'CANCELLED') OR (o2.purge_at_ms IS NOT NULL AND o2.purge_at_ms > ?))
-                 )
-                 LIMIT 1
-              )
-            )),
-            status = 'QUEUED', paid_at_ms = COALESCE(paid_at_ms, ?),
-            queued_at_ms = COALESCE(queued_at_ms, ?), updated_at_ms = ?
-           WHERE id = ? AND cleanup_state = 'ACTIVE' AND (
-             status IN ('PAYMENT_PENDING', 'PAYMENT_FAILED', 'PAYMENT_CANCELLED', 'PAID')
-             OR (status = 'QUEUED' AND public_job_code = ?)
-           )`,
-        )
-        .bind(
-          input.jobCode,
-          input.nowMs,
-          input.nowMs,
-          input.nowMs,
-          input.nowMs,
-          before.orderId,
-          input.jobCode,
-        ),
-      this.db
-        .prepare(
-          `UPDATE installation SET 
-            next_pickup_code_index = (
-              SELECT ((unicode(substr(pickup_code, 2, 1)) - 65) * 999 + cast(substr(pickup_code, 4, 3) AS INT)) % 25974 
-              FROM orders WHERE id = ?
-            ),
-            updated_at_ms = ?
-          WHERE id = 1 AND EXISTS (SELECT 1 FROM orders WHERE id = ? AND paid_at_ms = ?)`,
-        )
-        .bind(before.orderId, input.nowMs, before.orderId, input.nowMs),
       this.db
         .prepare(
           `UPDATE payments SET provider_payment_id = ?, status = 'PAID',
@@ -607,7 +610,6 @@ export class D1PaymentRepository implements PaymentRepository {
           input.nowMs,
           input.paymentId,
         ),
-
       this.db
         .prepare(
           `UPDATE uploads SET retention_reason = 'UNRESOLVED_PAID_FAILURE', delete_after_ms = ?,
@@ -618,13 +620,6 @@ export class D1PaymentRepository implements PaymentRepository {
           input.nowMs,
           before.orderId,
         ),
-      this.db
-        .prepare(
-          `INSERT OR IGNORE INTO payment_attempts
-            (id, payment_id, provider_payment_id, status, error_reason)
-          VALUES (?, ?, ?, 'VERIFIED', NULL)`,
-        )
-        .bind(crypto.randomUUID(), input.paymentId, input.providerPaymentId),
       this.db
         .prepare(
           `INSERT OR IGNORE INTO order_events

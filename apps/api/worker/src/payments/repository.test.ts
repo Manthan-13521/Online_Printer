@@ -251,7 +251,7 @@ describe("D1PaymentRepository webhook claim & stale event recovery", () => {
       total_amount_paise: 2080,
       priority_fee_paise: 500,
       discount_amount_paise: 520,
-      identification_required: 0,
+      identification_required: 1,
     });
     await db
       .prepare(

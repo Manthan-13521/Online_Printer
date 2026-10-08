@@ -1,26 +1,6 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-
-import * as net from "node:net";
-
-function acquireSingleInstanceLock(): Promise<net.Server> {
-  return new Promise((resolve, reject) => {
-    const server = net.createServer();
-    server.once("error", (err: NodeJS.ErrnoException) => {
-      if (err.code === "EADDRINUSE") {
-        reject(
-          new Error("Another instance of PrintGo Agent is already running."),
-        );
-      } else {
-        reject(err);
-      }
-    });
-    server.listen("\\\\.\\pipe\\printgo-agent-lock", () => {
-      resolve(server);
-    });
-  });
-}
 import {
   AgentApiError,
   AgentAuthError,
@@ -252,7 +232,7 @@ SumatraPDF:
       } catch (err) {
         console.warn(
           `[PrintGo Agent] Warning: Failed to parse ${configPath}:`,
-          String(err),
+          err instanceof Error ? err.message : String(err),
         );
       }
     }
@@ -283,7 +263,7 @@ SumatraPDF:
     } catch (err) {
       console.warn(
         "[PrintGo Agent] Warning: Malformed pairing URL:",
-        String(err),
+        err instanceof Error ? err.message : String(err),
       );
     }
   }
@@ -397,22 +377,9 @@ SumatraPDF:
 
   let authErrorCleared = false;
 
-  try {
-    if (process.env.NODE_ENV !== "test") await acquireSingleInstanceLock();
-  } catch {
-    console.error(
-      "[PrintGo Agent] ❌ Another instance of PrintGo Agent is already running.",
-    );
-    console.error(
-      "Only one agent daemon can run per computer to prevent print duplication.",
-    );
-    process.exit(1);
-  }
-
   const log = new RotatingLog(
     path.join(path.dirname(getDefaultStatusFilePath()), "daemon.log"),
   );
-
   const daemon = new AgentDaemon({
     client,
     agentVersion: "2.1.0",
@@ -455,7 +422,9 @@ SumatraPDF:
     try {
       await daemon.pair(serverUrl, pairCodeArg, displayName);
     } catch (err: unknown) {
-      console.error(`[PrintGo Agent] Pairing failed: ${String(err)}`);
+      console.error(
+        `[PrintGo Agent] Pairing failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
       process.exit(1);
     }
   }

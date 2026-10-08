@@ -28,6 +28,8 @@ const validSettings = {
   customerNotice: "Collect before 8 PM.",
   onlinePrintingEnabled: true,
   maxPdfSizeBytes: 10 * 1024 * 1024,
+  identificationSheetEnabled: true,
+  identificationSheetPlacement: "FIRST",
 };
 
 const validRates = (["A4", "A3"] as const).flatMap((paperSize) =>
@@ -120,6 +122,20 @@ describe("shop settings validation", () => {
     });
   });
 
+  it.each(["FIRST", "LAST"] as const)(
+    "accepts the %s identification-sheet placement and boolean settings",
+    (identificationSheetPlacement) => {
+      expect(
+        validateShopSettingsInput({
+          ...validSettings,
+          identificationSheetPlacement,
+          onlinePrintingEnabled: false,
+          identificationSheetEnabled: false,
+        }).ok,
+      ).toBe(true);
+    },
+  );
+
   it.each([
     [{ ...validSettings, shopName: "" }, "shopName"],
     [{ ...validSettings, shopName: "x".repeat(101) }, "shopName"],
@@ -128,6 +144,10 @@ describe("shop settings validation", () => {
       "maxPdfSizeBytes",
     ],
     [{ ...validSettings, maxPdfSizeBytes: 0 }, "maxPdfSizeBytes"],
+    [
+      { ...validSettings, identificationSheetPlacement: "MIDDLE" },
+      "identificationSheetPlacement",
+    ],
     [
       { ...validSettings, onlinePrintingEnabled: "yes" },
       "onlinePrintingEnabled",

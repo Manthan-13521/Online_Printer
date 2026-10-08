@@ -90,12 +90,12 @@ describe("WindowsPrinterAdapter with mock executor", () => {
     },
   );
 
-  it("reports a printer ONLINE when Windows CIM output has no error or offline flags", async () => {
+  it("does not report a printer ONLINE when Windows omits health information", async () => {
     const adapter = new WindowsPrinterAdapter(() =>
       Promise.resolve(JSON.stringify({ Name: "Printer" })),
     );
     await adapter.listPrinters();
-    expect((await adapter.getStatus("Printer")).availability).toBe("ONLINE");
+    expect((await adapter.getStatus("Printer")).availability).toBe("UNKNOWN");
   });
 
   it("drops stale ONLINE snapshots when discovery fails or the printer disappears", async () => {
@@ -117,8 +117,13 @@ describe("WindowsPrinterAdapter with mock executor", () => {
     const submit = scripts.find((script) =>
       script.includes("ProcessStartInfo"),
     )!;
-    expect(submit).toContain("Printer readiness blocked:");
-    expect(submit.indexOf("$wmi = Get-CimInstance")).toBeLessThan(
+    expect(submit).toContain(
+      "Printer readiness could not be confirmed before submission.",
+    );
+    expect(submit).toContain(
+      "$ready.DetectedErrorState -in @(4,6,7,8,9,10,11)",
+    );
+    expect(submit.indexOf("$ready = Get-CimInstance")).toBeLessThan(
       submit.indexOf("ProcessStartInfo"),
     );
   });

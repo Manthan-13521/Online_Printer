@@ -16,6 +16,7 @@ import {
 import { D1ConfigurationRepository } from "./config/repository.js";
 import { D1CustomerRepository } from "./customer/repository.js";
 import { D1DiscountRuleRepository } from "./discount-rules/repository.js";
+import { D1PaymentRepository } from "./payments/repository.js";
 import { D1PrintingRepository } from "./printing/repository.js";
 
 function createTestDatabase(): DatabaseSync {
@@ -39,10 +40,6 @@ function createTestDatabase(): DatabaseSync {
     "0016_phase4_failure_recovery_and_pause.sql",
     "0017_phase5_fallback_and_reprint_protection.sql",
     "0018_phase6_history_cleanup.sql",
-    "0019_phase7_restore_hot_indexes.sql",
-    "0020_order_retention_duration.sql",
-    "0021_daily_order_stats.sql",
-    "0022_phase2_recovery_foundation.sql",
   ];
   for (const name of migrationFiles) {
     db.exec(
@@ -408,6 +405,44 @@ describe("Phase 3: Pickup Codes Sequence, Wrap, and Collision Avoidance", () => 
     expect(pickupCodeToIndex("PZ-999")).toBe(TOTAL_PICKUP_CODES - 1);
   });
 
+  it("avoids active pickup code collisions and increments safely", async () => {
+    const rawDb = createTestDatabase();
+    seedInstallation(rawDb, 1000);
+    const d1 = asD1(rawDb);
+    const paymentRepo = new D1PaymentRepository(d1);
+
+    // Make PA-001 active
+    rawDb
+      .prepare(
+        `INSERT INTO orders (
+        id, customer_name, customer_phone, original_filename,
+        paper_size, color_mode, sides, total_amount_paise, printing_amount_paise,
+        service_charge_paise, currency, status, public_job_code, pickup_code,
+        cleanup_state, queued_at_ms, created_at_ms, updated_at_ms
+      ) VALUES (
+        '60000000-0000-4000-8000-000000000020', 'Cust', '9999999999', 'test.pdf',
+        'A4', 'BW', 'SINGLE', 300, 200,
+        100, 'INR', 'QUEUED', 'JOB1', 'PA-001',
+        'ACTIVE', 1000, 1000, 1000
+      )`,
+      )
+      .run();
+
+    // Now allocating a code must skip PA-001 and return PA-002
+    const code = await (
+      paymentRepo as unknown as {
+        allocatePickupCode(nowMs: number): Promise<string>;
+      }
+    ).allocatePickupCode(2000);
+    expect(code).toBe("PA-002");
+
+    // Next code index in DB must be updated to 2 (PA-003)
+    const installRow = rawDb
+      .prepare(`SELECT next_pickup_code_index FROM installation WHERE id = 1`)
+      .get() as { next_pickup_code_index: number };
+    expect(installRow.next_pickup_code_index).toBe(2);
+  });
+
   it("resets pickup code sequence to PA-001 without disturbing active orders", async () => {
     const rawDb = createTestDatabase();
     seedInstallation(rawDb, 1000);
@@ -455,13 +490,13 @@ describe("Phase 3: Customer Public Tracking & Status Mapping", () => {
         id, customer_name, customer_phone, original_filename,
         paper_size, color_mode, sides, total_amount_paise, printing_amount_paise,
         service_charge_paise, currency, status, public_job_code, pickup_code,
-        is_priority, cleanup_state,
+        is_priority, identification_required, cleanup_state,
         queued_at_ms, created_at_ms, updated_at_ms
       ) VALUES (
         '60000000-0000-4000-8000-000000000030', 'Secret VIP Customer', '+919999988888', 'secret.pdf',
         'A4', 'BW', 'SINGLE', 5000, 4000,
         1000, 'INR', 'MANUAL_PRINT', 'JOB-PRIV-1', 'PA-123',
-        1, 'ACTIVE',
+        1, 1, 'ACTIVE',
         1000, 1000, 1000
       )`,
       )
@@ -476,6 +511,7 @@ describe("Phase 3: Customer Public Tracking & Status Mapping", () => {
     expect(tracking?.status).toBe("WAITING_FOR_STAFF");
     expect(tracking?.statusLabel).toBe("Waiting for Staff");
     expect(tracking?.isPriority).toBe(true);
+    expect(tracking?.identificationRequired).toBe(true);
 
     // Verify privacy: safe fields only
     const record = tracking as unknown as Record<string, unknown>;

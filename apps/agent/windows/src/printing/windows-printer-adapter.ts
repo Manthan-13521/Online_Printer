@@ -75,15 +75,16 @@ export function extractHostFromPortName(
   if (!portName) return null;
   const trimmed = portName.trim();
   const ipPrefix =
-    /^(?:IP_|TCP_|WSD_)?([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})(?::\d+)?/i.exec(
-      trimmed,
-    );
+    /^IP_([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})$/i.exec(trimmed);
   if (ipPrefix?.[1]) return ipPrefix[1];
-  const urlMatch =
-    /https?:\/\/([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}|[a-zA-Z0-9.-]+)(?::\d+)?/i.exec(
+  const directIp =
+    /^([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})(?::\d+)?$/i.exec(
       trimmed,
     );
-  if (urlMatch?.[1]) return urlMatch[1];
+  if (directIp?.[1]) return directIp[1];
+  const tcpPrefix =
+    /^TCP_([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})$/i.exec(trimmed);
+  if (tcpPrefix?.[1]) return tcpPrefix[1];
   return null;
 }
 
@@ -358,19 +359,6 @@ Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $printer } | Select-O
     p: CimPrinterOutput,
     isNetworkReachable?: boolean,
   ): PrinterStatus {
-    if (isNetworkReachable === true) {
-      return { availability: "ONLINE" };
-    }
-    if (isNetworkReachable === false) {
-      const host = extractHostFromPortName(p.PortName);
-      return {
-        availability: "OFFLINE",
-        message: host
-          ? `Network printer unreachable at ${host}`
-          : "Network printer unreachable",
-      };
-    }
-
     if (p.WorkOffline) {
       return {
         availability: "OFFLINE",
@@ -412,9 +400,34 @@ Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $printer } | Select-O
       return { availability: "ONLINE" };
     }
 
-    // When no error or offline condition is present in Windows spooler/CIM,
-    // the printer is ONLINE and ready for print submissions.
-    return { availability: "ONLINE" };
+    const host = extractHostFromPortName(p.PortName);
+    if (host !== null) {
+      if (isNetworkReachable === false) {
+        return {
+          availability: "OFFLINE",
+          message: `Network printer unreachable at ${host}`,
+        };
+      }
+      if (isNetworkReachable === true) {
+        return { availability: "ONLINE" };
+      }
+    }
+
+    // When Windows reports WorkOffline is false, or reports a defined PrinterStatus (such as 2=Unknown/Default,
+    // 3=Idle, 4=Printing, 5=Warmup) or DetectedErrorState is 0/2 (no error detected), the printer is ready.
+    if (
+      p.WorkOffline === false ||
+      p.PrinterStatus !== undefined ||
+      p.DetectedErrorState === 0 ||
+      p.DetectedErrorState === 2
+    ) {
+      return { availability: "ONLINE" };
+    }
+
+    return {
+      availability: "UNKNOWN",
+      message: "Printer readiness is not reported by Windows",
+    };
   }
 
   async getStatus(printerId: string): Promise<PrinterStatus> {
@@ -552,44 +565,10 @@ if (-not $sumatra -or -not (Test-Path $sumatra)) {
 }
 
 # Fresh readiness in this same process, before any physical side effect. Never trust the idle snapshot here.
-$statusStrings = @()
-
-$gp = Get-Printer -Name $printer -ErrorAction SilentlyContinue
-if ($gp) { $statusStrings += $gp.PrinterStatus.ToString() }
-
-Add-Type -AssemblyName System.Printing -ErrorAction SilentlyContinue
-try {
-    $server = New-Object System.Printing.LocalPrintServer
-    $queue = $server.GetPrintQueue($printer)
-    if ($queue.QueueStatus.ToString() -ne 'None') { $statusStrings += $queue.QueueStatus.ToString() }
-} catch {}
-
-$wmi = Get-CimInstance Win32_Printer -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq $printer }
-if ($wmi) {
-    if ($wmi.DetectedErrorState -eq 4) { $statusStrings += "PaperOut" }
-    if ($wmi.DetectedErrorState -eq 7) { $statusStrings += "DoorOpen" }
-    if ($wmi.DetectedErrorState -eq 8) { $statusStrings += "PaperJam" }
-    if ($wmi.DetectedErrorState -eq 11) { $statusStrings += "OutputBinFull" }
-    if ($wmi.WorkOffline -or $wmi.PrinterStatus -in @(6,7)) { $statusStrings += "WmiOffline" }
-}
-
-$statusText = $statusStrings -join ", "
-$isBlocked = $false
-$failureReason = ""
-
-if ($statusText -match "PaperOut|NoPaper") { $isBlocked = $true; $failureReason = "Paper Out" }
-elseif ($statusText -match "Jam") { $isBlocked = $true; $failureReason = "Paper Jam" }
-elseif ($statusText -match "DoorOpen|CoverOpen") { $isBlocked = $true; $failureReason = "Door Open" }
-elseif ($statusText -match "NoToner") { $isBlocked = $true; $failureReason = "No Toner" }
-elseif ($statusText -match "OutputBinFull") { $isBlocked = $true; $failureReason = "Output Bin Full" }
-elseif ($statusText -match "UserIntervention") { $isBlocked = $true; $failureReason = "User Intervention Required" }
-elseif ($statusText -match "Error" -and $statusText -notmatch "NoError") { $isBlocked = $true; $failureReason = "Printer Error State" }
-elseif ($statusText -match "Offline" -and $statusText -notmatch "WmiOffline") {
-    $isBlocked = $true; $failureReason = "Printer is Offline"
-}
-
-if ($isBlocked) {
-    throw "Printer readiness blocked: $failureReason"
+$ready = Get-CimInstance Win32_Printer -ErrorAction Stop | Where-Object { $_.Name -eq $printer }
+if (-not $ready -or $ready.WorkOffline -or $ready.PrinterStatus -in @(6,7) -or
+    $ready.DetectedErrorState -in @(4,6,7,8,9,10,11)) {
+    throw "Printer readiness could not be confirmed before submission."
 }
 
 # 2. Record pre-submission spooler job IDs for this exact printer

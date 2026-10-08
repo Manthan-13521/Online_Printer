@@ -71,32 +71,6 @@ export async function handleAdminOrdersRequest(
       }
     }
 
-    const removeMatch =
-      /^\/api\/admin\/orders\/([^/]+)\/remove-from-queue$/u.exec(pathname);
-    if (request.method === "POST" && removeMatch) {
-      const orderId = decodeURIComponent(removeMatch[1] ?? "");
-      const printingService = createPrintingService(env);
-      const result = await printingService.removeFromQueue(
-        orderId,
-        session.admin.id,
-      );
-      return withAdminCors(ok(result, 200), env.ADMIN_ALLOWED_ORIGIN);
-    }
-
-
-    const cancelMatch = /^\/api\/admin\/orders\/([^/]+)\/cancel$/u.exec(pathname);
-    if (request.method === "POST" && cancelMatch) {
-      const orderId = decodeURIComponent(cancelMatch[1] ?? "");
-      let reason = "";
-      try {
-        const body = (await readAdminJson(request, MAX_JSON_BYTES)) as Record<string, unknown>;
-        if (typeof body.reason === "string") reason = body.reason.trim();
-      } catch {}
-      const printingService = createPrintingService(env);
-      const result = await printingService.cancelOrder(orderId, session.admin.id, reason);
-      return withAdminCors(ok(result, 200), env.ADMIN_ALLOWED_ORIGIN);
-    }
-
     const manualCompleteMatch =
       /^\/api\/admin\/orders\/([^/]+)\/manual-complete$/u.exec(pathname);
     if (request.method === "POST" && manualCompleteMatch) {
@@ -178,22 +152,6 @@ export async function handleAdminOrdersRequest(
       ) {
         return withAdminCors(
           error(404, caught.code, "Requested resource not found."),
-          env.ADMIN_ALLOWED_ORIGIN,
-        );
-      }
-      if (caught.code === "ORDER_ALREADY_IN_PROGRESS") {
-        return withAdminCors(
-          error(400, "ORDER_ALREADY_IN_PROGRESS", "Already in print queue."),
-          env.ADMIN_ALLOWED_ORIGIN,
-        );
-      }
-      if (caught.code === "ORDER_IS_UNCERTAIN") {
-        return withAdminCors(
-          error(
-            400,
-            "ORDER_IS_UNCERTAIN",
-            "Some pages may already have printed. Reprinting may produce duplicates. Please resolve the uncertainty first.",
-          ),
           env.ADMIN_ALLOWED_ORIGIN,
         );
       }

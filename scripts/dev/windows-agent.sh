@@ -11,7 +11,7 @@ case "$action" in
     echo "=== PrintGo Agent Process & Service Status on $HOST ==="
     ssh "$HOST" "powershell -NoProfile -ExecutionPolicy Bypass -Command -" << 'EOF'
 Write-Host "[Process Status]" -ForegroundColor Cyan
-$procs = Get-Process -Name *PrintGo-Agent* -ErrorAction SilentlyContinue
+$procs = Get-Process -Name *PrintGo* -ErrorAction SilentlyContinue
 if ($procs) {
     $procs | Select-Object Id, ProcessName, WorkingSet64, StartTime | Format-Table -AutoSize | Out-String | Write-Host
 } else {
@@ -45,7 +45,7 @@ EOF
   start)
     echo "=== Starting PrintGo Agent on $HOST ==="
     ssh "$HOST" "powershell -NoProfile -ExecutionPolicy Bypass -Command -" << 'EOF'
-$procs = Get-Process -Name *PrintGo-Agent* -ErrorAction SilentlyContinue
+$procs = Get-Process -Name *PrintGo* -ErrorAction SilentlyContinue
 if ($procs) {
     Write-Host "PrintGo-Agent is already running (PID: $($procs.Id))." -ForegroundColor Yellow
     exit 0
@@ -77,7 +77,7 @@ EOF
   stop)
     echo "=== Stopping PrintGo Agent on $HOST ==="
     ssh "$HOST" "powershell -NoProfile -ExecutionPolicy Bypass -Command -" << 'EOF'
-$procs = Get-Process -Name *PrintGo-Agent* -ErrorAction SilentlyContinue
+$procs = Get-Process -Name *PrintGo* -ErrorAction SilentlyContinue
 if ($procs) {
     foreach ($p in $procs) {
         Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue

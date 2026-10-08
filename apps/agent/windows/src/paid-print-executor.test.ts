@@ -126,18 +126,10 @@ async function journal() {
 }
 
 describe("PaidPrintExecutor duplicate prevention", () => {
-  it("reports BLOCKED before submission while offline, then resumes and submits when online", async () => {
+  it("waits before submission while offline, then uses the same pending step when online", async () => {
     const api = client();
     const printer = adapter();
     vi.mocked(printer.getStatus)
-      .mockResolvedValueOnce({
-        availability: "OFFLINE",
-        message: "Printer is offline",
-      })
-      .mockResolvedValueOnce({
-        availability: "OFFLINE",
-        message: "Printer is offline",
-      })
       .mockResolvedValueOnce({
         availability: "OFFLINE",
         message: "Printer is offline",
@@ -146,37 +138,14 @@ describe("PaidPrintExecutor duplicate prevention", () => {
     const store = await journal();
     const executor = new PaidPrintExecutor(api, printer, store);
 
-    const initialJob = job("IDENTIFICATION_SHEET");
-    const r1 = await executor.handle(credentials, initialJob);
-    expect(r1).toBe("PREFLIGHT_DEFERRED");
-    const r2 = await executor.handle(credentials, initialJob);
-    expect(r2).toBe("PREFLIGHT_DEFERRED");
-    const r3 = await executor.handle(credentials, initialJob);
-    expect(r3).toBe("PREFLIGHT_DEFERRED");
+    await executor.handle(credentials, job("IDENTIFICATION_SHEET"));
 
     expect(api.startPrintStep).not.toHaveBeenCalled();
-    expect(api.reportPrintStep).toHaveBeenCalledTimes(1);
-    expect(api.reportPrintStep).toHaveBeenCalledWith(
-      credentials.serverUrl,
-      credentials.agentId,
-      credentials.agentSecret,
-      initialJob,
-      expect.objectContaining({
-        status: "BLOCKED",
-        failureCode: "PRINTER_OFFLINE",
-      }),
-    );
+    expect(api.reportPrintStep).not.toHaveBeenCalled();
     expect(printer.submitPdfJob).not.toHaveBeenCalled();
     expect(await store.load()).toBeNull();
 
-    const blockedJob = {
-      ...initialJob,
-      currentStep: {
-        ...initialJob.currentStep,
-        status: "BLOCKED" as const,
-      },
-    };
-    await executor.handle(credentials, blockedJob);
+    await executor.handle(credentials, job("IDENTIFICATION_SHEET"));
     expect(api.startPrintStep).toHaveBeenCalledTimes(1);
     expect(printer.submitPdfJob).toHaveBeenCalledTimes(1);
   });
@@ -213,7 +182,7 @@ describe("PaidPrintExecutor duplicate prevention", () => {
       expect.anything(),
       expect.anything(),
       expect.anything(),
-      expect.objectContaining({ status: "UNCERTAIN", spoolerJobId: "42" }),
+      expect.objectContaining({ status: "SUCCEEDED", spoolerJobId: "42" }),
     );
   });
 
@@ -303,7 +272,7 @@ describe("PaidPrintExecutor duplicate prevention", () => {
       expect.anything(),
       expect.anything(),
       expect.anything(),
-      expect.objectContaining({ status: "UNCERTAIN" }),
+      expect.objectContaining({ status: "SUCCEEDED" }),
     );
   });
 
@@ -397,39 +366,6 @@ describe("PaidPrintExecutor duplicate prevention", () => {
       expect.anything(),
       expect.anything(),
       expect.objectContaining({ status: "BLOCKED", spoolerJobId: "42" }),
-    );
-  });
-
-  it("prevents SUCCEEDED report if printer enters BLOCKED state upon spool completion", async () => {
-    const api = client();
-    const printer = adapter();
-    // Spool reports removed/despooled
-    vi.mocked(printer.getJobStatus).mockResolvedValue({
-      state: "COMPLETED_OR_REMOVED",
-      spoolJobId: "42",
-    });
-    // But printer hardware reports paper jam / blocked
-    vi.mocked(printer.getStatus).mockResolvedValue({
-      availability: "BLOCKED",
-      message: "Paper Jam",
-    });
-
-    await new PaidPrintExecutor(api, printer, await journal()).handle(
-      credentials,
-      job("CUSTOMER_DOCUMENT", "SUBMITTED"),
-    );
-
-    expect(api.reportPrintStep).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.anything(),
-      expect.anything(),
-      expect.anything(),
-      expect.objectContaining({
-        status: "BLOCKED",
-        spoolerJobId: "42",
-        failureCode: "PRINTER_ERROR",
-        failureDetail: "Paper Jam",
-      }),
     );
   });
 });

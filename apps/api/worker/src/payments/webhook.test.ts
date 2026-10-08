@@ -24,7 +24,6 @@ const payment: PaymentRecord = {
 function repository(): PaymentRepository {
   return {
     findDraft: vi.fn(),
-    findPaidPayment: vi.fn(),
     saveRecalculatedQuote: vi.fn(),
     findActivePayment: vi.fn(),
     reservePayment: vi.fn(),

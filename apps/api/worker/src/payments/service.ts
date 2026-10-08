@@ -1,5 +1,4 @@
 import type {
-  CancelCustomerPaymentData,
   CreateCustomerPaymentData,
   CustomerFileQuoteData,
   CustomerPaymentSuccessData,
@@ -14,6 +13,7 @@ import {
 import {
   calculateDiscount,
   calculatePrintPrice,
+  isIdentificationRequired,
   PricingError,
 } from "@printgo/pricing";
 
@@ -56,17 +56,6 @@ export class PaymentError extends Error {
     super(message);
     this.name = "PaymentError";
   }
-}
-
-function createTrackingToken(): string {
-  const bytes = new Uint8Array(32);
-  crypto.getRandomValues(bytes);
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary)
-    .replaceAll("+", "-")
-    .replaceAll("/", "_")
-    .replace(/=+$/u, "");
 }
 
 export interface PaymentServiceConfiguration {
@@ -116,6 +105,12 @@ export class PaymentService {
     ) {
       throw new PaymentError("PAYMENT_STATE_INVALID");
     }
+  }
+
+  private async requireDraft(rawToken: string): Promise<PayableDraftRecord> {
+    const draft = await this.findDraft(rawToken);
+    this.validateDraftState(draft);
+    return draft;
   }
 
   private files(draft: PayableDraftRecord): PayableFileRecord[] {
@@ -199,7 +194,7 @@ export class PaymentService {
       const addonAmountPaise = await this.customer.getOrderAddonAmountPaise(
         draft.orderId,
       );
-      const { priorityPrinting, discountRules } =
+      const { priorityPrinting, identificationPolicy, discountRules } =
         await this.customer.getPricingRulesAndPolicy();
       const isPriority = draft.isPriority && priorityPrinting.enabled;
       const priorityFeePaise = isPriority ? priorityPrinting.feePaise : 0;
@@ -213,6 +208,11 @@ export class PaymentService {
       );
       const totalAmountPaise =
         subtotalAmountPaise - discount.discountAmountPaise;
+      const identificationRequired = isIdentificationRequired({
+        mode: identificationPolicy.mode,
+        thresholdPaise: identificationPolicy.thresholdPaise,
+        onlineAmountPaise: totalAmountPaise,
+      });
       return {
         normalizedSelectedPages: first.selectedPages,
         selectedPageCount: first.selectedPageCount,
@@ -239,6 +239,7 @@ export class PaymentService {
                 discountPercent: discount.discountPercent,
               }
             : null,
+        identificationRequired,
       };
     } catch (caught) {
       if (
@@ -267,7 +268,7 @@ export class PaymentService {
       snapshotDiscountThresholdPaise:
         quote.appliedDiscount?.minSubtotalPaise ?? null,
       snapshotDiscountPercent: quote.appliedDiscount?.discountPercent ?? null,
-
+      identificationRequired: quote.identificationRequired ?? false,
       nowMs: this.now(),
     });
     if (!saved) throw new PaymentError("PAYMENT_STATE_INVALID");
@@ -276,21 +277,11 @@ export class PaymentService {
   async createCheckout(
     rawToken: string,
     acknowledgedTotalPaise: number,
-    trackingToken: string,
   ): Promise<CreateCustomerPaymentData> {
     if (!this.configuration.keyId || !this.configuration.keySecret) {
       throw new PaymentError("PAYMENT_CONFIGURATION_MISSING");
     }
-    const draft = await this.findDraft(rawToken);
-
-    const paidPayment = await this.payments.findPaidPayment(draft.orderId);
-    if (paidPayment && paidPayment.publicJobCode) {
-      const successData = await this.successData(paidPayment, trackingToken);
-      return { ...successData, status: "ALREADY_PAID" };
-    }
-
-    this.validateDraftState(draft);
-
+    const draft = await this.requireDraft(rawToken);
     const draftFiles = this.files(draft);
     const quote = await this.reprice(draft);
     const active = await this.payments.findActivePayment(draft.orderId);
@@ -528,24 +519,14 @@ export class PaymentService {
     throw new Error("Could not allocate a unique public job code.");
   }
 
-  async cancel(
-    rawToken: string,
-    providerOrderId: string,
-    trackingToken?: string,
-  ): Promise<CancelCustomerPaymentData> {
-    const draft = await this.findDraft(rawToken);
+  async cancel(rawToken: string, providerOrderId: string) {
+    const draft = await this.requireDraft(rawToken);
     const payment =
       await this.payments.findPaymentByProviderOrderId(providerOrderId);
-
-    if (payment && payment.status === "PAID" && payment.publicJobCode) {
-      const tokenToUse = trackingToken ?? createTrackingToken();
-      const successData = await this.successData(payment, tokenToUse);
-      return { ...successData, status: "ALREADY_PAID" };
-    }
-    this.validateDraftState(draft);
-
     if (!payment || payment.orderId !== draft.orderId)
       throw new PaymentError("PAYMENT_ORDER_MISMATCH");
+    if (payment.status === "PAID")
+      throw new PaymentError("PAYMENT_STATE_INVALID");
     if (payment.status === "CANCELLED" && draft.deleteAfterMs) {
       return {
         status: "PAYMENT_CANCELLED" as const,
@@ -592,6 +573,9 @@ export class PaymentService {
       trackingExpiresAt: tracking.expiresAt,
       ...(payment.isPriority !== undefined
         ? { isPriority: payment.isPriority }
+        : {}),
+      ...(payment.identificationRequired !== undefined
+        ? { identificationRequired: payment.identificationRequired }
         : {}),
     };
   }

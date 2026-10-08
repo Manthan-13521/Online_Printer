@@ -64,12 +64,6 @@ export async function routeRequest(
     return handleAdminDiscountRulesRequest(request, env);
   }
 
-  if (url.pathname.startsWith("/api/admin/print-system")) {
-    const { handleAdminPrintSystemRequest } =
-      await import("./printing/recovery-admin-routes");
-    return handleAdminPrintSystemRequest(request, env);
-  }
-
   if (url.pathname.startsWith("/api/admin/orders")) {
     // Manual orders management (mark-printed, mark-finished, set-pickup-charge, list manual)
     const isManualPath =

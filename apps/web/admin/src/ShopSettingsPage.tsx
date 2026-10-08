@@ -289,42 +289,34 @@ export function ShopSettingsPage({
           <p className="field-help">Plain text only. Shown to customers.</p>
         </section>
 
-        <section className="panel form-section">
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "flex-start",
-              gap: "1rem",
-              marginBottom: "0.5rem",
-            }}
-          >
-            <h2 style={{ margin: 0 }}>Online Printing</h2>
-            <div
-              style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}
-            >
-              <span style={{ fontWeight: "bold", fontSize: "0.95rem" }}>
-                {settings.onlinePrintingEnabled ? "On" : "Off"}
-              </span>
-              <label className="toggle-switch">
-                <input
-                  aria-label="Accept online printing"
-                  checked={settings.onlinePrintingEnabled}
-                  onChange={(event) => {
-                    if (!event.target.checked && settings.onlinePrintingEnabled)
-                      setConfirmPause(true);
-                    else patch({ onlinePrintingEnabled: event.target.checked });
-                  }}
-                  role="switch"
-                  type="checkbox"
-                />
-                <span className="toggle-slider" />
-              </label>
-            </div>
+        <section className="panel setting-card important-setting">
+          <div>
+            <h2>Online Printing</h2>
+            <p className="muted">
+              Controls whether the shop accepts new online work.
+            </p>
           </div>
-          <p className="field-help" style={{ margin: "0 0 0.75rem 0" }}>
-            Controls whether the shop accepts new online work.
-          </p>
+          <div
+            style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}
+          >
+            <span style={{ fontWeight: "bold", fontSize: "0.95rem" }}>
+              {settings.onlinePrintingEnabled ? "On" : "Off"}
+            </span>
+            <label className="toggle-switch">
+              <input
+                aria-label="Accept online printing"
+                checked={settings.onlinePrintingEnabled}
+                onChange={(event) => {
+                  if (!event.target.checked && settings.onlinePrintingEnabled)
+                    setConfirmPause(true);
+                  else patch({ onlinePrintingEnabled: event.target.checked });
+                }}
+                role="switch"
+                type="checkbox"
+              />
+              <span className="toggle-slider" />
+            </label>
+          </div>
         </section>
 
         <section className="panel form-section">
@@ -382,7 +374,7 @@ export function ShopSettingsPage({
               <label className="toggle-switch">
                 <input
                   aria-label="Print one identification sheet for each order"
-                  checked={Boolean(settings.identificationSheetEnabled)}
+                  checked={settings.identificationSheetEnabled}
                   onChange={(event) =>
                     patch({ identificationSheetEnabled: event.target.checked })
                   }
@@ -421,18 +413,12 @@ export function ShopSettingsPage({
             </label>
           </fieldset>
 
-          <fieldset
-            disabled={!settings.identificationSheetEnabled}
+          <div
             style={{
-              border: 0,
-              padding: 0,
-              margin: 0,
-              minInlineSize: 0,
               display: "grid",
               gap: "0.35rem",
               paddingTop: "1rem",
               borderTop: "1px solid #e2e8f0",
-              opacity: settings.identificationSheetEnabled ? 1 : 0.6,
             }}
           >
             <h3
@@ -452,7 +438,6 @@ export function ShopSettingsPage({
             <label htmlFor="id-requirement-mode">Identification policy</label>
             <select
               id="id-requirement-mode"
-              disabled={!settings.identificationSheetEnabled}
               value={settings.idRequirementMode ?? "ALWAYS"}
               onChange={(event) =>
                 patch({
@@ -479,7 +464,6 @@ export function ShopSettingsPage({
                   type="number"
                   min="1"
                   step="1"
-                  disabled={!settings.identificationSheetEnabled}
                   value={
                     settings.idThresholdPaise !== undefined
                       ? formatPaiseAsRupeesInput(settings.idThresholdPaise)
@@ -498,7 +482,7 @@ export function ShopSettingsPage({
                 </p>
               </div>
             ) : null}
-          </fieldset>
+          </div>
         </section>
 
         <section className="panel form-section">

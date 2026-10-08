@@ -867,29 +867,6 @@ body {
   gap: 1.5rem;
   grid-template-columns: 1fr;
 }
-@media (max-width: 959px) {
-  .order-layout {
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-  }
-  .order-left,
-  .order-right {
-    display: contents;
-  }
-  .step-1 {
-    order: 1;
-  }
-  .step-2 {
-    order: 2;
-  }
-  .step-3 {
-    order: 3;
-  }
-  .step-4 {
-    order: 4;
-  }
-}
 @media (min-width: 960px) {
   .order-layout {
     grid-template-columns: 1fr 1fr;
@@ -965,19 +942,16 @@ label {
   font-weight: 600;
   font-size: 0.95rem;
   color: #1e293b;
+  margin: 0;
 }
-.input-with-icon {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
+.input-with-icon,
 .select-wrapper {
   position: relative;
   display: flex;
   align-items: center;
-  height: 42px;
 }
-.input-with-icon .icon {
+.input-with-icon .icon,
+.select-wrapper .icon {
   position: absolute;
   left: 0.85rem;
   font-size: 1.1rem;
@@ -985,6 +959,7 @@ label {
   pointer-events: none;
 }
 .input-with-icon input,
+.select-wrapper select,
 .input-with-icon textarea {
   width: 100%;
   padding: 0.75rem 1rem 0.75rem 2.5rem;
@@ -995,19 +970,6 @@ label {
   color: #0f172a;
   transition: all 0.2s;
   outline: none;
-}
-.select-wrapper select {
-  width: 100%;
-  height: 42px;
-  padding: 0 0.85rem;
-  border: 1px solid #cbd5e1;
-  border-radius: 8px;
-  background: #ffffff;
-  font-size: 0.95rem;
-  color: #0f172a;
-  transition: all 0.2s;
-  outline: none;
-  cursor: pointer;
 }
 .input-with-icon.textarea .icon {
   top: 0.85rem;
@@ -1354,54 +1316,40 @@ label {
 }
 .number-stepper {
   display: flex;
-  align-items: stretch;
+  align-items: center;
   border: 1px solid #cbd5e1;
   border-radius: 8px;
   overflow: hidden;
   height: 42px;
-  background: #ffffff;
 }
 .number-stepper button {
-  background: #f1f5f9;
+  background: #f8fafc;
   border: none;
-  color: #1e293b;
+  color: #0f172a;
   width: 40px;
-  min-width: 40px;
   height: 100%;
-  margin: 0 !important;
-  padding: 0;
-  font-size: 1.3rem;
-  font-weight: 600;
-  line-height: 1;
+  font-size: 1.25rem;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 0;
-  user-select: none;
-  transition: background 0.15s;
+  padding: 0;
 }
 .number-stepper button:hover {
   background: #e2e8f0;
-}
-.number-stepper button:active {
-  background: #cbd5e1;
 }
 .number-stepper input {
   flex: 1;
   border: none;
   text-align: center;
-  margin: 0;
   padding: 0;
   height: 100%;
-  font-size: 1rem;
-  font-weight: 700;
-  color: #0f172a;
+  font-weight: 600;
   outline: none;
   background: white;
   width: 100%;
   min-width: 0;
-  line-height: 42px;
   -moz-appearance: textfield;
 }
 .number-stepper input::-webkit-outer-spin-button,

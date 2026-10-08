@@ -52,6 +52,8 @@ const settings: ShopSettings = {
   customerNotice: "Collect before 8 PM.",
   onlinePrintingEnabled: true,
   maxPdfSizeBytes: FILE_SIZE_10_MIB,
+  identificationSheetEnabled: true,
+  identificationSheetPlacement: "FIRST",
 };
 
 const pricing: AdminPricingConfiguration = {
@@ -309,9 +311,7 @@ describe("Admin application", () => {
     ).toBeTruthy();
     expect(await screen.findByText("PG-ABC234")).toBeTruthy();
     expect(screen.getByText("Paper out", { exact: false })).toBeTruthy();
-    expect(
-      screen.getByText(/Printer fault. Clear printer error, then Recover./i),
-    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: /retry/iu })).toBeTruthy();
   });
 
   it("requires confirmation before pausing new online printing", async () => {

@@ -27,8 +27,6 @@ export class PaidPrintExecutor {
     private readonly onStepFinished: () => void = () => undefined,
   ) {}
 
-  private currentDeferralState: { stepId: string; count: number } | null = null;
-
   async handle(
     credentials: AgentCredentials,
     job: AgentPrintJob,
@@ -38,11 +36,6 @@ export class PaidPrintExecutor {
         `PRINT_TIMING step=${job.currentStep.stepId} event=${event} atMs=${atMs}`,
       );
     timing("preparation_start");
-
-    if (this.currentDeferralState?.stepId !== job.currentStep.stepId) {
-      this.currentDeferralState = null;
-    }
-
     const saved = await this.journal.load();
     const matching =
       saved?.orderId === job.orderId &&
@@ -124,43 +117,9 @@ export class PaidPrintExecutor {
         (printerStatus.availability === "OFFLINE" ||
           printerStatus.availability === "BLOCKED")
       ) {
-        const deferrals = (this.currentDeferralState?.count ?? 0) + 1;
-        this.currentDeferralState = {
-          stepId: job.currentStep.stepId,
-          count: deferrals,
-        };
-
-        if (deferrals <= 2) {
-          this.log(
-            `Printer ${job.windowsPrinterName} is not online (${printerStatus.availability}: ${printerStatus.message ?? "Not ready"}). Waiting before print submission (Deferral ${deferrals}/2).`,
-          );
-          return "PREFLIGHT_DEFERRED";
-        }
-
         this.log(
-          `Printer ${job.windowsPrinterName} is persistently not online (${printerStatus.availability}: ${printerStatus.message ?? "Not ready"}). Reporting step BLOCKED before print submission.`,
+          `Printer ${job.windowsPrinterName} is not online (${printerStatus.availability}: ${printerStatus.message ?? "Not ready"}). Waiting before print submission.`,
         );
-
-        this.currentDeferralState = null;
-        if (job.currentStep.status !== "BLOCKED") {
-          await this.client.reportPrintStep(
-            credentials.serverUrl,
-            credentials.agentId,
-            credentials.agentSecret,
-            job,
-            {
-              status: "BLOCKED",
-              spoolerJobId: null,
-              failureCode:
-                printerStatus.availability === "OFFLINE"
-                  ? "PRINTER_OFFLINE"
-                  : "PRINTER_ERROR",
-              failureDetail:
-                printerStatus.message ??
-                "Printer is offline or blocked before submission.",
-            },
-          );
-        }
         return "PREFLIGHT_DEFERRED";
       }
     }
@@ -414,56 +373,8 @@ export class PaidPrintExecutor {
       return;
     }
 
-    if (observed.state === "COMPLETED_OR_REMOVED") {
-      if (typeof this.printer.getStatus === "function") {
-        const postStatus = await this.printer.getStatus(job.windowsPrinterName);
-        if (
-          postStatus &&
-          (postStatus.availability === "BLOCKED" ||
-            postStatus.availability === "OFFLINE")
-        ) {
-          await this.client.reportPrintStep(
-            credentials.serverUrl,
-            credentials.agentId,
-            credentials.agentSecret,
-            job,
-            {
-              status: "BLOCKED",
-              spoolerJobId,
-              failureCode:
-                postStatus.availability === "OFFLINE"
-                  ? "PRINTER_OFFLINE"
-                  : "PRINTER_ERROR",
-              failureDetail:
-                postStatus.message ??
-                "Printer encountered a hardware fault during print completion.",
-            },
-          );
-          return;
-        }
-      }
-
-      await this.client.reportPrintStep(
-        credentials.serverUrl,
-        credentials.agentId,
-        credentials.agentSecret,
-        job,
-        {
-          status: "UNCERTAIN",
-          spoolerJobId,
-          failureCode: null,
-          failureDetail:
-            observed.message ??
-            "Spool handoff complete; print outcome uncertain.",
-        },
-      );
-      await this.journal.clear();
-      this.log(
-        `PRINT_TIMING step=${job.currentStep.stepId} event=step_acknowledged atMs=${Date.now()}`,
-      );
-      this.onStepFinished();
-      return;
-    }
+    const status =
+      observed.state === "COMPLETED_OR_REMOVED" ? "SUCCEEDED" : "UNCERTAIN";
 
     await this.client.reportPrintStep(
       credentials.serverUrl,
@@ -471,12 +382,19 @@ export class PaidPrintExecutor {
       credentials.agentSecret,
       job,
       {
-        status: "UNCERTAIN",
+        status,
         spoolerJobId,
-        failureCode: observed.failureCode ?? "UNKNOWN",
-        failureDetail: observed.message ?? "Spool outcome uncertain.",
+        failureCode:
+          observed.failureCode ?? (status === "UNCERTAIN" ? "UNKNOWN" : null),
+        failureDetail: observed.message ?? null,
       },
     );
     await this.journal.clear();
+    if (status === "SUCCEEDED") {
+      this.log(
+        `PRINT_TIMING step=${job.currentStep.stepId} event=step_acknowledged atMs=${Date.now()}`,
+      );
+      this.onStepFinished();
+    }
   }
 }

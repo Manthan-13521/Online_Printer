@@ -213,7 +213,9 @@ describe("customer upload app", () => {
     expect(screen.getByLabelText<HTMLInputElement>("Copies").value).toBe("3");
 
     fireEvent.submit(
-      screen.getByRole("button", { name: "Review Order" }).closest("form")!,
+      screen
+        .getByRole("button", { name: "Review Order" })
+        .closest("form")!,
     );
     const review = (await screen.findByText("Files (3)")).closest("section")!;
     expect(within(review).queryByText(/View files/i)).toBeNull();
@@ -275,7 +277,9 @@ describe("customer upload app", () => {
     );
     expect(await screen.findAllByText(/10 pages/)).toBeTruthy();
     fireEvent.submit(
-      screen.getByRole("button", { name: "Review Order" }).closest("form")!,
+      screen
+        .getByRole("button", { name: "Review Order" })
+        .closest("form")!,
     );
     await waitFor(() =>
       expect(customerApi.quoteOrder).toHaveBeenCalledWith(
@@ -311,14 +315,18 @@ describe("customer upload app", () => {
     const pages = await screen.findByLabelText("Custom pages");
     fireEvent.change(pages, { target: { value: "10-2" } });
     fireEvent.submit(
-      screen.getByRole("button", { name: "Review Order" }).closest("form")!,
+      screen
+        .getByRole("button", { name: "Review Order" })
+        .closest("form")!,
     );
     expect(
       await screen.findByText(/Enter pages between 1 and 10/),
     ).toBeTruthy();
     fireEvent.change(pages, { target: { value: "1-3" } });
     fireEvent.submit(
-      screen.getByRole("button", { name: "Review Order" }).closest("form")!,
+      screen
+        .getByRole("button", { name: "Review Order" })
+        .closest("form")!,
     );
     expect(
       (await screen.findAllByText(/The upload was interrupted/i)).length,
@@ -346,7 +354,9 @@ describe("customer upload app", () => {
       new File(["%PDF"], "notes.pdf", { type: "application/pdf" }),
     );
     fireEvent.submit(
-      screen.getByRole("button", { name: "Review Order" }).closest("form")!,
+      screen
+        .getByRole("button", { name: "Review Order" })
+        .closest("form")!,
     );
     const pay = await screen.findByRole("button", { name: "🔒 Pay ₹21.00" });
     await user.click(pay);
@@ -371,7 +381,9 @@ describe("customer upload app", () => {
       new File(["%PDF"], "notes.pdf", { type: "application/pdf" }),
     );
     fireEvent.submit(
-      screen.getByRole("button", { name: "Review Order" }).closest("form")!,
+      screen
+        .getByRole("button", { name: "Review Order" })
+        .closest("form")!,
     );
     const pay = await screen.findByRole("button", { name: "🔒 Pay ₹21.00" });
     await user.click(pay);
@@ -421,11 +433,11 @@ describe("customer upload app", () => {
       new File(["%PDF"], "notes.pdf", { type: "application/pdf" }),
     );
     fireEvent.submit(
-      screen.getByRole("button", { name: "Review Order" }).closest("form")!,
+      screen
+        .getByRole("button", { name: "Review Order" })
+        .closest("form")!,
     );
-    await user.click(
-      await screen.findByRole("button", { name: "🔒 Pay ₹21.00" }),
-    );
+    await user.click(await screen.findByRole("button", { name: "🔒 Pay ₹21.00" }));
     expect(screen.queryByText("PG-ABC234")).toBeNull();
     checkoutHandler?.({
       razorpay_order_id: "order_server_a",
@@ -480,24 +492,20 @@ describe("customer upload app", () => {
       new File(["%PDF"], "notes.pdf", { type: "application/pdf" }),
     );
     fireEvent.submit(
-      screen.getByRole("button", { name: "Review Order" }).closest("form")!,
+      screen
+        .getByRole("button", { name: "Review Order" })
+        .closest("form")!,
     );
-    await user.click(
-      await screen.findByRole("button", { name: "🔒 Pay ₹21.00" }),
-    );
+    await user.click(await screen.findByRole("button", { name: "🔒 Pay ₹21.00" }));
     dismiss?.();
     expect(
       await screen.findByText(
         /Payment was cancelled\. Your PDF is retained briefly/,
       ),
     ).toBeTruthy();
-    expect(customerApi.cancelPayment).toHaveBeenCalledWith(
-      "A".repeat(43),
-      expect.objectContaining({
-        razorpayOrderId: "order_server_a",
-        trackingToken: expect.any(String) as unknown as string,
-      }),
-    );
+    expect(customerApi.cancelPayment).toHaveBeenCalledWith("A".repeat(43), {
+      razorpayOrderId: "order_server_a",
+    });
   });
 
   it("shows checkout failure without fabricating success", async () => {
@@ -530,11 +538,11 @@ describe("customer upload app", () => {
       new File(["%PDF"], "notes.pdf", { type: "application/pdf" }),
     );
     fireEvent.submit(
-      screen.getByRole("button", { name: "Review Order" }).closest("form")!,
+      screen
+        .getByRole("button", { name: "Review Order" })
+        .closest("form")!,
     );
-    await user.click(
-      await screen.findByRole("button", { name: "🔒 Pay ₹21.00" }),
-    );
+    await user.click(await screen.findByRole("button", { name: "🔒 Pay ₹21.00" }));
     failed?.();
     expect(
       await screen.findByText(/Payment failed\. No print job was created/),
@@ -557,11 +565,11 @@ describe("customer upload app", () => {
       new File(["%PDF"], "notes.pdf", { type: "application/pdf" }),
     );
     fireEvent.submit(
-      screen.getByRole("button", { name: "Review Order" }).closest("form")!,
+      screen
+        .getByRole("button", { name: "Review Order" })
+        .closest("form")!,
     );
-    await user.click(
-      await screen.findByRole("button", { name: "🔒 Pay ₹21.00" }),
-    );
+    await user.click(await screen.findByRole("button", { name: "🔒 Pay ₹21.00" }));
     expect(
       await screen.findByText(/payment service could not be reached/i),
     ).toBeTruthy();

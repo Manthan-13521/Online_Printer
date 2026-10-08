@@ -286,7 +286,6 @@ describe("customer routes", () => {
     const valid = await handleCustomerRequest(
       request("/api/customer/payments/create", "POST", {
         acknowledgedTotalPaise: 400,
-        trackingToken: "test",
       }),
       env,
       api,
@@ -294,7 +293,6 @@ describe("customer routes", () => {
     expect(valid.status).toBe(200);
     expect(api.createPayment).toHaveBeenCalledWith(token, {
       acknowledgedTotalPaise: 400,
-      trackingToken: "test",
     });
   });
 
