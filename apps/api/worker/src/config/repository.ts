@@ -62,6 +62,8 @@ interface SettingsRow {
   max_order_upload_bytes: number;
   identification_sheet_enabled: number;
   identification_sheet_placement: "FIRST" | "LAST";
+  id_sheet_min_pages?: number | null;
+  id_sheet_min_amount_paise?: number | null;
   automatic_daily_cleanup_enabled: number;
   daily_cleanup_time: string;
   timezone: string;
@@ -129,6 +131,7 @@ export class D1ConfigurationRepository implements ConfigurationRepository {
         `SELECT logo_key, app_name, shop_name, contact_phone, address, customer_notice,
                 online_printing_enabled, max_pdf_size_bytes, max_order_upload_bytes,
                 identification_sheet_enabled, identification_sheet_placement,
+                id_sheet_min_pages, id_sheet_min_amount_paise,
                 automatic_daily_cleanup_enabled, daily_cleanup_time, timezone,
                 last_cleanup_at_ms, next_daily_cleanup_at_ms, last_cleanup_result,
                 priority_printing_enabled, priority_fee_paise,
@@ -152,6 +155,9 @@ export class D1ConfigurationRepository implements ConfigurationRepository {
           maxOrderUploadBytes: row.max_order_upload_bytes,
           identificationSheetEnabled: row.identification_sheet_enabled === 1,
           identificationSheetPlacement: row.identification_sheet_placement,
+          identificationSheetMinPages: row.id_sheet_min_pages ?? null,
+          identificationSheetMinAmountPaise:
+            row.id_sheet_min_amount_paise ?? null,
           automaticDailyCleanupEnabled:
             row.automatic_daily_cleanup_enabled === 1,
           dailyCleanupTime: row.daily_cleanup_time,
@@ -186,6 +192,7 @@ export class D1ConfigurationRepository implements ConfigurationRepository {
            SET app_name = ?, shop_name = ?, contact_phone = ?, address = ?, customer_notice = ?,
                online_printing_enabled = ?, max_pdf_size_bytes = ?, max_order_upload_bytes = ?,
                identification_sheet_enabled = ?, identification_sheet_placement = ?,
+               id_sheet_min_pages = ?, id_sheet_min_amount_paise = ?,
                next_daily_cleanup_at_ms = CASE
                  WHEN automatic_daily_cleanup_enabled = ? AND daily_cleanup_time = ? AND timezone = ?
                  THEN next_daily_cleanup_at_ms ELSE NULL END,
@@ -209,6 +216,8 @@ export class D1ConfigurationRepository implements ConfigurationRepository {
           input.settings.maxOrderUploadBytes ?? input.settings.maxPdfSizeBytes,
           input.settings.identificationSheetEnabled ? 1 : 0,
           input.settings.identificationSheetPlacement,
+          input.settings.identificationSheetMinPages ?? null,
+          input.settings.identificationSheetMinAmountPaise ?? null,
           input.settings.automaticDailyCleanupEnabled ? 1 : 0,
           input.settings.dailyCleanupTime ?? "23:30",
           input.settings.timezone ?? "Asia/Kolkata",

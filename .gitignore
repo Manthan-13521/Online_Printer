@@ -36,3 +36,4 @@ tmp/
 installer/stage/
 installer/dist/
 *.zip
+production_backup.sql

@@ -174,6 +174,65 @@ describe("shop settings validation", () => {
       value: { ...validSettings, customerNotice: notice },
     });
   });
+
+  it("accepts valid identification sheet threshold conditions", () => {
+    const result = validateShopSettingsInput({
+      ...validSettings,
+      identificationSheetMinPages: 50,
+      identificationSheetMinAmountPaise: 10000,
+    });
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        ...validSettings,
+        identificationSheetMinPages: 50,
+        identificationSheetMinAmountPaise: 10000,
+      },
+    });
+  });
+
+  it("accepts disabled (null) identification sheet threshold conditions", () => {
+    const result = validateShopSettingsInput({
+      ...validSettings,
+      identificationSheetMinPages: null,
+      identificationSheetMinAmountPaise: null,
+    });
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        ...validSettings,
+        identificationSheetMinPages: null,
+        identificationSheetMinAmountPaise: null,
+      },
+    });
+  });
+
+  it("rejects invalid identification sheet threshold conditions", () => {
+    expect(
+      validateShopSettingsInput({
+        ...validSettings,
+        identificationSheetMinPages: -5,
+      }).ok,
+    ).toBe(false);
+    expect(
+      validateShopSettingsInput({
+        ...validSettings,
+        identificationSheetMinPages: 2.5,
+      }).ok,
+    ).toBe(false);
+    expect(
+      validateShopSettingsInput({
+        ...validSettings,
+        identificationSheetMinAmountPaise: -100,
+      }).ok,
+    ).toBe(false);
+    expect(
+      validateShopSettingsInput({
+        ...validSettings,
+        identificationSheetMinAmountPaise: 2.5,
+      }).ok,
+    ).toBe(false);
+  });
 });
 
 describe("pricing configuration validation", () => {

@@ -172,7 +172,6 @@ export function DashboardPage({
   const onlinePrinting = Boolean(settings?.onlinePrintingEnabled);
   const canAcceptOrders = onlinePrinting && agentOnline && printerReady;
 
-
   return (
     <div className="dashboard-page">
       <header className="page-header" style={{ marginBottom: "1.5rem" }}>

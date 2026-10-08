@@ -88,6 +88,10 @@ interface CandidateRow {
   remaining_files: number;
   identification_sheet_enabled: number;
   identification_sheet_placement: "FIRST" | "LAST";
+  id_sheet_min_pages: number | null;
+  id_sheet_min_amount_paise: number | null;
+  total_amount_paise: number;
+  total_printed_pages: number | null;
   identification_required: number;
   /** Non-null when the job was routed to a fallback printer. */
   fallback_from_printer_id: string | null;
@@ -426,7 +430,11 @@ export class D1PrintingRepository implements PrintingRepository {
     const candidate = await this.db
       .prepare(
         `SELECT o.id order_id, p.id printer_id, i.identification_sheet_enabled,
-        i.identification_sheet_placement, o.identification_required, f.id file_id, f.position file_position,
+        i.identification_sheet_placement, i.id_sheet_min_pages, i.id_sheet_min_amount_paise,
+        o.total_amount_paise,
+        (SELECT SUM(COALESCE(op.selected_page_count, op.source_page_count, 1) * op.copies)
+         FROM order_files op WHERE op.order_id = o.id) total_printed_pages,
+        o.identification_required, f.id file_id, f.position file_position,
         (SELECT COUNT(*) FROM order_files all_files WHERE all_files.order_id = o.id) file_count,
         (SELECT COUNT(*) FROM order_files remaining WHERE remaining.order_id = o.id
           AND remaining.print_status <> 'PRINTED') remaining_files,
@@ -495,8 +503,33 @@ export class D1PrintingRepository implements PrintingRepository {
     const succeededSet = new Set(
       succeededSteps.results.map((r) => r.step_type),
     );
+    const meetsPageThreshold =
+      candidate.id_sheet_min_pages !== null &&
+      candidate.id_sheet_min_pages !== undefined &&
+      candidate.id_sheet_min_pages > 0
+        ? (candidate.total_printed_pages ?? 0) > candidate.id_sheet_min_pages
+        : null;
+
+    const meetsAmountThreshold =
+      candidate.id_sheet_min_amount_paise !== null &&
+      candidate.id_sheet_min_amount_paise !== undefined &&
+      candidate.id_sheet_min_amount_paise > 0
+        ? (candidate.total_amount_paise ?? 0) >
+          candidate.id_sheet_min_amount_paise
+        : null;
+
+    const thresholdsSatisfied =
+      meetsPageThreshold !== null && meetsAmountThreshold !== null
+        ? meetsPageThreshold || meetsAmountThreshold
+        : meetsPageThreshold !== null
+          ? meetsPageThreshold
+          : meetsAmountThreshold !== null
+            ? meetsAmountThreshold
+            : true;
+
     const needIdStep =
       candidate.identification_sheet_enabled === 1 &&
+      thresholdsSatisfied &&
       !succeededSet.has("IDENTIFICATION_SHEET") &&
       ((candidate.identification_sheet_placement === "FIRST" &&
         candidate.file_position === 1) ||

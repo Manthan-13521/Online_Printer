@@ -24,6 +24,7 @@ const migrations = [
   "0016_phase4_failure_recovery_and_pause.sql",
   "0017_phase5_fallback_and_reprint_protection.sql",
   "0018_phase6_history_cleanup.sql",
+  "0023_identification_sheet_conditions.sql",
 ].map((name) =>
   readFileSync(
     new URL(`../../../../../database/migrations/${name}`, import.meta.url),
@@ -272,6 +273,73 @@ describe("paid-print D1 safety", () => {
       )
       .all() as Array<{ step_type: string }>;
     expect(rows.map((row) => row.step_type)).toEqual(["CUSTOMER_DOCUMENT"]);
+  });
+
+  it("enforces minimum pages threshold for identification sheet", async () => {
+    seed(db);
+    db.prepare(
+      "UPDATE installation SET identification_sheet_enabled = 1, identification_sheet_placement = 'FIRST', id_sheet_min_pages = 50",
+    ).run();
+    const jobNoId = await repository.claimOrRenew(ids.agent1, 2_000);
+    expect(jobNoId?.currentStep.type).toBe("CUSTOMER_DOCUMENT");
+    expect(jobNoId?.identificationSheet).toBeNull();
+
+    db.prepare("UPDATE installation SET id_sheet_min_pages = 10").run();
+    db.prepare("DELETE FROM print_attempt_steps").run();
+    db.prepare("DELETE FROM print_attempts").run();
+    db.prepare(
+      "UPDATE orders SET status = 'QUEUED', claimed_by_agent_id = NULL, claim_id = NULL, claim_expires_at_ms = NULL",
+    ).run();
+
+    const jobId = await repository.claimOrRenew(ids.agent1, 3_000);
+    expect(jobId?.currentStep.type).toBe("IDENTIFICATION_SHEET");
+    expect(jobId?.identificationSheet).toBeDefined();
+  });
+
+  it("enforces minimum amount threshold for identification sheet", async () => {
+    seed(db);
+    db.prepare(
+      "UPDATE installation SET identification_sheet_enabled = 1, identification_sheet_placement = 'FIRST', id_sheet_min_amount_paise = 10000",
+    ).run();
+    const jobNoId = await repository.claimOrRenew(ids.agent1, 2_000);
+    expect(jobNoId?.currentStep.type).toBe("CUSTOMER_DOCUMENT");
+    expect(jobNoId?.identificationSheet).toBeNull();
+
+    db.prepare(
+      "UPDATE installation SET id_sheet_min_amount_paise = 2000",
+    ).run();
+    db.prepare("DELETE FROM print_attempt_steps").run();
+    db.prepare("DELETE FROM print_attempts").run();
+    db.prepare(
+      "UPDATE orders SET status = 'QUEUED', claimed_by_agent_id = NULL, claim_id = NULL, claim_expires_at_ms = NULL",
+    ).run();
+
+    const jobId = await repository.claimOrRenew(ids.agent1, 3_000);
+    expect(jobId?.currentStep.type).toBe("IDENTIFICATION_SHEET");
+    expect(jobId?.identificationSheet).toBeDefined();
+  });
+
+  it("triggers identification sheet when either threshold is exceeded if both are configured", async () => {
+    seed(db);
+    db.prepare(
+      "UPDATE installation SET identification_sheet_enabled = 1, identification_sheet_placement = 'FIRST', id_sheet_min_pages = 50, id_sheet_min_amount_paise = 2000",
+    ).run();
+    const jobId = await repository.claimOrRenew(ids.agent1, 2_000);
+    expect(jobId?.currentStep.type).toBe("IDENTIFICATION_SHEET");
+    expect(jobId?.identificationSheet).toBeDefined();
+
+    db.prepare(
+      "UPDATE installation SET id_sheet_min_pages = 50, id_sheet_min_amount_paise = 10000",
+    ).run();
+    db.prepare("DELETE FROM print_attempt_steps").run();
+    db.prepare("DELETE FROM print_attempts").run();
+    db.prepare(
+      "UPDATE orders SET status = 'QUEUED', claimed_by_agent_id = NULL, claim_id = NULL, claim_expires_at_ms = NULL",
+    ).run();
+
+    const jobNoId = await repository.claimOrRenew(ids.agent1, 3_000);
+    expect(jobNoId?.currentStep.type).toBe("CUSTOMER_DOCUMENT");
+    expect(jobNoId?.identificationSheet).toBeNull();
   });
 
   it("does not multiply step events or metadata writes for simultaneous duplicate requests", async () => {

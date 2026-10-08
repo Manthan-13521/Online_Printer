@@ -411,6 +411,166 @@ export function ShopSettingsPage({
               <span>Print after document</span>
             </label>
           </fieldset>
+
+          <fieldset
+            disabled={!settings.identificationSheetEnabled}
+            style={{ marginTop: "1rem" }}
+          >
+            <legend>Trigger Conditions (Optional)</legend>
+            <p className="field-help" style={{ margin: "0 0 0.75rem 0" }}>
+              Leave disabled to print for all orders, or set thresholds to print
+              only when an order is large or high-value. If both are enabled,
+              the sheet prints when either threshold is exceeded.
+            </p>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "0.85rem",
+              }}
+            >
+              <div>
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.5rem",
+                    cursor: "pointer",
+                  }}
+                >
+                  <input
+                    checked={
+                      settings.identificationSheetMinPages !== null &&
+                      settings.identificationSheetMinPages !== undefined &&
+                      settings.identificationSheetMinPages > 0
+                    }
+                    onChange={(event) =>
+                      patch({
+                        identificationSheetMinPages: event.target.checked
+                          ? 50
+                          : null,
+                      })
+                    }
+                    type="checkbox"
+                  />
+                  <span>
+                    Print identification sheet only when order exceeds minimum
+                    pages
+                  </span>
+                </label>
+                {settings.identificationSheetMinPages !== null &&
+                settings.identificationSheetMinPages !== undefined &&
+                settings.identificationSheetMinPages > 0 ? (
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.5rem",
+                      marginTop: "0.35rem",
+                      marginLeft: "1.6rem",
+                    }}
+                  >
+                    <label
+                      htmlFor="id-sheet-min-pages"
+                      style={{ margin: 0, fontSize: "0.9rem" }}
+                    >
+                      Threshold (exceeds):
+                    </label>
+                    <input
+                      id="id-sheet-min-pages"
+                      max={10000}
+                      min={1}
+                      onChange={(event) => {
+                        const val = parseInt(event.target.value, 10);
+                        patch({
+                          identificationSheetMinPages: isNaN(val)
+                            ? 50
+                            : Math.max(1, val),
+                        });
+                      }}
+                      style={{ width: "90px", padding: "0.25rem 0.5rem" }}
+                      type="number"
+                      value={settings.identificationSheetMinPages}
+                    />
+                    <span style={{ fontSize: "0.85rem", color: "#64748b" }}>
+                      pages (including copies)
+                    </span>
+                  </div>
+                ) : null}
+              </div>
+
+              <div>
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.5rem",
+                    cursor: "pointer",
+                  }}
+                >
+                  <input
+                    checked={
+                      settings.identificationSheetMinAmountPaise !== null &&
+                      settings.identificationSheetMinAmountPaise !==
+                        undefined &&
+                      settings.identificationSheetMinAmountPaise > 0
+                    }
+                    onChange={(event) =>
+                      patch({
+                        identificationSheetMinAmountPaise: event.target.checked
+                          ? 10000
+                          : null,
+                      })
+                    }
+                    type="checkbox"
+                  />
+                  <span>
+                    Print identification sheet only when order amount exceeds
+                    minimum (₹)
+                  </span>
+                </label>
+                {settings.identificationSheetMinAmountPaise !== null &&
+                settings.identificationSheetMinAmountPaise !== undefined &&
+                settings.identificationSheetMinAmountPaise > 0 ? (
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.5rem",
+                      marginTop: "0.35rem",
+                      marginLeft: "1.6rem",
+                    }}
+                  >
+                    <label
+                      htmlFor="id-sheet-min-amount"
+                      style={{ margin: 0, fontSize: "0.9rem" }}
+                    >
+                      Threshold (exceeds):
+                    </label>
+                    <span>₹</span>
+                    <input
+                      id="id-sheet-min-amount"
+                      max={100000}
+                      min={1}
+                      onChange={(event) => {
+                        const val = parseInt(event.target.value, 10);
+                        patch({
+                          identificationSheetMinAmountPaise: isNaN(val)
+                            ? 10000
+                            : Math.max(1, val * 100),
+                        });
+                      }}
+                      style={{ width: "90px", padding: "0.25rem 0.5rem" }}
+                      type="number"
+                      value={Math.round(
+                        settings.identificationSheetMinAmountPaise / 100,
+                      )}
+                    />
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </fieldset>
         </section>
 
         <section className="panel form-section">

@@ -82,6 +82,8 @@ export interface ShopSettings {
   maxOrderUploadBytes?: number;
   identificationSheetEnabled: boolean;
   identificationSheetPlacement: IdentificationSheetPlacement;
+  identificationSheetMinPages?: number | null;
+  identificationSheetMinAmountPaise?: number | null;
   automaticDailyCleanupEnabled?: boolean;
   dailyCleanupTime?: string;
   timezone?: string;

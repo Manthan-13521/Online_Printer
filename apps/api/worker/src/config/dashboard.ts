@@ -46,11 +46,9 @@ export async function handleDashboard(
       ]);
 
     const dailyStats = counts[0]?.results[0] as
-      | { created_count: number; earnings_paise: number }
-      | undefined;
+      { created_count: number; earnings_paise: number } | undefined;
     const statusRows = counts[1]?.results as
-      | { status: string; count: number }[]
-      | undefined;
+      { status: string; count: number }[] | undefined;
 
     let waiting = 0;
     let printing = 0;

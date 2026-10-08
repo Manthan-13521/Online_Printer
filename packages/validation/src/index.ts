@@ -259,6 +259,8 @@ export interface ValidatedShopSettings {
   maxOrderUploadBytes?: number;
   identificationSheetEnabled: boolean;
   identificationSheetPlacement: IdentificationSheetPlacement;
+  identificationSheetMinPages?: number | null;
+  identificationSheetMinAmountPaise?: number | null;
   automaticDailyCleanupEnabled?: boolean;
   dailyCleanupTime?: string;
   timezone?: string;
@@ -398,6 +400,31 @@ export function validateShopSettingsInput(
     });
   }
   if (
+    record.identificationSheetMinPages !== undefined &&
+    record.identificationSheetMinPages !== null &&
+    (!Number.isInteger(record.identificationSheetMinPages) ||
+      (record.identificationSheetMinPages as number) <= 0)
+  ) {
+    issues.push({
+      path: ["identificationSheetMinPages"],
+      code: "INVALID_MIN_PAGES",
+      message: "Minimum pages must be a positive integer or disabled.",
+    });
+  }
+  if (
+    record.identificationSheetMinAmountPaise !== undefined &&
+    record.identificationSheetMinAmountPaise !== null &&
+    (!isIntegerPaise(record.identificationSheetMinAmountPaise) ||
+      record.identificationSheetMinAmountPaise <= 0)
+  ) {
+    issues.push({
+      path: ["identificationSheetMinAmountPaise"],
+      code: "INVALID_MIN_AMOUNT",
+      message:
+        "Minimum order amount must be a positive integer in paise or disabled.",
+    });
+  }
+  if (
     hasExtendedSettings &&
     typeof record.automaticDailyCleanupEnabled !== "boolean"
   ) {
@@ -489,6 +516,24 @@ export function validateShopSettingsInput(
             : {}),
           ...(isIntegerPaise(record.idThresholdPaise)
             ? { idThresholdPaise: record.idThresholdPaise }
+            : {}),
+          ...(record.identificationSheetMinPages !== undefined
+            ? {
+                identificationSheetMinPages:
+                  typeof record.identificationSheetMinPages === "number" &&
+                  record.identificationSheetMinPages > 0
+                    ? Math.floor(record.identificationSheetMinPages)
+                    : null,
+              }
+            : {}),
+          ...(record.identificationSheetMinAmountPaise !== undefined
+            ? {
+                identificationSheetMinAmountPaise:
+                  typeof record.identificationSheetMinAmountPaise ===
+                    "number" && record.identificationSheetMinAmountPaise > 0
+                    ? Math.floor(record.identificationSheetMinAmountPaise)
+                    : null,
+              }
             : {}),
           shopName,
           contactPhone,
