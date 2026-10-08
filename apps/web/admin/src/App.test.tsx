@@ -89,9 +89,16 @@ describe("Admin application", () => {
         settings,
         agents: [],
         defaultProductionPrinterId: null,
-        queue: 0,
-        attention: 0,
-        completedToday: 0,
+        todaysEarningsPaise: 0,
+        todaysOrders: 0,
+        inQueue: 0,
+        printingNow: 0,
+        statusCounts: {
+          waiting: 0,
+          printing: 0,
+          readyForPickup: 0,
+          needsAttention: 0,
+        },
       },
     });
   });

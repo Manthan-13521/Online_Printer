@@ -25,8 +25,6 @@ export async function handleDashboard(
       );
     const now = Date.now();
     // Shop business date is India Standard Time, consistent with customer INR flow.
-    const midnight =
-      Math.floor((now + 19_800_000) / 86_400_000) * 86_400_000 - 19_800_000;
     const dateKey = new Date(now + 19_800_000).toISOString().slice(0, 10);
     const agentsRepo = new D1AgentRepository(env.DB);
     const [settings, agents, defaultProductionPrinterId, counts] =
@@ -34,29 +32,60 @@ export async function handleDashboard(
         new D1ConfigurationRepository(env.DB).getSettings(),
         agentsRepo.listAgentsWithPrinters(now),
         agentsRepo.getDefaultProductionPrinterId(),
-        env.DB.batch<{ n: number }>([
+        env.DB.batch([
           env.DB.prepare(
-            "SELECT COUNT(*) n FROM orders WHERE status IN ('QUEUED','CLAIMED','PRINTING','SPOOLING')",
+            "SELECT created_count, earnings_paise FROM daily_order_stats WHERE date_key = ?",
+          ).bind(dateKey),
+          env.DB.prepare(
+            `SELECT status, COUNT(*) as count 
+             FROM orders 
+             WHERE status IN ('QUEUED', 'CLAIMED', 'SPOOLING', 'PRINTING', 'PRINTED', 'AWAITING_FINISHING', 'ADMIN_ACTION_REQUIRED', 'PRINT_BLOCKED', 'NEEDS_ADMIN', 'COMPLETION_UNKNOWN', 'RETRY_PENDING')
+             GROUP BY status`,
           ),
-          env.DB.prepare(
-            "SELECT COUNT(*) n FROM orders WHERE status IN ('ADMIN_ACTION_REQUIRED','PRINT_BLOCKED')",
-          ),
-          env.DB.prepare(
-            `SELECT MAX(
-              COALESCE((SELECT completed_count FROM daily_order_stats WHERE date_key = ?), 0),
-              COALESCE((SELECT COUNT(*) FROM orders WHERE status = 'COMPLETED' AND completed_at_ms >= ? AND completed_at_ms < ?), 0)
-            ) AS n`,
-          ).bind(dateKey, midnight, midnight + 86_400_000),
         ]),
       ]);
+
+    const dailyStats = counts[0]?.results[0] as
+      | { created_count: number; earnings_paise: number }
+      | undefined;
+    const statusRows = counts[1]?.results as
+      | { status: string; count: number }[]
+      | undefined;
+
+    let waiting = 0;
+    let printing = 0;
+    let readyForPickup = 0;
+    let needsAttention = 0;
+
+    if (statusRows) {
+      for (const row of statusRows) {
+        if (["QUEUED", "CLAIMED"].includes(row.status)) {
+          waiting += row.count;
+        } else if (["SPOOLING", "PRINTING"].includes(row.status)) {
+          printing += row.count;
+        } else if (["PRINTED", "AWAITING_FINISHING"].includes(row.status)) {
+          readyForPickup += row.count;
+        } else {
+          needsAttention += row.count;
+        }
+      }
+    }
+
     response = ok(
       {
         settings,
         agents,
         defaultProductionPrinterId,
-        queue: counts[0]?.results[0]?.n ?? 0,
-        attention: counts[1]?.results[0]?.n ?? 0,
-        completedToday: counts[2]?.results[0]?.n ?? 0,
+        todaysEarningsPaise: dailyStats?.earnings_paise ?? 0,
+        todaysOrders: dailyStats?.created_count ?? 0,
+        inQueue: waiting,
+        printingNow: printing,
+        statusCounts: {
+          waiting,
+          printing,
+          readyForPickup,
+          needsAttention,
+        },
       },
       200,
       { "Cache-Control": "no-store" },

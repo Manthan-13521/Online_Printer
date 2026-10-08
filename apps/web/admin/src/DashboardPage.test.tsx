@@ -32,9 +32,16 @@ it("uses one aggregate request, stops while hidden, and refreshes on focus", asy
       },
       agents: [],
       defaultProductionPrinterId: null,
-      queue: 4,
-      attention: 2,
-      completedToday: 17,
+      todaysEarningsPaise: 155000,
+      todaysOrders: 17,
+      inQueue: 4,
+      printingNow: 2,
+      statusCounts: {
+        waiting: 4,
+        printing: 2,
+        readyForPickup: 8,
+        needsAttention: 1,
+      },
     },
   });
   const view = render(
@@ -48,6 +55,11 @@ it("uses one aggregate request, stops while hidden, and refreshes on focus", asy
   });
   expect(screen.getAllByText("Synthetic Shop").length).toBeGreaterThan(0);
   expect(screen.getByText("17")).toBeTruthy();
+  expect(screen.getByText("₹1550.00")).toBeTruthy();
+  expect(screen.getAllByText("4").length).toBe(2);
+  expect(screen.getAllByText("2").length).toBe(2);
+  expect(screen.getByText("8")).toBeTruthy();
+  expect(screen.getByText("1")).toBeTruthy();
   expect(getDashboard).toHaveBeenCalledTimes(1);
   await act(async () => {
     await vi.advanceTimersByTimeAsync(30_000);
@@ -86,9 +98,16 @@ it("renders red readiness banner when agent or printer is offline and only shop 
       },
       agents: [],
       defaultProductionPrinterId: null,
-      queue: 0,
-      attention: 0,
-      completedToday: 0,
+      todaysEarningsPaise: 155000,
+      todaysOrders: 17,
+      inQueue: 4,
+      printingNow: 2,
+      statusCounts: {
+        waiting: 4,
+        printing: 2,
+        readyForPickup: 8,
+        needsAttention: 1,
+      },
     },
   });
   render(
@@ -142,9 +161,16 @@ it("renders green readiness banner when agent, printer, and online printing are 
         },
       ],
       defaultProductionPrinterId: "printer-1",
-      queue: 0,
-      attention: 0,
-      completedToday: 0,
+      todaysEarningsPaise: 155000,
+      todaysOrders: 17,
+      inQueue: 4,
+      printingNow: 2,
+      statusCounts: {
+        waiting: 4,
+        printing: 2,
+        readyForPickup: 8,
+        needsAttention: 1,
+      },
     },
   });
   render(

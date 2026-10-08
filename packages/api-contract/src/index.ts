@@ -912,9 +912,16 @@ export interface AdminDashboardData {
   settings: ShopSettings | null;
   agents: AdminAgentDetails[];
   defaultProductionPrinterId: string | null;
-  queue: number;
-  attention: number;
-  completedToday: number;
+  todaysEarningsPaise: number;
+  todaysOrders: number;
+  inQueue: number;
+  printingNow: number;
+  statusCounts: {
+    waiting: number;
+    printing: number;
+    readyForPickup: number;
+    needsAttention: number;
+  };
 }
 
 export type CleanupScope =

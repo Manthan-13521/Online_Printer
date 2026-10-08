@@ -24,9 +24,16 @@ export function DashboardPage({
   const [printers, setPrinters] = useState<AdminPrinterDetails[]>([]);
   const [defaultPrinterId, setDefaultPrinterId] = useState<string | null>(null);
   const [counts, setCounts] = useState({
-    queue: 0,
-    attention: 0,
-    completedToday: 0,
+    todaysEarningsPaise: 0,
+    todaysOrders: 0,
+    inQueue: 0,
+    printingNow: 0,
+    statusCounts: {
+      waiting: 0,
+      printing: 0,
+      readyForPickup: 0,
+      needsAttention: 0,
+    },
   });
   const [togglingPrinting, setTogglingPrinting] = useState(false);
   const [togglingIdSheet, setTogglingIdSheet] = useState(false);
@@ -100,9 +107,11 @@ export function DashboardPage({
         setPrinters(data.agents.flatMap((a) => a.printers));
         setDefaultPrinterId(data.defaultProductionPrinterId);
         setCounts({
-          queue: data.queue,
-          attention: data.attention,
-          completedToday: data.completedToday,
+          todaysEarningsPaise: data.todaysEarningsPaise,
+          todaysOrders: data.todaysOrders,
+          inQueue: data.inQueue,
+          printingNow: data.printingNow,
+          statusCounts: data.statusCounts,
         });
       } catch (err: unknown) {
         if (cancelled) return;
@@ -163,8 +172,6 @@ export function DashboardPage({
   const onlinePrinting = Boolean(settings?.onlinePrintingEnabled);
   const canAcceptOrders = onlinePrinting && agentOnline && printerReady;
 
-  const ordersWaiting = counts.queue;
-  const ordersAttention = counts.attention;
 
   return (
     <div className="dashboard-page">
@@ -180,219 +187,336 @@ export function DashboardPage({
         </p>
       ) : null}
 
-      {/* Critical Status Grid */}
+      {/* Top 4 Cards */}
       <section
         className="status-grid"
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
           gap: "1rem",
           marginBottom: "1.5rem",
         }}
       >
-        {/* Card 1: Online Printing */}
-        <div className="panel" style={{ padding: "1.25rem" }}>
+        <div
+          className="panel"
+          style={{
+            padding: "1.5rem",
+            backgroundColor: "#f0fdf4",
+            border: "1px solid #bbf7d0",
+          }}
+        >
           <p
             className="muted"
-            style={{ margin: 0, fontSize: "0.85rem", fontWeight: "bold" }}
+            style={{
+              margin: 0,
+              fontSize: "0.85rem",
+              fontWeight: "bold",
+              color: "#166534",
+            }}
           >
-            ONLINE PRINTING
+            TODAY'S EARNINGS
           </p>
           <div
             style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "0.5rem",
+              fontSize: "2rem",
+              fontWeight: "bold",
+              color: "#15803d",
               marginTop: "0.5rem",
             }}
           >
-            <span
-              style={{
-                display: "inline-block",
-                width: "12px",
-                height: "12px",
-                borderRadius: "50%",
-                backgroundColor: onlinePrinting ? "#22c55e" : "#94a3b8",
-              }}
-            />
-            <span style={{ fontSize: "1.25rem", fontWeight: "bold" }}>
-              {onlinePrinting ? "Accepting Orders" : "Paused"}
-            </span>
+            ₹{(counts.todaysEarningsPaise / 100).toFixed(2)}
           </div>
-          <button
-            className="text-button"
-            onClick={() => onNavigate("/admin/shop-settings")}
-            style={{ marginTop: "0.75rem", padding: 0 }}
-            type="button"
-          >
-            {onlinePrinting ? "Manage settings →" : "Turn ON in settings →"}
-          </button>
         </div>
 
-        {/* Card 2: Windows Agent */}
-        <div className="panel" style={{ padding: "1.25rem" }}>
+        <div
+          className="panel"
+          style={{
+            padding: "1.5rem",
+            backgroundColor: "#eff6ff",
+            border: "1px solid #bfdbfe",
+          }}
+        >
           <p
             className="muted"
-            style={{ margin: 0, fontSize: "0.85rem", fontWeight: "bold" }}
-          >
-            WINDOWS AGENT
-          </p>
-          <div
             style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "0.5rem",
-              marginTop: "0.5rem",
+              margin: 0,
+              fontSize: "0.85rem",
+              fontWeight: "bold",
+              color: "#1e40af",
             }}
-          >
-            <span
-              style={{
-                display: "inline-block",
-                width: "12px",
-                height: "12px",
-                borderRadius: "50%",
-                backgroundColor: agentOnline ? "#22c55e" : "#ef4444",
-              }}
-            />
-            <span style={{ fontSize: "1.25rem", fontWeight: "bold" }}>
-              {agentOnline ? "Connected" : "Disconnected"}
-            </span>
-          </div>
-          <button
-            className="text-button"
-            onClick={() => onNavigate("/admin/printer")}
-            style={{ marginTop: "0.75rem", padding: 0 }}
-            type="button"
-          >
-            {agentOnline
-              ? (activeAgent?.displayName ?? "Agent details →")
-              : "Connect Windows PC →"}
-          </button>
-        </div>
-
-        {/* Card 3: Production Printer */}
-        <div className="panel" style={{ padding: "1.25rem" }}>
-          <p
-            className="muted"
-            style={{ margin: 0, fontSize: "0.85rem", fontWeight: "bold" }}
-          >
-            PRODUCTION PRINTER
-          </p>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "0.5rem",
-              marginTop: "0.5rem",
-            }}
-          >
-            <span
-              style={{
-                display: "inline-block",
-                width: "12px",
-                height: "12px",
-                borderRadius: "50%",
-                backgroundColor: printerReady ? "#22c55e" : "#eab308",
-              }}
-            />
-            <span
-              style={{
-                fontSize: "1.1rem",
-                fontWeight: "bold",
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-              }}
-            >
-              {defaultPrinter ? defaultPrinter.displayName : "No printer set"}
-            </span>
-          </div>
-          <button
-            className="text-button"
-            onClick={() => onNavigate("/admin/printer")}
-            style={{ marginTop: "0.75rem", padding: 0 }}
-            type="button"
-          >
-            {printerReady ? "Printer ready →" : "Choose printer →"}
-          </button>
-        </div>
-
-        {/* Card 4: Orders in Queue */}
-        <div className="panel" style={{ padding: "1.25rem" }}>
-          <p
-            className="muted"
-            style={{ margin: 0, fontSize: "0.85rem", fontWeight: "bold" }}
-          >
-            ORDERS IN QUEUE
-          </p>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "baseline",
-              gap: "0.5rem",
-              marginTop: "0.5rem",
-            }}
-          >
-            <span style={{ fontSize: "1.75rem", fontWeight: "bold" }}>
-              {ordersWaiting}
-            </span>
-            <span className="muted" style={{ fontSize: "0.9rem" }}>
-              waiting
-            </span>
-            {ordersAttention > 0 ? (
-              <span
-                style={{
-                  color: "#ef4444",
-                  fontWeight: "bold",
-                  marginLeft: "auto",
-                }}
-              >
-                ⚠️ {ordersAttention} need attention
-              </span>
-            ) : null}
-          </div>
-          <button
-            className="text-button"
-            onClick={() => onNavigate("/admin/live-orders")}
-            style={{ marginTop: "0.75rem", padding: 0 }}
-            type="button"
-          >
-            View live queue →
-          </button>
-        </div>
-
-        {/* Card 5: Today's Orders */}
-        <div className="panel" style={{ padding: "1.25rem" }}>
-          <p
-            className="muted"
-            style={{ margin: 0, fontSize: "0.85rem", fontWeight: "bold" }}
           >
             TODAY'S ORDERS
           </p>
           <div
             style={{
-              display: "flex",
-              alignItems: "baseline",
-              gap: "0.5rem",
+              fontSize: "2rem",
+              fontWeight: "bold",
+              color: "#1d4ed8",
               marginTop: "0.5rem",
             }}
           >
-            <span style={{ fontSize: "1.75rem", fontWeight: "bold" }}>
-              {counts.completedToday}
-            </span>
-            <span className="muted" style={{ fontSize: "0.9rem" }}>
-              completed
-            </span>
+            {counts.todaysOrders}
           </div>
-          <button
-            className="text-button"
-            onClick={() => onNavigate("/admin/order-history")}
-            style={{ marginTop: "0.75rem", padding: 0 }}
-            type="button"
-          >
-            View history →
-          </button>
         </div>
+
+        <div
+          className="panel"
+          style={{
+            padding: "1.5rem",
+            backgroundColor: "#fef3c7",
+            border: "1px solid #fde68a",
+          }}
+        >
+          <p
+            className="muted"
+            style={{
+              margin: 0,
+              fontSize: "0.85rem",
+              fontWeight: "bold",
+              color: "#92400e",
+            }}
+          >
+            IN QUEUE
+          </p>
+          <div
+            style={{
+              fontSize: "2rem",
+              fontWeight: "bold",
+              color: "#b45309",
+              marginTop: "0.5rem",
+            }}
+          >
+            {counts.inQueue}
+          </div>
+        </div>
+
+        <div
+          className="panel"
+          style={{
+            padding: "1.5rem",
+            backgroundColor: "#fdf4ff",
+            border: "1px solid #fbcfe8",
+          }}
+        >
+          <p
+            className="muted"
+            style={{
+              margin: 0,
+              fontSize: "0.85rem",
+              fontWeight: "bold",
+              color: "#86198f",
+            }}
+          >
+            PRINTING NOW
+          </p>
+          <div
+            style={{
+              fontSize: "2rem",
+              fontWeight: "bold",
+              color: "#a21caf",
+              marginTop: "0.5rem",
+            }}
+          >
+            {counts.printingNow}
+          </div>
+        </div>
+      </section>
+
+      {/* Order Status Section */}
+      <h2
+        style={{ fontSize: "1.15rem", margin: "0 0 1rem 0", color: "#334155" }}
+      >
+        Order Status
+      </h2>
+      {/* Customer Readiness Banner */}
+      {!canAcceptOrders ? (
+        <section
+          className="panel"
+          style={{
+            marginBottom: "1.5rem",
+            backgroundColor: "#fef2f2",
+            border: "1px solid #fecaca",
+            padding: "1.25rem",
+          }}
+        >
+          <h2
+            style={{
+              margin: "0 0 0.5rem 0",
+              color: "#991b1b",
+              fontSize: "1.15rem",
+            }}
+          >
+            ⚠️ Online Printing Cannot Accept Payments Yet
+          </h2>
+          <p style={{ margin: 0, color: "#991b1b" }}>
+            Before customers can pay and submit jobs, ensure:
+          </p>
+          <ul style={{ margin: "0.5rem 0 0 1.25rem", color: "#991b1b" }}>
+            {!onlinePrinting ? (
+              <li>Online printing is enabled in Shop Settings.</li>
+            ) : null}
+            {!agentOnline ? (
+              <li>The PrintGo Windows Agent is running on the shop PC.</li>
+            ) : null}
+            {!printerReady ? (
+              <li>The production printer is connected and working.</li>
+            ) : null}
+          </ul>
+        </section>
+      ) : (
+        <section
+          className="panel"
+          style={{
+            marginBottom: "1.5rem",
+            backgroundColor: "#f0fdf4",
+            border: "1px solid #bbf7d0",
+            padding: "1.25rem",
+          }}
+        >
+          <h2
+            style={{
+              margin: "0 0 0.5rem 0",
+              color: "#166534",
+              fontSize: "1.15rem",
+            }}
+          >
+            ✅ Your Website is Accepting Online Orders
+          </h2>
+          <p style={{ margin: 0, color: "#15803d" }}>
+            All systems ready! The PrintGo Windows Agent is running on the shop
+            PC and your printer is connected and working.
+          </p>
+        </section>
+      )}
+
+      <section
+        className="panel"
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: "1.5rem",
+          padding: "1.5rem",
+          marginBottom: "1.5rem",
+          justifyContent: "space-around",
+        }}
+      >
+        <button
+          onClick={() => onNavigate("/admin/live-orders")}
+          type="button"
+          style={{
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            textAlign: "center",
+            padding: "0.5rem",
+          }}
+        >
+          <div
+            style={{ fontSize: "2rem", fontWeight: "bold", color: "#3b82f6" }}
+          >
+            {counts.statusCounts.waiting}
+          </div>
+          <div
+            style={{
+              fontSize: "0.9rem",
+              fontWeight: "bold",
+              color: "#64748b",
+              marginTop: "0.25rem",
+            }}
+          >
+            Waiting
+          </div>
+        </button>
+
+        <button
+          onClick={() => onNavigate("/admin/live-orders")}
+          type="button"
+          style={{
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            textAlign: "center",
+            padding: "0.5rem",
+          }}
+        >
+          <div
+            style={{ fontSize: "2rem", fontWeight: "bold", color: "#8b5cf6" }}
+          >
+            {counts.statusCounts.printing}
+          </div>
+          <div
+            style={{
+              fontSize: "0.9rem",
+              fontWeight: "bold",
+              color: "#64748b",
+              marginTop: "0.25rem",
+            }}
+          >
+            Printing
+          </div>
+        </button>
+
+        <button
+          onClick={() => onNavigate("/admin/live-orders")}
+          type="button"
+          style={{
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            textAlign: "center",
+            padding: "0.5rem",
+          }}
+        >
+          <div
+            style={{ fontSize: "2rem", fontWeight: "bold", color: "#10b981" }}
+          >
+            {counts.statusCounts.readyForPickup}
+          </div>
+          <div
+            style={{
+              fontSize: "0.9rem",
+              fontWeight: "bold",
+              color: "#64748b",
+              marginTop: "0.25rem",
+            }}
+          >
+            Ready for Pickup
+          </div>
+        </button>
+
+        <button
+          onClick={() => onNavigate("/admin/live-orders")}
+          type="button"
+          style={{
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            textAlign: "center",
+            padding: "0.5rem",
+          }}
+        >
+          <div
+            style={{
+              fontSize: "2rem",
+              fontWeight: "bold",
+              color:
+                counts.statusCounts.needsAttention > 0 ? "#ef4444" : "#64748b",
+            }}
+          >
+            {counts.statusCounts.needsAttention}
+          </div>
+          <div
+            style={{
+              fontSize: "0.9rem",
+              fontWeight: "bold",
+              color:
+                counts.statusCounts.needsAttention > 0 ? "#ef4444" : "#64748b",
+              marginTop: "0.25rem",
+            }}
+          >
+            Needs Attention
+          </div>
+        </button>
       </section>
 
       {/* Identification Sheet & Online Printing Controls */}
@@ -480,67 +604,6 @@ export function DashboardPage({
           </div>
         </div>
       </section>
-
-      {/* Customer Readiness Banner */}
-      {!canAcceptOrders ? (
-        <section
-          className="panel"
-          style={{
-            marginBottom: "1.5rem",
-            backgroundColor: "#fef2f2",
-            border: "1px solid #fecaca",
-            padding: "1.25rem",
-          }}
-        >
-          <h2
-            style={{
-              margin: "0 0 0.5rem 0",
-              color: "#991b1b",
-              fontSize: "1.15rem",
-            }}
-          >
-            ⚠️ Online Printing Cannot Accept Payments Yet
-          </h2>
-          <p style={{ margin: 0, color: "#991b1b" }}>
-            Before customers can pay and submit jobs, ensure:
-          </p>
-          <ul style={{ margin: "0.5rem 0 0 1.25rem", color: "#991b1b" }}>
-            {!onlinePrinting ? (
-              <li>Online printing is enabled in Shop Settings.</li>
-            ) : null}
-            {!agentOnline ? (
-              <li>The PrintGo Windows Agent is running on the shop PC.</li>
-            ) : null}
-            {!printerReady ? (
-              <li>The production printer is connected and working.</li>
-            ) : null}
-          </ul>
-        </section>
-      ) : (
-        <section
-          className="panel"
-          style={{
-            marginBottom: "1.5rem",
-            backgroundColor: "#f0fdf4",
-            border: "1px solid #bbf7d0",
-            padding: "1.25rem",
-          }}
-        >
-          <h2
-            style={{
-              margin: "0 0 0.5rem 0",
-              color: "#166534",
-              fontSize: "1.15rem",
-            }}
-          >
-            ✅ Your Website is Accepting Online Orders
-          </h2>
-          <p style={{ margin: 0, color: "#15803d" }}>
-            All systems ready! The PrintGo Windows Agent is running on the shop
-            PC and your printer is connected and working.
-          </p>
-        </section>
-      )}
 
       {/* First-Run Setup Checklist */}
       <section
