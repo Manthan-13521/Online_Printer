@@ -111,13 +111,28 @@ export async function handleAdminConfigurationRequest(
       request.method === "POST" &&
       url.pathname === "/api/admin/settings/reset-pickup-code"
     ) {
-      const nextPickupCode = await configuration.resetPickupCode(
-        session.admin.id,
-      );
-      response = ok({
-        nextPickupCode,
-        message: "Next pickup code reset to PA-001.",
-      });
+      try {
+        const nextPickupCode = await configuration.resetPickupCode(
+          session.admin.id,
+        );
+        response = ok({
+          nextPickupCode,
+          message: "Next pickup code reset to PA-001.",
+        });
+      } catch (caught) {
+        if (
+          caught instanceof Error &&
+          caught.message === "ACTIVE_ORDER_COLLISION"
+        ) {
+          response = error(
+            409,
+            "ACTIVE_ORDER_COLLISION",
+            "An active order is currently in progress with code PA-001. Complete or resolve it before resetting.",
+          );
+        } else {
+          throw caught;
+        }
+      }
     } else if (
       request.method === "GET" &&
       url.pathname === "/api/admin/pricing"

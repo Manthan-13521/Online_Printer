@@ -262,6 +262,18 @@ export class D1ConfigurationRepository implements ConfigurationRepository {
   }
 
   async resetPickupCode(adminId: string, nowMs: number): Promise<string> {
+    const activeOrder = await this.db
+      .prepare(
+        `SELECT id FROM orders
+         WHERE pickup_code = 'PA-001' AND cleanup_state = 'ACTIVE'
+           AND status NOT IN ('COMPLETED', 'CANCELLED', 'EXPIRED')
+         LIMIT 1`,
+      )
+      .first<{ id: string }>();
+    if (activeOrder) {
+      throw new Error("ACTIVE_ORDER_COLLISION");
+    }
+
     await this.db.batch([
       this.db
         .prepare(

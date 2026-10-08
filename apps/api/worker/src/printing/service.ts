@@ -18,7 +18,8 @@ export type PrintingErrorCode =
   | "ORDER_PDF_NOT_FOUND"
   | "ORDER_PDF_EXPIRED"
   | "ORDER_CANNOT_BE_COMPLETED"
-  | "ORDER_CONFIRMATION_REQUIRED";
+  | "ORDER_CONFIRMATION_REQUIRED"
+  | "ORDER_CANNOT_BE_DELETED";
 
 export class PrintingError extends Error {
   constructor(readonly code: PrintingErrorCode) {
@@ -241,5 +242,24 @@ export class PrintingService {
       downloadUrl: authorization.url,
       expiresAtMs,
     };
+  }
+
+  async deleteOrder(orderId: string, adminId: string, bucket: R2Bucket) {
+    try {
+      return await this.repository.deleteOrder({
+        orderId,
+        adminId,
+        bucket,
+        nowMs: this.now(),
+      });
+    } catch (err) {
+      if (err instanceof Error && err.message === "ORDER_NOT_FOUND") {
+        throw new PrintingError("ORDER_NOT_FOUND");
+      }
+      if (err instanceof Error && err.message === "ORDER_CANNOT_BE_DELETED") {
+        throw new PrintingError("ORDER_CANNOT_BE_DELETED");
+      }
+      throw err;
+    }
   }
 }

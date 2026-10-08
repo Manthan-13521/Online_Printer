@@ -15,6 +15,7 @@ import {
   type PaperSize,
   type SidesMode,
 } from "@printgo/domain";
+import { isOwnedUploadKey } from "../cleanup/service";
 
 export interface ClaimedPrintJobRecord {
   orderId: string;
@@ -237,6 +238,12 @@ export interface PrintingRepository {
     deleted_at_ms: number | null;
     delete_after_ms: number | null;
   } | null>;
+  deleteOrder(input: {
+    orderId: string;
+    adminId: string;
+    bucket: R2Bucket;
+    nowMs: number;
+  }): Promise<{ orderId: string; deleted: boolean; message: string }>;
 }
 
 export class D1PrintingRepository implements PrintingRepository {
@@ -1602,6 +1609,21 @@ export class D1PrintingRepository implements PrintingRepository {
     )
       throw new Error("ORDER_CANNOT_BE_COMPLETED");
 
+    let retentionMs = COMPLETED_RETENTION_MS;
+    try {
+      const installSettings = await this.db
+        .prepare(`SELECT order_retention_hours FROM installation WHERE id = 1`)
+        .first<{ order_retention_hours: number | null }>();
+      if (
+        typeof installSettings?.order_retention_hours === "number" &&
+        installSettings.order_retention_hours > 0
+      ) {
+        retentionMs = installSettings.order_retention_hours * 3600_000;
+      }
+    } catch {
+      // Keep default retentionMs
+    }
+
     const hasFinishing = await this.db
       .prepare(
         `SELECT 1 AS required FROM order_addon_services
@@ -1627,7 +1649,7 @@ export class D1PrintingRepository implements PrintingRepository {
           nextStatus,
           input.nowMs,
           hasFinishing ? null : input.nowMs,
-          hasFinishing ? null : input.nowMs + COMPLETED_RETENTION_MS,
+          hasFinishing ? null : input.nowMs + retentionMs,
           input.nowMs,
           input.orderId,
         ),
@@ -1652,7 +1674,7 @@ export class D1PrintingRepository implements PrintingRepository {
            AND EXISTS (SELECT 1 FROM orders WHERE id = ? AND status = 'COMPLETED')`,
         )
         .bind(
-          input.nowMs + COMPLETED_RETENTION_MS,
+          input.nowMs + retentionMs,
           input.nowMs,
           input.orderId,
           input.orderId,
@@ -1897,5 +1919,149 @@ export class D1PrintingRepository implements PrintingRepository {
     }
 
     return { retriedCount };
+  }
+
+  async deleteOrder(input: {
+    orderId: string;
+    adminId: string;
+    bucket: R2Bucket;
+    nowMs: number;
+  }): Promise<{ orderId: string; deleted: boolean; message: string }> {
+    const order = await this.db
+      .prepare(`SELECT id, status, cleanup_state FROM orders WHERE id = ?`)
+      .bind(input.orderId)
+      .first<{ id: string; status: string; cleanup_state: string }>();
+
+    if (!order) {
+      throw new Error("ORDER_NOT_FOUND");
+    }
+
+    // Block deletion if printing is active, submitted or uncertain
+    if (
+      ["CLAIMED", "SPOOLING", "PRINTING", "COMPLETION_UNKNOWN"].includes(
+        order.status,
+      )
+    ) {
+      throw new Error("ORDER_CANNOT_BE_DELETED");
+    }
+
+    const activeStep = await this.db
+      .prepare(
+        `SELECT 1 FROM print_attempt_steps
+         WHERE order_id = ? AND status IN ('SUBMISSION_STARTED', 'SUBMITTED')
+         LIMIT 1`,
+      )
+      .bind(input.orderId)
+      .first();
+    if (activeStep) {
+      throw new Error("ORDER_CANNOT_BE_DELETED");
+    }
+
+    const uploadRows = await this.db
+      .prepare(
+        `SELECT r2_object_key FROM uploads WHERE order_id = ? AND r2_object_key IS NOT NULL
+         UNION
+         SELECT r2_object_key FROM order_files WHERE order_id = ? AND r2_object_key IS NOT NULL`,
+      )
+      .bind(input.orderId, input.orderId)
+      .all<{ r2_object_key: string }>();
+
+    const objectKeys = uploadRows.results
+      .map((r) => r.r2_object_key)
+      .filter(
+        (k): k is string =>
+          typeof k === "string" &&
+          k.length > 0 &&
+          isOwnedUploadKey(k, input.orderId),
+      );
+
+    if (objectKeys.length > 0) {
+      try {
+        await input.bucket.delete(objectKeys);
+      } catch (err) {
+        console.error(
+          "Failed to delete R2 objects for order:",
+          input.orderId,
+          err,
+        );
+      }
+    }
+
+    await this.db.batch([
+      this.db
+        .prepare("DELETE FROM retained_order_history WHERE id = ?")
+        .bind(input.orderId),
+      this.db
+        .prepare(
+          `INSERT OR IGNORE INTO retained_payment_records
+          (id, provider, provider_order_id, provider_payment_id, amount_paise,
+           currency, status, verified_at_ms, payment_created_at_ms, purged_at_ms)
+         SELECT id, provider, provider_order_id, provider_payment_id, amount_paise,
+           currency, status, verified_at_ms, created_at_ms, ?
+         FROM payments WHERE order_id = ?`,
+        )
+        .bind(input.nowMs, input.orderId),
+      this.db
+        .prepare(
+          `INSERT OR IGNORE INTO retained_provider_events
+          (id, provider, provider_event_id, event_type, received_at_ms,
+           processed_at_ms, processing_status, purged_at_ms)
+         SELECT id, provider, provider_event_id, event_type, received_at_ms,
+           processed_at_ms, processing_status, ?
+         FROM payment_provider_events WHERE related_order_id = ? OR related_payment_id IN
+           (SELECT id FROM payments WHERE order_id = ?)`,
+        )
+        .bind(input.nowMs, input.orderId, input.orderId),
+      this.db
+        .prepare(
+          `DELETE FROM payment_provider_events WHERE related_order_id = ? OR related_payment_id IN
+           (SELECT id FROM payments WHERE order_id = ?)`,
+        )
+        .bind(input.orderId, input.orderId),
+      this.db
+        .prepare("DELETE FROM print_attempt_steps WHERE order_id = ?")
+        .bind(input.orderId),
+      this.db
+        .prepare("DELETE FROM print_attempts WHERE order_id = ?")
+        .bind(input.orderId),
+      this.db
+        .prepare("DELETE FROM order_events WHERE order_id = ?")
+        .bind(input.orderId),
+      this.db
+        .prepare(
+          "UPDATE audit_logs SET entity_id = NULL, metadata_json = NULL WHERE entity_type = 'ORDER' AND entity_id = ?",
+        )
+        .bind(input.orderId),
+      this.db
+        .prepare("DELETE FROM payments WHERE order_id = ?")
+        .bind(input.orderId),
+      this.db
+        .prepare("DELETE FROM uploads WHERE order_id = ?")
+        .bind(input.orderId),
+      this.db
+        .prepare("DELETE FROM order_files WHERE order_id = ?")
+        .bind(input.orderId),
+      this.db
+        .prepare("DELETE FROM order_addon_services WHERE order_id = ?")
+        .bind(input.orderId),
+      this.db.prepare("DELETE FROM orders WHERE id = ?").bind(input.orderId),
+      this.db
+        .prepare(
+          `INSERT INTO audit_logs (id, admin_id, action, entity_type, entity_id, metadata_json, created_at_ms)
+           VALUES (?, ?, 'ORDER_DELETED', 'ORDER', NULL, ?, ?)`,
+        )
+        .bind(
+          crypto.randomUUID(),
+          input.adminId,
+          JSON.stringify({ deletedOrderId: input.orderId }),
+          input.nowMs,
+        ),
+    ]);
+
+    return {
+      orderId: input.orderId,
+      deleted: true,
+      message: "Order and customer files permanently deleted.",
+    };
   }
 }

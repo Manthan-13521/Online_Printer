@@ -91,7 +91,7 @@ export async function handleAdminOrdersRequest(
       const result = await printingService.manualComplete(
         orderId,
         session.admin.id,
-        reason,
+        reason || `Verified physically printed by admin: ${session.admin.id}`,
       );
       return withAdminCors(ok(result, 200), env.ADMIN_ALLOWED_ORIGIN);
     }
@@ -130,12 +130,34 @@ export async function handleAdminOrdersRequest(
       return withAdminCors(ok(result, 200), env.ADMIN_ALLOWED_ORIGIN);
     }
 
+    const deleteOrderMatch = /^\/api\/admin\/orders\/([^/]+)$/u.exec(pathname);
+    if (request.method === "DELETE" && deleteOrderMatch) {
+      const orderId = decodeURIComponent(deleteOrderMatch[1] ?? "");
+      const printingService = createPrintingService(env);
+      const result = await printingService.deleteOrder(
+        orderId,
+        session.admin.id,
+        env.PDF_BUCKET,
+      );
+      return withAdminCors(ok(result, 200), env.ADMIN_ALLOWED_ORIGIN);
+    }
+
     return withAdminCors(
       error(404, "NOT_FOUND", "Endpoint not found."),
       env.ADMIN_ALLOWED_ORIGIN,
     );
   } catch (caught) {
     if (caught instanceof PrintingError) {
+      if (caught.code === "ORDER_CANNOT_BE_DELETED") {
+        return withAdminCors(
+          error(
+            409,
+            "ORDER_CANNOT_BE_DELETED",
+            "Cannot delete order while printing is active, submitted, or in an uncertain state. Please resolve or cancel it before deleting.",
+          ),
+          env.ADMIN_ALLOWED_ORIGIN,
+        );
+      }
       if (caught.code === "ORDER_PDF_EXPIRED") {
         return withAdminCors(
           error(

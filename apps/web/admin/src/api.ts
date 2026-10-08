@@ -288,6 +288,15 @@ export const adminApi = {
   getOrderPdfUrl(orderId: string): Promise<AdminOrderPdfUrlResponse> {
     return request(`/api/admin/orders/${encodeURIComponent(orderId)}/pdf-url`);
   },
+  deleteOrder(
+    orderId: string,
+  ): Promise<
+    ApiResponse<{ orderId: string; deleted: boolean; message: string }>
+  > {
+    return request(`/api/admin/orders/${encodeURIComponent(orderId)}`, {
+      method: "DELETE",
+    });
+  },
   // ── Add-on Services ──────────────────────────────────────────────
   listAddonServices(): Promise<AdminAddonServicesResponse> {
     return request("/api/admin/addon-services");

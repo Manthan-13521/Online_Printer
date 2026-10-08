@@ -87,17 +87,15 @@ export function LiveOrdersPage({
 
   async function handleManualComplete(order: AdminLiveOrder) {
     const code = order.pickupCode ?? order.jobCode;
-    const reason = window
-      .prompt(
-        `Confirm every file in ${code} was physically printed. Enter who verified it and how:`,
-      )
-      ?.trim();
-    if (!reason) return;
+    const confirmed = window.confirm(
+      `Confirm order ${code} was physically printed and handed to the customer?`,
+    );
+    if (!confirmed) return;
     setActionBusyId(`complete-${order.orderId}`);
     setError(null);
     setActionNotice(null);
     try {
-      const res = await adminApi.manualCompleteOrder(order.orderId, reason);
+      const res = await adminApi.manualCompleteOrder(order.orderId);
       if (res.ok) {
         setOrders(
           (prev) =>
@@ -112,6 +110,34 @@ export function LiveOrdersPage({
             ? `Job ${code} marked as completed.`
             : `Job ${code} is awaiting finishing in Manual Orders.`,
         );
+      }
+    } catch (caught: unknown) {
+      if (caught instanceof AdminApiError && caught.status === 401) {
+        onSessionExpired("Your session has expired. Please sign in again.");
+        return;
+      }
+      setError(friendlyAdminError(caught));
+    } finally {
+      setActionBusyId(null);
+    }
+  }
+
+  async function handleDeleteOrder(order: AdminLiveOrder) {
+    const code = order.pickupCode ?? order.jobCode;
+    const confirmed = window.confirm(
+      `Permanently delete order ${code} and its files? This cannot be undone.`,
+    );
+    if (!confirmed) return;
+    setActionBusyId(`delete-${order.orderId}`);
+    setError(null);
+    setActionNotice(null);
+    try {
+      const res = await adminApi.deleteOrder(order.orderId);
+      if (res.ok) {
+        setOrders(
+          (prev) => prev?.filter((o) => o.orderId !== order.orderId) ?? [],
+        );
+        setActionNotice(`Order ${code} has been permanently deleted.`);
       }
     } catch (caught: unknown) {
       if (caught instanceof AdminApiError && caught.status === 401) {
@@ -452,6 +478,23 @@ export function LiveOrdersPage({
                         </button>
                       )
                     ) : null}
+
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      style={{
+                        marginLeft: "auto",
+                        color: "#dc2626",
+                        borderColor: "#fca5a5",
+                      }}
+                      disabled={actionBusyId !== null}
+                      onClick={() => void handleDeleteOrder(order)}
+                      title="Permanently delete order and associated customer data"
+                    >
+                      {actionBusyId === `delete-${order.orderId}`
+                        ? "Deleting…"
+                        : "Delete Order"}
+                    </button>
                   </div>
                 </article>
               ))}

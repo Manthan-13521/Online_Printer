@@ -540,10 +540,9 @@ export class D1PaymentRepository implements PaymentRepository {
           `SELECT 1 FROM orders
            WHERE pickup_code = ?
              AND cleanup_state = 'ACTIVE'
-             AND (status NOT IN ('COMPLETED', 'CANCELLED') OR (purge_at_ms IS NOT NULL AND purge_at_ms > ?))
            LIMIT 1`,
         )
-        .bind(candidateCode, nowMs)
+        .bind(candidateCode)
         .first();
 
       if (!active) {

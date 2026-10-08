@@ -24,6 +24,7 @@ export function OrderHistoryPage({
   const [loaded, setLoaded] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [printingOrderId, setPrintingOrderId] = useState<string | null>(null);
+  const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null);
   const [orderNotice, setOrderNotice] = useState<Record<string, string>>({});
   const PAGE_SIZE = 10;
 
@@ -59,6 +60,34 @@ export function OrderHistoryPage({
       setError(friendlyAdminError(caught));
     } finally {
       setPrintingOrderId(null);
+    }
+  }
+
+  async function handleDeleteOrder(order: AdminOrderHistoryEntry) {
+    const code = order.pickupCode ?? order.orderId.slice(0, 8);
+    const confirmed = window.confirm(
+      `Permanently delete order ${code} and its customer files? This cannot be undone.`,
+    );
+    if (!confirmed) return;
+    setDeletingOrderId(order.orderId);
+    setError(null);
+    try {
+      const res = await adminApi.deleteOrder(order.orderId);
+      if (res.ok) {
+        setOrders((prev) => prev.filter((o) => o.orderId !== order.orderId));
+        setOrderNotice((prev) => ({
+          ...prev,
+          [order.orderId]: `Order ${code} deleted.`,
+        }));
+      }
+    } catch (caught: unknown) {
+      if (caught instanceof AdminApiError && caught.status === 401) {
+        onSessionExpired("Your session has expired. Please sign in again.");
+        return;
+      }
+      setError(friendlyAdminError(caught));
+    } finally {
+      setDeletingOrderId(null);
     }
   }
 
@@ -297,30 +326,19 @@ export function OrderHistoryPage({
                         : "Print Again"}
                     </button>
                   ) : null}
+
+                  <button
+                    type="button"
+                    className="secondary-button compact"
+                    style={{ color: "#dc2626", borderColor: "#fca5a5" }}
+                    disabled={deletingOrderId === order.orderId}
+                    onClick={() => void handleDeleteOrder(order)}
+                    title="Permanently delete order and associated customer data"
+                  >
+                    {deletingOrderId === order.orderId ? "Deleting…" : "Delete"}
+                  </button>
                 </div>
               </div>
-
-              {order.failureHistory.length ? (
-                <div
-                  style={{
-                    fontSize: "0.8rem",
-                    color: "#b91c1c",
-                    marginTop: "0.25rem",
-                  }}
-                >
-                  <span style={{ color: "#5E6A63" }}>
-                    Failure / uncertain history:{" "}
-                  </span>
-                  <span>
-                    {order.failureHistory
-                      .map(
-                        (failure) =>
-                          `${failure.status}${failure.code ? ` (${failure.code})` : ""}${failure.at ? ` · ${time(failure.at)}` : ""}`,
-                      )
-                      .join("; ")}
-                  </span>
-                </div>
-              ) : null}
             </div>
           </article>
         ))}
