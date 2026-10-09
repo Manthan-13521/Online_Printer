@@ -1,4 +1,4 @@
-import type { WorkerEnv } from "../env";
+
 
 export class AgentRoom {
   private state: DurableObjectState;
