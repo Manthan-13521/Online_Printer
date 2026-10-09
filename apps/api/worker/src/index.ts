@@ -6,6 +6,7 @@ import { D1PrintingRepository } from "./printing/repository";
 import { routeRequest } from "./router";
 
 export { routeRequest } from "./router";
+export { AgentRoom } from "./agent/agent-room";
 
 export default {
   async fetch(request: Request, env: WorkerEnv): Promise<Response> {

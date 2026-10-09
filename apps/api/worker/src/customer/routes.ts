@@ -123,7 +123,11 @@ function actionsFromEnv(env: WorkerEnv): CustomerActions {
     quoteOrder: (token, input) => service.quoteOrder(token, input),
     createPayment: (token, input) =>
       paymentService.createCheckout(token, input.acknowledgedTotalPaise),
-    verifyPayment: (token, input) => paymentService.verify(token, input),
+    verifyPayment: async (token, input) => {
+      const result = await paymentService.verify(token, input);
+      void import("../agent/wake").then((m) => m.wakeAgent(env));
+      return result;
+    },
     cancelPayment: (token, input) =>
       paymentService.cancel(token, input.razorpayOrderId),
     tracking: (jobCode, token) => trackingService.get(jobCode, token),

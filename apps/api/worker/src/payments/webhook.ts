@@ -226,6 +226,7 @@ export async function handleRazorpayWebhook(
       orderId,
       nowMs: dependencies.now(),
     });
+    void import("../agent/wake").then((m) => m.wakeAgent(env));
     return ok({ received: true }, 200, NO_STORE);
   } catch {
     await dependencies.payments.finishProviderEvent({

@@ -126,7 +126,7 @@ export function DashboardPage({
       }
     }
 
-    const stop = startVisiblePolling(loadDashboard, 30_000);
+    const stop = startVisiblePolling(loadDashboard, 35_000);
     return () => {
       cancelled = true;
       stop();
@@ -162,7 +162,7 @@ export function DashboardPage({
     (activeAgent &&
       activeAgent.isActive &&
       activeAgent.lastHeartbeatAt &&
-      Date.now() - new Date(activeAgent.lastHeartbeatAt).getTime() < 90000),
+      Date.now() - new Date(activeAgent.lastHeartbeatAt).getTime() < 150000),
   );
   const printerReady = Boolean(
     defaultPrinter &&

@@ -449,7 +449,7 @@ describe("AgentService", () => {
           id: "agent_123",
           displayName: "Front Desk PC",
           isActive: true,
-          lastHeartbeatAtMs: 1_500_000 - 100_000, // 100s ago (> 90s timeout)
+          lastHeartbeatAtMs: 1_500_000 - 200_000, // 200s ago (> 150s timeout)
         }),
       ),
     });

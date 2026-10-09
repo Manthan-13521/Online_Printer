@@ -121,6 +121,17 @@ export class AgentService {
     };
   }
 
+  async verifyTokenOnly(rawSecret: string): Promise<void> {
+    const credentialHash = await hashSessionToken(rawSecret);
+    const agent = await this.repository.findAgentByCredentialHash(
+      credentialHash,
+      this.now(),
+    );
+    if (!agent || !agent.isActive) {
+      throw new AgentError("AGENT_UNAUTHORIZED");
+    }
+  }
+
   async heartbeat(
     rawSecret: string,
     input: ValidatedAgentHeartbeatInput,
@@ -139,7 +150,7 @@ export class AgentService {
     if (
       reportPrinters ||
       agent.lastHeartbeatAtMs === null ||
-      nowMs - agent.lastHeartbeatAtMs >= 60_000
+      nowMs - agent.lastHeartbeatAtMs >= 65_000
     ) {
       await this.repository.updateHeartbeat({
         agentId: agent.id,

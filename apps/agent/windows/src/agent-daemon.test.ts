@@ -166,19 +166,19 @@ describe("AgentDaemon", () => {
     // Initial pulse
     expect(mockClient.sendHeartbeat).toHaveBeenCalledTimes(1);
 
-    // Advance 30 seconds
-    await vi.advanceTimersByTimeAsync(30_000);
-    expect(mockClient.sendHeartbeat).toHaveBeenCalledTimes(3);
+    // Advance 60 seconds
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(mockClient.sendHeartbeat).toHaveBeenCalledTimes(2);
 
     daemon.stop();
     expect(daemon.isRunning()).toBe(false);
 
     // Should not pulse after stop
     await vi.advanceTimersByTimeAsync(30_000);
-    expect(mockClient.sendHeartbeat).toHaveBeenCalledTimes(3);
+    expect(mockClient.sendHeartbeat).toHaveBeenCalledTimes(2);
   });
 
-  it("backs off idle polls but returns to responsive polling when work appears", async () => {
+  it("uses 60s idle polling and executes commands when they arrive", async () => {
     let polls = 0;
     const client = {
       sendHeartbeat: vi.fn(() => {
@@ -186,7 +186,7 @@ describe("AgentDaemon", () => {
         return Promise.resolve({
           acknowledged: true,
           serverTimeMs: Date.now(),
-          ...(polls === 6
+          ...(polls === 3
             ? {
                 nextCommand: {
                   type: "TEST_PRINT" as const,
@@ -195,7 +195,6 @@ describe("AgentDaemon", () => {
                   windowsPrinterName: "p1",
                   printerDisplayName: "Printer 1",
                   shopName: "Test Shop",
-                  // Skip execution; this test isolates scheduler timing.
                   expiresAtMs: Date.now() - 1,
                 },
               }
@@ -215,20 +214,16 @@ describe("AgentDaemon", () => {
     });
 
     const startedAt = Date.now();
-    await daemon.start();
-    for (const [elapsed, calls] of [
-      [5_000, 2],
-      [10_000, 3],
-      [20_000, 4],
-      [35_000, 5],
-      [50_000, 6],
-    ] as const) {
-      await vi.advanceTimersToNextTimerAsync();
-      expect(client.sendHeartbeat).toHaveBeenCalledTimes(calls);
-      expect(Date.now() - startedAt).toBe(elapsed);
-    }
-    await vi.advanceTimersByTimeAsync(5_000);
-    expect(client.sendHeartbeat).toHaveBeenCalledTimes(7);
+    await daemon.start(); // poll 1
+    
+    await vi.advanceTimersToNextTimerAsync(); // +60s
+    expect(client.sendHeartbeat).toHaveBeenCalledTimes(2);
+    expect(Date.now() - startedAt).toBe(60_000);
+
+    await vi.advanceTimersToNextTimerAsync(); // +60s (poll 3 gets command)
+    expect(client.sendHeartbeat).toHaveBeenCalledTimes(3);
+    expect(Date.now() - startedAt).toBe(120_000);
+
     daemon.stop();
   });
 
@@ -257,10 +252,10 @@ describe("AgentDaemon", () => {
     await daemon.start();
     expect(adapter.listPrinters).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(90_000);
-    expect(client.sendHeartbeat).toHaveBeenCalledTimes(4);
+    expect(client.sendHeartbeat).toHaveBeenCalledTimes(2);
     expect(adapter.listPrinters).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(30_000);
-    expect(client.sendHeartbeat).toHaveBeenCalledTimes(5);
+    expect(client.sendHeartbeat).toHaveBeenCalledTimes(3);
     expect(adapter.listPrinters).toHaveBeenCalledTimes(2);
     daemon.stop();
   });
@@ -359,7 +354,7 @@ describe("AgentDaemon", () => {
     await daemon.start();
     expect(daemon.isRunning()).toBe(true);
     expect(client.reportCommand).toHaveBeenCalledTimes(2);
-    await vi.advanceTimersByTimeAsync(5_000);
+    await vi.advanceTimersByTimeAsync(65_000);
     expect(client.sendHeartbeat).toHaveBeenCalledTimes(2);
     expect(daemon.isRunning()).toBe(true);
     daemon.stop();
@@ -489,9 +484,9 @@ describe("AgentDaemon", () => {
     });
 
     await daemon.start();
-    await vi.advanceTimersByTimeAsync(5_000);
+    await vi.advanceTimersToNextTimerAsync(); // call 2 (error)
     expect(daemon.isRunning()).toBe(true);
-    await vi.advanceTimersByTimeAsync(10_000);
+    await vi.advanceTimersToNextTimerAsync(); // call 3 (success)
     expect(client.sendHeartbeat).toHaveBeenCalledTimes(3);
     expect(daemon.isRunning()).toBe(true);
     daemon.stop();

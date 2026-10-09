@@ -12,4 +12,5 @@ export interface WorkerEnv {
   RAZORPAY_KEY_SECRET?: string;
   RAZORPAY_WEBHOOK_SECRET?: string;
   PAYMENT_READINESS_DEV_BYPASS?: string;
+  AGENT_ROOM: DurableObjectNamespace;
 }

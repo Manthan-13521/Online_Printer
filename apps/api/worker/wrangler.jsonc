@@ -31,4 +31,18 @@
       "bucket_name": "printgo-pdfs",
     },
   ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "AGENT_ROOM",
+        "class_name": "AgentRoom"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_classes": ["AgentRoom"]
+    }
+  ]
 }

@@ -68,7 +68,7 @@ it("backs off an offline paid preflight without slowing later idle polling", asy
   expect(send).toHaveBeenCalledTimes(1);
   await vi.advanceTimersByTimeAsync(1);
   expect(send).toHaveBeenCalledTimes(2);
-  await vi.advanceTimersByTimeAsync(5_000);
+  await vi.advanceTimersByTimeAsync(60_000);
   expect(send).toHaveBeenCalledTimes(3);
   daemon.stop();
 });

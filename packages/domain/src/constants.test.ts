@@ -55,7 +55,7 @@ describe("retention constants", () => {
     expect(CUSTOMER_TRACKING_LIFETIME_MS).toBe(14 * 24 * 60 * 60 * 1_000);
     expect(AGENT_PAIR_CODE_LIFETIME_MS).toBe(10 * 60 * 1_000);
     expect(AGENT_HEARTBEAT_INTERVAL_MS).toBe(30 * 1_000);
-    expect(AGENT_HEARTBEAT_TIMEOUT_MS).toBe(90 * 1_000);
+    expect(AGENT_HEARTBEAT_TIMEOUT_MS).toBe(150 * 1_000);
     expect(TEST_PRINT_COMMAND_LIFETIME_MS).toBe(5 * 60 * 1_000);
     expect(MIN_PRINT_COPIES).toBe(1);
     expect(MAX_PRINT_COPIES).toBe(100);

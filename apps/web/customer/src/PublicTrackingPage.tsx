@@ -66,7 +66,7 @@ export function PublicTrackingPage({
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
         void fetchTracking();
-      }, 15_000);
+      }, 20_000);
     }
 
     void fetchTracking();

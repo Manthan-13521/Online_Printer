@@ -74,7 +74,7 @@ export function TrackingPage({
             }
             return;
           }
-          // Schedule next poll: 15s for first 2 minutes, 30s thereafter
+          // Schedule next poll: 10s for first minute, 30s thereafter
           scheduleNextPoll();
         })
         .catch((caught: unknown) => {
@@ -99,7 +99,7 @@ export function TrackingPage({
     const scheduleNextPoll = () => {
       if (!active || terminalReachedRef.current) return;
       if (timer) clearTimeout(timer);
-      const delayMs = Date.now() - mountTime < 120_000 ? 3_000 : 15_000;
+      const delayMs = Date.now() - mountTime < 60_000 ? 10_000 : 30_000;
       timer = setTimeout(fetchStatus, delayMs);
     };
 

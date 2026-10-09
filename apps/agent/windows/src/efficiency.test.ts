@@ -121,7 +121,7 @@ describe("Agent efficiency", () => {
     expect(send).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(1);
     expect(send).toHaveBeenCalledTimes(2);
-    await vi.advanceTimersByTimeAsync(29999);
+    await vi.advanceTimersByTimeAsync(59999);
     expect(send).toHaveBeenCalledTimes(2);
     await vi.advanceTimersByTimeAsync(1);
     expect(send).toHaveBeenCalledTimes(3);

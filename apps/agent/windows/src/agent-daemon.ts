@@ -54,6 +54,7 @@ export class AgentDaemon {
   private timer: NodeJS.Timeout | null = null;
   private running = false;
   private isBeating = false;
+  private ws: WebSocket | null = null;
   private readonly executedCommandIds = new Map<string, number>();
   private readonly paidPrintExecutor: PaidPrintExecutor;
 
@@ -67,7 +68,7 @@ export class AgentDaemon {
     if (
       !Number.isFinite(this.heartbeatIntervalMs) ||
       this.heartbeatIntervalMs < 100 ||
-      this.heartbeatIntervalMs > 30_000 ||
+      this.heartbeatIntervalMs > 65_000 ||
       !Number.isFinite(this.printerRefreshMs) ||
       this.printerRefreshMs < 1_000 ||
       this.printerRefreshMs > 120_000
@@ -150,9 +151,63 @@ export class AgentDaemon {
     // Perform immediate first heartbeat
     await this.pulse();
 
+    this.connectWebSocket();
     this.schedulePulse();
 
     return this.running;
+  }
+
+  private connectWebSocket(): void {
+    if (!this.running || !this.credentials) return;
+    
+    // Cleanup existing connection
+    if (this.ws) {
+      this.ws.onclose = null;
+      this.ws.onerror = null;
+      this.ws.onmessage = null;
+      this.ws.close();
+    }
+
+    try {
+      const wsUrl = new URL(this.credentials.serverUrl);
+      wsUrl.protocol = wsUrl.protocol === "https:" ? "wss:" : "ws:";
+      wsUrl.pathname = "/api/agent/ws";
+      
+      this.ws = new WebSocket(wsUrl.toString(), [this.credentials.agentSecret]);
+      
+      this.ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data.toString());
+          if (data.type === "WAKE_UP") {
+            this.log("Received instant wake-up notification");
+            if (this.timer) {
+              clearTimeout(this.timer);
+              this.timer = null;
+            }
+            this.nextDelayMs = 0;
+            this.schedulePulse();
+          }
+        } catch {
+          // Ignore invalid messages
+        }
+      };
+
+      this.ws.onerror = () => {
+        // Ignored, onclose will handle reconnect
+      };
+
+      this.ws.onclose = () => {
+        this.ws = null;
+        if (this.running) {
+          setTimeout(() => this.connectWebSocket(), 15_000); // Reconnect backoff
+        }
+      };
+    } catch (err) {
+      this.log(`Failed to initiate WebSocket: ${err instanceof Error ? err.message : String(err)}`);
+      if (this.running) {
+        setTimeout(() => this.connectWebSocket(), 15_000);
+      }
+    }
   }
 
   private schedulePulse(): void {
@@ -176,6 +231,11 @@ export class AgentDaemon {
     if (this.timer) {
       clearTimeout(this.timer);
       this.timer = null;
+    }
+    if (this.ws) {
+      this.ws.onclose = null;
+      this.ws.close();
+      this.ws = null;
     }
     this.running = false;
     this.log("Agent daemon stopped.");
@@ -275,14 +335,11 @@ export class AgentDaemon {
         this.idlePolls = Math.min(this.idlePolls + 1, 4);
       }
       if (heartbeatData.onlinePrintingEnabled === false || !ready) {
-        this.nextDelayMs = 30_000;
+        this.nextDelayMs = 60_000;
       } else if (heartbeatData.printJob) {
-        this.nextDelayMs = 2_000;
+        this.nextDelayMs = 6_000;
       } else {
-        this.nextDelayMs = Math.min(
-          15_000,
-          this.heartbeatIntervalMs * 2 ** Math.max(0, this.idlePolls - 1),
-        );
+        this.nextDelayMs = 60_000;
       }
       if (Date.now() - this.lastStatusWriteMs >= 60_000 || refreshPrinters) {
         this.lastStatusWriteMs = Date.now();

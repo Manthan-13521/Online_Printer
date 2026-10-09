@@ -19,7 +19,7 @@ function summary(order: AdminLiveOrder): string {
 
 export function LiveOrdersPage({
   onSessionExpired,
-  pollIntervalMs = 20000,
+  pollIntervalMs = 40_000,
 }: {
   onSessionExpired: (message: string) => void;
   pollIntervalMs?: number;

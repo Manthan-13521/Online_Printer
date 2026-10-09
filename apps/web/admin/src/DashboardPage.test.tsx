@@ -62,7 +62,7 @@ it("uses one aggregate request, stops while hidden, and refreshes on focus", asy
   expect(screen.getByText("1")).toBeTruthy();
   expect(getDashboard).toHaveBeenCalledTimes(1);
   await act(async () => {
-    await vi.advanceTimersByTimeAsync(30_000);
+    await vi.advanceTimersByTimeAsync(35_000);
   });
   expect(getDashboard).toHaveBeenCalledTimes(2);
   Object.defineProperty(document, "hidden", {

@@ -101,6 +101,23 @@ export async function handleAgentRequest(
     }
   }
 
+  if (request.method === "GET" && pathname === "/api/agent/ws") {
+    const token = request.headers.get("Sec-WebSocket-Protocol"); // Client sends token as subprotocol
+    if (!token) {
+      return error(401, "AGENT_UNAUTHORIZED", "Agent token required", NO_STORE);
+    }
+    try {
+      // Very lightweight auth verify before accepting connection
+      await service.verifyTokenOnly(token); 
+    } catch {
+      return error(401, "AGENT_UNAUTHORIZED", "Invalid token", NO_STORE);
+    }
+    const id = env.AGENT_ROOM.idFromName("shop");
+    const room = env.AGENT_ROOM.get(id);
+    const newReq = new Request("http://do/connect", request);
+    return room.fetch(newReq);
+  }
+
   if (
     request.method === "POST" &&
     (pathname === "/api/agent/heartbeat" || pathname === "/api/agent/pulse")
