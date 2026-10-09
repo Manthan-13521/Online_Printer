@@ -3,11 +3,11 @@ import type { WorkerEnv } from "../env";
 export class AgentRoom {
   private state: DurableObjectState;
 
-  constructor(state: DurableObjectState, _env: WorkerEnv) {
+  constructor(state: DurableObjectState) {
     this.state = state;
   }
 
-  async fetch(request: Request): Promise<Response> {
+  fetch(request: Request): Response {
     const url = new URL(request.url);
 
     if (url.pathname === "/connect") {

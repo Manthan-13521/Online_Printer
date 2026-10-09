@@ -177,7 +177,7 @@ export class AgentDaemon {
       
       this.ws.onmessage = (event) => {
         try {
-          const data = JSON.parse(event.data.toString());
+          const data = JSON.parse(String(event.data)) as { type?: string };
           if (data.type === "WAKE_UP") {
             this.log("Received instant wake-up notification");
             if (this.timer) {

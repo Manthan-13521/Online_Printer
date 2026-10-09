@@ -1,6 +1,6 @@
 import type { WorkerEnv } from "../env";
 
-export async function wakeAgent(env: WorkerEnv): Promise<void> {
+export function wakeAgent(env: WorkerEnv): void {
   try {
     const id = env.AGENT_ROOM.idFromName("shop");
     const room = env.AGENT_ROOM.get(id);
