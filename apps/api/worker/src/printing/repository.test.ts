@@ -24,6 +24,7 @@ const migrations = [
   "0016_phase4_failure_recovery_and_pause.sql",
   "0017_phase5_fallback_and_reprint_protection.sql",
   "0018_phase6_history_cleanup.sql",
+  "0020_order_retention_duration.sql",
   "0023_identification_sheet_conditions.sql",
 ].map((name) =>
   readFileSync(
@@ -593,6 +594,59 @@ describe("paid-print D1 safety", () => {
     ).toEqual({
       retention_reason: "COMPLETED",
       delete_after_ms: 3_000 + COMPLETED_RETENTION_MS,
+    });
+  });
+
+  it("applies dynamically configured order_retention_hours upon completion", async () => {
+    seed(db);
+    // Configure shop retention to 6 hours (6 * 3600_000 = 21_600_000 ms)
+    db.prepare(
+      "UPDATE installation SET order_retention_hours = 6 WHERE id = 1",
+    ).run();
+
+    const job = (await repository.claimOrRenew(ids.agent1, 2_000))!;
+    const ownership = {
+      agentId: ids.agent1,
+      orderId: ids.order,
+      stepId: job.currentStep.stepId,
+      claimId: job.claimId,
+    };
+    await repository.startStep({ ...ownership, nowMs: 2_100 });
+    await repository.recordSubmission({
+      ...ownership,
+      spoolerJobId: "42",
+      nowMs: 2_200,
+    });
+    await repository.recordResult({
+      ...ownership,
+      status: "SUCCEEDED",
+      spoolerJobId: "42",
+      failureCode: null,
+      failureDetail: null,
+      nowMs: 3_000,
+    });
+
+    const expectedRetentionMs = 6 * 3600_000;
+    expect(
+      db
+        .prepare(
+          "SELECT status, completed_at_ms, purge_at_ms FROM orders WHERE id = ?",
+        )
+        .get(ids.order),
+    ).toEqual({
+      status: "COMPLETED",
+      completed_at_ms: 3_000,
+      purge_at_ms: 3_000 + expectedRetentionMs,
+    });
+    expect(
+      db
+        .prepare(
+          "SELECT retention_reason, delete_after_ms FROM uploads WHERE order_id = ?",
+        )
+        .get(ids.order),
+    ).toEqual({
+      retention_reason: "COMPLETED",
+      delete_after_ms: 3_000 + expectedRetentionMs,
     });
   });
 

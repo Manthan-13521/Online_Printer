@@ -331,6 +331,22 @@ export async function handleAdminManualOrdersRequest(
         const orderId = match[1]!;
         const action = match[2]!;
         const nowMs = Date.now();
+        let retentionMs = COMPLETED_RETENTION_MS;
+        try {
+          const installSettings = await db
+            .prepare(
+              "SELECT order_retention_hours FROM installation WHERE id = 1",
+            )
+            .first<{ order_retention_hours: number | null }>();
+          if (
+            typeof installSettings?.order_retention_hours === "number" &&
+            installSettings.order_retention_hours > 0
+          ) {
+            retentionMs = installSettings.order_retention_hours * 3600_000;
+          }
+        } catch {
+          // Keep default COMPLETED_RETENTION_MS
+        }
 
         if (action === "mark-printed") {
           // MANUAL_PRINT → AWAITING_FINISHING (if any POST_PRINT addon) or → COMPLETED
@@ -355,7 +371,7 @@ export async function handleAdminManualOrdersRequest(
                 nextStatus,
                 nowMs,
                 completedAt,
-                hasPostPrint ? null : nowMs + COMPLETED_RETENTION_MS,
+                hasPostPrint ? null : nowMs + retentionMs,
                 nowMs,
                 orderId,
               ),
@@ -389,7 +405,7 @@ export async function handleAdminManualOrdersRequest(
                  updated_at_ms = ? WHERE order_id = ? AND storage_status = 'UPLOADED'
                  AND EXISTS (SELECT 1 FROM orders WHERE id = ? AND status = 'COMPLETED')`,
               )
-              .bind(nowMs + COMPLETED_RETENTION_MS, nowMs, orderId, orderId),
+              .bind(nowMs + retentionMs, nowMs, orderId, orderId),
           ]);
 
           if (result?.meta.changes !== 1) {
@@ -415,14 +431,14 @@ export async function handleAdminManualOrdersRequest(
                  AND NOT EXISTS (SELECT 1 FROM print_attempt_steps
                    WHERE order_id = orders.id AND status IN ('SUBMISSION_STARTED','SUBMITTED'))`,
               )
-              .bind(nowMs, nowMs + COMPLETED_RETENTION_MS, nowMs, orderId),
+              .bind(nowMs, nowMs + retentionMs, nowMs, orderId),
             db
               .prepare(
                 `UPDATE uploads SET retention_reason = 'COMPLETED', delete_after_ms = ?,
                  updated_at_ms = ? WHERE order_id = ? AND storage_status = 'UPLOADED'
                  AND EXISTS (SELECT 1 FROM orders WHERE id = ? AND status = 'COMPLETED')`,
               )
-              .bind(nowMs + COMPLETED_RETENTION_MS, nowMs, orderId, orderId),
+              .bind(nowMs + retentionMs, nowMs, orderId, orderId),
           ]);
 
           if (result?.meta.changes !== 1) {

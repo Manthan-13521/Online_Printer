@@ -791,4 +791,266 @@ describe("D1 cleanup repository", () => {
     );
     expect(candidates.map((c) => c.orderId)).toEqual([expiredOrderId]);
   });
+
+  it("strictly purges payment records older than 25 days and preserves newer records", async () => {
+    const DAY_MS = 24 * 60 * 60 * 1_000;
+    const nowMs = 30 * DAY_MS; // Day 30
+    const expiredPaymentMs = nowMs - (25 * DAY_MS + 1_000); // 25 days + 1 sec ago (EXPIRED)
+    const activePaymentMs = nowMs - 20 * DAY_MS; // 20 days ago (ACTIVE, < 25 days)
+
+    // Insert retained_payment_records: 1 expired, 1 active
+    db.prepare(
+      `INSERT INTO retained_payment_records
+       (id, provider, provider_order_id, provider_payment_id, amount_paise, currency, status, payment_created_at_ms, purged_at_ms)
+       VALUES (?, 'RAZORPAY', 'order_exp_1', 'pay_exp_1', 1000, 'INR', 'PAID', ?, ?)`,
+    ).run(
+      "71000000-0000-4000-8000-000000000001",
+      expiredPaymentMs,
+      expiredPaymentMs + 7200000,
+    );
+
+    db.prepare(
+      `INSERT INTO retained_payment_records
+       (id, provider, provider_order_id, provider_payment_id, amount_paise, currency, status, payment_created_at_ms, purged_at_ms)
+       VALUES (?, 'RAZORPAY', 'order_act_1', 'pay_act_1', 2000, 'INR', 'PAID', ?, ?)`,
+    ).run(
+      "72000000-0000-4000-8000-000000000001",
+      activePaymentMs,
+      activePaymentMs + 7200000,
+    );
+
+    // Insert retained_provider_events: 1 expired, 1 active
+    db.prepare(
+      `INSERT INTO retained_provider_events
+       (id, provider, provider_event_id, event_type, received_at_ms, processed_at_ms, processing_status, purged_at_ms)
+       VALUES (?, 'RAZORPAY', 'evt_exp_1', 'payment.captured', ?, ?, 'PROCESSED', ?)`,
+    ).run(
+      "73000000-0000-4000-8000-000000000001",
+      expiredPaymentMs,
+      expiredPaymentMs + 100,
+      expiredPaymentMs + 7200000,
+    );
+
+    db.prepare(
+      `INSERT INTO retained_provider_events
+       (id, provider, provider_event_id, event_type, received_at_ms, processed_at_ms, processing_status, purged_at_ms)
+       VALUES (?, 'RAZORPAY', 'evt_act_1', 'payment.captured', ?, ?, 'PROCESSED', ?)`,
+    ).run(
+      "74000000-0000-4000-8000-000000000001",
+      activePaymentMs,
+      activePaymentMs + 100,
+      activePaymentMs + 7200000,
+    );
+
+    // Insert payment_provider_events: 1 expired, 1 active
+    db.prepare(
+      `INSERT INTO payment_provider_events
+       (id, provider, provider_event_id, event_type, received_at_ms, processed_at_ms, processing_status)
+       VALUES (?, 'RAZORPAY', 'raw_exp_1', 'order.paid', ?, ?, 'PROCESSED')`,
+    ).run(
+      "75000000-0000-4000-8000-000000000001",
+      expiredPaymentMs,
+      expiredPaymentMs + 100,
+    );
+
+    db.prepare(
+      `INSERT INTO payment_provider_events
+       (id, provider, provider_event_id, event_type, received_at_ms, processed_at_ms, processing_status)
+       VALUES (?, 'RAZORPAY', 'raw_act_1', 'order.paid', ?, ?, 'PROCESSED')`,
+    ).run(
+      "76000000-0000-4000-8000-000000000001",
+      activePaymentMs,
+      activePaymentMs + 100,
+    );
+
+    // Purge expired payments at nowMs
+    const purgeResult = await repository.purgeExpiredPayments(nowMs);
+    expect(purgeResult.deletedRetainedPayments).toBe(1);
+    expect(purgeResult.deletedRetainedEvents).toBe(1);
+    expect(purgeResult.deletedEvents).toBe(1);
+
+    // Verify expired records are gone
+    const remainingRetainedPay = db
+      .prepare("SELECT id FROM retained_payment_records")
+      .all() as Array<{ id: string }>;
+    expect(remainingRetainedPay.map((r) => r.id)).toEqual([
+      "72000000-0000-4000-8000-000000000001",
+    ]);
+
+    const remainingRetainedEvt = db
+      .prepare("SELECT id FROM retained_provider_events")
+      .all() as Array<{ id: string }>;
+    expect(remainingRetainedEvt.map((r) => r.id)).toEqual([
+      "74000000-0000-4000-8000-000000000001",
+    ]);
+
+    const remainingRawEvt = db
+      .prepare("SELECT id FROM payment_provider_events")
+      .all() as Array<{ id: string }>;
+    expect(remainingRawEvt.map((r) => r.id)).toEqual([
+      "76000000-0000-4000-8000-000000000001",
+    ]);
+  });
+
+  it("caps failed retry attempts at 3 and does not deadlock subsequent runs", async () => {
+    const orderId = "81000000-0000-4000-8000-000000000001";
+    const runId = "82000000-0000-4000-8000-000000000001";
+    seedOrder(orderId, "UPLOADED");
+    db.prepare(
+      "UPDATE orders SET status = 'COMPLETED', pickup_code = 'PA-123', completed_at_ms = 1000, purge_at_ms = 1000 WHERE id = ?",
+    ).run(orderId);
+    db.prepare(
+      "UPDATE order_files SET print_status = 'PRINTED' WHERE order_id = ?",
+    ).run(orderId);
+
+    const preview = await repository.preview("COMPLETED_DUE", 2_000);
+    await repository.createRun({
+      id: runId,
+      scope: "COMPLETED_DUE",
+      source: "SCHEDULED",
+      preview,
+      nowMs: 2_000,
+    });
+
+    // Claim batch
+    const [candidate] = await repository.claimBatch(
+      runId,
+      "COMPLETED_DUE",
+      2_000,
+      5,
+    );
+    expect(candidate?.orderId).toBe(orderId);
+
+    // Record 1st failure
+    await repository.recordFailure(runId, orderId, "R2 network error", 2_000);
+    let item = db
+      .prepare(
+        "SELECT attempt_count, next_attempt_at_ms FROM cleanup_run_items WHERE run_id = ?",
+      )
+      .get(runId) as {
+      attempt_count: number;
+      next_attempt_at_ms: number | null;
+    };
+    expect(item.attempt_count).toBe(1);
+    expect(item.next_attempt_at_ms).toBeGreaterThan(2_000);
+
+    // Record 2nd failure
+    await repository.recordFailure(runId, orderId, "R2 timeout", 10_000);
+    item = db
+      .prepare(
+        "SELECT attempt_count, next_attempt_at_ms FROM cleanup_run_items WHERE run_id = ?",
+      )
+      .get(runId) as {
+      attempt_count: number;
+      next_attempt_at_ms: number | null;
+    };
+    expect(item.attempt_count).toBe(2);
+
+    // Record 3rd failure (never terminal, always rescheduled with backoff!)
+    await repository.recordFailure(
+      runId,
+      orderId,
+      "R2 permanent error",
+      50_000,
+    );
+    item = db
+      .prepare(
+        "SELECT attempt_count, next_attempt_at_ms FROM cleanup_run_items WHERE run_id = ?",
+      )
+      .get(runId) as {
+      attempt_count: number;
+      next_attempt_at_ms: number | null;
+    };
+    expect(item.attempt_count).toBe(3);
+    expect(item.next_attempt_at_ms).not.toBeNull();
+    expect(item.next_attempt_at_ms).toBeGreaterThan(50_000);
+
+    // Record 4th failure (still rescheduled with backoff)
+    await repository.recordFailure(runId, orderId, "R2 4th error", 600_000);
+    item = db
+      .prepare(
+        "SELECT attempt_count, next_attempt_at_ms FROM cleanup_run_items WHERE run_id = ?",
+      )
+      .get(runId) as {
+      attempt_count: number;
+      next_attempt_at_ms: number | null;
+    };
+    expect(item.attempt_count).toBe(4);
+    expect(item.next_attempt_at_ms).not.toBeNull();
+    expect(item.next_attempt_at_ms).toBeGreaterThan(600_000);
+
+    // Because this run is now PARTIAL and not PENDING/RUNNING, hasOpenRun returns false!
+    expect(await repository.hasOpenRun("COMPLETED_DUE", "SCHEDULED")).toBe(
+      false,
+    );
+
+    // When the retry time arrives, claimBatch picks it up again!
+    const dueRetryMs = item.next_attempt_at_ms!;
+    const [retriedCandidate] = await repository.claimBatch(
+      runId,
+      "COMPLETED_DUE",
+      dueRetryMs,
+      5,
+    );
+    expect(retriedCandidate?.orderId).toBe(orderId);
+
+    // Successfully purge the order on retry
+    await repository.purgeOrder(runId, retriedCandidate!, dueRetryMs);
+    expect(
+      await repository.finishIfDrained(runId, "COMPLETED_DUE", dueRetryMs),
+    ).toBe(true);
+
+    const run = await repository.getRun(runId);
+    expect(run?.status).toBe("PARTIAL"); // had earlier failures, now fully drained
+    expect(run?.completedAt).not.toBeNull();
+  });
+
+  it("recovers orphaned claimed orders and marks items for non-existent orders as DELETED", async () => {
+    const orderId = "20000000-0000-4000-8000-000000000099";
+    seedOrder(orderId, "QUEUED");
+    db.prepare(
+      "UPDATE orders SET cleanup_state = 'CLAIMED', cleanup_run_id = 'non-existent-run-id' WHERE id = ?",
+    ).run(orderId);
+
+    // Also simulate a ghost run item for an order that no longer exists in `orders`
+    const ghostRunId = "30000000-0000-4000-8000-000000000001";
+    const nonExistentOrderId = "40000000-0000-4000-8000-000000000002";
+    db.prepare(
+      `INSERT INTO cleanup_runs (id, scope, source, status, orders_selected, files_selected, bytes_selected,
+        bytes_deleted, active_skipped, cutoff_at_ms, created_at_ms, updated_at_ms)
+       VALUES (?, 'COMPLETED_DUE', 'SCHEDULED', 'RUNNING', 1, 1, 100, 0, 0, 1000, 1000, 1000)`,
+    ).run(ghostRunId);
+    db.prepare(
+      `INSERT INTO cleanup_run_items (run_id, order_id, status, file_count, bytes, updated_at_ms)
+       VALUES (?, ?, 'FAILED', 1, 100, 1000)`,
+    ).run(ghostRunId, nonExistentOrderId);
+
+    const recovered = await repository.recoverOrphanedClaims(2000);
+    expect(recovered).toBe(2);
+
+    const row = db
+      .prepare("SELECT cleanup_state, cleanup_run_id FROM orders WHERE id = ?")
+      .get(orderId) as { cleanup_state: string; cleanup_run_id: string | null };
+    expect(row.cleanup_state).toBe("ACTIVE");
+    expect(row.cleanup_run_id).toBeNull();
+
+    // Verify the ghost item is marked DELETED
+    const itemRow = db
+      .prepare(
+        "SELECT status FROM cleanup_run_items WHERE run_id = ? AND order_id = ?",
+      )
+      .get(ghostRunId, nonExistentOrderId) as { status: string };
+    expect(itemRow.status).toBe("DELETED");
+
+    // Verify finishIfDrained successfully completes the ghost run
+    const drained = await repository.finishIfDrained(
+      ghostRunId,
+      "COMPLETED_DUE",
+      2000,
+    );
+    expect(drained).toBe(true);
+
+    const run = await repository.getRun(ghostRunId);
+    expect(run?.completedAt).not.toBeNull();
+  });
 });

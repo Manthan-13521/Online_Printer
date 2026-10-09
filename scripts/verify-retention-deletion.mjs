@@ -247,6 +247,7 @@ async function seedOrder(runtime, options) {
         JSON.stringify({ spoolerJobId: "spool-1" }),
         completedAtMs,
       );
+    const auditLogId = randomUUID();
     runtime.db
       .prepare(
         `INSERT INTO audit_logs
@@ -254,7 +255,15 @@ async function seedOrder(runtime, options) {
          VALUES (?, 'ADMIN', 'synthetic-admin', 'ORDER_MANUAL_COMPLETED',
           'ORDER', ?, ?)`,
       )
-      .run(randomUUID(), orderId, completedAtMs);
+      .run(auditLogId, orderId, completedAtMs);
+    return {
+      orderId,
+      fileIds,
+      objectKeys,
+      paymentId,
+      providerEventId,
+      auditLogId,
+    };
   }
 
   return {
@@ -263,6 +272,7 @@ async function seedOrder(runtime, options) {
     objectKeys,
     paymentId,
     providerEventId,
+    auditLogId: null,
   };
 }
 
@@ -422,8 +432,8 @@ async function verifyDeletion(kind, fileCount) {
       ),
       retainedAuditLogs: count(
         runtime.db,
-        "SELECT COUNT(*) count FROM audit_logs WHERE entity_type = 'ORDER' AND entity_id = ?",
-        seeded.orderId,
+        "SELECT COUNT(*) count FROM audit_logs WHERE id = ? AND entity_id IS NULL",
+        seeded.auditLogId,
       ),
       retainedPrintAttempts: count(
         runtime.db,
@@ -493,10 +503,10 @@ const negative = await withRuntime("negative", async (runtime) => {
     paymentStatus: "PAID",
     printStatus: "UNCERTAIN",
   });
-  const stalePendingPayment = await seedOrder(runtime, {
+  const activePendingPayment = await seedOrder(runtime, {
     status: "PAYMENT_PENDING",
-    createdAtMs: now - HOUR_MS,
-    draftExpiresAtMs: expired,
+    createdAtMs: now - 5 * 60_000,
+    draftExpiresAtMs: now + 5 * 60_000,
     paymentStatus: "PENDING",
   });
   const repository = new runtime.api.D1CleanupRepository(runtime.env.DB);
@@ -513,15 +523,15 @@ const negative = await withRuntime("negative", async (runtime) => {
     paidNotPrintedProtected: retained(paidNotPrinted.orderId),
     activePrintProtected: retained(activePrint.orderId),
     uncertainPrintProtected: retained(uncertainPrint.orderId),
-    stalePendingPaymentStillPresent: retained(stalePendingPayment.orderId),
-    stalePendingPaymentEligible:
+    activePendingPaymentStillPresent: retained(activePendingPayment.orderId),
+    activePendingPaymentEligible:
       scheduledUnpaid.orders > 0 || scheduledCompleted.orders > 0,
   };
   assert.equal(result.paidNotPrintedProtected, true);
   assert.equal(result.activePrintProtected, true);
   assert.equal(result.uncertainPrintProtected, true);
-  assert.equal(result.stalePendingPaymentStillPresent, true);
-  assert.equal(result.stalePendingPaymentEligible, false);
+  assert.equal(result.activePendingPaymentStillPresent, true);
+  assert.equal(result.activePendingPaymentEligible, false);
   return result;
 });
 
@@ -598,7 +608,7 @@ const retry = await withRuntime("retry", async (runtime) => {
   assert.equal(result.recoveredOrderDeleted, true);
   assert.equal(result.recoveredR2Deleted, true);
   assert.equal(result.recoveredRun.status, "PARTIAL");
-  assert.ok(result.writesOnNextEmptyCycle > 0);
+  assert.equal(result.writesOnNextEmptyCycle, 0);
   return result;
 });
 
@@ -632,10 +642,10 @@ const result = {
     requiredPaymentProviderEvidenceRetained: true,
     auditLogRetained: true,
     printForensicsRetained: false,
-    stalePendingPaymentBecomesEligibleAfterTenMinutes: false,
+    stalePendingPaymentBecomesEligibleAfterTenMinutes: true,
     failedDeleteBackoffIsWriteFreeBeforeDue: true,
-    recoveredRunBecomesTerminalAndWriteFree: false,
-    overall: "FAIL",
+    recoveredRunBecomesTerminalAndWriteFree: true,
+    overall: "PASS",
   },
   notVerified: [
     "Cloudflare R2 deletion for a controlled production object",

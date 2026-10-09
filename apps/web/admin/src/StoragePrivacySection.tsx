@@ -338,6 +338,27 @@ export function StoragePrivacySection({
           </dl>
         </section>
 
+        {/* Section 3: Statutory Accounting & Data Retention Notice */}
+        <section className="panel form-section">
+          <h2>Statutory Accounting &amp; Retention Advisory</h2>
+          <p className="field-help">
+            <strong>Notice for Shopkeepers:</strong> PrintGo automatically
+            purges customer order details and PDFs after the configured hours,
+            and permanently deletes payment records after 25 days to enforce
+            strict customer privacy and minimize edge storage liabilities.
+          </p>
+          <p className="field-help" style={{ marginTop: "0.5rem" }}>
+            PrintGo&apos;s aggregated daily dashboard totals do{" "}
+            <strong>not</strong> substitute for statutory books of accounts, tax
+            invoices, or customer sales registers required under applicable laws
+            (including Section 36 of the CGST Act and Section 44AA of the Income
+            Tax Act). Shopkeepers must periodically export and archive their
+            legally required accounting records and GST reports directly from
+            their Razorpay Merchant Dashboard or external accounting systems
+            before the 25-day retention window expires.
+          </p>
+        </section>
+
         <div className="save-bar">
           <span className={dirty ? "unsaved" : "saved-state"}>
             {dirty ? "Unsaved changes" : "All changes saved"}

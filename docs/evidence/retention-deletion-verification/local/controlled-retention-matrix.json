@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-01T09:28:09.019Z",
+  "generatedAt": "2026-10-09T07:53:08.230Z",
   "evidence": "MEASURED LOCAL with SIMULATED in-memory R2",
   "scope": "Current cleanup service/repository, all migrations, fake clock, synthetic D1/R2/payment/print fixtures; no external side effects.",
   "policyBoundary": {
@@ -79,8 +79,8 @@
       "paidNotPrintedProtected": true,
       "activePrintProtected": true,
       "uncertainPrintProtected": true,
-      "stalePendingPaymentStillPresent": true,
-      "stalePendingPaymentEligible": false
+      "activePendingPaymentStillPresent": true,
+      "activePendingPaymentEligible": false
     },
     "retry": {
       "failureKeptR2Object": true,
@@ -92,12 +92,12 @@
         "failures": 1,
         "completed_at_ms": 1790813700000
       },
-      "writesOnNextEmptyCycle": 1
+      "writesOnNextEmptyCycle": 0
     }
   },
   "optimizer": {
     "emptyCron": {
-      "statements": 6,
+      "statements": 15,
       "returnedRows": 1,
       "changedRows": 0,
       "r2Deletes": 0
@@ -109,10 +109,10 @@
     "requiredPaymentProviderEvidenceRetained": true,
     "auditLogRetained": true,
     "printForensicsRetained": false,
-    "stalePendingPaymentBecomesEligibleAfterTenMinutes": false,
+    "stalePendingPaymentBecomesEligibleAfterTenMinutes": true,
     "failedDeleteBackoffIsWriteFreeBeforeDue": true,
-    "recoveredRunBecomesTerminalAndWriteFree": false,
-    "overall": "FAIL"
+    "recoveredRunBecomesTerminalAndWriteFree": true,
+    "overall": "PASS"
   },
   "notVerified": [
     "Cloudflare R2 deletion for a controlled production object",

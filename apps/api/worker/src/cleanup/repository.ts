@@ -3,6 +3,7 @@ import type {
   AdminCleanupRunData,
   CleanupScope,
 } from "@printgo/api-contract";
+import { PAYMENT_RETENTION_MS } from "@printgo/domain";
 
 export interface CleanupCandidate {
   orderId: string;
@@ -92,7 +93,7 @@ export class D1CleanupRepository {
       .prepare(
         `SELECT 1 open_run FROM cleanup_runs
          WHERE scope = ? AND source = ?
-           AND status IN ('PENDING','RUNNING','PARTIAL')
+           AND status IN ('PENDING','RUNNING')
          LIMIT 1`,
       )
       .bind(scope, source)
@@ -185,7 +186,7 @@ export class D1CleanupRepository {
          SELECT ?, ?, ?, 'PENDING', ?, ?, ?, ?, 0, ?, ?, ?, ?
          WHERE ? = 0 OR NOT EXISTS (
            SELECT 1 FROM cleanup_runs WHERE scope = ? AND source = ?
-             AND status IN ('PENDING','RUNNING','PARTIAL')
+             AND status IN ('PENDING','RUNNING')
          )`,
       )
       .bind(
@@ -264,7 +265,14 @@ export class D1CleanupRepository {
     return this.db
       .prepare(
         `SELECT id, scope, source FROM cleanup_runs
-         WHERE status IN ('PENDING','RUNNING','PARTIAL')
+         WHERE status IN ('PENDING','RUNNING')
+            OR (
+              status = 'PARTIAL' AND completed_at_ms IS NULL AND EXISTS (
+                SELECT 1 FROM cleanup_run_items item
+                WHERE item.run_id = cleanup_runs.id
+                  AND (item.status = 'PENDING' OR (item.status = 'FAILED' AND (item.next_attempt_at_ms IS NULL OR item.next_attempt_at_ms <= ?)))
+              )
+            )
          ORDER BY CASE
            WHEN status = 'PENDING' THEN 0
            WHEN EXISTS (SELECT 1 FROM cleanup_run_items pending
@@ -277,7 +285,7 @@ export class D1CleanupRepository {
          END, created_at_ms
          LIMIT 1`,
       )
-      .bind(nowMs)
+      .bind(nowMs, nowMs)
       .first<{
         id: string;
         scope: CleanupScope;
@@ -525,9 +533,15 @@ export class D1CleanupRepository {
       .prepare(
         `SELECT 1 remaining FROM orders o
          WHERE o.cleanup_run_id = ? AND o.cleanup_state = 'CLAIMED'
+           AND NOT EXISTS (
+             SELECT 1 FROM cleanup_run_items item
+             WHERE item.run_id = o.cleanup_run_id AND item.order_id = o.id
+               AND item.status = 'DELETED'
+           )
          UNION ALL
-         SELECT 1 FROM cleanup_run_items
-         WHERE run_id = ? AND status IN ('PENDING','FAILED')
+         SELECT 1 FROM cleanup_run_items item
+         WHERE item.run_id = ? AND (item.status = 'PENDING' OR item.status = 'FAILED')
+           AND EXISTS (SELECT 1 FROM orders o WHERE o.id = item.order_id)
          UNION ALL
          SELECT 1 FROM orders o ${dueIndex(scope)}
          WHERE o.cleanup_state = 'ACTIVE' AND ${where}
@@ -550,11 +564,15 @@ export class D1CleanupRepository {
     if (remaining) return false;
     const result = await this.db
       .prepare(
-        `UPDATE cleanup_runs SET status = 'COMPLETED',
+        `UPDATE cleanup_runs SET
+         status = CASE WHEN failures > 0 THEN 'PARTIAL' ELSE 'COMPLETED' END,
          completed_at_ms = ?, updated_at_ms = ? WHERE id = ?
            AND status IN ('PENDING','RUNNING','PARTIAL')
-           AND NOT EXISTS (SELECT 1 FROM cleanup_run_items
-             WHERE run_id = ? AND status IN ('PENDING','FAILED'))`,
+           AND NOT EXISTS (
+             SELECT 1 FROM cleanup_run_items item
+             WHERE item.run_id = ? AND (item.status = 'PENDING' OR item.status = 'FAILED')
+               AND EXISTS (SELECT 1 FROM orders o WHERE o.id = item.order_id)
+           )`,
       )
       .bind(nowMs, nowMs, runId, runId)
       .run();
@@ -602,13 +620,42 @@ export class D1CleanupRepository {
     return result.meta.changes === 1;
   }
 
+  /**
+   * Safely recover any orders that were claimed by a run that completed or was removed,
+   * returning them to ACTIVE cleanup_state so they are never abandoned.
+   */
+  async recoverOrphanedClaims(nowMs: number): Promise<number> {
+    const [ordersResult, itemsResult] = await this.db.batch([
+      this.db
+        .prepare(
+          `UPDATE orders SET cleanup_state = 'ACTIVE', cleanup_run_id = NULL, updated_at_ms = ?
+           WHERE cleanup_state = 'CLAIMED'
+             AND (
+               cleanup_run_id IS NULL
+               OR NOT EXISTS (SELECT 1 FROM cleanup_runs r WHERE r.id = orders.cleanup_run_id)
+               OR EXISTS (SELECT 1 FROM cleanup_runs r WHERE r.id = orders.cleanup_run_id AND r.completed_at_ms IS NOT NULL)
+             )`,
+        )
+        .bind(nowMs),
+      this.db
+        .prepare(
+          `UPDATE cleanup_run_items SET status = 'DELETED', updated_at_ms = ?
+           WHERE status IN ('PENDING', 'FAILED')
+             AND NOT EXISTS (SELECT 1 FROM orders WHERE id = cleanup_run_items.order_id)`,
+        )
+        .bind(nowMs),
+    ]);
+    return (ordersResult?.meta.changes ?? 0) + (itemsResult?.meta.changes ?? 0);
+  }
+
   async recordCleanupResult(
     run: AdminCleanupRunData,
     nowMs: number,
   ): Promise<void> {
     await this.db
       .prepare(
-        `UPDATE installation SET last_cleanup_at_ms = ?, last_cleanup_result = ?, updated_at_ms = ?
+        `UPDATE installation SET last_cleanup_at_ms = ?, last_cleanup_result = ?,
+         updated_at_ms = MAX(COALESCE(created_at_ms, 0), ?)
        WHERE id = 1`,
       )
       .bind(
@@ -624,5 +671,105 @@ export class D1CleanupRepository {
     nowMs: number,
   ): Promise<void> {
     return this.recordCleanupResult(run, nowMs);
+  }
+
+  /**
+   * Permanently delete all payment and transaction details older than 25 days.
+   * Purges retained_payment_records, retained_provider_events,
+   * payment_provider_events, and payments older than PAYMENT_RETENTION_MS.
+   */
+  async purgeExpiredPayments(
+    nowMs: number,
+    maxAgeMs: number = PAYMENT_RETENTION_MS,
+  ): Promise<{
+    deletedPayments: number;
+    deletedEvents: number;
+    deletedRetainedPayments: number;
+    deletedRetainedEvents: number;
+  }> {
+    const cutoffMs = nowMs - maxAgeMs;
+    const [delRetainedPay, delRetainedEvents, delEvents, delPayments] =
+      await this.db.batch([
+        this.db
+          .prepare(
+            `DELETE FROM retained_payment_records
+             WHERE COALESCE(payment_created_at_ms, purged_at_ms) <= ?`,
+          )
+          .bind(cutoffMs),
+        this.db
+          .prepare(
+            `DELETE FROM retained_provider_events
+             WHERE COALESCE(received_at_ms, purged_at_ms) <= ?`,
+          )
+          .bind(cutoffMs),
+        this.db
+          .prepare(
+            `DELETE FROM payment_provider_events
+             WHERE received_at_ms <= ?
+                OR related_payment_id IN (
+                  SELECT id FROM payments WHERE created_at_ms <= ?
+                )`,
+          )
+          .bind(cutoffMs, cutoffMs),
+        this.db
+          .prepare(
+            `DELETE FROM payments
+             WHERE created_at_ms <= ?
+               AND status NOT IN ('CREATED', 'PENDING')`,
+          )
+          .bind(cutoffMs),
+      ]);
+    return {
+      deletedRetainedPayments: delRetainedPay?.meta.changes ?? 0,
+      deletedRetainedEvents: delRetainedEvents?.meta.changes ?? 0,
+      deletedEvents: delEvents?.meta.changes ?? 0,
+      deletedPayments: delPayments?.meta.changes ?? 0,
+    };
+  }
+
+  /**
+   * Permanently prune diagnostic audit logs and finished cleanup run records.
+   * Audit logs older than 25 days and cleanup runs older than 7 days are purged.
+   */
+  async purgeOldDiagnosticLogs(
+    nowMs: number,
+    auditMaxAgeMs: number = PAYMENT_RETENTION_MS,
+    cleanupRunMaxAgeMs: number = 7 * 24 * 60 * 60 * 1000,
+  ): Promise<{
+    deletedAuditLogs: number;
+    deletedCleanupRunItems: number;
+    deletedCleanupRuns: number;
+  }> {
+    const auditCutoffMs = nowMs - auditMaxAgeMs;
+    const cleanupCutoffMs = nowMs - cleanupRunMaxAgeMs;
+    const [delAudit, delItems, delRuns] = await this.db.batch([
+      this.db
+        .prepare(`DELETE FROM audit_logs WHERE created_at_ms <= ?`)
+        .bind(auditCutoffMs),
+      this.db
+        .prepare(
+          `DELETE FROM cleanup_run_items
+           WHERE run_id IN (
+             SELECT id FROM cleanup_runs
+             WHERE status IN ('COMPLETED','FAILED','PARTIAL')
+               AND completed_at_ms IS NOT NULL
+               AND completed_at_ms <= ?
+           )`,
+        )
+        .bind(cleanupCutoffMs),
+      this.db
+        .prepare(
+          `DELETE FROM cleanup_runs
+           WHERE status IN ('COMPLETED','FAILED','PARTIAL')
+             AND completed_at_ms IS NOT NULL
+             AND completed_at_ms <= ?`,
+        )
+        .bind(cleanupCutoffMs),
+    ]);
+    return {
+      deletedAuditLogs: delAudit?.meta.changes ?? 0,
+      deletedCleanupRunItems: delItems?.meta.changes ?? 0,
+      deletedCleanupRuns: delRuns?.meta.changes ?? 0,
+    };
   }
 }

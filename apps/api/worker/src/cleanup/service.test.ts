@@ -51,10 +51,19 @@ describe("cleanup object ownership", () => {
     expect(
       isOwnedUploadKey(`uploads/2026/09/${orderId}/${fileId}.pdf`, orderId),
     ).toBe(true);
+    expect(
+      isOwnedUploadKey(`uploads/${orderId}/my-document.pdf`, orderId),
+    ).toBe(true);
     expect(isOwnedUploadKey(`branding/${fileId}.webp`, orderId)).toBe(false);
     expect(
       isOwnedUploadKey(`uploads/2026/09/other/${fileId}.pdf`, orderId),
     ).toBe(false);
+    expect(isOwnedUploadKey(`uploads/${orderId}/../secret.pdf`, orderId)).toBe(
+      false,
+    );
+    expect(isOwnedUploadKey(`uploads/${orderId}/file.exe`, orderId)).toBe(
+      false,
+    );
   });
 });
 
@@ -105,5 +114,103 @@ describe("scheduled cleanup cost gates", () => {
 
     expect(hasCandidates).toHaveBeenCalledTimes(2);
     expect(preview).not.toHaveBeenCalled();
+  });
+
+  it("filters out invalid object keys, deletes valid keys, and purges the order without throwing", async () => {
+    const orderId = "51000000-0000-4000-8000-000000000001";
+    const validFileId = "52000000-0000-4000-8000-000000000001";
+    const validKey = `uploads/${orderId}/${validFileId}.pdf`;
+    const invalidKey = "uploads/foreign-order/bad-file.pdf";
+    const deleteSpy = vi.fn().mockResolvedValue(undefined);
+    const mockBucket = { delete: deleteSpy } as unknown as R2Bucket;
+
+    const claimBatch = vi.fn().mockResolvedValue([
+      {
+        orderId,
+        objectKeys: [validKey, invalidKey],
+        fileCount: 2,
+        bytes: 1000,
+      },
+    ]);
+    const purgeOrder = vi.fn().mockResolvedValue(undefined);
+    const finishIfDrained = vi.fn().mockResolvedValue(true);
+    const recordFailure = vi.fn();
+
+    const repository = {
+      claimBatch,
+      purgeOrder,
+      finishIfDrained,
+      recordFailure,
+      getRun: vi.fn().mockResolvedValue({
+        runId: "run-1",
+        scope: "COMPLETED_DUE",
+        status: "COMPLETED",
+        orders: 1,
+        files: 2,
+        bytes: 1000,
+        active: 0,
+        deletedOrders: 1,
+        deletedFiles: 1,
+        deletedBytes: 500,
+        activeSkipped: 0,
+        failures: 0,
+        lastError: null,
+        createdAt: new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+      }),
+      recordCleanupResult: vi.fn(),
+      dailySettings: vi.fn().mockResolvedValue({ enabled: false }),
+      nextRunnableRun: vi.fn().mockResolvedValue({
+        id: "run-1",
+        scope: "COMPLETED_DUE",
+        source: "SCHEDULED",
+      }),
+      hasOpenRun: vi.fn().mockResolvedValue(true),
+    } as unknown as D1CleanupRepository;
+
+    const service = new CleanupService(repository, mockBucket, () => 2_000);
+    // Process scheduled run which calls processRun
+    await service.runScheduled();
+
+    // Verify valid keys were deleted, and deleteSpy was called ONLY with validKey
+    expect(deleteSpy).toHaveBeenCalledWith([validKey]);
+    // Verify purgeOrder was called
+    expect(purgeOrder).toHaveBeenCalledWith(
+      "run-1",
+      expect.objectContaining({ orderId }),
+      2_000,
+    );
+    // Verify recordFailure was NEVER called
+    expect(recordFailure).not.toHaveBeenCalled();
+  });
+
+  it("calls purgeExpiredPayments, recoverOrphanedClaims and purgeOldDiagnosticLogs during scheduled runs", async () => {
+    const recoverOrphanedClaims = vi.fn().mockResolvedValue(0);
+    const purgeExpiredPayments = vi.fn().mockResolvedValue({
+      deletedPayments: 2,
+      deletedEvents: 3,
+      deletedRetainedPayments: 1,
+      deletedRetainedEvents: 1,
+    });
+    const purgeOldDiagnosticLogs = vi.fn().mockResolvedValue({
+      deletedAuditLogs: 5,
+      deletedCleanupRunItems: 2,
+      deletedCleanupRuns: 1,
+    });
+    const repository = {
+      recoverOrphanedClaims,
+      purgeExpiredPayments,
+      purgeOldDiagnosticLogs,
+      hasOpenRun: vi.fn().mockResolvedValue(true),
+      dailySettings: vi.fn().mockResolvedValue({ enabled: false }),
+      nextRunnableRun: vi.fn().mockResolvedValue(null),
+    } as unknown as D1CleanupRepository;
+
+    const service = new CleanupService(repository, bucket, () => 5_000);
+    await service.runScheduled();
+
+    expect(recoverOrphanedClaims).toHaveBeenCalledWith(5_000);
+    expect(purgeExpiredPayments).toHaveBeenCalledWith(5_000);
+    expect(purgeOldDiagnosticLogs).toHaveBeenCalledWith(5_000);
   });
 });

@@ -1363,6 +1363,7 @@ export class D1PrintingRepository implements PrintingRepository {
       ]);
     } else {
       // AUTO: transition directly to COMPLETED
+      const retentionMs = await this.getOrderRetentionMs();
       await this.db.batch([
         this.db
           .prepare(
@@ -1385,7 +1386,7 @@ export class D1PrintingRepository implements PrintingRepository {
           .bind(
             input.nowMs,
             input.nowMs,
-            input.nowMs + COMPLETED_RETENTION_MS,
+            input.nowMs + retentionMs,
             input.nowMs,
             input.orderId,
             input.claimId,
@@ -1396,11 +1397,7 @@ export class D1PrintingRepository implements PrintingRepository {
              WHERE order_id = ? AND storage_status = 'UPLOADED' AND retention_reason IS NOT 'COMPLETED'
                AND EXISTS (SELECT 1 FROM orders WHERE id = uploads.order_id AND status = 'COMPLETED')`,
           )
-          .bind(
-            input.nowMs + COMPLETED_RETENTION_MS,
-            input.nowMs,
-            input.orderId,
-          ),
+          .bind(input.nowMs + retentionMs, input.nowMs, input.orderId),
         this.db
           .prepare(
             `INSERT OR IGNORE INTO order_events (id, order_id, event_type, from_status,
@@ -1432,6 +1429,23 @@ export class D1PrintingRepository implements PrintingRepository {
       ]);
     }
     return true;
+  }
+
+  private async getOrderRetentionMs(): Promise<number> {
+    try {
+      const installSettings = await this.db
+        .prepare(`SELECT order_retention_hours FROM installation WHERE id = 1`)
+        .first<{ order_retention_hours: number | null }>();
+      if (
+        typeof installSettings?.order_retention_hours === "number" &&
+        installSettings.order_retention_hours > 0
+      ) {
+        return installSettings.order_retention_hours * 3600_000;
+      }
+    } catch {
+      // Keep default retentionMs
+    }
+    return COMPLETED_RETENTION_MS;
   }
 
   private event(
@@ -1641,20 +1655,7 @@ export class D1PrintingRepository implements PrintingRepository {
     )
       throw new Error("ORDER_CANNOT_BE_COMPLETED");
 
-    let retentionMs = COMPLETED_RETENTION_MS;
-    try {
-      const installSettings = await this.db
-        .prepare(`SELECT order_retention_hours FROM installation WHERE id = 1`)
-        .first<{ order_retention_hours: number | null }>();
-      if (
-        typeof installSettings?.order_retention_hours === "number" &&
-        installSettings.order_retention_hours > 0
-      ) {
-        retentionMs = installSettings.order_retention_hours * 3600_000;
-      }
-    } catch {
-      // Keep default retentionMs
-    }
+    const retentionMs = await this.getOrderRetentionMs();
 
     const hasFinishing = await this.db
       .prepare(

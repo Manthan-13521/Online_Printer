@@ -11,9 +11,10 @@ const MINUTE_MS = 60_000;
 const SEARCH_WINDOW_MINUTES = 8 * 24 * 60;
 
 export function isOwnedUploadKey(key: string, orderId: string): boolean {
+  if (key.includes("..") || key.includes("\0")) return false;
   const parts = key.split("/");
   const file = parts.at(-1) ?? "";
-  if (!/^[0-9a-f-]{36}\.pdf$/iu.test(file)) return false;
+  if (!/^[a-zA-Z0-9_.-]+\.pdf$/iu.test(file)) return false;
   if (parts.length === 3) return parts[0] === "uploads" && parts[1] === orderId;
   return (
     parts.length === 5 &&
@@ -122,8 +123,11 @@ export class CleanupService {
       preview,
       nowMs,
     });
-    // Also clear any legacy retained_order_history rows from previous cleanup runs.
+    // Also clear any legacy retained_order_history rows, recover orphaned claims, expired payments, and old diagnostic logs.
     await this.repository.purgeAllHistory();
+    await this.repository.recoverOrphanedClaims?.(nowMs);
+    await this.repository.purgeExpiredPayments?.(nowMs);
+    await this.repository.purgeOldDiagnosticLogs?.(nowMs);
     await this.processRun(runId, scope, 10);
     const run = await this.repository.getRun(runId);
     if (!run) throw new CleanupRequestError("CLEANUP_RUN_NOT_FOUND");
@@ -153,15 +157,11 @@ export class CleanupService {
       if (batch.length === 0) break;
       for (const candidate of batch) {
         try {
-          if (
-            candidate.objectKeys.some(
-              (key) => !isOwnedUploadKey(key, candidate.orderId),
-            )
-          ) {
-            throw new Error("Cleanup candidate contains an invalid object key");
-          }
-          if (candidate.objectKeys.length > 0) {
-            await this.bucket.delete(candidate.objectKeys);
+          const validKeys = candidate.objectKeys.filter((key) =>
+            isOwnedUploadKey(key, candidate.orderId),
+          );
+          if (validKeys.length > 0) {
+            await this.bucket.delete(validKeys);
           }
           await this.repository.purgeOrder(runId, candidate, this.now());
         } catch (caught) {
@@ -238,10 +238,14 @@ export class CleanupService {
   }
 
   async runScheduled(): Promise<AdminCleanupRunData | null> {
+    const nowMs = this.now();
+    await this.repository.recoverOrphanedClaims?.(nowMs);
+    await this.repository.purgeExpiredPayments?.(nowMs);
+    await this.repository.purgeOldDiagnosticLogs?.(nowMs);
     await this.createScheduledRun("EXPIRED_UNPAID");
     await this.createScheduledRun("COMPLETED_DUE");
     await this.scheduleDailyRun();
-    const next = await this.repository.nextRunnableRun(this.now());
+    const next = await this.repository.nextRunnableRun(nowMs);
     if (!next) return null;
     await this.processRun(next.id, next.scope);
     const run = await this.repository.getRun(next.id);
@@ -251,7 +255,7 @@ export class CleanupService {
         next.source === "DAILY" ||
         run.status === "COMPLETED")
     ) {
-      await this.repository.recordCleanupResult(run, this.now());
+      await this.repository.recordCleanupResult(run, nowMs);
     }
     return run;
   }

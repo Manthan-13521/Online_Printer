@@ -18,6 +18,8 @@ import {
   UNRESOLVED_PAID_FAILURE_RETENTION_MS,
   MIN_PRINT_COPIES,
   MAX_PRINT_COPIES,
+  PAYMENT_RETENTION_DAYS,
+  PAYMENT_RETENTION_MS,
   WEBHOOK_PROCESSING_STALE_TIMEOUT_MS,
 } from "./constants";
 import { getFileSizeServiceChargeBand } from "./file-size";
@@ -43,6 +45,8 @@ describe("file-size service-charge boundaries", () => {
 describe("retention constants", () => {
   it("matches the finalized retention and agent durations exactly", () => {
     expect(UNPAID_RETENTION_MS).toBe(10 * 60 * 1_000);
+    expect(PAYMENT_RETENTION_DAYS).toBe(25);
+    expect(PAYMENT_RETENTION_MS).toBe(25 * 24 * 60 * 60 * 1_000);
     expect(FAILED_OR_CANCELLED_PAYMENT_RETENTION_MS).toBe(30 * 60 * 1_000);
     expect(COMPLETED_RETENTION_MS).toBe(2 * 60 * 60 * 1_000);
     expect(COMPLETED_PDF_RETENTION_MS).toBe(2 * 60 * 60 * 1_000);
