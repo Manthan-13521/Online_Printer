@@ -835,22 +835,6 @@ export class D1PrintingRepository implements PrintingRepository {
           input.agentId,
           input.nowMs,
         ),
-      this.db
-        .prepare(
-          `UPDATE order_files SET print_status = 'SUBMISSION_STARTED',
-           submission_started_at_ms = COALESCE(submission_started_at_ms, ?),
-           updated_at_ms = ?
-           WHERE id = ? AND ? = 'CUSTOMER_DOCUMENT'
-             AND EXISTS (SELECT 1 FROM print_attempt_steps
-               WHERE id = ? AND status = 'SUBMISSION_STARTED')`,
-        )
-        .bind(
-          input.nowMs,
-          input.nowMs,
-          current.order_file_id,
-          current.step_type,
-          input.stepId,
-        ),
     ]);
     return results[0]?.meta.changes === 1
       ? this.findOwnedStep({ ...input, nowMs: input.nowMs })
@@ -907,23 +891,6 @@ export class D1PrintingRepository implements PrintingRepository {
         WHERE id = ? AND claim_id = ? AND status IN ('SPOOLING','PRINT_BLOCKED') AND changes() = 1`,
         )
         .bind(lease, input.nowMs, input.orderId, input.claimId),
-      this.db
-        .prepare(
-          `UPDATE order_files SET print_status = 'SUBMITTED', spooler_job_id = ?,
-           submitted_at_ms = COALESCE(submitted_at_ms, ?), updated_at_ms = ?
-           WHERE id = ? AND ? = 'CUSTOMER_DOCUMENT'
-             AND EXISTS (SELECT 1 FROM print_attempt_steps
-               WHERE id = ? AND status = 'SUBMITTED' AND spooler_job_id = ?)`,
-        )
-        .bind(
-          input.spoolerJobId,
-          input.nowMs,
-          input.nowMs,
-          current.order_file_id,
-          current.step_type,
-          input.stepId,
-          input.spoolerJobId,
-        ),
     ]);
     return results[0]?.meta.changes === 1 ? this.findOwnedStep(input) : null;
   }

@@ -381,7 +381,7 @@ describe("paid-print D1 safety", () => {
       );
       const changed =
         Number(db.prepare("SELECT total_changes() n").get()!.n) - before;
-      expect(changed).toBe(step === 0 ? 5 : 2);
+      expect(changed).toBe(step === 0 ? 3 : 2);
       await repository.recordResult({
         ...ownership,
         nowMs: 2_300 + step * 1000,
