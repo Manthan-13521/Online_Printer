@@ -15,6 +15,7 @@ import {
 import type {
   ValidatedAgentHeartbeatInput,
   ValidatedReportCommandInput,
+  ValidatedUpdatePrinterInput,
 } from "@printgo/validation";
 
 import {
@@ -191,6 +192,51 @@ export class AgentService {
       throw new AgentError("AGENT_NOT_FOUND");
     }
     return true;
+  }
+
+  async updatePrinter(
+    printerId: string,
+    input: ValidatedUpdatePrinterInput,
+    adminId: string,
+  ): Promise<{
+    id: string;
+    enabled: boolean;
+    displayName: string;
+    priority: number;
+    fallbackPrinterId: string | null;
+    autoFallbackEnabled: boolean;
+  }> {
+    try {
+      return await this.repository.updatePrinterConfig({
+        printerId,
+        enabled: input.enabled,
+        displayName: input.displayName,
+        priority: input.priority,
+        fallbackPrinterId: input.fallbackPrinterId,
+        autoFallbackEnabled: input.autoFallbackEnabled,
+        adminId,
+        nowMs: this.now(),
+      });
+    } catch (err) {
+      if (err instanceof Error) {
+        if (err.message === "PRINTER_NOT_FOUND") {
+          throw new AgentError("PRINTER_NOT_FOUND");
+        }
+        if (err.message === "CANNOT_ENABLE_VIRTUAL_PRINTER") {
+          throw new AgentError("CANNOT_ENABLE_VIRTUAL_PRINTER");
+        }
+        if (err.message === "FALLBACK_SELF_REFERENCE") {
+          throw new AgentError("FALLBACK_SELF_REFERENCE");
+        }
+        if (err.message === "FALLBACK_PRINTER_NOT_FOUND") {
+          throw new AgentError("FALLBACK_PRINTER_NOT_FOUND");
+        }
+        if (err.message === "FALLBACK_LOOP_DETECTED") {
+          throw new AgentError("FALLBACK_LOOP_DETECTED");
+        }
+      }
+      throw err;
+    }
   }
 
   async togglePrinter(

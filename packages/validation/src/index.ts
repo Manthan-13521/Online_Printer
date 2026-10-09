@@ -825,9 +825,17 @@ export function validateAgentPairInput(
     : { ok: true, value: { pairCode, displayName } };
 }
 
-export function validateTogglePrinterInput(
+export interface ValidatedUpdatePrinterInput {
+  enabled?: boolean;
+  displayName?: string;
+  priority?: number;
+  fallbackPrinterId?: string | null;
+  autoFallbackEnabled?: boolean;
+}
+
+export function validateUpdatePrinterInput(
   value: unknown,
-): ValidationResult<{ enabled: boolean }> {
+): ValidationResult<ValidatedUpdatePrinterInput> {
   if (typeof value !== "object" || value === null) {
     return {
       ok: false,
@@ -837,19 +845,112 @@ export function validateTogglePrinterInput(
     };
   }
   const record = value as Record<string, unknown>;
-  if (typeof record.enabled !== "boolean") {
+  const issues: ValidationIssue[] = [];
+  const result: ValidatedUpdatePrinterInput = {};
+
+  if (record.enabled !== undefined) {
+    if (typeof record.enabled !== "boolean") {
+      issues.push({
+        path: ["enabled"],
+        code: "INVALID_ENABLED",
+        message: "Enabled must be a boolean.",
+      });
+    } else {
+      result.enabled = record.enabled;
+    }
+  }
+
+  if (record.displayName !== undefined) {
+    if (
+      typeof record.displayName !== "string" ||
+      record.displayName.trim().length === 0 ||
+      record.displayName.trim().length > 100
+    ) {
+      issues.push({
+        path: ["displayName"],
+        code: "INVALID_DISPLAY_NAME",
+        message: "Display name must be between 1 and 100 characters.",
+      });
+    } else {
+      result.displayName = record.displayName.trim();
+    }
+  }
+
+  if (record.priority !== undefined) {
+    if (
+      !Number.isSafeInteger(record.priority) ||
+      (record.priority as number) < 0 ||
+      (record.priority as number) > 1000
+    ) {
+      issues.push({
+        path: ["priority"],
+        code: "INVALID_PRIORITY",
+        message: "Priority must be a non-negative integer between 0 and 1000.",
+      });
+    } else {
+      result.priority = record.priority as number;
+    }
+  }
+
+  if (record.fallbackPrinterId !== undefined) {
+    if (
+      record.fallbackPrinterId !== null &&
+      (typeof record.fallbackPrinterId !== "string" ||
+        record.fallbackPrinterId.trim().length === 0)
+    ) {
+      issues.push({
+        path: ["fallbackPrinterId"],
+        code: "INVALID_FALLBACK_PRINTER",
+        message: "Fallback printer ID must be a valid string or null.",
+      });
+    } else {
+      result.fallbackPrinterId =
+        record.fallbackPrinterId === null
+          ? null
+          : record.fallbackPrinterId.trim();
+    }
+  }
+
+  if (record.autoFallbackEnabled !== undefined) {
+    if (typeof record.autoFallbackEnabled !== "boolean") {
+      issues.push({
+        path: ["autoFallbackEnabled"],
+        code: "INVALID_AUTO_FALLBACK",
+        message: "autoFallbackEnabled must be a boolean.",
+      });
+    } else {
+      result.autoFallbackEnabled = record.autoFallbackEnabled;
+    }
+  }
+
+  if (
+    result.enabled === undefined &&
+    result.displayName === undefined &&
+    result.priority === undefined &&
+    result.fallbackPrinterId === undefined &&
+    result.autoFallbackEnabled === undefined
+  ) {
     return {
       ok: false,
       issues: [
         {
-          path: ["enabled"],
-          code: "INVALID_ENABLED",
-          message: "Enabled must be a boolean.",
+          path: [],
+          code: "NO_UPDATES",
+          message:
+            "At least one printer configuration setting must be provided.",
         },
       ],
     };
   }
-  return { ok: true, value: { enabled: record.enabled } };
+
+  if (issues.length > 0) return { ok: false, issues };
+  return { ok: true, value: result };
+}
+
+export function validateTogglePrinterInput(
+  value: unknown,
+): ValidationResult<ValidatedUpdatePrinterInput> {
+  return validateUpdatePrinterInput(value);
 }
 
 export interface ValidatedPrinterReport {

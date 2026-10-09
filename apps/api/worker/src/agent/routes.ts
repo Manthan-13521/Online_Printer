@@ -108,7 +108,7 @@ export async function handleAgentRequest(
     }
     try {
       // Very lightweight auth verify before accepting connection
-      await service.verifyTokenOnly(token); 
+      await service.verifyTokenOnly(token);
     } catch {
       return error(401, "AGENT_UNAUTHORIZED", "Invalid token", NO_STORE);
     }

@@ -6,6 +6,7 @@ import type { AdminAuthService } from "../auth/service";
 import type { WorkerEnv } from "../env";
 import { handleAdminPrinterRequest } from "./admin-routes";
 import { AgentError, type AgentService } from "./service";
+import type { ValidatedUpdatePrinterInput } from "@printgo/validation";
 
 const admin = {
   id: "admin_100",
@@ -65,6 +66,17 @@ function createMockAgentService(
     ),
     revokeAgent: vi.fn(() => Promise.resolve(true)),
     togglePrinter: vi.fn(() => Promise.resolve()),
+    updatePrinter: vi.fn(
+      (printerId: string, input: ValidatedUpdatePrinterInput) =>
+        Promise.resolve({
+          id: printerId,
+          enabled: input.enabled ?? true,
+          displayName: input.displayName ?? "Canon MF4700",
+          priority: input.priority ?? 0,
+          fallbackPrinterId: input.fallbackPrinterId ?? null,
+          autoFallbackEnabled: input.autoFallbackEnabled ?? false,
+        }),
+    ),
     requestTestPrint: vi.fn(() =>
       Promise.resolve({
         commandId: "cmd-test-1",
@@ -274,6 +286,45 @@ describe("Admin Printer & Agent HTTP Routes", () => {
     expect(agentService.togglePrinter).toHaveBeenCalledWith(
       "printer_1",
       false,
+      "admin_100",
+    );
+  });
+
+  it("updates printer configuration with priority and friendly name", async () => {
+    const authService = createMockAuth();
+    const agentService = createMockAgentService();
+
+    const request = new Request(
+      "https://example.com/api/admin/printers/printer_1",
+      {
+        method: "PUT",
+        headers: {
+          Origin: env.ADMIN_ALLOWED_ORIGIN,
+          Cookie: "__Host-printgo_admin=valid_token",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          displayName: "Fast Desk Xerox",
+          priority: 25,
+          enabled: true,
+        }),
+      },
+    );
+
+    const response = await handleAdminPrinterRequest(
+      request,
+      env,
+      agentService,
+      authService,
+    );
+    expect(response.status).toBe(200);
+    expect(agentService.updatePrinter).toHaveBeenCalledWith(
+      "printer_1",
+      expect.objectContaining({
+        displayName: "Fast Desk Xerox",
+        priority: 25,
+        enabled: true,
+      }),
       "admin_100",
     );
   });

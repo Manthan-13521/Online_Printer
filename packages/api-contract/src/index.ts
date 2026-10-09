@@ -787,6 +787,8 @@ export interface AdminPrinterDetails {
   fallbackPrinterId?: string | null;
   /** Whether automatic fallback routing is enabled for this printer. */
   autoFallbackEnabled?: boolean;
+  /** Routing priority (higher values = higher priority; default 0). */
+  priority?: number;
 }
 
 export interface AdminCheckPrinterHealthResponseData {
@@ -816,14 +818,26 @@ export interface AdminPrintersData {
 
 export type AdminPrintersResponse = ApiResponse<AdminPrintersData>;
 
-export interface AdminTogglePrinterRequest {
-  enabled: boolean;
+export interface AdminUpdatePrinterRequest {
+  enabled?: boolean;
+  displayName?: string;
+  priority?: number;
+  fallbackPrinterId?: string | null;
+  autoFallbackEnabled?: boolean;
 }
 
-export type AdminTogglePrinterResponse = ApiResponse<{
+export type AdminUpdatePrinterResponse = ApiResponse<{
   id: string;
   enabled: boolean;
+  displayName?: string;
+  priority?: number;
+  fallbackPrinterId?: string | null;
+  autoFallbackEnabled?: boolean;
 }>;
+
+export type AdminTogglePrinterRequest = AdminUpdatePrinterRequest;
+
+export type AdminTogglePrinterResponse = AdminUpdatePrinterResponse;
 
 export interface AdminSetDefaultPrinterResponseData {
   defaultPrinterId: string;

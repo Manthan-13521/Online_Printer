@@ -30,13 +30,43 @@ function formatRelativeTime(dateString: string | null): string {
 function formatSimpleCapabilities(
   caps: AdminPrinterDetails["capabilities"],
 ): string {
-  if (!caps) return "Standard A4";
-  const color = caps.colour ? "Colour & B/W" : "Black & White";
-  const sides = caps.duplex ? "Duplex (2-sided)" : "1-sided";
+  if (!caps) return "B&W • A4 (Unverified)";
+  const color = caps.colour ? "Color" : "B&W";
+  const sides = caps.duplex ? "Duplex" : "1-sided";
   const paper = caps.paperSizes?.includes("A4")
     ? "A4"
     : caps.paperSizes?.[0] || "A4";
-  return `${paper} • ${color} • ${sides}`;
+  return `${color} • ${paper} • ${sides} (Driver Detected)`;
+}
+
+function friendlyPrinterMessage(
+  code: string | null | undefined,
+  detail: string | null | undefined,
+): string {
+  if (detail && detail.trim().length > 0) {
+    if (detail.toLowerCase().includes("paper tray is empty")) {
+      return "Paper tray is empty. Please load paper.";
+    }
+    return detail;
+  }
+  switch (code) {
+    case "PAPER_OUT":
+      return "Printer is out of paper. Please add paper.";
+    case "PAPER_JAM":
+      return "Paper jam detected. Please check the paper path.";
+    case "DOOR_OPEN":
+      return "Printer door or cover is open.";
+    case "NO_TONER":
+      return "Toner or ink is empty.";
+    case "TONER_LOW":
+      return "Toner or ink is low.";
+    case "OFFLINE":
+      return "Printer is powered off or disconnected.";
+    case "USER_INTERVENTION":
+      return "Printer requires attention.";
+    default:
+      return "Printer reported an issue.";
+  }
 }
 
 export function PrinterPage({
@@ -45,6 +75,9 @@ export function PrinterPage({
   onSessionExpired: (message: string) => void;
 }) {
   const [agents, setAgents] = useState<AdminAgentDetails[]>([]);
+  const [defaultProductionPrinterId, setDefaultProductionPrinterId] = useState<
+    string | null
+  >(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -74,9 +107,19 @@ export function PrinterPage({
     string | null
   >(null);
 
-  // Change printer modal & developer debug filter
-  const [isChangingPrinter, setIsChangingPrinter] = useState(false);
+  // Add Printer flow & Settings Modal
+  const [isAddingPrinter, setIsAddingPrinter] = useState(false);
+  const [settingsPrinter, setSettingsPrinter] =
+    useState<AdminPrinterDetails | null>(null);
   const [showVirtualPrinters, setShowVirtualPrinters] = useState(false);
+
+  // Settings form state
+  const [formDisplayName, setFormDisplayName] = useState("");
+  const [formPriority, setFormPriority] = useState(0);
+  const [formEnabled, setFormEnabled] = useState(true);
+  const [formFallbackId, setFormFallbackId] = useState<string>("");
+  const [formAutoFallback, setFormAutoFallback] = useState(false);
+  const [savingSettings, setSavingSettings] = useState(false);
 
   async function handleCheckHealth(printerId: string) {
     setCheckingHealthId(printerId);
@@ -110,6 +153,9 @@ export function PrinterPage({
       const response = await adminApi.getPrinters();
       if (response.ok) {
         setAgents(response.data.agents);
+        setDefaultProductionPrinterId(
+          response.data.defaultProductionPrinterId ?? null,
+        );
         setTestPrints((prev) => {
           const next = { ...prev };
           for (const agent of response.data.agents) {
@@ -288,6 +334,7 @@ export function PrinterPage({
     try {
       const res = await adminApi.setDefaultPrinter(printer.id);
       if (res.ok) {
+        setDefaultProductionPrinterId(printer.id);
         setNotice(
           `Printer "${printer.displayName}" is now the default production printer.`,
         );
@@ -301,6 +348,46 @@ export function PrinterPage({
       setError(friendlyAdminError(caught));
     } finally {
       setSettingDefaultId(null);
+    }
+  }
+
+  function openSettingsModal(printer: AdminPrinterDetails) {
+    setSettingsPrinter(printer);
+    setFormDisplayName(printer.displayName);
+    setFormPriority(printer.priority ?? 0);
+    setFormEnabled(printer.enabled);
+    setFormFallbackId(printer.fallbackPrinterId ?? "");
+    setFormAutoFallback(printer.autoFallbackEnabled ?? false);
+  }
+
+  async function handleSaveSettings() {
+    if (!settingsPrinter) return;
+    setSavingSettings(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await adminApi.updatePrinter(settingsPrinter.id, {
+        displayName: formDisplayName.trim() || settingsPrinter.displayName,
+        priority: formPriority,
+        enabled: formEnabled,
+        fallbackPrinterId: formFallbackId.trim() || null,
+        autoFallbackEnabled: formAutoFallback,
+      });
+      if (res.ok) {
+        setNotice(
+          `Settings saved for "${formDisplayName.trim() || settingsPrinter.displayName}".`,
+        );
+        setSettingsPrinter(null);
+        await loadPrinters();
+      }
+    } catch (caught: unknown) {
+      if (caught instanceof AdminApiError && caught.status === 401) {
+        onSessionExpired("Your session has expired. Please sign in again.");
+        return;
+      }
+      setError(friendlyAdminError(caught));
+    } finally {
+      setSavingSettings(false);
     }
   }
 
@@ -346,7 +433,7 @@ export function PrinterPage({
 
   const release = getWindowsAgentReleaseConfig();
 
-  // Helper to identify virtual software queues (Microsoft Print to PDF, XPS, Fax, OneNote, etc.)
+  // Helper to identify virtual software queues
   function isVirtualPrinter(p: AdminPrinterDetails): boolean {
     if (p.isVirtual) return true;
     const text = `${p.displayName} ${p.windowsPrinterName}`.toLowerCase();
@@ -370,34 +457,27 @@ export function PrinterPage({
   const allPrinters = activeAgent?.printers ?? [];
   const physicalPrinters = allPrinters.filter((p) => !isVirtualPrinter(p));
 
-  // Determine active production printer:
-  // 1. Explicit production default
-  // 2. First enabled physical printer
-  // 3. First physical printer
-  // 4. First printer overall
-  const activePrinter =
-    allPrinters.find((p) => p.isProductionDefault) ??
-    physicalPrinters.find((p) => p.enabled) ??
-    physicalPrinters[0] ??
-    allPrinters[0] ??
-    null;
+  // Configured printers to display
+  const displayedPrinters = showVirtualPrinters
+    ? allPrinters
+    : physicalPrinters;
 
-  // Printers available to pick in Change Printer modal
-  const selectablePrinters =
-    physicalPrinters.length > 0 && !showVirtualPrinters
-      ? physicalPrinters
-      : allPrinters;
+  // Printers discovered but un-enabled (ready to confirm/add)
+  const unconfiguredPrinters = physicalPrinters.filter((p) => !p.enabled);
 
-  const testPrint = activePrinter
-    ? (testPrints[activePrinter.id] ?? activePrinter.latestTestPrint)
-    : null;
-  const isRequestingTestPrint =
-    activePrinter && requestingTestPrintId === activePrinter.id;
-  const isTestPrintActive =
-    testPrint &&
-    (testPrint.status === "PENDING" ||
-      testPrint.status === "CLAIMED" ||
-      testPrint.status === "SUBMITTED");
+  // Ready and attention counts
+  const readyPrinters = displayedPrinters.filter(
+    (p) =>
+      p.enabled &&
+      p.status === "ONLINE" &&
+      !p.isPaused &&
+      Boolean(activeAgent?.isOnline),
+  );
+  const attentionPrinters = displayedPrinters.filter(
+    (p) =>
+      p.enabled &&
+      (p.isPaused || p.status !== "ONLINE" || !activeAgent?.isOnline),
+  );
 
   if (loading) {
     return (
@@ -409,12 +489,13 @@ export function PrinterPage({
 
   return (
     <div className="page-stack printer-page">
+      {/* Top Header */}
       <div className="action-row" style={{ alignItems: "flex-start" }}>
         <div>
           <p className="eyebrow">Shop Hardware</p>
           <h1>Printers & Agent</h1>
           <p className="page-intro">
-            Manage your physical printer readiness and PrintGo Windows Agent.
+            Manage all your shop printers in one place.
           </p>
         </div>
         <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
@@ -428,11 +509,10 @@ export function PrinterPage({
           </button>
           <button
             className="primary-button"
-            disabled={generatingCode}
-            onClick={() => void handleGeneratePairCode()}
+            onClick={() => setIsAddingPrinter(true)}
             type="button"
           >
-            {generatingCode ? "Generating…" : "Connect New Agent"}
+            + Add Printer
           </button>
         </div>
       </div>
@@ -535,7 +615,7 @@ export function PrinterPage({
         </section>
       ) : null}
 
-      {/* Case 1: No agents connected at all */}
+      {/* Empty State: No agents connected */}
       {agents.length === 0 ? (
         <>
           <section
@@ -685,363 +765,512 @@ export function PrinterPage({
         </>
       ) : (
         <>
-          {/* Section 1: PRINTER (Clean Single Printer Card) */}
+          {/* Section: MULTI-PRINTER MANAGEMENT */}
           <section
             className="panel"
-            aria-labelledby="primary-printer-heading"
+            aria-labelledby="printers-section-heading"
             style={{
               padding: "1.5rem",
               borderRadius: "12px",
               boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
             }}
           >
+            {/* Summary Bar */}
             <div
               style={{
                 display: "flex",
                 justifyContent: "space-between",
-                alignItems: "flex-start",
+                alignItems: "center",
                 flexWrap: "wrap",
-                gap: "1.25rem",
+                gap: "1rem",
+                marginBottom: "1.25rem",
+                paddingBottom: "1rem",
+                borderBottom: "1px solid var(--border-color, #e2e8f0)",
               }}
             >
-              <div style={{ flex: "1 1 280px" }}>
-                <span
+              <div>
+                <h2
+                  id="printers-section-heading"
                   style={{
-                    display: "block",
-                    textTransform: "uppercase",
-                    fontSize: "0.75rem",
-                    letterSpacing: "1.2px",
+                    margin: 0,
+                    fontSize: "1.25rem",
                     fontWeight: 700,
-                    color: "var(--text-muted, #64748b)",
-                    marginBottom: "0.5rem",
+                    color: "var(--text-primary, #0f172a)",
                   }}
                 >
-                  PRINTER
-                </span>
-
-                {activePrinter ? (
-                  <>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "0.75rem",
-                        flexWrap: "wrap",
-                      }}
-                    >
-                      <h2
-                        id="primary-printer-heading"
-                        style={{
-                          margin: 0,
-                          fontSize: "1.5rem",
-                          fontWeight: 600,
-                          color: "var(--text-primary, #0f172a)",
-                        }}
-                      >
-                        {activePrinter.displayName}
-                      </h2>
-                      <span
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: "0.35rem",
-                          padding: "0.2rem 0.65rem",
-                          borderRadius: "9999px",
-                          fontSize: "0.8rem",
-                          fontWeight: 600,
-                          backgroundColor: activePrinter.isPaused
-                            ? "#fef3c7"
-                            : activePrinter.status === "ONLINE"
-                              ? "#e6f4ea"
-                              : "#fce8e6",
-                          color: activePrinter.isPaused
-                            ? "#92400e"
-                            : activePrinter.status === "ONLINE"
-                              ? "#137333"
-                              : "#c5221f",
-                        }}
-                      >
-                        <span style={{ fontSize: "0.65rem" }}>●</span>
-                        {activePrinter.isPaused
-                          ? "PAUSED"
-                          : activePrinter.status}
-                      </span>
-                    </div>
-
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "0.6rem",
-                        marginTop: "0.5rem",
-                        flexWrap: "wrap",
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontSize: "0.8rem",
-                          fontWeight: 600,
-                          color: "#1a73e8",
-                          backgroundColor: "#e8f0fe",
-                          padding: "0.15rem 0.55rem",
-                          borderRadius: "6px",
-                        }}
-                      >
-                        Default printer
-                      </span>
-                      <span
-                        className="muted"
-                        style={{ fontSize: "0.85rem", color: "#64748b" }}
-                      >
-                        • {formatSimpleCapabilities(activePrinter.capabilities)}
-                      </span>
-                    </div>
-                  </>
-                ) : (
-                  <div style={{ marginTop: "0.25rem" }}>
-                    <h2
-                      id="primary-printer-heading"
-                      style={{
-                        margin: 0,
-                        fontSize: "1.25rem",
-                        color: "#64748b",
-                      }}
-                    >
-                      No physical printer selected
-                    </h2>
-                    <p
-                      className="muted"
-                      style={{ fontSize: "0.85rem", margin: "0.25rem 0 0 0" }}
-                    >
-                      Select a physical printer to start accepting customer
-                      orders.
-                    </p>
-                  </div>
-                )}
+                  My Printers
+                </h2>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.6rem",
+                    marginTop: "0.35rem",
+                    fontSize: "0.875rem",
+                    color: "var(--text-muted, #64748b)",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <span style={{ color: "#16a34a", fontWeight: 600 }}>
+                    {readyPrinters.length} ready
+                  </span>
+                  <span>·</span>
+                  <span
+                    style={{
+                      color:
+                        attentionPrinters.length > 0 ? "#d97706" : "#64748b",
+                      fontWeight: attentionPrinters.length > 0 ? 600 : 400,
+                    }}
+                  >
+                    {attentionPrinters.length} needs attention
+                  </span>
+                  <span>·</span>
+                  <span>
+                    {displayedPrinters.length} printer
+                    {displayedPrinters.length === 1 ? "" : "s"}
+                  </span>
+                </div>
               </div>
 
-              {/* Action Buttons: Test Print & Change Printer */}
               <div
-                style={{
-                  display: "flex",
-                  gap: "0.75rem",
-                  flexWrap: "wrap",
-                  alignItems: "center",
-                }}
+                style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}
               >
-                {activePrinter && (
-                  <button
-                    type="button"
-                    className="primary-button"
-                    disabled={
-                      !activeAgent?.isOnline ||
-                      isRequestingTestPrint ||
-                      Boolean(isTestPrintActive)
-                    }
-                    onClick={() => void handleRequestTestPrint(activePrinter)}
-                    title={
-                      !activeAgent?.isOnline ? "Agent is offline" : undefined
-                    }
-                  >
-                    {isRequestingTestPrint
-                      ? "Sending test page…"
-                      : isTestPrintActive
-                        ? "Testing in progress…"
-                        : testPrint
-                          ? "Try Test Print Again"
-                          : "Test Print"}
-                  </button>
-                )}
-                <button
-                  type="button"
-                  className="secondary-button"
-                  onClick={() => setIsChangingPrinter(true)}
+                <label
+                  style={{
+                    fontSize: "0.8rem",
+                    color: "#64748b",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "0.4rem",
+                    cursor: "pointer",
+                    marginRight: "0.5rem",
+                  }}
                 >
-                  Change Printer
-                </button>
+                  <input
+                    type="checkbox"
+                    checked={showVirtualPrinters}
+                    onChange={(e) => setShowVirtualPrinters(e.target.checked)}
+                  />
+                  Show virtual queues
+                </label>
               </div>
             </div>
 
-            {/* Paused alert if printer has a problem */}
-            {activePrinter?.isPaused && (
+            {/* Offline Agent Warning Banner */}
+            {activeAgent && !activeAgent.isOnline && (
               <div
                 style={{
-                  marginTop: "1.25rem",
+                  marginBottom: "1.25rem",
                   padding: "0.75rem 1rem",
-                  backgroundColor: "#fef3c7",
-                  border: "1px solid #f59e0b",
+                  backgroundColor: "#fee2e2",
+                  border: "1px solid #ef4444",
                   borderRadius: "8px",
                   display: "flex",
-                  justifyContent: "space-between",
                   alignItems: "center",
-                  flexWrap: "wrap",
                   gap: "0.75rem",
+                  color: "#991b1b",
+                  fontSize: "0.875rem",
                 }}
               >
+                <span style={{ fontSize: "1.25rem" }}>⚠️</span>
                 <div>
-                  <strong style={{ color: "#92400e", display: "block" }}>
-                    ⏸️ PRINTING PAUSED
-                  </strong>
-                  <span style={{ fontSize: "0.85rem", color: "#78350f" }}>
-                    {activePrinter.pausedReason || "Printer problem reported"}
-                  </span>
+                  <strong>Shop PC Agent is Offline.</strong> Statuses below
+                  reflect the last known report from{" "}
+                  {formatRelativeTime(activeAgent.lastHeartbeatAt)}. Keep
+                  PrintGo Agent running on the shop PC to print orders.
                 </div>
+              </div>
+            )}
+
+            {/* Printer Cards List */}
+            {displayedPrinters.length === 0 ? (
+              <div
+                style={{
+                  textAlign: "center",
+                  padding: "2.5rem 1rem",
+                  color: "var(--text-muted, #64748b)",
+                }}
+              >
+                <p style={{ margin: "0 0 0.75rem 0", fontSize: "1rem" }}>
+                  No physical printers detected yet.
+                </p>
                 <button
                   type="button"
-                  className="secondary-button"
-                  disabled={checkingHealthId === activePrinter.id}
-                  onClick={() => void handleCheckHealth(activePrinter.id)}
-                  style={{ fontSize: "0.85rem" }}
+                  className="primary-button"
+                  onClick={() => setIsAddingPrinter(true)}
                 >
-                  {checkingHealthId === activePrinter.id
-                    ? "Checking…"
-                    : "Issue Solved / Check Again"}
+                  Detect & Add Printers
                 </button>
               </div>
-            )}
-
-            {/* Test print status banner */}
-            {activePrinter && testPrint && (
+            ) : (
               <div
-                className="test-print-status"
-                role="status"
                 style={{
-                  marginTop: "1rem",
-                  padding: "0.6rem 0.85rem",
-                  borderRadius: "6px",
-                  fontSize: "0.85rem",
-                  backgroundColor:
-                    testPrint.status === "SUCCEEDED"
-                      ? "#e6f4ea"
-                      : testPrint.status === "BLOCKED"
-                        ? "#fef7e0"
-                        : testPrint.status === "FAILED" ||
-                            testPrint.status === "EXPIRED"
-                          ? "#fce8e6"
-                          : "#e8f0fe",
-                  color:
-                    testPrint.status === "SUCCEEDED"
-                      ? "#137333"
-                      : testPrint.status === "BLOCKED"
-                        ? "#b06000"
-                        : testPrint.status === "FAILED" ||
-                            testPrint.status === "EXPIRED"
-                          ? "#c5221f"
-                          : "#1a73e8",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
+                  gap: "1rem",
                 }}
               >
-                <div>
-                  {isRequestingTestPrint && <span>Sending test page…</span>}
-                  {!isRequestingTestPrint && testPrint.status === "PENDING" && (
-                    <span>Waiting for Agent…</span>
-                  )}
-                  {!isRequestingTestPrint && testPrint.status === "CLAIMED" && (
-                    <span>Agent claimed command…</span>
-                  )}
-                  {!isRequestingTestPrint &&
-                    testPrint.status === "SUBMITTED" && (
-                      <span>
-                        Submitted to printer…
-                        {testPrint.spoolerJobId
-                          ? ` (Spooler Job #${testPrint.spoolerJobId})`
-                          : ""}
-                      </span>
-                    )}
-                  {!isRequestingTestPrint &&
-                    testPrint.status === "SUCCEEDED" && (
-                      <span>Test page submitted successfully.</span>
-                    )}
-                  {!isRequestingTestPrint && testPrint.status === "BLOCKED" && (
-                    <span>
-                      Printer needs attention:{" "}
-                      {testPrint.failureDetail ||
-                        testPrint.failureCode ||
-                        "Printer is blocked"}
-                    </span>
-                  )}
-                  {!isRequestingTestPrint && testPrint.status === "FAILED" && (
-                    <span>
-                      Test print failed
-                      {testPrint.failureDetail
-                        ? `: ${testPrint.failureDetail}`
-                        : ""}
-                    </span>
-                  )}
-                  {!isRequestingTestPrint && testPrint.status === "EXPIRED" && (
-                    <span>Test print timed out waiting for Agent.</span>
-                  )}
-                </div>
-                {testPrint.finishedAt ? (
-                  <span className="muted" style={{ fontSize: "0.75rem" }}>
-                    {formatRelativeTime(testPrint.finishedAt)}
-                  </span>
-                ) : null}
-              </div>
-            )}
+                {displayedPrinters.map((p) => {
+                  const isDefault =
+                    p.id === defaultProductionPrinterId ||
+                    p.isProductionDefault;
+                  const tp = testPrints[p.id] ?? p.latestTestPrint;
+                  const isTesting =
+                    requestingTestPrintId === p.id ||
+                    (tp &&
+                      (tp.status === "PENDING" ||
+                        tp.status === "CLAIMED" ||
+                        tp.status === "SUBMITTED"));
 
-            {/* Collapsed Diagnostics & Technical Details */}
-            {activePrinter && (
-              <details
-                style={{
-                  marginTop: "1.25rem",
-                  borderTop: "1px solid var(--border-color, #e0e0e0)",
-                  paddingTop: "0.75rem",
-                }}
-              >
-                <summary
-                  style={{
-                    cursor: "pointer",
-                    fontSize: "0.85rem",
-                    color: "var(--text-muted, #64748b)",
-                    userSelect: "none",
-                  }}
-                >
-                  Diagnostics & Technical Details
-                </summary>
-                <div
-                  style={{
-                    marginTop: "0.75rem",
-                    display: "grid",
-                    gap: "0.4rem",
-                    fontSize: "0.85rem",
-                    color: "var(--text-muted, #475569)",
-                  }}
-                >
-                  <div>
-                    Windows Queue:{" "}
-                    <code>{activePrinter.windowsPrinterName}</code>
-                  </div>
-                  <div>
-                    Port: <code>{activePrinter.portName || "Local/USB"}</code>
-                  </div>
-                  <div>
-                    Driver:{" "}
-                    <code>{activePrinter.driverName || "Windows Default"}</code>
-                  </div>
-                  <div>
-                    Supported Paper:{" "}
-                    {activePrinter.capabilities?.paperSizes?.join(", ") ||
-                      "Standard A4"}
-                  </div>
-                  <div style={{ marginTop: "0.5rem" }}>
-                    <button
-                      type="button"
-                      className="secondary-button compact"
-                      disabled={togglingPrinterId === activePrinter.id}
-                      onClick={() => void handleTogglePrinter(activePrinter)}
+                  // Status details
+                  const isAgentOnline = Boolean(activeAgent?.isOnline);
+                  const hasProblem =
+                    p.isPaused ||
+                    p.status === "BLOCKED" ||
+                    p.status === "ERROR";
+
+                  return (
+                    <div
+                      key={p.id}
+                      style={{
+                        border: isDefault
+                          ? "2px solid #2563eb"
+                          : "1px solid var(--border-color, #cbd5e1)",
+                        backgroundColor: p.enabled
+                          ? isDefault
+                            ? "#f8faff"
+                            : "#ffffff"
+                          : "#f8fafc",
+                        borderRadius: "10px",
+                        padding: "1.25rem",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "0.85rem",
+                        boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
+                        opacity: p.enabled ? 1 : 0.8,
+                      }}
                     >
-                      {activePrinter.enabled ? "Disable" : "Enable"}
-                    </button>
-                  </div>
-                </div>
-              </details>
+                      {/* Card Header: Name + Status Badge */}
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "flex-start",
+                          gap: "0.5rem",
+                        }}
+                      >
+                        <div>
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "0.5rem",
+                              flexWrap: "wrap",
+                            }}
+                          >
+                            <h3
+                              style={{
+                                margin: 0,
+                                fontSize: "1.15rem",
+                                fontWeight: 700,
+                                color: "var(--text-primary, #0f172a)",
+                              }}
+                            >
+                              {p.displayName}
+                            </h3>
+                            {isDefault && (
+                              <span
+                                style={{
+                                  fontSize: "0.75rem",
+                                  fontWeight: 700,
+                                  backgroundColor: "#dbeafe",
+                                  color: "#1d4ed8",
+                                  padding: "0.15rem 0.5rem",
+                                  borderRadius: "9999px",
+                                }}
+                              >
+                                Default
+                              </span>
+                            )}
+                            {(p.priority ?? 0) > 0 && (
+                              <span
+                                style={{
+                                  fontSize: "0.75rem",
+                                  fontWeight: 600,
+                                  backgroundColor: "#fef3c7",
+                                  color: "#b45309",
+                                  padding: "0.15rem 0.5rem",
+                                  borderRadius: "9999px",
+                                }}
+                              >
+                                Priority {p.priority}
+                              </span>
+                            )}
+                            {!p.enabled && (
+                              <span
+                                style={{
+                                  fontSize: "0.75rem",
+                                  fontWeight: 600,
+                                  backgroundColor: "#e2e8f0",
+                                  color: "#475569",
+                                  padding: "0.15rem 0.5rem",
+                                  borderRadius: "9999px",
+                                }}
+                              >
+                                Disabled
+                              </span>
+                            )}
+                          </div>
+                          <p
+                            className="muted"
+                            style={{
+                              margin: "0.25rem 0 0 0",
+                              fontSize: "0.8rem",
+                            }}
+                          >
+                            {formatSimpleCapabilities(p.capabilities)}
+                          </p>
+                        </div>
+
+                        {/* Status Badge */}
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "0.35rem",
+                            padding: "0.25rem 0.65rem",
+                            borderRadius: "9999px",
+                            fontSize: "0.775rem",
+                            fontWeight: 600,
+                            whiteSpace: "nowrap",
+                            backgroundColor: !p.enabled
+                              ? "#e2e8f0"
+                              : !isAgentOnline
+                                ? "#fee2e2"
+                                : p.isPaused
+                                  ? "#fef3c7"
+                                  : p.status === "ONLINE"
+                                    ? "#dcfce7"
+                                    : "#fee2e2",
+                            color: !p.enabled
+                              ? "#475569"
+                              : !isAgentOnline
+                                ? "#991b1b"
+                                : p.isPaused
+                                  ? "#92400e"
+                                  : p.status === "ONLINE"
+                                    ? "#15803d"
+                                    : "#991b1b",
+                          }}
+                        >
+                          <span style={{ fontSize: "0.6rem" }}>●</span>
+                          {!p.enabled
+                            ? "Disabled"
+                            : !isAgentOnline
+                              ? "Agent Offline"
+                              : p.isPaused
+                                ? "Paused"
+                                : p.status === "ONLINE"
+                                  ? "Ready"
+                                  : p.status === "OFFLINE"
+                                    ? "Offline"
+                                    : p.status}
+                        </span>
+                      </div>
+
+                      {/* Problem Alert Box */}
+                      {hasProblem && (
+                        <div
+                          style={{
+                            padding: "0.6rem 0.75rem",
+                            backgroundColor: "#fef3c7",
+                            border: "1px solid #f59e0b",
+                            borderRadius: "6px",
+                            fontSize: "0.825rem",
+                            color: "#78350f",
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            flexWrap: "wrap",
+                            gap: "0.5rem",
+                          }}
+                        >
+                          <div>
+                            <strong>Problem: </strong>
+                            {friendlyPrinterMessage(
+                              p.statusReason,
+                              p.pausedReason,
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            className="secondary-button compact"
+                            disabled={checkingHealthId === p.id}
+                            onClick={() => void handleCheckHealth(p.id)}
+                            style={{ fontSize: "0.775rem" }}
+                          >
+                            {checkingHealthId === p.id
+                              ? "Checking…"
+                              : "Check Again"}
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Test Print Banner */}
+                      {tp && (
+                        <div
+                          style={{
+                            padding: "0.5rem 0.75rem",
+                            borderRadius: "6px",
+                            fontSize: "0.8rem",
+                            backgroundColor:
+                              tp.status === "SUCCEEDED"
+                                ? "#dcfce7"
+                                : tp.status === "BLOCKED"
+                                  ? "#fef3c7"
+                                  : tp.status === "FAILED" ||
+                                      tp.status === "EXPIRED"
+                                    ? "#fee2e2"
+                                    : "#e0f2fe",
+                            color:
+                              tp.status === "SUCCEEDED"
+                                ? "#15803d"
+                                : tp.status === "BLOCKED"
+                                  ? "#92400e"
+                                  : tp.status === "FAILED" ||
+                                      tp.status === "EXPIRED"
+                                    ? "#991b1b"
+                                    : "#0369a1",
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                          }}
+                        >
+                          <div>
+                            {requestingTestPrintId === p.id ? (
+                              <span>Sending test page…</span>
+                            ) : tp.status === "PENDING" ? (
+                              <span>Waiting for Agent…</span>
+                            ) : tp.status === "CLAIMED" ? (
+                              <span>Agent claimed command…</span>
+                            ) : tp.status === "SUBMITTED" ? (
+                              <span>
+                                Submitted to printer…
+                                {tp.spoolerJobId
+                                  ? ` (Job #${tp.spoolerJobId})`
+                                  : ""}
+                              </span>
+                            ) : tp.status === "SUCCEEDED" ? (
+                              <span>Test page submitted successfully.</span>
+                            ) : tp.status === "BLOCKED" ? (
+                              <span>
+                                Printer needs attention:{" "}
+                                {friendlyPrinterMessage(
+                                  tp.failureCode,
+                                  tp.failureDetail,
+                                )}
+                              </span>
+                            ) : tp.status === "FAILED" ? (
+                              <span>
+                                Test print failed:{" "}
+                                {tp.failureDetail || "Unknown error"}
+                              </span>
+                            ) : (
+                              <span>Test print timed out.</span>
+                            )}
+                          </div>
+                          {tp.finishedAt ? (
+                            <span style={{ fontSize: "0.7rem", opacity: 0.8 }}>
+                              {formatRelativeTime(tp.finishedAt)}
+                            </span>
+                          ) : null}
+                        </div>
+                      )}
+
+                      {/* Action Controls */}
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          marginTop: "auto",
+                          paddingTop: "0.6rem",
+                          borderTop: "1px solid var(--border-color, #e2e8f0)",
+                          flexWrap: "wrap",
+                          gap: "0.5rem",
+                        }}
+                      >
+                        <div style={{ display: "flex", gap: "0.4rem" }}>
+                          <button
+                            type="button"
+                            className="secondary-button compact"
+                            disabled={
+                              !activeAgent?.isOnline || Boolean(isTesting)
+                            }
+                            onClick={() => void handleRequestTestPrint(p)}
+                            title={
+                              !activeAgent?.isOnline
+                                ? "Agent is offline"
+                                : undefined
+                            }
+                          >
+                            {isTesting
+                              ? "Testing…"
+                              : tp
+                                ? "Try Test Print Again"
+                                : "Test Print"}
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary-button compact"
+                            onClick={() => openSettingsModal(p)}
+                          >
+                            Settings
+                          </button>
+                        </div>
+
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: "0.4rem",
+                            alignItems: "center",
+                          }}
+                        >
+                          {!isDefault && p.enabled && !isVirtualPrinter(p) && (
+                            <button
+                              type="button"
+                              className="text-button"
+                              style={{
+                                fontSize: "0.8rem",
+                                color: "#2563eb",
+                                cursor: "pointer",
+                              }}
+                              disabled={settingDefaultId === p.id}
+                              onClick={() => void handleSetDefaultPrinter(p)}
+                            >
+                              {settingDefaultId === p.id
+                                ? "Setting…"
+                                : "Set Default"}
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="secondary-button compact"
+                            disabled={togglingPrinterId === p.id}
+                            onClick={() => void handleTogglePrinter(p)}
+                          >
+                            {p.enabled ? "Disable" : "Enable"}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </section>
 
-          {/* Section 2: PRINTGO AGENT */}
+          {/* Section: PRINTGO WINDOWS AGENT (At bottom) */}
           {activeAgent && (
             <section
               className="panel"
@@ -1070,10 +1299,10 @@ export function PrinterPage({
                       letterSpacing: "1.2px",
                       fontWeight: 700,
                       color: "var(--text-muted, #64748b)",
-                      marginBottom: "0.5rem",
+                      marginBottom: "0.4rem",
                     }}
                   >
-                    PRINTGO AGENT
+                    PRINTGO WINDOWS AGENT
                   </span>
                   <div
                     style={{
@@ -1104,9 +1333,9 @@ export function PrinterPage({
                         fontSize: "0.8rem",
                         fontWeight: 600,
                         backgroundColor: activeAgent.isOnline
-                          ? "#e6f4ea"
-                          : "#fce8e6",
-                        color: activeAgent.isOnline ? "#137333" : "#c5221f",
+                          ? "#dcfce7"
+                          : "#fee2e2",
+                        color: activeAgent.isOnline ? "#15803d" : "#991b1b",
                       }}
                     >
                       <span style={{ fontSize: "0.65rem" }}>●</span>
@@ -1121,14 +1350,30 @@ export function PrinterPage({
                       color: "#64748b",
                     }}
                   >
-                    Last seen: {formatRelativeTime(activeAgent.lastHeartbeatAt)}
+                    One Agent manages all {physicalPrinters.length} shop
+                    printers • Last seen:{" "}
+                    {formatRelativeTime(activeAgent.lastHeartbeatAt)}
                     {activeAgent.pairedAt
                       ? ` • Paired: ${new Date(activeAgent.pairedAt).toLocaleDateString()}`
                       : ""}
                   </p>
                 </div>
 
-                <div>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: "0.5rem",
+                    alignItems: "center",
+                  }}
+                >
+                  <button
+                    className="secondary-button"
+                    disabled={generatingCode}
+                    onClick={() => void handleGeneratePairCode()}
+                    type="button"
+                  >
+                    {generatingCode ? "Generating…" : "Connect New Agent"}
+                  </button>
                   {confirmRevokeId === activeAgent.id ? (
                     <div
                       style={{
@@ -1165,7 +1410,7 @@ export function PrinterPage({
                       onClick={() => setConfirmRevokeId(activeAgent.id)}
                       type="button"
                     >
-                      Disconnect Agent
+                      Revoke Agent
                     </button>
                   )}
                 </div>
@@ -1173,7 +1418,7 @@ export function PrinterPage({
             </section>
           )}
 
-          {/* Section 3: Stale / Old Duplicate Agents (Shop cleanup) */}
+          {/* Stale / Inactive Agents List */}
           {staleAgents.length > 0 && (
             <section className="panel" aria-labelledby="stale-agents-heading">
               <h3
@@ -1273,12 +1518,12 @@ export function PrinterPage({
             </section>
           )}
 
-          {/* Change Printer Modal */}
-          {isChangingPrinter && (
+          {/* ADD PRINTER MODAL */}
+          {isAddingPrinter && (
             <div
               role="dialog"
               aria-modal="true"
-              aria-labelledby="change-printer-title"
+              aria-labelledby="add-printer-title"
               style={{
                 position: "fixed",
                 inset: 0,
@@ -1315,23 +1560,23 @@ export function PrinterPage({
                 >
                   <div>
                     <h2
-                      id="change-printer-title"
+                      id="add-printer-title"
                       style={{ margin: 0, fontSize: "1.25rem" }}
                     >
-                      Choose Production Printer
+                      Connect & Add Printer
                     </h2>
                     <p
                       className="muted"
                       style={{ margin: "0.25rem 0 0 0", fontSize: "0.85rem" }}
                     >
-                      Select the physical printer used for customer online
-                      orders.
+                      Automatic discovery for all your shop USB and network
+                      printers.
                     </p>
                   </div>
                   <button
                     type="button"
                     className="text-button"
-                    onClick={() => setIsChangingPrinter(false)}
+                    onClick={() => setIsAddingPrinter(false)}
                     style={{ fontSize: "1.25rem", padding: "0.25rem 0.5rem" }}
                   >
                     ✕
@@ -1344,148 +1589,121 @@ export function PrinterPage({
                     overflowY: "auto",
                     display: "flex",
                     flexDirection: "column",
-                    gap: "0.75rem",
+                    gap: "1rem",
                   }}
                 >
-                  {selectablePrinters.length === 0 ? (
-                    <p
-                      className="muted"
-                      style={{ textAlign: "center", padding: "1.5rem 0" }}
-                    >
-                      No physical printers detected. Make sure your printer is
-                      connected via USB/Network and powered on.
-                    </p>
-                  ) : (
-                    selectablePrinters.map((p) => {
-                      const isCurrentDefault = p.id === activePrinter?.id;
-                      return (
-                        <div
-                          key={p.id}
-                          style={{
-                            border: isCurrentDefault
-                              ? "2px solid #1a73e8"
-                              : "1px solid #cbd5e1",
-                            backgroundColor: isCurrentDefault
-                              ? "#f8faff"
-                              : "#ffffff",
-                            borderRadius: "8px",
-                            padding: "1rem",
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "center",
-                            gap: "0.75rem",
-                          }}
-                        >
-                          <div>
-                            <div
-                              style={{
-                                display: "flex",
-                                alignItems: "center",
-                                gap: "0.5rem",
-                              }}
-                            >
-                              <strong>{p.displayName}</strong>
-                              <span
-                                style={{
-                                  fontSize: "0.75rem",
-                                  fontWeight: 600,
-                                  color:
-                                    p.status === "ONLINE"
-                                      ? "#137333"
-                                      : "#c5221f",
-                                }}
-                              >
-                                ● {p.status === "ONLINE" ? "Online" : "Offline"}
-                              </span>
-                            </div>
-                            <div
-                              className="muted"
-                              style={{
-                                fontSize: "0.8rem",
-                                marginTop: "0.2rem",
-                              }}
-                            >
-                              {formatSimpleCapabilities(p.capabilities)}
-                            </div>
-                          </div>
-
+                  {/* If there are discovered unconfigured printers on the agent */}
+                  {unconfiguredPrinters.length > 0 ? (
+                    <div>
+                      <h3
+                        style={{
+                          fontSize: "0.95rem",
+                          margin: "0 0 0.5rem 0",
+                          color: "#1e293b",
+                        }}
+                      >
+                        Detected Printers Ready to Add:
+                      </h3>
+                      <div
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "0.6rem",
+                        }}
+                      >
+                        {unconfiguredPrinters.map((up) => (
                           <div
+                            key={up.id}
                             style={{
+                              border: "1px solid #cbd5e1",
+                              borderRadius: "8px",
+                              padding: "0.75rem 1rem",
                               display: "flex",
-                              gap: "0.5rem",
+                              justifyContent: "space-between",
                               alignItems: "center",
+                              backgroundColor: "#f8fafc",
                             }}
                           >
-                            {isCurrentDefault ? (
-                              <span
+                            <div>
+                              <strong>{up.displayName}</strong>
+                              <p
+                                className="muted"
                                 style={{
-                                  fontSize: "0.85rem",
-                                  fontWeight: 600,
-                                  color: "#1a73e8",
+                                  margin: "0.2rem 0 0 0",
+                                  fontSize: "0.8rem",
                                 }}
                               >
-                                ✓ Selected
-                              </span>
-                            ) : (
-                              <button
-                                type="button"
-                                className="primary-button compact"
-                                disabled={settingDefaultId === p.id}
-                                onClick={() => {
-                                  void (async () => {
-                                    await handleSetDefaultPrinter(p);
-                                    setIsChangingPrinter(false);
-                                  })();
-                                }}
-                              >
-                                {settingDefaultId === p.id
-                                  ? "Setting…"
-                                  : "Set as Printer"}
-                              </button>
-                            )}
+                                {formatSimpleCapabilities(up.capabilities)} •{" "}
+                                {up.portName || "USB/Network"}
+                              </p>
+                            </div>
                             <button
                               type="button"
-                              className="secondary-button compact"
-                              disabled={
-                                !activeAgent?.isOnline ||
-                                requestingTestPrintId === p.id
-                              }
-                              onClick={() => void handleRequestTestPrint(p)}
+                              className="primary-button compact"
+                              disabled={togglingPrinterId === up.id}
+                              onClick={() => void handleTogglePrinter(up)}
                             >
-                              Test Print
+                              {togglingPrinterId === up.id
+                                ? "Adding…"
+                                : "+ Add Printer"}
                             </button>
                           </div>
-                        </div>
-                      );
-                    })
-                  )}
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {/* Setup guide */}
+                  <div
+                    style={{
+                      padding: "1rem",
+                      backgroundColor: "#f1f5f9",
+                      borderRadius: "8px",
+                      fontSize: "0.875rem",
+                      color: "#334155",
+                    }}
+                  >
+                    <h4 style={{ margin: "0 0 0.5rem 0", fontSize: "0.95rem" }}>
+                      Plug & Play Setup:
+                    </h4>
+                    <ol
+                      style={{
+                        margin: 0,
+                        paddingLeft: "1.25rem",
+                        lineHeight: 1.6,
+                      }}
+                    >
+                      <li>
+                        Connect your printer to the shop Windows PC via{" "}
+                        <strong>USB cable</strong> or connect it to the{" "}
+                        <strong>shop Wi-Fi / LAN</strong>.
+                      </li>
+                      <li>
+                        Turn on the printer power and verify it has paper.
+                      </li>
+                      <li>
+                        Click <strong>Scan for Printers</strong> below. PrintGo
+                        Agent will discover it in Windows and register it
+                        automatically!
+                      </li>
+                    </ol>
+                  </div>
 
                   <div
                     style={{
-                      marginTop: "0.75rem",
-                      paddingTop: "0.75rem",
-                      borderTop: "1px solid #e2e8f0",
+                      display: "flex",
+                      justifyContent: "center",
+                      paddingTop: "0.5rem",
                     }}
                   >
-                    <label
-                      style={{
-                        fontSize: "0.8rem",
-                        color: "#64748b",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: "0.4rem",
-                        cursor: "pointer",
-                      }}
+                    <button
+                      type="button"
+                      className="primary-button"
+                      disabled={refreshing}
+                      onClick={() => void loadPrinters(true)}
                     >
-                      <input
-                        type="checkbox"
-                        checked={showVirtualPrinters}
-                        onChange={(e) =>
-                          setShowVirtualPrinters(e.target.checked)
-                        }
-                      />
-                      Show virtual / software printers (Developer debug mode)
-                    </label>
+                      {refreshing ? "Scanning PC…" : "🔄 Scan for New Printers"}
+                    </button>
                   </div>
                 </div>
 
@@ -1500,9 +1718,351 @@ export function PrinterPage({
                   <button
                     type="button"
                     className="secondary-button"
-                    onClick={() => setIsChangingPrinter(false)}
+                    onClick={() => setIsAddingPrinter(false)}
                   >
                     Done
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* SETTINGS MODAL */}
+          {settingsPrinter && (
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="printer-settings-title"
+              style={{
+                position: "fixed",
+                inset: 0,
+                backgroundColor: "rgba(0, 0, 0, 0.5)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                zIndex: 100,
+                padding: "1rem",
+              }}
+            >
+              <div
+                style={{
+                  backgroundColor: "#ffffff",
+                  borderRadius: "12px",
+                  maxWidth: "520px",
+                  width: "100%",
+                  maxHeight: "90vh",
+                  display: "flex",
+                  flexDirection: "column",
+                  boxShadow:
+                    "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)",
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    padding: "1.25rem 1.5rem",
+                    borderBottom: "1px solid #e2e8f0",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                  }}
+                >
+                  <div>
+                    <h2
+                      id="printer-settings-title"
+                      style={{ margin: 0, fontSize: "1.25rem" }}
+                    >
+                      Printer Settings
+                    </h2>
+                    <p
+                      className="muted"
+                      style={{ margin: "0.25rem 0 0 0", fontSize: "0.85rem" }}
+                    >
+                      Configure friendly name, default status, and priorities.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="text-button"
+                    onClick={() => setSettingsPrinter(null)}
+                    style={{ fontSize: "1.25rem", padding: "0.25rem 0.5rem" }}
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div
+                  style={{
+                    padding: "1.25rem 1.5rem",
+                    overflowY: "auto",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "1.1rem",
+                  }}
+                >
+                  {/* Friendly Display Name */}
+                  <div>
+                    <label
+                      htmlFor="printer-friendly-name"
+                      style={{ display: "block", marginBottom: "0.35rem" }}
+                    >
+                      Printer Name (Friendly):
+                    </label>
+                    <input
+                      id="printer-friendly-name"
+                      type="text"
+                      value={formDisplayName}
+                      onChange={(e) => setFormDisplayName(e.target.value)}
+                      placeholder="e.g. Counter HP LaserJet"
+                      maxLength={100}
+                    />
+                    <p
+                      className="muted"
+                      style={{ fontSize: "0.75rem", margin: "0.25rem 0 0 0" }}
+                    >
+                      This name is displayed throughout the shop admin and
+                      tracking.
+                    </p>
+                  </div>
+
+                  {/* Enable / Disable */}
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      padding: "0.75rem 1rem",
+                      backgroundColor: "#f8fafc",
+                      borderRadius: "8px",
+                      border: "1px solid #e2e8f0",
+                    }}
+                  >
+                    <div>
+                      <strong>Accept Orders (Enabled)</strong>
+                      <p
+                        className="muted"
+                        style={{ margin: "0.2rem 0 0 0", fontSize: "0.8rem" }}
+                      >
+                        Disable to temporarily take this printer out of service.
+                      </p>
+                    </div>
+                    <label
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={formEnabled}
+                        onChange={(e) => setFormEnabled(e.target.checked)}
+                      />
+                    </label>
+                  </div>
+
+                  {/* Default Printer Status */}
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      padding: "0.75rem 1rem",
+                      backgroundColor: "#f8fafc",
+                      borderRadius: "8px",
+                      border: "1px solid #e2e8f0",
+                    }}
+                  >
+                    <div>
+                      <strong>Default Production Printer</strong>
+                      <p
+                        className="muted"
+                        style={{ margin: "0.2rem 0 0 0", fontSize: "0.8rem" }}
+                      >
+                        {settingsPrinter.id === defaultProductionPrinterId ||
+                        settingsPrinter.isProductionDefault
+                          ? "This printer is currently your primary default."
+                          : "Set this printer as the default for new orders."}
+                      </p>
+                    </div>
+                    {!(
+                      settingsPrinter.id === defaultProductionPrinterId ||
+                      settingsPrinter.isProductionDefault
+                    ) && (
+                      <button
+                        type="button"
+                        className="secondary-button compact"
+                        disabled={settingDefaultId === settingsPrinter.id}
+                        onClick={() => {
+                          void (async () => {
+                            await handleSetDefaultPrinter(settingsPrinter);
+                            setSettingsPrinter(null);
+                          })();
+                        }}
+                      >
+                        {settingDefaultId === settingsPrinter.id
+                          ? "Setting…"
+                          : "Set Default"}
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Routing Priority */}
+                  <div>
+                    <label
+                      htmlFor="printer-priority"
+                      style={{ display: "block", marginBottom: "0.35rem" }}
+                    >
+                      Routing Priority (0 = Normal, 1+ = Higher):
+                    </label>
+                    <input
+                      id="printer-priority"
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={formPriority}
+                      onChange={(e) =>
+                        setFormPriority(Number(e.target.value) || 0)
+                      }
+                    />
+                    <p
+                      className="muted"
+                      style={{ fontSize: "0.75rem", margin: "0.25rem 0 0 0" }}
+                    >
+                      Higher priority printers are selected first when multiple
+                      printers match order specs.
+                    </p>
+                  </div>
+
+                  {/* Fallback Printer */}
+                  <div>
+                    <label
+                      htmlFor="printer-fallback"
+                      style={{ display: "block", marginBottom: "0.35rem" }}
+                    >
+                      Automatic Fallback Printer (Optional):
+                    </label>
+                    <select
+                      id="printer-fallback"
+                      value={formFallbackId}
+                      onChange={(e) => setFormFallbackId(e.target.value)}
+                    >
+                      <option value="">None (No fallback)</option>
+                      {displayedPrinters
+                        .filter((p) => p.id !== settingsPrinter.id && p.enabled)
+                        .map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.displayName} (
+                            {formatSimpleCapabilities(p.capabilities)})
+                          </option>
+                        ))}
+                    </select>
+                    {formFallbackId ? (
+                      <label
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "0.4rem",
+                          marginTop: "0.4rem",
+                          fontSize: "0.8rem",
+                          color: "#334155",
+                          cursor: "pointer",
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={formAutoFallback}
+                          onChange={(e) =>
+                            setFormAutoFallback(e.target.checked)
+                          }
+                          disabled
+                        />
+                        <span style={{ opacity: 0.7 }}>
+                          Auto-reroute to fallback printer when this printer is
+                          paused or offline <i>(Routing coming in Phase 3)</i>
+                        </span>
+                      </label>
+                    ) : null}
+                  </div>
+
+                  {/* Advanced Technical Details */}
+                  <details
+                    style={{
+                      borderTop: "1px solid #e2e8f0",
+                      paddingTop: "0.75rem",
+                    }}
+                  >
+                    <summary
+                      style={{
+                        cursor: "pointer",
+                        fontSize: "0.85rem",
+                        color: "var(--text-muted, #64748b)",
+                        userSelect: "none",
+                      }}
+                    >
+                      Advanced Technical Details
+                    </summary>
+                    <div
+                      style={{
+                        marginTop: "0.5rem",
+                        display: "grid",
+                        gap: "0.35rem",
+                        fontSize: "0.8rem",
+                        color: "#475569",
+                        backgroundColor: "#f8fafc",
+                        padding: "0.75rem",
+                        borderRadius: "6px",
+                      }}
+                    >
+                      <div>
+                        Windows Queue:{" "}
+                        <code>{settingsPrinter.windowsPrinterName}</code>
+                      </div>
+                      <div>
+                        Port:{" "}
+                        <code>{settingsPrinter.portName || "Local/USB"}</code>
+                      </div>
+                      <div>
+                        Driver:{" "}
+                        <code>
+                          {settingsPrinter.driverName || "Standard Driver"}
+                        </code>
+                      </div>
+                      <div>
+                        Hardware ID: <code>{settingsPrinter.id}</code>
+                      </div>
+                      <div>
+                        Supported Sizes:{" "}
+                        {settingsPrinter.capabilities?.paperSizes?.join(", ") ||
+                          "A4"}
+                      </div>
+                    </div>
+                  </details>
+                </div>
+
+                <div
+                  style={{
+                    padding: "1rem 1.5rem",
+                    borderTop: "1px solid #e2e8f0",
+                    display: "flex",
+                    justifyContent: "flex-end",
+                    gap: "0.5rem",
+                  }}
+                >
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => setSettingsPrinter(null)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="primary-button"
+                    disabled={savingSettings}
+                    onClick={() => void handleSaveSettings()}
+                  >
+                    {savingSettings ? "Saving…" : "Save Settings"}
                   </button>
                 </div>
               </div>

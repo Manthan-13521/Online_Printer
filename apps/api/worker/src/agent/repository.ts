@@ -166,6 +166,23 @@ export interface AgentRepository {
     fallbackPrinterId: string | null;
     autoFallbackEnabled: boolean;
   }>;
+  updatePrinterConfig(input: {
+    printerId: string;
+    enabled?: boolean | undefined;
+    displayName?: string | undefined;
+    priority?: number | undefined;
+    fallbackPrinterId?: string | null | undefined;
+    autoFallbackEnabled?: boolean | undefined;
+    adminId: string;
+    nowMs: number;
+  }): Promise<{
+    id: string;
+    enabled: boolean;
+    displayName: string;
+    priority: number;
+    fallbackPrinterId: string | null;
+    autoFallbackEnabled: boolean;
+  }>;
   checkPrinterHealth(
     printerId: string,
     adminId: string,
@@ -202,6 +219,7 @@ interface PrinterRow {
   health_check_requested?: number | null;
   fallback_printer_id?: string | null;
   auto_fallback_enabled?: number | null;
+  priority?: number | null;
 }
 
 export class D1AgentRepository implements AgentRepository {
@@ -457,7 +475,8 @@ export class D1AgentRepository implements AgentRepository {
         const virtualChanged = existing.is_virtual !== (p.isVirtual ? 1 : 0);
         const portChanged = existing.port_name !== (p.portName ?? null);
         const driverChanged = existing.driver_name !== (p.driverName ?? null);
-        const forceDisable = p.isVirtual && existing.enabled === 1;
+        const hardwareChanged = portChanged || driverChanged;
+        const forceDisable = (p.isVirtual || hardwareChanged) && existing.enabled === 1;
 
         if (
           capsChanged ||
@@ -466,9 +485,7 @@ export class D1AgentRepository implements AgentRepository {
           nameChanged ||
           eligibleChanged ||
           virtualChanged ||
-          portChanged ||
-          driverChanged ||
-          forceDisable
+          hardwareChanged
         ) {
           statements.push(
             this.db
@@ -490,7 +507,7 @@ export class D1AgentRepository implements AgentRepository {
                 p.isVirtual ? 1 : 0,
                 p.portName ?? null,
                 p.driverName ?? null,
-                p.isVirtual ? 1 : 0,
+                forceDisable ? 1 : 0,
                 input.nowMs,
                 input.nowMs,
                 existing.id,
@@ -609,17 +626,17 @@ export class D1AgentRepository implements AgentRepository {
                 status, status_reason, capabilities_json, last_status_at_ms,
                 is_production_eligible, is_virtual, port_name, driver_name,
                 is_paused, paused_reason, paused_at_ms, last_health_check_at_ms, health_check_requested,
-                fallback_printer_id, auto_fallback_enabled
-         FROM printers ORDER BY windows_printer_name ASC`,
+                fallback_printer_id, auto_fallback_enabled, priority
+         FROM printers ORDER BY priority DESC, windows_printer_name ASC`,
         ),
         this.db.prepare(
           `SELECT ptc.id, ptc.printer_id, ptc.agent_id, ptc.status, ptc.spooler_job_id,
                 ptc.failure_code, ptc.failure_detail, ptc.created_at_ms, ptc.expires_at_ms,
                 ptc.claimed_at_ms, ptc.finished_at_ms
          FROM printers p JOIN printer_test_commands ptc ON ptc.id = (
-           SELECT id FROM printer_test_commands WHERE printer_id = p.id
-           ORDER BY created_at_ms DESC, id DESC LIMIT 1
-         )`,
+            SELECT id FROM printer_test_commands WHERE printer_id = p.id
+            ORDER BY created_at_ms DESC, id DESC LIMIT 1
+          )`,
         ),
         this.db.prepare(
           `SELECT default_production_printer_id FROM installation WHERE id = 1`,
@@ -687,6 +704,7 @@ export class D1AgentRepository implements AgentRepository {
         healthCheckRequested: pr.health_check_requested === 1,
         fallbackPrinterId: pr.fallback_printer_id ?? null,
         autoFallbackEnabled: pr.auto_fallback_enabled === 1,
+        priority: pr.priority ?? 0,
       });
       printersByAgent.set(pr.agent_id, list);
     }
@@ -770,38 +788,130 @@ export class D1AgentRepository implements AgentRepository {
     return true;
   }
 
-  async togglePrinter(input: {
+  async updatePrinterConfig(input: {
     printerId: string;
-    enabled: boolean;
+    enabled?: boolean | undefined;
+    displayName?: string | undefined;
+    priority?: number | undefined;
+    fallbackPrinterId?: string | null | undefined;
+    autoFallbackEnabled?: boolean | undefined;
     adminId: string;
     nowMs: number;
-  }): Promise<boolean> {
-    if (input.enabled) {
-      const printer = await this.db
-        .prepare(
-          `SELECT is_virtual, is_production_eligible FROM printers WHERE id = ?`,
-        )
-        .bind(input.printerId)
-        .first<{ is_virtual: number; is_production_eligible: number }>();
-      if (!printer) {
-        return false;
-      }
+  }): Promise<{
+    id: string;
+    enabled: boolean;
+    displayName: string;
+    priority: number;
+    fallbackPrinterId: string | null;
+    autoFallbackEnabled: boolean;
+  }> {
+    const printer = await this.db
+      .prepare(
+        `SELECT id, is_virtual, is_production_eligible, enabled, display_name,
+                fallback_printer_id, auto_fallback_enabled, priority
+         FROM printers WHERE id = ?`,
+      )
+      .bind(input.printerId)
+      .first<{
+        id: string;
+        is_virtual: number;
+        is_production_eligible: number;
+        enabled: number;
+        display_name: string;
+        fallback_printer_id: string | null;
+        auto_fallback_enabled: number | null;
+        priority: number | null;
+      }>();
+
+    if (!printer) {
+      throw new Error("PRINTER_NOT_FOUND");
+    }
+
+    if (input.enabled === true) {
       if (printer.is_virtual === 1 || printer.is_production_eligible === 0) {
         throw new Error("CANNOT_ENABLE_VIRTUAL_PRINTER");
       }
     }
 
-    const result = await this.db
-      .prepare(
-        `UPDATE printers
-         SET enabled = ?, updated_at_ms = ?
-         WHERE id = ?`,
-      )
-      .bind(input.enabled ? 1 : 0, input.nowMs, input.printerId)
-      .run();
+    if (input.fallbackPrinterId !== undefined) {
+      if (input.fallbackPrinterId === input.printerId) {
+        throw new Error("FALLBACK_SELF_REFERENCE");
+      }
+      if (input.fallbackPrinterId !== null) {
+        const target = await this.db
+          .prepare(`SELECT id, fallback_printer_id FROM printers WHERE id = ?`)
+          .bind(input.fallbackPrinterId)
+          .first<{ id: string; fallback_printer_id: string | null }>();
+        if (!target) {
+          throw new Error("FALLBACK_PRINTER_NOT_FOUND");
+        }
+        if (target.fallback_printer_id === input.printerId) {
+          throw new Error("FALLBACK_LOOP_DETECTED");
+        }
+      }
+    }
 
-    if (result.meta.changes === 1) {
-      await this.db
+    const nextEnabled =
+      input.enabled !== undefined ? (input.enabled ? 1 : 0) : printer.enabled;
+    const nextDisplayName =
+      input.displayName !== undefined
+        ? input.displayName.trim()
+        : printer.display_name;
+    const nextPriority =
+      input.priority !== undefined ? input.priority : (printer.priority ?? 0);
+    const nextFallback =
+      input.fallbackPrinterId !== undefined
+        ? input.fallbackPrinterId
+        : printer.fallback_printer_id;
+    const nextAutoFallback =
+      input.autoFallbackEnabled !== undefined
+        ? input.autoFallbackEnabled
+          ? 1
+          : 0
+        : (printer.auto_fallback_enabled ?? 0);
+
+    const updates: string[] = ["updated_at_ms = ?"];
+    const bindings: (string | number | null)[] = [input.nowMs];
+
+    if (input.enabled !== undefined) {
+      updates.push("enabled = ?");
+      bindings.push(nextEnabled);
+    }
+    if (input.displayName !== undefined) {
+      updates.push("display_name = ?");
+      bindings.push(nextDisplayName);
+    }
+    if (input.priority !== undefined) {
+      updates.push("priority = ?");
+      bindings.push(nextPriority);
+    }
+    if (input.fallbackPrinterId !== undefined) {
+      updates.push("fallback_printer_id = ?");
+      bindings.push(nextFallback);
+    }
+    if (input.autoFallbackEnabled !== undefined) {
+      updates.push("auto_fallback_enabled = ?");
+      bindings.push(nextAutoFallback);
+    }
+
+    bindings.push(input.printerId);
+
+    const auditAction =
+      input.enabled !== undefined &&
+      input.displayName === undefined &&
+      input.priority === undefined &&
+      input.fallbackPrinterId === undefined &&
+      input.autoFallbackEnabled === undefined
+        ? input.enabled
+          ? "PRINTER_ENABLED"
+          : "PRINTER_DISABLED"
+        : "PRINTER_CONFIGURED";
+
+    await this.db.batch([
+      this.db
+        .prepare(`UPDATE printers SET ${updates.join(", ")} WHERE id = ?`)
+        .bind(...bindings),
+      this.db
         .prepare(
           `INSERT INTO audit_logs (
              id, actor_type, actor_id, action, entity_type, entity_id, created_at_ms
@@ -810,14 +920,35 @@ export class D1AgentRepository implements AgentRepository {
         .bind(
           crypto.randomUUID(),
           input.adminId,
-          input.enabled ? "PRINTER_ENABLED" : "PRINTER_DISABLED",
+          auditAction,
           input.printerId,
           input.nowMs,
-        )
-        .run();
-      return true;
-    }
-    return false;
+        ),
+    ]);
+
+    return {
+      id: input.printerId,
+      enabled: nextEnabled === 1,
+      displayName: nextDisplayName,
+      priority: nextPriority,
+      fallbackPrinterId: nextFallback,
+      autoFallbackEnabled: nextAutoFallback === 1,
+    };
+  }
+
+  async togglePrinter(input: {
+    printerId: string;
+    enabled: boolean;
+    adminId: string;
+    nowMs: number;
+  }): Promise<boolean> {
+    await this.updatePrinterConfig({
+      printerId: input.printerId,
+      enabled: input.enabled,
+      adminId: input.adminId,
+      nowMs: input.nowMs,
+    });
+    return true;
   }
 
   async findPrinterById(printerId: string): Promise<{

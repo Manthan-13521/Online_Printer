@@ -1,4 +1,4 @@
-import { validateTogglePrinterInput } from "@printgo/validation";
+import { validateUpdatePrinterInput } from "@printgo/validation";
 
 import {
   adminRequestErrorResponse,
@@ -136,7 +136,7 @@ export async function handleAdminPrinterRequest(
     if (request.method === "PUT" && printerMatch) {
       const printerId = decodeURIComponent(printerMatch[1] ?? "");
       const rawBody = await readAdminJson(request, MAX_JSON_BYTES);
-      const validation = validateTogglePrinterInput(rawBody);
+      const validation = validateUpdatePrinterInput(rawBody);
       if (!validation.ok) {
         return withAdminCors(
           error(
@@ -147,15 +147,29 @@ export async function handleAdminPrinterRequest(
           env.ADMIN_ALLOWED_ORIGIN,
         );
       }
-      await agentService.togglePrinter(
+      if (
+        validation.value.displayName === undefined &&
+        validation.value.priority === undefined &&
+        validation.value.fallbackPrinterId === undefined &&
+        validation.value.autoFallbackEnabled === undefined &&
+        typeof validation.value.enabled === "boolean"
+      ) {
+        await agentService.togglePrinter(
+          printerId,
+          validation.value.enabled,
+          session.admin.id,
+        );
+        return withAdminCors(
+          ok({ id: printerId, enabled: validation.value.enabled }, 200),
+          env.ADMIN_ALLOWED_ORIGIN,
+        );
+      }
+      const result = await agentService.updatePrinter(
         printerId,
-        validation.value.enabled,
+        validation.value,
         session.admin.id,
       );
-      return withAdminCors(
-        ok({ id: printerId, enabled: validation.value.enabled }, 200),
-        env.ADMIN_ALLOWED_ORIGIN,
-      );
+      return withAdminCors(ok(result, 200), env.ADMIN_ALLOWED_ORIGIN);
     }
 
     const fallbackMatch = /^\/api\/admin\/printers\/([^/]+)\/fallback$/u.exec(

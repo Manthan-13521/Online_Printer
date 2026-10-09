@@ -2,7 +2,14 @@
 
 /* eslint-disable @typescript-eslint/unbound-method -- Vitest inspects method mocks without invoking them. */
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -20,6 +27,9 @@ vi.mock("./api", async (importOriginal) => {
       createPairCode: vi.fn(),
       revokeAgent: vi.fn(),
       togglePrinter: vi.fn(),
+      updatePrinter: vi.fn(),
+      setDefaultPrinter: vi.fn(),
+      checkPrinterHealth: vi.fn(),
       requestTestPrint: vi.fn(),
       getTestPrintStatus: vi.fn(),
     },
@@ -126,7 +136,7 @@ describe("PrinterPage", () => {
     await waitFor(() => {
       expect(screen.getByText("Front Desk PC")).toBeTruthy();
       expect(screen.getByText("HP LaserJet 400")).toBeTruthy();
-      expect(screen.getAllByText("ONLINE").length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText(/Ready/i).length).toBeGreaterThanOrEqual(1);
       expect(screen.getByRole("button", { name: "Disable" })).toBeTruthy();
     });
   });
@@ -311,6 +321,297 @@ describe("PrinterPage", () => {
       expect(
         screen.getByRole("button", { name: "Try Test Print Again" }),
       ).toBeTruthy();
+    });
+  });
+
+  it("discovers and represents multiple physical printers (1, 2, 4, 8) with summary counts", async () => {
+    const multiPrinters = [
+      {
+        id: "p1",
+        agentId: "agent_test_1",
+        displayName: "HP LaserJet Pro",
+        windowsPrinterName: "HP_LaserJet_Pro",
+        enabled: true,
+        status: "ONLINE" as const,
+        statusReason: null,
+        capabilities: { colour: false, duplex: true, paperSizes: ["A4"] },
+        lastStatusAt: new Date().toISOString(),
+        isProductionEligible: true,
+        isVirtual: false,
+        isProductionDefault: true,
+        priority: 10,
+      },
+      {
+        id: "p2",
+        agentId: "agent_test_1",
+        displayName: "Canon LBP2900",
+        windowsPrinterName: "Canon_LBP2900",
+        enabled: true,
+        status: "ONLINE" as const,
+        statusReason: null,
+        capabilities: { colour: false, duplex: false, paperSizes: ["A4"] },
+        lastStatusAt: new Date().toISOString(),
+        isProductionEligible: true,
+        isVirtual: false,
+        isProductionDefault: false,
+        priority: 5,
+      },
+      {
+        id: "p3",
+        agentId: "agent_test_1",
+        displayName: "Epson EcoTank Color",
+        windowsPrinterName: "Epson_L3150",
+        enabled: true,
+        status: "ONLINE" as const,
+        statusReason: null,
+        capabilities: { colour: true, duplex: false, paperSizes: ["A4"] },
+        lastStatusAt: new Date().toISOString(),
+        isProductionEligible: true,
+        isVirtual: false,
+        isProductionDefault: false,
+        priority: 0,
+      },
+      {
+        id: "p4",
+        agentId: "agent_test_1",
+        displayName: "Brother HL-L2321D",
+        windowsPrinterName: "Brother_HLL2321D",
+        enabled: true,
+        status: "BLOCKED" as const,
+        statusReason: "Paper tray is empty",
+        capabilities: { colour: false, duplex: true, paperSizes: ["A4"] },
+        lastStatusAt: new Date().toISOString(),
+        isProductionEligible: true,
+        isVirtual: false,
+        isProductionDefault: false,
+        priority: 0,
+      },
+    ];
+
+    mockedApi.getPrinters.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        agents: [
+          {
+            ...mockAgents[0]!,
+            printers: multiPrinters,
+          },
+        ],
+        defaultProductionPrinterId: "p1",
+      },
+    });
+
+    render(<PrinterPage onSessionExpired={vi.fn()} />);
+
+    await waitFor(() => {
+      // Summary count: 3 ready · 1 needs attention · 4 printers
+      expect(screen.getByText(/3 ready/i)).toBeTruthy();
+      expect(screen.getByText(/1 needs attention/i)).toBeTruthy();
+      expect(screen.getByText(/4 printers/i)).toBeTruthy();
+
+      // All 4 printers displayed on their cards
+      expect(screen.getByText("HP LaserJet Pro")).toBeTruthy();
+      expect(screen.getByText("Canon LBP2900")).toBeTruthy();
+      expect(screen.getByText("Epson EcoTank Color")).toBeTruthy();
+      expect(screen.getByText("Brother HL-L2321D")).toBeTruthy();
+
+      // Badges
+      expect(screen.getByText("Default")).toBeTruthy();
+      expect(screen.getByText("Priority 10")).toBeTruthy();
+      expect(screen.getByText("Priority 5")).toBeTruthy();
+    });
+  });
+
+  it("opens Add Printer modal and allows adding discovered unconfigured printers", async () => {
+    const unconfiguredPrinter = {
+      id: "p_new",
+      agentId: "agent_test_1",
+      displayName: "Newly Plugged Xerox",
+      windowsPrinterName: "Xerox_B210",
+      enabled: false,
+      status: "ONLINE" as const,
+      statusReason: null,
+      capabilities: { colour: false, duplex: true, paperSizes: ["A4"] },
+      lastStatusAt: new Date().toISOString(),
+      isProductionEligible: true,
+      isVirtual: false,
+      isProductionDefault: false,
+    };
+
+    mockedApi.getPrinters.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        agents: [
+          {
+            ...mockAgents[0]!,
+            printers: [mockAgents[0]!.printers[0]!, unconfiguredPrinter],
+          },
+        ],
+      },
+    });
+    mockedApi.togglePrinter.mockResolvedValueOnce({
+      ok: true,
+      data: { id: "p_new", enabled: true },
+    });
+
+    const user = userEvent.setup();
+    render(<PrinterPage onSessionExpired={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("HP LaserJet 400")).toBeTruthy();
+    });
+
+    // Click "+ Add Printer" in header
+    const addPrinterBtn = screen.getByRole("button", {
+      name: /\+ Add Printer/i,
+    });
+    fireEvent.click(addPrinterBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText("Connect & Add Printer")).toBeTruthy();
+    });
+
+    // Check detected printer inside modal
+    const modal = screen.getByRole("dialog");
+    expect(within(modal).getByText("Newly Plugged Xerox")).toBeTruthy();
+
+    // Click "+ Add Printer" inside modal
+    const modalAddBtn = within(modal).getByRole("button", {
+      name: "+ Add Printer",
+    });
+    await user.click(modalAddBtn);
+
+    await waitFor(() => {
+      expect(mockedApi.togglePrinter).toHaveBeenCalledWith("p_new", true);
+    });
+  });
+
+  it("opens Settings modal and updates printer configuration including priority and name", async () => {
+    mockedApi.getPrinters.mockResolvedValueOnce({
+      ok: true,
+      data: { agents: mockAgents },
+    });
+    mockedApi.updatePrinter.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        id: "printer_test_1",
+        enabled: true,
+        displayName: "Counter Main LaserJet",
+        priority: 15,
+        fallbackPrinterId: null,
+        autoFallbackEnabled: false,
+      },
+    });
+    mockedApi.getPrinters.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        agents: [
+          {
+            ...mockAgents[0]!,
+            printers: [
+              {
+                ...mockAgents[0]!.printers[0]!,
+                displayName: "Counter Main LaserJet",
+                priority: 15,
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    const user = userEvent.setup();
+    render(<PrinterPage onSessionExpired={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Settings" })).toBeTruthy();
+    });
+
+    // Open settings modal
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Printer Settings")).toBeTruthy();
+      expect(screen.getByLabelText(/Printer Name \(Friendly\):/i)).toBeTruthy();
+      expect(screen.getByLabelText(/Routing Priority/i)).toBeTruthy();
+    });
+
+    // Edit friendly name and priority
+    const nameInput = screen.getByLabelText(/Printer Name \(Friendly\):/i);
+    await user.clear(nameInput);
+    await user.type(nameInput, "Counter Main LaserJet");
+
+    const priorityInput = screen.getByLabelText(/Routing Priority/i);
+    await user.clear(priorityInput);
+    await user.type(priorityInput, "15");
+
+    // Click Save Settings
+    await user.click(screen.getByRole("button", { name: "Save Settings" }));
+
+    await waitFor(() => {
+      expect(mockedApi.updatePrinter).toHaveBeenCalledWith("printer_test_1", {
+        displayName: "Counter Main LaserJet",
+        priority: 15,
+        enabled: true,
+        fallbackPrinterId: null,
+        autoFallbackEnabled: false,
+      });
+    });
+  });
+
+  it("sets a printer as default production printer", async () => {
+    const nonDefaultPrinter = {
+      ...mockAgents[0]!.printers[0]!,
+      id: "printer_non_default",
+      displayName: "Secondary Canon",
+      isProductionDefault: false,
+    };
+
+    mockedApi.getPrinters.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        agents: [
+          {
+            ...mockAgents[0]!,
+            printers: [nonDefaultPrinter],
+          },
+        ],
+        defaultProductionPrinterId: "other_printer",
+      },
+    });
+    mockedApi.setDefaultPrinter.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        defaultPrinterId: "printer_non_default",
+        windowsPrinterName: "Canon_MF4700",
+      },
+    });
+    mockedApi.getPrinters.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        agents: [
+          {
+            ...mockAgents[0]!,
+            printers: [{ ...nonDefaultPrinter, isProductionDefault: true }],
+          },
+        ],
+        defaultProductionPrinterId: "printer_non_default",
+      },
+    });
+
+    const user = userEvent.setup();
+    render(<PrinterPage onSessionExpired={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Set Default" })).toBeTruthy();
+    });
+
+    await user.click(screen.getByRole("button", { name: "Set Default" }));
+
+    await waitFor(() => {
+      expect(mockedApi.setDefaultPrinter).toHaveBeenCalledWith(
+        "printer_non_default",
+      );
     });
   });
 });

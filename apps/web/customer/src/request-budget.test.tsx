@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { customerApi } from "./api";
@@ -128,13 +134,19 @@ describe("Customer App Request Budget & Polling Optimization", () => {
     expect(customerApi.tracking).toHaveBeenCalledTimes(1);
 
     // PRINTED is finishing, not ready; polling must continue.
-    await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
     expect(customerApi.tracking).toHaveBeenCalledTimes(2);
 
     // COMPLETED is terminal; polling must then stop.
-    await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
     expect(customerApi.tracking).toHaveBeenCalledTimes(3);
-    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
     expect(customerApi.tracking).toHaveBeenCalledTimes(3);
   });
   it("terminal tracking stays idle after visibility resumes", async () => {
@@ -164,7 +176,9 @@ describe("Customer App Request Budget & Polling Optimization", () => {
       trackingExpiresAt: "2026-10-10T00:00:00.000Z",
     });
     render(<TrackingPage jobCode="PG-JOB123" />);
-    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
     expect(customerApi.tracking).toHaveBeenCalledTimes(1);
     Object.defineProperty(document, "hidden", {
       configurable: true,
@@ -176,7 +190,9 @@ describe("Customer App Request Budget & Polling Optimization", () => {
       value: false,
     });
     document.dispatchEvent(new Event("visibilitychange"));
-    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
     expect(customerApi.tracking).toHaveBeenCalledTimes(1);
   });
 });

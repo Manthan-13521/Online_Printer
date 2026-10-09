@@ -159,7 +159,7 @@ export class AgentDaemon {
 
   private connectWebSocket(): void {
     if (!this.running || !this.credentials) return;
-    
+
     // Cleanup existing connection
     if (this.ws) {
       this.ws.onclose = null;
@@ -172,9 +172,9 @@ export class AgentDaemon {
       const wsUrl = new URL(this.credentials.serverUrl);
       wsUrl.protocol = wsUrl.protocol === "https:" ? "wss:" : "ws:";
       wsUrl.pathname = "/api/agent/ws";
-      
+
       this.ws = new WebSocket(wsUrl.toString(), [this.credentials.agentSecret]);
-      
+
       this.ws.onmessage = (event) => {
         try {
           const data = JSON.parse(String(event.data)) as { type?: string };
@@ -203,7 +203,9 @@ export class AgentDaemon {
         }
       };
     } catch (err) {
-      this.log(`Failed to initiate WebSocket: ${err instanceof Error ? err.message : String(err)}`);
+      this.log(
+        `Failed to initiate WebSocket: ${err instanceof Error ? err.message : String(err)}`,
+      );
       if (this.running) {
         setTimeout(() => this.connectWebSocket(), 15_000);
       }

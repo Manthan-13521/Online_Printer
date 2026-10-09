@@ -35,14 +35,14 @@
     "bindings": [
       {
         "name": "AGENT_ROOM",
-        "class_name": "AgentRoom"
-      }
-    ]
+        "class_name": "AgentRoom",
+      },
+    ],
   },
   "migrations": [
     {
       "tag": "v1",
-      "new_classes": ["AgentRoom"]
-    }
-  ]
+      "new_classes": ["AgentRoom"],
+    },
+  ],
 }

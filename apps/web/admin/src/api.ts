@@ -16,6 +16,8 @@ import type {
   AdminSettingsUpdateRequest,
   AdminTestPrintResponse,
   AdminTogglePrinterResponse,
+  AdminUpdatePrinterRequest,
+  AdminUpdatePrinterResponse,
   AdminManualCompleteOrderResponse,
   AdminRetryOrderResponse,
   AdminOrderPdfUrlResponse,
@@ -284,6 +286,15 @@ export const adminApi = {
     return request(`/api/admin/agents/${encodeURIComponent(agentId)}/revoke`, {
       method: "POST",
       body: "{}",
+    });
+  },
+  updatePrinter(
+    printerId: string,
+    input: AdminUpdatePrinterRequest,
+  ): Promise<AdminUpdatePrinterResponse> {
+    return request(`/api/admin/printers/${encodeURIComponent(printerId)}`, {
+      method: "PUT",
+      body: JSON.stringify(input),
     });
   },
   togglePrinter(

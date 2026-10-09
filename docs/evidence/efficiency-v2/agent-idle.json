@@ -3,9 +3,9 @@
   "calls": 10800,
   "reports": 1,
   "powerShellInvocations": 900,
-  "processCpuMs": 119.701,
-  "wallMs": 145.20604200000002,
-  "heapStart": 13628432,
-  "peakHeap": 21505048,
-  "rss": 98091008
+  "processCpuMs": 125.781,
+  "wallMs": 216.832,
+  "heapStart": 13785896,
+  "peakHeap": 21461616,
+  "rss": 101318656
 }

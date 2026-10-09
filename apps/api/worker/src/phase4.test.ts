@@ -33,6 +33,7 @@ function createTestDatabase(): DatabaseSync {
     "0017_phase5_fallback_and_reprint_protection.sql",
     "0018_phase6_history_cleanup.sql",
     "0023_identification_sheet_conditions.sql",
+    "0024_printer_priority.sql",
   ];
   for (const name of migrationFiles) {
     db.exec(

@@ -1,5 +1,3 @@
-
-
 export class AgentRoom {
   private state: DurableObjectState;
 

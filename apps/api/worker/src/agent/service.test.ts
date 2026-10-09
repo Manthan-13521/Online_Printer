@@ -19,6 +19,17 @@ function createMockRepository(
     listAgentsWithPrinters: vi.fn(() => Promise.resolve([])),
     revokeAgent: vi.fn(() => Promise.resolve(true)),
     togglePrinter: vi.fn(() => Promise.resolve(true)),
+    updatePrinterConfig: vi.fn(
+      (params: Parameters<AgentRepository["updatePrinterConfig"]>[0]) =>
+        Promise.resolve({
+          id: params.printerId,
+          enabled: params.enabled ?? true,
+          displayName: params.displayName ?? "Printer",
+          priority: params.priority ?? 0,
+          fallbackPrinterId: params.fallbackPrinterId ?? null,
+          autoFallbackEnabled: params.autoFallbackEnabled ?? false,
+        }),
+    ),
     findPrinterById: vi.fn(),
     createTestPrintCommand: vi.fn(),
     claimPendingTestPrintCommand: vi.fn(() => Promise.resolve(null)),
@@ -285,6 +296,36 @@ describe("AgentService", () => {
       adminId: "admin_1",
       nowMs: 1_500_000,
     });
+  });
+
+  it("updates printer configuration including priority and display name", async () => {
+    const repo = createMockRepository();
+    const service = new AgentService(repo, () => 1_500_000);
+
+    const result = await service.updatePrinter(
+      "printer_1",
+      {
+        displayName: "High Speed Xerox",
+        priority: 10,
+        enabled: true,
+        fallbackPrinterId: "printer_2",
+        autoFallbackEnabled: true,
+      },
+      "admin_1",
+    );
+
+    expect(repo.updatePrinterConfig).toHaveBeenCalledWith({
+      printerId: "printer_1",
+      displayName: "High Speed Xerox",
+      priority: 10,
+      enabled: true,
+      fallbackPrinterId: "printer_2",
+      autoFallbackEnabled: true,
+      adminId: "admin_1",
+      nowMs: 1_500_000,
+    });
+    expect(result.priority).toBe(10);
+    expect(result.displayName).toBe("High Speed Xerox");
   });
 
   it("requests test print for an enabled printer on an active and online agent", async () => {

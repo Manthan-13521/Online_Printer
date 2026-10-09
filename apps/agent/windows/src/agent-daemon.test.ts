@@ -215,7 +215,7 @@ describe("AgentDaemon", () => {
 
     const startedAt = Date.now();
     await daemon.start(); // poll 1
-    
+
     await vi.advanceTimersToNextTimerAsync(); // +60s
     expect(client.sendHeartbeat).toHaveBeenCalledTimes(2);
     expect(Date.now() - startedAt).toBe(60_000);

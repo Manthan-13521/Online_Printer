@@ -9,6 +9,7 @@ I have inspected the entire PrintGo polling architecture, the Windows Agent, Clo
 ## 1. Planned Interval Updates
 
 I will update the codebase with the exact requested polling intervals:
+
 - **Windows Agent active:** 6 seconds (`apps/agent/windows/src/agent-daemon.ts`)
 - **Admin Dashboard:** 35 seconds (`apps/web/admin/src/DashboardPage.tsx`)
 - **Admin Live Orders:** 40 seconds (`apps/web/admin/src/LiveOrdersPage.tsx`)
@@ -23,6 +24,7 @@ I will update the codebase with the exact requested polling intervals:
 ## 2. The "Instant Wake-up" Blocker (REPORTED)
 
 The requirement states:
+
 > _"Windows Agent idle: 60 seconds, with reliable instant wake-up for newly paid print jobs... Design instant wake-up to be reliable, secure and cost-efficient... If instant wake-up cannot be implemented safely within the architecture, do not fake it or silently replace it with polling; report the blocker."_
 
 **The Blocker:**
@@ -41,7 +43,7 @@ True "instant wake-up" (Server-Sent Events / Long-Polling) without a paid coordi
 How would you like to proceed with the Windows Agent's idle behavior?
 
 - **Option A: Adaptive Standard Polling (Recommended).** Instead of true instant wake-up + 60s fallback, the Agent simply polls every **5 to 6 seconds** over standard HTTP when idle.
-  - *Why this works:* 5-second polling generates ~17,280 requests per day. The Cloudflare Free Tier gives 100,000 requests per day. This fits perfectly, uses zero extra CPU time, completely avoids connection timeouts, and keeps D1 safe because the Worker already limits D1 heartbeat writes to 60+ seconds.
+  - _Why this works:_ 5-second polling generates ~17,280 requests per day. The Cloudflare Free Tier gives 100,000 requests per day. This fits perfectly, uses zero extra CPU time, completely avoids connection timeouts, and keeps D1 safe because the Worker already limits D1 heartbeat writes to 60+ seconds.
 - **Option B: Strict 60-Second Polling.** The Agent strictly polls every 60 seconds when idle, accepting up to 60 seconds of latency between a customer paying and the print job starting.
 - **Option C:** If you have an alternative acceptable workaround for Cloudflare Free Tier signaling, please let me know.
 
