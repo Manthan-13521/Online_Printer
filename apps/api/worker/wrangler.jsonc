@@ -42,7 +42,7 @@
   "migrations": [
     {
       "tag": "v1",
-      "new_classes": ["AgentRoom"],
+      "new_sqlite_classes": ["AgentRoom"],
     },
   ],
 }
