@@ -11,8 +11,10 @@ import {
   maskPhoneNumber,
   normalizePrinterFailure,
   isPrinterWideFailure,
+  resolveEffectiveFeatures,
   type ColorMode,
   type PaperSize,
+  type PrinterCapabilityFeatures,
   type SidesMode,
 } from "@printgo/domain";
 import { isOwnedUploadKey } from "../cleanup/service";
@@ -39,6 +41,8 @@ export interface ClaimedPrintJobRecord {
   sides: SidesMode;
   identificationSheet: IdentificationSheetData | null;
   currentStep: AgentPrintJobStep;
+  verifiedFeatures?: PrinterCapabilityFeatures | null;
+  physicalDeviceId?: string;
 }
 
 interface JobRow {
@@ -51,6 +55,7 @@ interface JobRow {
   due_at_pickup_paise: number;
   printer_id: string;
   windows_printer_name: string;
+  physical_device_id: string | null;
   r2_object_key: string;
   size_bytes: number;
   source_page_count: number;
@@ -77,11 +82,16 @@ interface JobRow {
   step_status: PrintPlanStepStatus;
   spooler_job_id: string | null;
   addon_services_json: string | null;
+  verified_capabilities_json: string | null;
+  enabled_services_json: string | null;
+  capabilities_json: string | null;
 }
 
 interface CandidateRow {
   order_id: string;
+  order_status: string;
   printer_id: string;
+  physical_device_id: string | null;
   file_id: string;
   file_position: number;
   file_count: number;
@@ -106,6 +116,31 @@ interface StepOwnershipRow {
   order_status: string;
   step_type: AgentPrintJobStep["type"];
   order_file_id: string | null;
+  attempt_number?: number;
+  printer_id?: string;
+}
+
+function toStepFailureCode(code: string | null | undefined): string | null {
+  if (!code) return null;
+  const upper = code.trim().toUpperCase();
+  const allowed = [
+    "PAPER_OUT",
+    "PAPER_JAM",
+    "OFFLINE",
+    "NO_TONER",
+    "TONER_LOW",
+    "DOOR_OPEN",
+    "USER_INTERVENTION",
+    "PRINTER_ERROR",
+    "UNKNOWN",
+  ];
+  if (allowed.includes(upper)) {
+    return upper;
+  }
+  if (upper === "PRINTER_OFFLINE" || upper === "CONNECTION_LOST")
+    return "OFFLINE";
+  if (upper === "SPOOLER_ERROR") return "PRINTER_ERROR";
+  return "UNKNOWN";
 }
 
 function parseAddonServices(
@@ -142,6 +177,9 @@ function mapJob(row: JobRow | null): ClaimedPrintJobRecord | null {
     originalFilename: row.original_filename,
     printerId: row.printer_id,
     windowsPrinterName: row.windows_printer_name,
+    ...(row.physical_device_id
+      ? { physicalDeviceId: row.physical_device_id }
+      : {}),
     objectKey: row.r2_object_key,
     expectedSizeBytes: row.size_bytes,
     sourcePageCount: row.source_page_count,
@@ -179,6 +217,11 @@ function mapJob(row: JobRow | null): ClaimedPrintJobRecord | null {
       status: row.step_status,
       spoolerJobId: row.spooler_job_id,
     },
+    verifiedFeatures: resolveEffectiveFeatures({
+      verified_capabilities_json: row.verified_capabilities_json ?? null,
+      enabled_services_json: row.enabled_services_json ?? null,
+      capabilities_json: row.capabilities_json ?? null,
+    }),
   };
 }
 
@@ -188,6 +231,12 @@ export interface PrintingRepository {
     agentId: string,
     nowMs: number,
   ): Promise<ClaimedPrintJobRecord | null>;
+  claimOrRenewAll(
+    agentId: string,
+    nowMs: number,
+  ): Promise<ClaimedPrintJobRecord[]>;
+  findAllCurrent(agentId: string): Promise<ClaimedPrintJobRecord[]>;
+  finishOrphanedSuccess(agentId: string, nowMs: number): Promise<void>;
   authenticateAgent(rawCredentialHash: string): Promise<string | null>;
   findOwnedStep(input: {
     agentId: string;
@@ -222,6 +271,22 @@ export interface PrintingRepository {
     failureDetail: string | null;
     nowMs: number;
   }): Promise<StepOwnershipRow | null>;
+  handlePreflightFailure(input: {
+    agentId: string;
+    orderId: string;
+    stepId: string;
+    claimId: string;
+    failureCode: string;
+    failureDetail?: string | null;
+    nowMs: number;
+  }): Promise<{
+    action: "FALLBACK_ASSIGNED" | "BLOCKED_RELEASED" | "ACTION_REQUIRED";
+    printJob?: ClaimedPrintJobRecord | null;
+    fallbackPrinterName?: string | null;
+    orderId: string;
+    message: string;
+    retryAfterMs?: number;
+  }>;
   listLiveOrders(nowMs?: number): Promise<AdminLiveOrder[]>;
   manualComplete(input: {
     orderId: string;
@@ -341,13 +406,14 @@ export class D1PrintingRepository implements PrintingRepository {
     ]);
   }
 
-  private async findCurrent(
-    agentId: string,
-  ): Promise<ClaimedPrintJobRecord | null> {
-    const row = await this.db
+  async findAllCurrent(agentId: string): Promise<ClaimedPrintJobRecord[]> {
+    const rows = await this.db
       .prepare(
         `SELECT o.id order_id, pa.id attempt_id, o.claim_id, o.claim_expires_at_ms,
-        o.public_job_code, o.pickup_code, o.due_at_pickup_paise, o.printer_id, p.windows_printer_name, f.r2_object_key,
+        o.public_job_code, o.pickup_code, o.due_at_pickup_paise, o.printer_id, p.windows_printer_name,
+        COALESCE(o.physical_device_id, COALESCE(p.physical_device_id, 'AGENT_LOCK_' || p.agent_id)) physical_device_id,
+        p.verified_capabilities_json, p.enabled_services_json, p.capabilities_json,
+        f.r2_object_key,
         f.size_bytes, f.source_page_count, f.selected_pages, f.copies,
         f.paper_size, f.color_mode, f.sides, o.customer_name, o.customer_phone,
         o.instructions, o.total_amount_paise, o.currency, o.paid_at_ms,
@@ -364,135 +430,42 @@ export class D1PrintingRepository implements PrintingRepository {
       FROM orders o
       JOIN print_attempts pa ON pa.order_id = o.id
         AND pa.status IN ('CREATED','SUBMITTING','SPOOLING','PRINTING','BLOCKED')
-      JOIN print_attempt_steps ps ON ps.print_attempt_id = pa.id
-        AND ps.status <> 'SUCCEEDED'
+      JOIN print_attempt_steps ps ON ps.id = (
+        SELECT next_s.id FROM print_attempt_steps next_s
+        WHERE next_s.print_attempt_id = pa.id AND next_s.status <> 'SUCCEEDED'
+        ORDER BY CASE WHEN next_s.status IN ('PENDING', 'SUBMISSION_STARTED') THEN 0 ELSE 1 END ASC,
+                 next_s.sequence_number ASC
+        LIMIT 1
+      )
       JOIN printers p ON p.id = o.printer_id AND p.agent_id = o.claimed_by_agent_id
       JOIN order_files f ON f.id = COALESCE(pa.order_file_id,
         (SELECT legacy.id FROM order_files legacy WHERE legacy.order_id = o.id ORDER BY legacy.position LIMIT 1))
       JOIN installation i ON i.id = 1
       WHERE o.claimed_by_agent_id = ?
         AND o.status IN ('CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED')
-      ORDER BY 
-        CASE WHEN ps.status IN ('PENDING', 'SUBMISSION_STARTED') THEN 0 ELSE 1 END ASC,
-        ps.sequence_number ASC 
-      LIMIT 1`,
+      ORDER BY o.queued_at_ms ASC, o.id ASC`,
       )
       .bind(agentId)
-      .first<JobRow>();
-    return mapJob(row);
+      .all<JobRow>();
+    return (rows.results ?? [])
+      .map(mapJob)
+      .filter((j): j is ClaimedPrintJobRecord => j !== null);
   }
 
-  async claimOrRenew(
+  async findCurrent(
+    agentId: string,
+    orderId?: string,
+  ): Promise<ClaimedPrintJobRecord | null> {
+    const all = await this.findAllCurrent(agentId);
+    if (orderId) return all.find((j) => j.orderId === orderId) ?? null;
+    return all[0] ?? null;
+  }
+
+  private async claimCandidate(
+    candidate: CandidateRow,
     agentId: string,
     nowMs: number,
   ): Promise<ClaimedPrintJobRecord | null> {
-    // Empty queues must not run the recovery/claim write chain on every pulse.
-    const work = await this.db
-      .prepare(
-        `SELECT 1 FROM orders
-         WHERE status IN ('QUEUED','CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED','RETRY_PENDING')
-            OR (status = 'PRINT_FAILED' AND cleanup_state = 'ACTIVE' AND updated_at_ms <= ?)
-         LIMIT 1`,
-      )
-      .bind(nowMs - 60_000)
-      .first();
-    if (!work) return null;
-    await this.recoverExpiredClaims(nowMs);
-    await this.autoRetryEligibleOrders(nowMs);
-    await this.finishOrphanedSuccess(agentId, nowMs);
-    const existing = await this.findCurrent(agentId);
-    if (existing && existing.leaseExpiresAtMs > nowMs) {
-      // Leave fast jobs alone; renew only in the last third of the configured lease.
-      if (existing.leaseExpiresAtMs - nowMs > PRINT_CLAIM_LEASE_MS / 3)
-        return existing;
-      const lease = nowMs + PRINT_CLAIM_LEASE_MS;
-      await this.db
-        .prepare(
-          `UPDATE orders SET claim_expires_at_ms = ?, updated_at_ms = ?
-         WHERE id = ? AND claimed_by_agent_id = ? AND claim_id = ?
-           AND claim_expires_at_ms > ? AND claim_expires_at_ms <= ?
-           AND status IN ('CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED')`,
-        )
-        .bind(
-          lease,
-          nowMs,
-          existing.orderId,
-          agentId,
-          existing.claimId,
-          nowMs,
-          nowMs + PRINT_CLAIM_LEASE_MS / 3,
-        )
-        .run();
-      // Re-read ownership: a concurrent completion/recovery must not receive a fabricated lease.
-      return this.findCurrent(agentId);
-    }
-
-    const candidate = await this.db
-      .prepare(
-        `SELECT o.id order_id, p.id printer_id, i.identification_sheet_enabled,
-        i.identification_sheet_placement, i.id_sheet_min_pages, i.id_sheet_min_amount_paise,
-        o.total_amount_paise,
-        (SELECT SUM(COALESCE(op.selected_page_count, op.source_page_count, 1) * op.copies)
-         FROM order_files op WHERE op.order_id = o.id) total_printed_pages,
-        o.identification_required, f.id file_id, f.position file_position,
-        (SELECT COUNT(*) FROM order_files all_files WHERE all_files.order_id = o.id) file_count,
-        (SELECT COUNT(*) FROM order_files remaining WHERE remaining.order_id = o.id
-          AND remaining.print_status <> 'PRINTED') remaining_files,
-        CASE WHEN i.default_production_printer_id IS NOT NULL
-                  AND p.id <> i.default_production_printer_id
-             THEN i.default_production_printer_id
-             ELSE NULL
-        END AS fallback_from_printer_id
-      FROM orders o
-      JOIN order_files f ON f.order_id = o.id AND f.id = COALESCE((
-        SELECT next_file.id FROM order_files next_file
-        WHERE next_file.order_id = o.id AND next_file.print_status <> 'PRINTED'
-        ORDER BY next_file.position LIMIT 1
-      ), (SELECT last_file.id FROM order_files last_file
-          WHERE last_file.order_id = o.id ORDER BY last_file.position DESC LIMIT 1))
-      JOIN payments pay ON pay.order_id = o.id AND pay.status = 'PAID'
-        AND pay.provider_payment_id IS NOT NULL AND pay.verified_at_ms IS NOT NULL
-      JOIN agents a ON a.id = ? AND a.is_active = 1 AND a.last_heartbeat_at_ms >= ?
-      JOIN printers p ON p.agent_id = a.id AND p.enabled = 1 AND p.status = 'ONLINE'
-        AND COALESCE(p.is_paused, 0) = 0
-        AND p.is_production_eligible = 1 AND p.is_virtual = 0
-        AND p.capabilities_json IS NOT NULL
-      JOIN installation i ON i.id = 1
-        AND (
-          i.default_production_printer_id IS NULL
-          OR p.id = i.default_production_printer_id
-          OR (
-            -- Fallback: primary is unavailable and this printer is its configured fallback
-            EXISTS (
-              SELECT 1 FROM printers pp
-              WHERE pp.id = i.default_production_printer_id
-                AND pp.auto_fallback_enabled = 1
-                AND pp.fallback_printer_id = p.id
-                AND (pp.enabled = 0 OR pp.status <> 'ONLINE' OR COALESCE(pp.is_paused, 0) = 1)
-            )
-            -- Prevent loop: this printer's fallback must not be the primary
-            AND COALESCE(p.fallback_printer_id, '') <> i.default_production_printer_id
-          )
-        )
-      WHERE ((o.status = 'QUEUED') OR (o.status = 'RETRY_PENDING' AND (o.next_retry_at_ms IS NULL OR o.next_retry_at_ms <= ?)))
-        AND o.public_job_code IS NOT NULL
-        AND o.cleanup_state = 'ACTIVE' AND f.upload_status = 'UPLOADED'
-        AND f.size_bytes IS NOT NULL
-        AND (f.position <> 1 OR EXISTS (SELECT 1 FROM uploads u
-          WHERE u.order_id = o.id AND u.r2_object_key = f.r2_object_key
-            AND u.storage_status = 'UPLOADED'))
-        AND (f.color_mode = 'BW' OR json_extract(p.capabilities_json, '$.colour') = 1 OR json_extract(p.capabilities_json, '$.colour') = 'UNKNOWN')
-        AND (f.sides = 'SINGLE' OR json_extract(p.capabilities_json, '$.duplex') = 1 OR json_extract(p.capabilities_json, '$.duplex') = 'UNKNOWN' OR json_extract(p.capabilities_json, '$.duplex') IS NULL OR json_extract(p.capabilities_json, '$.duplex') = 0)
-        AND EXISTS (SELECT 1 FROM json_each(p.capabilities_json, '$.paperSizes')
-          WHERE upper(value) = f.paper_size)
-        AND NOT EXISTS (SELECT 1 FROM orders busy WHERE busy.claimed_by_agent_id = a.id
-          AND busy.status IN ('CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED'))
-      ORDER BY o.is_priority DESC, (CASE WHEN o.status = 'QUEUED' THEN 0 ELSE 1 END) ASC, o.queued_at_ms ASC, o.id, p.id LIMIT 1`,
-      )
-      .bind(agentId, nowMs - 90_000, nowMs)
-      .first<CandidateRow>();
-    if (!candidate) return null;
-
     const succeededSteps = await this.db
       .prepare(
         `SELECT step_type FROM print_attempt_steps WHERE order_id = ? AND status = 'SUCCEEDED'`,
@@ -548,29 +521,75 @@ export class D1PrintingRepository implements PrintingRepository {
     const idStep = crypto.randomUUID();
     const documentStep = crypto.randomUUID();
     const firstIsId = candidate.identification_sheet_placement === "FIRST";
+    const physicalDeviceId =
+      candidate.physical_device_id ?? candidate.printer_id;
     const statements: D1PreparedStatement[] = [
       this.db
         .prepare(
           `UPDATE orders SET status = 'CLAIMED', claimed_by_agent_id = ?, claim_id = ?,
-          claim_expires_at_ms = ?, printer_id = ?, claimed_at_ms = ?, updated_at_ms = ?
-        WHERE id = ? AND status IN ('QUEUED', 'RETRY_PENDING') AND cleanup_state = 'ACTIVE' AND EXISTS (
+          claim_expires_at_ms = ?, printer_id = ?, physical_device_id = ?, claimed_at_ms = ?, updated_at_ms = ?
+        WHERE id = ? AND status IN ('QUEUED', 'RETRY_PENDING', 'PRINT_BLOCKED') AND cleanup_state = 'ACTIVE'
+          AND NOT EXISTS (
+            SELECT 1 FROM orders busy
+            WHERE busy.id <> orders.id
+              AND busy.status IN ('CLAIMED','SPOOLING','PRINTING','ADMIN_ACTION_REQUIRED','COMPLETION_UNKNOWN','NEEDS_ADMIN')
+              AND busy.physical_device_id = ?
+          )
+          AND EXISTS (
           SELECT 1 FROM payments WHERE order_id = orders.id AND status = 'PAID'
             AND provider_payment_id IS NOT NULL AND verified_at_ms IS NOT NULL
         ) AND EXISTS (
           SELECT 1 FROM order_files WHERE id = ? AND order_id = orders.id
             AND upload_status = 'UPLOADED' AND size_bytes IS NOT NULL
         ) AND EXISTS (
-          SELECT 1 FROM printers p JOIN agents a ON a.id = p.agent_id
+          SELECT 1 FROM printers p
+          JOIN agents a ON a.id = p.agent_id
+          JOIN order_files f ON f.id = ? AND f.order_id = orders.id
           WHERE p.id = ? AND p.agent_id = ? AND p.enabled = 1 AND p.status = 'ONLINE'
             AND p.is_production_eligible = 1 AND p.is_virtual = 0
             AND a.is_active = 1 AND a.last_heartbeat_at_ms >= ?
             AND p.capabilities_json IS NOT NULL
-            AND ((SELECT color_mode FROM order_files WHERE id = ?) = 'BW'
-              OR json_extract(p.capabilities_json, '$.colour') = 1 OR json_extract(p.capabilities_json, '$.colour') = 'UNKNOWN')
-            AND ((SELECT sides FROM order_files WHERE id = ?) = 'SINGLE'
-              OR json_extract(p.capabilities_json, '$.duplex') = 1 OR json_extract(p.capabilities_json, '$.duplex') = 'UNKNOWN' OR json_extract(p.capabilities_json, '$.duplex') IS NULL OR json_extract(p.capabilities_json, '$.duplex') = 0)
-            AND EXISTS (SELECT 1 FROM json_each(p.capabilities_json, '$.paperSizes')
-              WHERE upper(value) = (SELECT paper_size FROM order_files WHERE id = ?))
+            AND (
+              p.verified_capabilities_json IS NULL
+              OR COALESCE(json_extract(p.verified_capabilities_json, '$.requiresReview'), 0) NOT IN (1, 'true')
+            )
+            AND (
+              CASE
+                WHEN p.verified_capabilities_json IS NOT NULL AND p.enabled_services_json IS NOT NULL THEN
+                  (
+                    (f.color_mode = 'BW' AND json_extract(p.verified_capabilities_json, '$.verified.bw') = 1 AND json_extract(p.enabled_services_json, '$.bw') = 1)
+                    OR
+                    (f.color_mode = 'COLOR' AND json_extract(p.verified_capabilities_json, '$.verified.color') = 1 AND json_extract(p.enabled_services_json, '$.color') = 1)
+                  )
+                ELSE
+                  (f.color_mode = 'BW' OR json_extract(p.capabilities_json, '$.colour') = 1 OR json_extract(p.capabilities_json, '$.colour') = 'true')
+              END
+            )
+            AND (
+              CASE
+                WHEN p.verified_capabilities_json IS NOT NULL AND p.enabled_services_json IS NOT NULL THEN
+                  (
+                    f.sides = 'SINGLE'
+                    OR
+                    (json_extract(p.verified_capabilities_json, '$.verified.duplex') = 1 AND json_extract(p.enabled_services_json, '$.duplex') = 1)
+                  )
+                ELSE
+                  (f.sides = 'SINGLE' OR json_extract(p.capabilities_json, '$.duplex') = 1 OR json_extract(p.capabilities_json, '$.duplex') = 'true')
+              END
+            )
+            AND (
+              CASE
+                WHEN p.verified_capabilities_json IS NOT NULL AND p.enabled_services_json IS NOT NULL THEN
+                  (
+                    (f.paper_size = 'A4' AND json_extract(p.verified_capabilities_json, '$.verified.a4') = 1 AND json_extract(p.enabled_services_json, '$.a4') = 1)
+                    OR
+                    (f.paper_size = 'A3' AND json_extract(p.verified_capabilities_json, '$.verified.a3') = 1 AND json_extract(p.enabled_services_json, '$.a3') = 1)
+                  )
+                ELSE
+                  EXISTS (SELECT 1 FROM json_each(p.capabilities_json, '$.paperSizes')
+                    WHERE upper(value) = f.paper_size)
+              END
+            )
         )`,
         )
         .bind(
@@ -578,30 +597,31 @@ export class D1PrintingRepository implements PrintingRepository {
           claimId,
           lease,
           candidate.printer_id,
+          physicalDeviceId,
           nowMs,
           nowMs,
           candidate.order_id,
+          physicalDeviceId,
+          candidate.file_id,
           candidate.file_id,
           candidate.printer_id,
           agentId,
           nowMs - 90_000,
-          candidate.file_id,
-          candidate.file_id,
-          candidate.file_id,
         ),
       this.db
         .prepare(
           `INSERT INTO print_attempts (id, order_id, attempt_number, agent_id, printer_id,
-          status, identification_sheet_included, created_at_ms, updated_at_ms,
+          physical_device_id, status, identification_sheet_included, created_at_ms, updated_at_ms,
           order_file_id, file_position, fallback_from_printer_id)
         SELECT ?, id, COALESCE((SELECT MAX(attempt_number) + 1 FROM print_attempts
-          WHERE order_id = orders.id), 1), ?, ?, 'CREATED', ?, ?, ?, ?, ?, ?
+          WHERE order_id = orders.id), 1), ?, ?, ?, 'CREATED', ?, ?, ?, ?, ?, ?
         FROM orders WHERE id = ? AND claim_id = ? AND claimed_by_agent_id = ?`,
         )
         .bind(
           attemptId,
           agentId,
           candidate.printer_id,
+          physicalDeviceId,
           needIdStep ? 1 : 0,
           nowMs,
           nowMs,
@@ -699,21 +719,251 @@ export class D1PrintingRepository implements PrintingRepository {
         .prepare(
           `INSERT INTO order_events (id, order_id, event_type, from_status, to_status,
           actor_type, actor_id, created_at_ms)
-        SELECT ?, id, 'PRINT_JOB_CLAIMED', 'QUEUED', 'CLAIMED', 'AGENT', ?, ?
+        SELECT ?, id, 'PRINT_JOB_CLAIMED', ?, 'CLAIMED', 'AGENT', ?, ?
         FROM orders WHERE id = ? AND claim_id = ?`,
         )
-        .bind(crypto.randomUUID(), agentId, nowMs, candidate.order_id, claimId),
+        .bind(
+          crypto.randomUUID(),
+          candidate.order_status,
+          agentId,
+          nowMs,
+          candidate.order_id,
+          claimId,
+        ),
     );
     const results = await this.db.batch(statements);
     if (results[0]?.meta.changes !== 1) return null;
-    return this.findCurrent(agentId);
+    return this.findCurrent(agentId, candidate.order_id);
   }
 
-  private async finishOrphanedSuccess(
+  async claimOrRenewAll(
     agentId: string,
     nowMs: number,
-  ): Promise<void> {
-    const row = await this.db
+  ): Promise<ClaimedPrintJobRecord[]> {
+    // Empty queues must not run the recovery/claim write chain on every pulse.
+    const work = await this.db
+      .prepare(
+        `SELECT 1 FROM orders
+         WHERE status IN ('QUEUED','CLAIMED','SPOOLING','PRINTING')
+            OR (status IN ('PRINT_BLOCKED','RETRY_PENDING') AND (next_retry_at_ms IS NULL OR next_retry_at_ms <= ?))
+            OR (status = 'PRINT_FAILED' AND cleanup_state = 'ACTIVE' AND updated_at_ms <= ?)
+         LIMIT 1`,
+      )
+      .bind(nowMs, nowMs - 60_000)
+      .first();
+    if (!work) return [];
+    await this.recoverExpiredClaims(nowMs);
+    await this.autoRetryEligibleOrders(nowMs);
+    await this.finishOrphanedSuccess(agentId, nowMs);
+
+    // Renew any existing active leases that are entering the final third of the lease window
+    const lease = nowMs + PRINT_CLAIM_LEASE_MS;
+    await this.db
+      .prepare(
+        `UPDATE orders SET claim_expires_at_ms = ?, updated_at_ms = ?
+       WHERE claimed_by_agent_id = ?
+         AND claim_expires_at_ms > ? AND claim_expires_at_ms <= ?
+         AND status IN ('CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED')`,
+      )
+      .bind(lease, nowMs, agentId, nowMs, nowMs + PRINT_CLAIM_LEASE_MS / 3)
+      .run();
+
+    // Loop to claim orders for any idle, available physical printers (bounded to 16)
+    for (let i = 0; i < 16; i++) {
+      const candidate = await this.db
+        .prepare(
+          `SELECT o.id order_id, o.status order_status, p.id printer_id,
+          COALESCE(p.physical_device_id, 'AGENT_LOCK_' || p.agent_id) physical_device_id,
+          i.identification_sheet_enabled,
+          i.identification_sheet_placement, i.id_sheet_min_pages, i.id_sheet_min_amount_paise,
+          o.total_amount_paise,
+          (SELECT SUM(COALESCE(op.selected_page_count, op.source_page_count, 1) * op.copies)
+           FROM order_files op WHERE op.order_id = o.id) total_printed_pages,
+          o.identification_required, f.id file_id, f.position file_position,
+          (SELECT COUNT(*) FROM order_files all_files WHERE all_files.order_id = o.id) file_count,
+          (SELECT COUNT(*) FROM order_files remaining WHERE remaining.order_id = o.id
+            AND remaining.print_status <> 'PRINTED') remaining_files,
+          CASE WHEN i.default_production_printer_id IS NOT NULL
+                    AND p.id <> i.default_production_printer_id
+               THEN i.default_production_printer_id
+               ELSE NULL
+          END AS fallback_from_printer_id
+        FROM orders o
+        JOIN order_files f ON f.order_id = o.id AND f.id = COALESCE((
+          SELECT next_file.id FROM order_files next_file
+          WHERE next_file.order_id = o.id AND next_file.print_status <> 'PRINTED'
+          ORDER BY next_file.position LIMIT 1
+        ), (SELECT last_file.id FROM order_files last_file
+            WHERE last_file.order_id = o.id ORDER BY last_file.position DESC LIMIT 1))
+        JOIN payments pay ON pay.order_id = o.id AND pay.status = 'PAID'
+          AND pay.provider_payment_id IS NOT NULL AND pay.verified_at_ms IS NOT NULL
+        JOIN agents a ON a.id = ? AND a.is_active = 1 AND a.last_heartbeat_at_ms >= ?
+        JOIN printers p ON p.agent_id = a.id AND p.enabled = 1 AND p.status = 'ONLINE'
+          AND COALESCE(p.is_paused, 0) = 0
+          AND p.is_production_eligible = 1 AND p.is_virtual = 0
+          AND p.capabilities_json IS NOT NULL
+        JOIN installation i ON i.id = 1
+          AND (
+            (o.printer_id IS NOT NULL AND p.id = o.printer_id)
+            OR (o.printer_id IS NULL AND (
+              (i.default_production_printer_id IS NULL AND (
+                p.id = (
+                  SELECT p_first.id FROM printers p_first
+                  WHERE p_first.agent_id = a.id AND p_first.enabled = 1
+                    AND p_first.is_production_eligible = 1 AND p_first.is_virtual = 0
+                  ORDER BY p_first.priority DESC, p_first.id ASC LIMIT 1
+                )
+              ))
+              OR p.id = i.default_production_printer_id
+              OR (
+                -- Subcase B1: Capability routing — default printer is ONLINE and NOT paused,
+                -- but lacks the specific capability requested by file f
+                p.id <> i.default_production_printer_id
+                AND EXISTS (
+                  SELECT 1 FROM printers def
+                  WHERE def.id = i.default_production_printer_id
+                    AND def.enabled = 1 AND def.status = 'ONLINE' AND COALESCE(def.is_paused, 0) = 0
+                    AND (
+                      (f.color_mode = 'COLOR' AND (
+                        (def.verified_capabilities_json IS NOT NULL AND (json_extract(def.verified_capabilities_json, '$.verified.color') <> 1 OR json_extract(def.enabled_services_json, '$.color') <> 1))
+                        OR (def.verified_capabilities_json IS NULL AND json_extract(def.capabilities_json, '$.colour') <> 1 AND json_extract(def.capabilities_json, '$.colour') <> 'true')
+                      ))
+                      OR (f.sides <> 'SINGLE' AND (
+                        (def.verified_capabilities_json IS NOT NULL AND (json_extract(def.verified_capabilities_json, '$.verified.duplex') <> 1 OR json_extract(def.enabled_services_json, '$.duplex') <> 1))
+                        OR (def.verified_capabilities_json IS NULL AND json_extract(def.capabilities_json, '$.duplex') <> 1 AND json_extract(def.capabilities_json, '$.duplex') <> 'true')
+                      ))
+                      OR (f.paper_size = 'A3' AND (
+                        (def.verified_capabilities_json IS NOT NULL AND (json_extract(def.verified_capabilities_json, '$.verified.a3') <> 1 OR json_extract(def.enabled_services_json, '$.a3') <> 1))
+                        OR (def.verified_capabilities_json IS NULL AND json_extract(def.capabilities_json, '$.paperSizes') NOT LIKE '%A3%')
+                      ))
+                    )
+                )
+              )
+              OR (
+                -- Subcase B2: Fallback routing — default printer is OFFLINE or PAUSED,
+                -- and auto-fallback is enabled pointing to this printer
+                p.id <> i.default_production_printer_id
+                AND EXISTS (
+                  SELECT 1 FROM printers def
+                  WHERE def.id = i.default_production_printer_id
+                    AND def.auto_fallback_enabled = 1
+                    AND def.fallback_printer_id = p.id
+                    AND (def.enabled = 0 OR def.status <> 'ONLINE' OR COALESCE(def.is_paused, 0) = 1)
+                )
+                AND COALESCE(p.fallback_printer_id, '') <> i.default_production_printer_id
+              )
+              OR (
+                -- Subcase B3: Parallel routing — default printer is busy on its physical device,
+                -- and printer p is on an independent, idle physical device that matches all capabilities
+                p.id <> i.default_production_printer_id
+                AND EXISTS (
+                  SELECT 1 FROM printers def
+                  WHERE def.id = i.default_production_printer_id
+                    AND COALESCE(def.physical_device_id, 'AGENT_LOCK_' || def.agent_id) <> COALESCE(p.physical_device_id, 'AGENT_LOCK_' || p.agent_id)
+                    AND EXISTS (
+                      SELECT 1 FROM orders busy
+                      JOIN printers busy_p ON busy_p.id = busy.printer_id
+                      WHERE busy.id <> o.id
+                        AND busy.status IN ('CLAIMED','SPOOLING','PRINTING','ADMIN_ACTION_REQUIRED','COMPLETION_UNKNOWN','NEEDS_ADMIN')
+                        AND COALESCE(busy.physical_device_id, COALESCE(busy_p.physical_device_id, 'AGENT_LOCK_' || busy_p.agent_id)) = COALESCE(def.physical_device_id, 'AGENT_LOCK_' || def.agent_id)
+                    )
+                )
+              )
+            ))
+          )
+        WHERE ((o.status = 'QUEUED')
+               OR (o.status IN ('RETRY_PENDING', 'PRINT_BLOCKED') AND (o.next_retry_at_ms IS NULL OR o.next_retry_at_ms <= ?)))
+          AND o.public_job_code IS NOT NULL
+          AND o.cleanup_state = 'ACTIVE' AND f.upload_status = 'UPLOADED'
+          AND f.size_bytes IS NOT NULL
+          AND (f.position <> 1 OR EXISTS (SELECT 1 FROM uploads u
+            WHERE u.order_id = o.id AND u.r2_object_key = f.r2_object_key
+              AND u.storage_status = 'UPLOADED'))
+          AND (
+            p.verified_capabilities_json IS NULL
+            OR COALESCE(json_extract(p.verified_capabilities_json, '$.requiresReview'), 0) NOT IN (1, 'true')
+          )
+          AND (
+            CASE
+              WHEN p.verified_capabilities_json IS NOT NULL AND p.enabled_services_json IS NOT NULL THEN
+                (
+                  (f.color_mode = 'BW' AND json_extract(p.verified_capabilities_json, '$.verified.bw') = 1 AND json_extract(p.enabled_services_json, '$.bw') = 1)
+                  OR
+                  (f.color_mode = 'COLOR' AND json_extract(p.verified_capabilities_json, '$.verified.color') = 1 AND json_extract(p.enabled_services_json, '$.color') = 1)
+                )
+              ELSE
+                (f.color_mode = 'BW' OR json_extract(p.capabilities_json, '$.colour') = 1 OR json_extract(p.capabilities_json, '$.colour') = 'true')
+            END
+          )
+          AND (
+            CASE
+              WHEN p.verified_capabilities_json IS NOT NULL AND p.enabled_services_json IS NOT NULL THEN
+                (
+                  f.sides = 'SINGLE'
+                  OR
+                  (json_extract(p.verified_capabilities_json, '$.verified.duplex') = 1 AND json_extract(p.enabled_services_json, '$.duplex') = 1)
+                )
+              ELSE
+                (f.sides = 'SINGLE' OR json_extract(p.capabilities_json, '$.duplex') = 1 OR json_extract(p.capabilities_json, '$.duplex') = 'true')
+            END
+          )
+          AND (
+            CASE
+              WHEN p.verified_capabilities_json IS NOT NULL AND p.enabled_services_json IS NOT NULL THEN
+                (
+                  (f.paper_size = 'A4' AND json_extract(p.verified_capabilities_json, '$.verified.a4') = 1 AND json_extract(p.enabled_services_json, '$.a4') = 1)
+                  OR
+                  (f.paper_size = 'A3' AND json_extract(p.verified_capabilities_json, '$.verified.a3') = 1 AND json_extract(p.enabled_services_json, '$.a3') = 1)
+                )
+              ELSE
+                EXISTS (SELECT 1 FROM json_each(p.capabilities_json, '$.paperSizes') WHERE upper(value) = f.paper_size)
+            END
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM orders busy
+            JOIN printers busy_p ON busy_p.id = busy.printer_id
+            WHERE busy.id <> o.id
+              AND busy.status IN ('CLAIMED','SPOOLING','PRINTING','ADMIN_ACTION_REQUIRED','COMPLETION_UNKNOWN','NEEDS_ADMIN')
+              AND COALESCE(busy.physical_device_id, COALESCE(busy_p.physical_device_id, 'AGENT_LOCK_' || busy_p.agent_id)) = COALESCE(p.physical_device_id, 'AGENT_LOCK_' || p.agent_id)
+          )
+        ORDER BY
+          o.is_priority DESC,
+          (CASE WHEN o.status = 'QUEUED' THEN 0 WHEN o.status = 'RETRY_PENDING' THEN 1 ELSE 2 END) ASC,
+          o.queued_at_ms ASC,
+          o.id ASC,
+          CASE WHEN p.id = i.default_production_printer_id THEN 0 ELSE 1 END ASC,
+          CASE WHEN EXISTS (
+            SELECT 1 FROM printers def
+            WHERE def.id = i.default_production_printer_id
+              AND def.auto_fallback_enabled = 1
+              AND def.fallback_printer_id = p.id
+              AND (def.enabled = 0 OR def.status <> 'ONLINE' OR COALESCE(def.is_paused, 0) = 1)
+          ) THEN 0 ELSE 1 END ASC,
+          p.priority DESC,
+          p.id ASC
+        LIMIT 1`,
+        )
+        .bind(agentId, nowMs - 90_000, nowMs)
+        .first<CandidateRow>();
+      if (!candidate) break;
+
+      const claimed = await this.claimCandidate(candidate, agentId, nowMs);
+      if (!claimed) break;
+    }
+
+    return this.findAllCurrent(agentId);
+  }
+
+  async claimOrRenew(
+    agentId: string,
+    nowMs: number,
+  ): Promise<ClaimedPrintJobRecord | null> {
+    const all = await this.claimOrRenewAll(agentId, nowMs);
+    return all[0] ?? null;
+  }
+
+  async finishOrphanedSuccess(agentId: string, nowMs: number): Promise<void> {
+    const rows = await this.db
       .prepare(
         `SELECT o.id order_id, pa.id attempt_id, ps.id step_id,
           ps.status step_status, ps.spooler_job_id, o.status order_status,
@@ -725,32 +975,34 @@ export class D1PrintingRepository implements PrintingRepository {
           AND pa.status IN ('SUBMITTING','SPOOLING','PRINTING','BLOCKED')
           AND NOT EXISTS (SELECT 1 FROM print_attempt_steps pending
             WHERE pending.print_attempt_id = pa.id AND pending.status <> 'SUCCEEDED')
-        ORDER BY ps.sequence_number DESC LIMIT 1`,
+        GROUP BY o.id
+        ORDER BY ps.sequence_number DESC`,
       )
       .bind(agentId)
-      .first<StepOwnershipRow & { claim_id: string }>();
-    if (!row) return;
-    if (row.step_type === "CUSTOMER_DOCUMENT" && row.order_file_id) {
-      await this.db
-        .prepare(
-          `UPDATE order_files SET print_status = 'PRINTED', printed_at_ms = ?,
-           updated_at_ms = ? WHERE id = ? AND order_id = ?
-             AND print_status <> 'PRINTED'`,
-        )
-        .bind(nowMs, nowMs, row.order_file_id, row.order_id)
-        .run();
+      .all<StepOwnershipRow & { claim_id: string }>();
+    for (const row of rows.results ?? []) {
+      if (row.step_type === "CUSTOMER_DOCUMENT" && row.order_file_id) {
+        await this.db
+          .prepare(
+            `UPDATE order_files SET print_status = 'PRINTED', printed_at_ms = ?,
+             updated_at_ms = ? WHERE id = ? AND order_id = ?
+               AND print_status <> 'PRINTED'`,
+          )
+          .bind(nowMs, nowMs, row.order_file_id, row.order_id)
+          .run();
+      }
+      await this.completeAttemptIfReady(row, {
+        agentId,
+        orderId: row.order_id,
+        stepId: row.step_id,
+        claimId: row.claim_id,
+        status: "SUCCEEDED",
+        spoolerJobId: row.spooler_job_id,
+        failureCode: null,
+        failureDetail: null,
+        nowMs,
+      });
     }
-    await this.completeAttemptIfReady(row, {
-      agentId,
-      orderId: row.order_id,
-      stepId: row.step_id,
-      claimId: row.claim_id,
-      status: "SUCCEEDED",
-      spoolerJobId: row.spooler_job_id,
-      failureCode: null,
-      failureDetail: null,
-      nowMs,
-    });
   }
 
   async findOwnedStep(
@@ -759,7 +1011,8 @@ export class D1PrintingRepository implements PrintingRepository {
     return this.db
       .prepare(
         `SELECT o.id order_id, pa.id attempt_id, ps.id step_id, ps.status step_status,
-        ps.spooler_job_id, o.status order_status, ps.step_type, pa.order_file_id
+        ps.spooler_job_id, o.status order_status, ps.step_type, pa.order_file_id,
+        pa.attempt_number, pa.printer_id
       FROM orders o JOIN print_attempts pa ON pa.order_id = o.id
       JOIN print_attempt_steps ps ON ps.print_attempt_id = pa.id
       WHERE o.id = ? AND ps.id = ? AND o.claimed_by_agent_id = ?
@@ -895,6 +1148,512 @@ export class D1PrintingRepository implements PrintingRepository {
     return results[0]?.meta.changes === 1 ? this.findOwnedStep(input) : null;
   }
 
+  async handlePreflightFailure(
+    input: Parameters<PrintingRepository["handlePreflightFailure"]>[0],
+  ): Promise<{
+    action: "FALLBACK_ASSIGNED" | "BLOCKED_RELEASED" | "ACTION_REQUIRED";
+    printJob?: ClaimedPrintJobRecord | null;
+    fallbackPrinterName?: string | null;
+    orderId: string;
+    message: string;
+    retryAfterMs?: number;
+  }> {
+    const current = await this.findOwnedStep(input);
+    if (!current) {
+      return {
+        action: "ACTION_REQUIRED",
+        orderId: input.orderId,
+        message: "Print step not owned by active agent lease.",
+      };
+    }
+
+    // Strict Post-Submission Boundary:
+    // If the step has been submitted to Windows spooler, or succeeded, or has a spoolerJobId,
+    // NEVER automatically reroute or reassign!
+    if (
+      current.step_status === "SUBMITTED" ||
+      current.step_status === "SUCCEEDED" ||
+      current.spooler_job_id !== null
+    ) {
+      return {
+        action: "ACTION_REQUIRED",
+        orderId: input.orderId,
+        message:
+          "Physical print submission has already started or spooler job was registered. Automatic rerouting is prohibited.",
+      };
+    }
+
+    // If submission was marked started, submission state is ambiguous (could have submitted before crash).
+    // Mark as UNCERTAIN and require operator review.
+    if (current.step_status === "SUBMISSION_STARTED") {
+      await this.db.batch([
+        this.db
+          .prepare(
+            `UPDATE print_attempt_steps SET status = 'UNCERTAIN', failure_code = ?, failure_detail = ?, finished_at_ms = ?, updated_at_ms = ? WHERE id = ?`,
+          )
+          .bind(
+            "UNKNOWN",
+            input.failureDetail ??
+              "Agent reported preflight failure after submission started.",
+            input.nowMs,
+            input.nowMs,
+            input.stepId,
+          ),
+        this.db
+          .prepare(
+            `UPDATE orders SET status = 'ADMIN_ACTION_REQUIRED', error_category = 'COMPLETION_UNKNOWN', raw_error = ?, updated_at_ms = ? WHERE id = ?`,
+          )
+          .bind(
+            input.failureDetail ?? "Ambiguous submission state",
+            input.nowMs,
+            input.orderId,
+          ),
+      ]);
+      return {
+        action: "ACTION_REQUIRED",
+        orderId: input.orderId,
+        message:
+          "Submission was already initiated; non-submission cannot be safely proven. Admin intervention required.",
+      };
+    }
+
+    // Step is strictly PENDING or BLOCKED without a spooler job ID:
+    // 100% PROVABLY PRE-SUBMISSION.
+    const normFailure = normalizePrinterFailure(
+      input.failureCode || input.failureDetail,
+    );
+    const stepFailureCode = toStepFailureCode(
+      input.failureCode || input.failureDetail,
+    );
+    const printerWide = isPrinterWideFailure(normFailure);
+    const failingPrinterId = current.printer_id;
+
+    // Pause failing printer if it's a hardware/printer-wide failure
+    if (failingPrinterId && printerWide) {
+      await this.db
+        .prepare(
+          `UPDATE printers
+           SET is_paused = 1, paused_reason = ?,
+               paused_at_ms = COALESCE(paused_at_ms, ?), updated_at_ms = ?
+           WHERE id = ?`,
+        )
+        .bind(normFailure, input.nowMs, input.nowMs, failingPrinterId)
+        .run();
+    }
+
+    // Mark current attempt step as FAILED
+    // Mark current attempt as FAILED
+    await this.db.batch([
+      this.db
+        .prepare(
+          `UPDATE print_attempt_steps
+           SET status = 'FAILED', failure_code = ?, failure_detail = ?, finished_at_ms = ?, updated_at_ms = ?
+           WHERE id = ?`,
+        )
+        .bind(
+          stepFailureCode,
+          input.failureDetail ?? "Preflight hardware check failed",
+          input.nowMs,
+          input.nowMs,
+          input.stepId,
+        ),
+      this.db
+        .prepare(
+          `UPDATE print_attempts
+           SET status = 'FAILED', failure_code = ?, failure_detail = ?, finished_at_ms = ?, updated_at_ms = ?
+           WHERE id = ?`,
+        )
+        .bind(
+          stepFailureCode,
+          input.failureDetail ?? "Preflight hardware check failed",
+          input.nowMs,
+          input.nowMs,
+          current.attempt_id,
+        ),
+    ]);
+
+    // Query file requirements and shop configuration
+    const fileMeta = await this.db
+      .prepare(
+        `SELECT f.id file_id, f.color_mode, f.paper_size, f.sides, f.position file_position,
+                o.total_amount_paise, o.identification_required, o.fallback_count,
+                (SELECT SUM(COALESCE(op.selected_page_count, op.source_page_count, 1) * op.copies)
+                 FROM order_files op WHERE op.order_id = o.id) total_printed_pages,
+                (SELECT COUNT(*) FROM order_files all_files WHERE all_files.order_id = o.id) file_count,
+                (SELECT COUNT(*) FROM order_files rem WHERE rem.order_id = o.id AND rem.print_status <> 'PRINTED') remaining_files,
+                i.default_production_printer_id, i.identification_sheet_enabled,
+                i.identification_sheet_placement, i.id_sheet_min_pages, i.id_sheet_min_amount_paise,
+                p_fail.fallback_printer_id, p_fail.auto_fallback_enabled
+         FROM order_files f
+         JOIN orders o ON o.id = f.order_id
+         JOIN installation i ON i.id = 1
+         LEFT JOIN printers p_fail ON p_fail.id = ?
+         WHERE f.id = ? AND o.id = ?`,
+      )
+      .bind(failingPrinterId, current.order_file_id, input.orderId)
+      .first<{
+        file_id: string;
+        color_mode: string;
+        paper_size: string;
+        sides: string;
+        file_position: number;
+        total_amount_paise: number;
+        identification_required: number;
+        fallback_count: number;
+        total_printed_pages: number | null;
+        file_count: number;
+        remaining_files: number;
+        default_production_printer_id: string | null;
+        identification_sheet_enabled: number;
+        identification_sheet_placement: string;
+        id_sheet_min_pages: number | null;
+        id_sheet_min_amount_paise: number | null;
+        fallback_printer_id: string | null;
+        auto_fallback_enabled: number | null;
+      }>();
+
+    // Query other candidate printers
+    const candidates = await this.db
+      .prepare(
+        `SELECT p.id, p.windows_printer_name, p.display_name, p.priority,
+                p.capabilities_json, p.verified_capabilities_json, p.enabled_services_json
+         FROM printers p
+         WHERE p.agent_id = ?
+           AND p.id <> ?
+           AND p.enabled = 1
+           AND p.status = 'ONLINE'
+           AND COALESCE(p.is_paused, 0) = 0
+           AND p.is_production_eligible = 1
+           AND p.is_virtual = 0
+           AND (
+             p.verified_capabilities_json IS NULL
+             OR COALESCE(json_extract(p.verified_capabilities_json, '$.requiresReview'), 0) NOT IN (1, 'true')
+           )
+         ORDER BY
+           CASE WHEN p.id = ? THEN 0 ELSE 1 END ASC,
+           p.priority DESC,
+           p.id ASC`,
+      )
+      .bind(
+        input.agentId,
+        failingPrinterId,
+        fileMeta?.auto_fallback_enabled === 1
+          ? fileMeta.fallback_printer_id
+          : null,
+      )
+      .all<{
+        id: string;
+        windows_printer_name: string;
+        display_name: string;
+        priority: number;
+        capabilities_json: string;
+        verified_capabilities_json: string | null;
+        enabled_services_json: string | null;
+      }>();
+
+    // Capability matching filter
+    const compatible = (candidates.results ?? []).filter((p) => {
+      if (!fileMeta) return false;
+      // Do not route to any fallback printer if auto_fallback_enabled is 0
+      if (fileMeta.auto_fallback_enabled === 0) {
+        return false;
+      }
+      if (
+        fileMeta.fallback_printer_id &&
+        fileMeta.fallback_printer_id !== p.id
+      ) {
+        return false;
+      }
+
+      // Check capabilities
+      const verified = p.verified_capabilities_json
+        ? (JSON.parse(p.verified_capabilities_json) as {
+            verified?: {
+              color?: number;
+              bw?: number;
+              duplex?: number;
+              a4?: number;
+              a3?: number;
+            };
+          })
+        : null;
+      const services = p.enabled_services_json
+        ? (JSON.parse(p.enabled_services_json) as {
+            color?: number;
+            bw?: number;
+            duplex?: number;
+            a4?: number;
+            a3?: number;
+          })
+        : null;
+      const legacy = p.capabilities_json
+        ? (JSON.parse(p.capabilities_json) as {
+            colour?: boolean | string;
+            duplex?: boolean | string;
+            paperSizes?: string[];
+          })
+        : null;
+
+      if (verified?.verified && services) {
+        if (fileMeta.color_mode === "COLOR") {
+          if (!verified.verified.color || !services.color) return false;
+        } else if (fileMeta.color_mode === "BW") {
+          if (!verified.verified.bw || !services.bw) return false;
+        }
+        if (fileMeta.sides !== "SINGLE") {
+          if (!verified.verified.duplex || !services.duplex) return false;
+        }
+        if (fileMeta.paper_size === "A4") {
+          if (!verified.verified.a4 || !services.a4) return false;
+        } else if (fileMeta.paper_size === "A3") {
+          if (!verified.verified.a3 || !services.a3) return false;
+        }
+      } else if (legacy) {
+        if (fileMeta.color_mode === "COLOR") {
+          if (!legacy.colour || legacy.colour === "false") return false;
+        }
+        if (fileMeta.sides !== "SINGLE") {
+          if (!legacy.duplex || legacy.duplex === "false") return false;
+        }
+        if (fileMeta.paper_size === "A3") {
+          const sizes = Array.isArray(legacy.paperSizes)
+            ? legacy.paperSizes
+            : [];
+          if (
+            !sizes.some((s: string) => String(s).toUpperCase().includes("A3"))
+          )
+            return false;
+        }
+      }
+      return true;
+    });
+
+    if (compatible.length > 0 && fileMeta) {
+      // BRANCH A: Compatible Fallback Printer Found!
+      const selected = compatible[0]!;
+      const newAttemptId = crypto.randomUUID();
+      const newAttemptNumber = (current.attempt_number ?? 1) + 1;
+      const idStep = crypto.randomUUID();
+      const documentStep = crypto.randomUUID();
+
+      const succeededSteps = await this.db
+        .prepare(
+          `SELECT step_type FROM print_attempt_steps WHERE order_id = ? AND status = 'SUCCEEDED'`,
+        )
+        .bind(input.orderId)
+        .all<{ step_type: string }>();
+      const succeededSet = new Set(
+        (succeededSteps.results ?? []).map((r) => r.step_type),
+      );
+
+      const meetsPageThreshold =
+        fileMeta.id_sheet_min_pages !== null &&
+        fileMeta.id_sheet_min_pages !== undefined &&
+        fileMeta.id_sheet_min_pages > 0
+          ? (fileMeta.total_printed_pages ?? 0) > fileMeta.id_sheet_min_pages
+          : null;
+      const meetsAmountThreshold =
+        fileMeta.id_sheet_min_amount_paise !== null &&
+        fileMeta.id_sheet_min_amount_paise !== undefined &&
+        fileMeta.id_sheet_min_amount_paise > 0
+          ? (fileMeta.total_amount_paise ?? 0) >
+            fileMeta.id_sheet_min_amount_paise
+          : null;
+      const thresholdsSatisfied =
+        meetsPageThreshold !== null && meetsAmountThreshold !== null
+          ? meetsPageThreshold || meetsAmountThreshold
+          : meetsPageThreshold !== null
+            ? meetsPageThreshold
+            : meetsAmountThreshold !== null
+              ? meetsAmountThreshold
+              : true;
+
+      const needIdStep =
+        fileMeta.identification_sheet_enabled === 1 &&
+        thresholdsSatisfied &&
+        !succeededSet.has("IDENTIFICATION_SHEET") &&
+        ((fileMeta.identification_sheet_placement === "FIRST" &&
+          fileMeta.file_position === 1) ||
+          (fileMeta.identification_sheet_placement === "LAST" &&
+            fileMeta.remaining_files === 1));
+
+      const needDocStep = fileMeta.remaining_files > 0;
+      const firstIsId = fileMeta.identification_sheet_placement === "FIRST";
+
+      const statements: D1PreparedStatement[] = [
+        this.db
+          .prepare(
+            `INSERT INTO print_attempts (
+               id, order_id, order_file_id, attempt_number, agent_id, printer_id,
+               fallback_from_printer_id, fallback_reason, fallback_authorized_at_ms,
+               status, created_at_ms, updated_at_ms
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'CREATED', ?, ?)`,
+          )
+          .bind(
+            newAttemptId,
+            input.orderId,
+            fileMeta.file_id,
+            newAttemptNumber,
+            input.agentId,
+            selected.id,
+            failingPrinterId,
+            normFailure,
+            input.nowMs,
+            input.nowMs,
+            input.nowMs,
+          ),
+        this.db
+          .prepare(
+            `UPDATE orders
+             SET printer_id = ?, fallback_count = fallback_count + 1, updated_at_ms = ?
+             WHERE id = ? AND claim_id = ?`,
+          )
+          .bind(selected.id, input.nowMs, input.orderId, input.claimId),
+        this.event(
+          input.orderId,
+          "FALLBACK_REASSIGNED",
+          current.order_status,
+          current.order_status,
+          input.agentId,
+          input.nowMs,
+        ),
+      ];
+
+      if (firstIsId) {
+        if (needIdStep) {
+          statements.push(
+            this.db
+              .prepare(
+                `INSERT INTO print_attempt_steps (id, print_attempt_id, order_id, sequence_number,
+                step_type, created_at_ms, updated_at_ms)
+                VALUES (?, ?, ?, 1, 'IDENTIFICATION_SHEET', ?, ?)`,
+              )
+              .bind(
+                idStep,
+                newAttemptId,
+                input.orderId,
+                input.nowMs,
+                input.nowMs,
+              ),
+          );
+        }
+        if (needDocStep) {
+          statements.push(
+            this.db
+              .prepare(
+                `INSERT INTO print_attempt_steps (id, print_attempt_id, order_id, sequence_number,
+                step_type, created_at_ms, updated_at_ms)
+                VALUES (?, ?, ?, ?, 'CUSTOMER_DOCUMENT', ?, ?)`,
+              )
+              .bind(
+                documentStep,
+                newAttemptId,
+                input.orderId,
+                needIdStep ? 2 : 1,
+                input.nowMs,
+                input.nowMs,
+              ),
+          );
+        }
+      } else {
+        if (needDocStep) {
+          statements.push(
+            this.db
+              .prepare(
+                `INSERT INTO print_attempt_steps (id, print_attempt_id, order_id, sequence_number,
+                step_type, created_at_ms, updated_at_ms)
+                VALUES (?, ?, ?, 1, 'CUSTOMER_DOCUMENT', ?, ?)`,
+              )
+              .bind(
+                documentStep,
+                newAttemptId,
+                input.orderId,
+                input.nowMs,
+                input.nowMs,
+              ),
+          );
+        }
+        if (needIdStep) {
+          statements.push(
+            this.db
+              .prepare(
+                `INSERT INTO print_attempt_steps (id, print_attempt_id, order_id, sequence_number,
+                step_type, created_at_ms, updated_at_ms)
+                VALUES (?, ?, ?, ?, 'IDENTIFICATION_SHEET', ?, ?)`,
+              )
+              .bind(
+                idStep,
+                newAttemptId,
+                input.orderId,
+                needDocStep ? 2 : 1,
+                input.nowMs,
+                input.nowMs,
+              ),
+          );
+        }
+      }
+
+      await this.db.batch(statements);
+      const newJob = await this.findCurrent(input.agentId);
+
+      return {
+        action: "FALLBACK_ASSIGNED",
+        printJob: newJob,
+        fallbackPrinterName: selected.display_name,
+        orderId: input.orderId,
+        message: `Safe fallback authorized to printer ${selected.display_name}.`,
+      };
+    }
+
+    // BRANCH B: No compatible fallback printer available.
+    // Release active claim to prevent queue starvation of unrelated orders!
+    const fallbackCount = (fileMeta?.fallback_count ?? 0) + 1;
+    const backoffMs = Math.min(
+      300_000,
+      30_000 * Math.pow(2, Math.min(fallbackCount - 1, 3)),
+    );
+
+    const statements: D1PreparedStatement[] = [
+      this.db
+        .prepare(
+          `UPDATE orders
+           SET status = 'RETRY_PENDING', claimed_by_agent_id = NULL, claim_id = NULL,
+               claim_expires_at_ms = NULL, error_category = ?, raw_error = ?,
+               blocked_reason = ?, fallback_count = ?, next_retry_at_ms = ?,
+               updated_at_ms = ?
+           WHERE id = ? AND claim_id = ?`,
+        )
+        .bind(
+          normFailure,
+          input.failureDetail ?? "No compatible printer currently available",
+          input.failureDetail ?? "Printer is blocked and no fallback available",
+          fallbackCount,
+          input.nowMs + backoffMs,
+          input.nowMs,
+          input.orderId,
+          input.claimId,
+        ),
+      this.event(
+        input.orderId,
+        "PRINT_UNSTARVED_RETRY",
+        current.order_status,
+        "RETRY_PENDING",
+        input.agentId,
+        input.nowMs,
+      ),
+    ];
+
+    await this.db.batch(statements);
+
+    return {
+      action: "BLOCKED_RELEASED",
+      orderId: input.orderId,
+      message:
+        "No compatible fallback printer available. Order claim released to allow other queued orders to progress.",
+      retryAfterMs: backoffMs,
+    };
+  }
+
   async recordResult(
     input: Parameters<PrintingRepository["recordResult"]>[0],
   ): Promise<StepOwnershipRow | null> {
@@ -924,28 +1683,6 @@ export class D1PrintingRepository implements PrintingRepository {
       input.spoolerJobId !== current.spooler_job_id
     )
       return null;
-    function toStepFailureCode(code: string | null | undefined): string | null {
-      if (!code) return null;
-      const upper = code.trim().toUpperCase();
-      const allowed = [
-        "PAPER_OUT",
-        "PAPER_JAM",
-        "OFFLINE",
-        "NO_TONER",
-        "TONER_LOW",
-        "DOOR_OPEN",
-        "USER_INTERVENTION",
-        "PRINTER_ERROR",
-        "UNKNOWN",
-      ];
-      if (allowed.includes(upper)) {
-        return upper;
-      }
-      if (upper === "PRINTER_OFFLINE" || upper === "CONNECTION_LOST")
-        return "OFFLINE";
-      if (upper === "SPOOLER_ERROR") return "PRINTER_ERROR";
-      return "UNKNOWN";
-    }
 
     const stepFailureCode = toStepFailureCode(input.failureCode);
     const finished = input.status === "BLOCKED" ? null : input.nowMs;

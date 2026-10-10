@@ -6,4 +6,5 @@ export * from "./page-range.js";
 export * from "./phone.js";
 export * from "./pickup-code.js";
 export * from "./printer-classification.js";
+export * from "./printer-capabilities.js";
 export * from "./vocabularies.js";

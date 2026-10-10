@@ -2,6 +2,7 @@ import * as fs from "node:fs/promises";
 import type {
   AgentHeartbeatRequest,
   AgentPrinterReport,
+  AgentPrintJob,
   AgentTestPrintCommand,
 } from "@printgo/api-contract";
 import { AgentAuthError, AgentClient } from "./agent-client.js";
@@ -56,6 +57,13 @@ export class AgentDaemon {
   private isBeating = false;
   private ws: WebSocket | null = null;
   private readonly executedCommandIds = new Map<string, number>();
+  private readonly executionJournal: ExecutionJournalStore =
+    new ExecutionJournalStore();
+  private readonly activeLanes = new Map<
+    string,
+    { job: AgentPrintJob; deviceKey: string; promise: Promise<void> }
+  >();
+  private readonly activePhysicalDevices = new Map<string, string>();
   private readonly paidPrintExecutor: PaidPrintExecutor;
 
   constructor(options: AgentDaemonOptions) {
@@ -80,10 +88,11 @@ export class AgentDaemon {
     this.paidPrintExecutor = new PaidPrintExecutor(
       this.client,
       this.printerAdapter,
-      new ExecutionJournalStore(),
+      this.executionJournal,
       (message) => this.log(message),
       () => {
         this.nextDelayMs = 0;
+        this.reschedulePulse();
       },
     );
   }
@@ -127,6 +136,7 @@ export class AgentDaemon {
   async start(): Promise<boolean> {
     if (this.running) return true;
 
+    await this.executionJournal.migrateLegacy();
     this.credentials = await this.credentialStore.load();
     if (!this.credentials) {
       this.log("No credentials found. Daemon is idle awaiting pairing.");
@@ -214,6 +224,10 @@ export class AgentDaemon {
 
   private schedulePulse(): void {
     if (!this.running) return;
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
     this.timer = setTimeout(() => {
       this.timer = null;
       void this.pulse()
@@ -229,6 +243,15 @@ export class AgentDaemon {
     }, this.nextDelayMs);
   }
 
+  private reschedulePulse(): void {
+    if (!this.running) return;
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    this.schedulePulse();
+  }
+
   stop(): void {
     if (this.timer) {
       clearTimeout(this.timer);
@@ -240,6 +263,8 @@ export class AgentDaemon {
       this.ws = null;
     }
     this.running = false;
+    this.activeLanes.clear();
+    this.activePhysicalDevices.clear();
     this.log("Agent daemon stopped.");
     void writeAgentStatus({
       operationalState: "OFFLINE",
@@ -328,8 +353,19 @@ export class AgentDaemon {
           p.isEligibleForProductionPrint !== false &&
           !p.isVirtual,
       );
+      const rawJobs: AgentPrintJob[] = [];
+      if (heartbeatData.printJobs && heartbeatData.printJobs.length > 0) {
+        for (const job of heartbeatData.printJobs) {
+          rawJobs.push(job);
+        }
+      } else if (heartbeatData.printJob?.type === "PAID_PRINT_JOB") {
+        rawJobs.push(heartbeatData.printJob);
+      }
+
       const hadWork = Boolean(
-        heartbeatData.nextCommand || heartbeatData.printJob,
+        heartbeatData.nextCommand ||
+        rawJobs.length > 0 ||
+        this.activeLanes.size > 0,
       );
       if (hadWork || (reportChanged && ready)) {
         this.idlePolls = 0;
@@ -338,7 +374,7 @@ export class AgentDaemon {
       }
       if (heartbeatData.onlinePrintingEnabled === false || !ready) {
         this.nextDelayMs = 60_000;
-      } else if (heartbeatData.printJob) {
+      } else if (rawJobs.length > 0 || this.activeLanes.size > 0) {
         this.nextDelayMs = 6_000;
       } else {
         this.nextDelayMs = 60_000;
@@ -372,20 +408,60 @@ export class AgentDaemon {
       if (heartbeatData.nextCommand?.type === "TEST_PRINT") {
         await this.handleTestPrintCommand(heartbeatData.nextCommand);
       }
-      if (heartbeatData.printJob?.type === "PAID_PRINT_JOB") {
-        try {
-          const printOutcome = await this.paidPrintExecutor.handle(
-            this.credentials,
-            heartbeatData.printJob,
-          );
-          if (printOutcome === "PREFLIGHT_DEFERRED") this.nextDelayMs = 30_000;
-        } catch (err: unknown) {
-          const error = err instanceof Error ? err : new Error(String(err));
+
+      const lanePromises: Promise<void>[] = [];
+      for (const job of rawJobs) {
+        if (job.type !== "PAID_PRINT_JOB") continue;
+        if (this.activeLanes.has(job.orderId)) continue;
+
+        const deviceKey =
+          job.physicalDeviceId || job.printerId || job.windowsPrinterName;
+        if (this.activePhysicalDevices.has(deviceKey)) {
           this.log(
-            `Paid print operation failed inside its safety boundary: ${error.message}`,
+            `Physical device "${deviceKey}" is currently busy with order ${this.activePhysicalDevices.get(deviceKey)}. Deferring parallel execution of order ${job.orderId}.`,
           );
-          this.notifyError(error);
+          continue;
         }
+
+        this.activePhysicalDevices.set(deviceKey, job.orderId);
+
+        const lanePromise = (async () => {
+          try {
+            const printOutcome = await this.paidPrintExecutor.handle(
+              this.credentials!,
+              job,
+            );
+            if (printOutcome === "PREFLIGHT_DEFERRED") {
+              this.nextDelayMs = 30_000;
+              this.reschedulePulse();
+            } else if (printOutcome === "BLOCKED_RELEASED") {
+              this.nextDelayMs = 6_000;
+              this.reschedulePulse();
+            }
+          } catch (err: unknown) {
+            const error = err instanceof Error ? err : new Error(String(err));
+            this.log(
+              `Paid print operation failed inside its safety boundary: ${error.message}`,
+            );
+            this.notifyError(error);
+          } finally {
+            this.activeLanes.delete(job.orderId);
+            this.activePhysicalDevices.delete(deviceKey);
+          }
+        })();
+
+        this.activeLanes.set(job.orderId, {
+          job,
+          deviceKey,
+          promise: lanePromise,
+        });
+        lanePromises.push(lanePromise);
+      }
+
+      if (lanePromises.length > 0) {
+        await Promise.all(
+          lanePromises.map((p) => Promise.race([p, Promise.resolve()])),
+        );
       }
     } catch (err: unknown) {
       if (err instanceof AgentAuthError) {
@@ -450,13 +526,27 @@ export class AgentDaemon {
       await this.printerAdapter.listPrinters(true);
       this.lastPrinterRefreshMs = -Infinity;
 
-      // 1. Generate local diagnostic document
+      // 1. Generate local diagnostic document according to requested test type
+      const testType = command.testType ?? "STANDARD";
       tempPdfPath = await createDiagnosticPdfFile({
         shopName: command.shopName,
         printerDisplayName: command.printerDisplayName,
+        testType,
       });
 
-      // 2. Submit to Windows printer via adapter
+      const paperSize =
+        command.testSettings?.paperSize ?? (testType === "A3" ? "A3" : "A4");
+      const colorMode =
+        command.testSettings?.colorMode === "COLOR" || testType === "COLOR"
+          ? "COLOUR"
+          : "BLACK_AND_WHITE";
+      const sides =
+        command.testSettings?.sides === "DOUBLE" || testType === "DUPLEX"
+          ? "TWO_SIDED_LONG"
+          : "ONE_SIDED";
+      const pageRange = testType === "DUPLEX" ? "1-2" : "1";
+
+      // 2. Submit to Windows printer via adapter with accurate requested settings
       const submission = await this.printerAdapter.submitPdfJob({
         printerId: command.windowsPrinterName,
         localPdfPath: tempPdfPath,
@@ -465,11 +555,12 @@ export class AgentDaemon {
         settings: {
           printerName: command.windowsPrinterName,
           copies: 1,
-          paperSize: "A4",
-          colorMode: "BLACK_AND_WHITE",
-          sides: "ONE_SIDED",
-          pageRange: "1",
+          paperSize,
+          colorMode,
+          sides,
+          pageRange,
         },
+        isDiagnosticTestPrint: true,
       });
 
       this.log(

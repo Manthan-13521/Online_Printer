@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-01T08:00:50.621Z",
+  "generatedAt": "2026-10-10T11:35:35.945Z",
   "evidence": "MEASURED LOCAL",
   "warning": "SQLite timings and plans provide relative/query-plan evidence only; they are not Cloudflare billed rows_read or rows_written.",
   "fixture": {
@@ -281,7 +281,7 @@
       {
         "id": 12,
         "parent": 0,
-        "notused": 61,
+        "notused": 60,
         "detail": "SEARCH o USING INDEX orders_completed_cleanup_due_idx (purge_at_ms>? AND purge_at_ms<?)"
       },
       {
@@ -485,10 +485,10 @@
     ],
     "openRunGate": [
       {
-        "id": 4,
+        "id": 3,
         "parent": 0,
-        "notused": 61,
-        "detail": "SEARCH cleanup_runs USING INDEX cleanup_runs_open_scope_idx (scope=? AND source=?)"
+        "notused": 54,
+        "detail": "SEARCH cleanup_runs USING COVERING INDEX cleanup_runs_scope_source_status_idx (scope=? AND source=? AND status=?)"
       }
     ],
     "expiredCandidateGate": [
@@ -563,7 +563,7 @@
       {
         "id": 4,
         "parent": 0,
-        "notused": 61,
+        "notused": 60,
         "detail": "SEARCH o USING INDEX orders_completed_cleanup_due_idx (purge_at_ms>? AND purge_at_ms<?)"
       },
       {
@@ -620,26 +620,26 @@
     {
       "label": "before: repeated expired preview despite open run",
       "iterations": 200,
-      "durationMs": 246.817584,
-      "averageMs": 1.2340879200000001
+      "durationMs": 244.88458400000002,
+      "averageMs": 1.22442292
     },
     {
       "label": "before: repeated completed preview despite open run",
       "iterations": 200,
-      "durationMs": 284.56720899999993,
-      "averageMs": 1.4228360449999997
+      "durationMs": 284.837417,
+      "averageMs": 1.424187085
     },
     {
       "label": "after: indexed open-run gate for expired cleanup",
       "iterations": 200,
-      "durationMs": 1.3957499999999072,
-      "averageMs": 0.0069787499999995365
+      "durationMs": 1.9568749999999682,
+      "averageMs": 0.00978437499999984
     },
     {
       "label": "after: indexed open-run gate for completed cleanup",
       "iterations": 200,
-      "durationMs": 1.3165839999999207,
-      "averageMs": 0.0065829199999996035
+      "durationMs": 1.8572499999999081,
+      "averageMs": 0.009286249999999541
     }
   ]
 }

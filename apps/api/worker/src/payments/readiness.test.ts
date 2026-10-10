@@ -302,4 +302,418 @@ describe("D1PaymentReadiness", () => {
     });
     expect(agentHeartbeatQueryCount).toBe(1);
   });
+
+  it("fails closed when verified capabilities or enabled services disallow requested feature", async () => {
+    const mockDb = createMockDb({
+      installation: () => Promise.resolve({ online_printing_enabled: 1 }),
+      agents: () => Promise.resolve([{ id: "agent_1" }]),
+      printers: () =>
+        Promise.resolve([
+          {
+            id: "printer_color_laser",
+            status: "ONLINE",
+            // Unverified WMI driver detected color & duplex:
+            capabilities_json: JSON.stringify({
+              colour: true,
+              duplex: true,
+              paperSizes: ["A4", "A3"],
+            }),
+            // Admin only verified & enabled B&W Simplex A4:
+            verified_capabilities_json: JSON.stringify({
+              verified: {
+                bw: true,
+                color: false,
+                duplex: false,
+                a4: true,
+                a3: false,
+              },
+              enabled: {
+                bw: true,
+                color: false,
+                duplex: false,
+                a4: true,
+                a3: false,
+              },
+              verifiedAtMs: 1_700_000_000_000,
+              verifiedByAdminId: "admin_1",
+            }),
+            enabled_services_json: JSON.stringify({
+              bw: true,
+              color: false,
+              duplex: false,
+              a4: true,
+              a3: false,
+            }),
+          },
+        ]),
+    });
+    const readiness = new D1PaymentReadiness(mockDb, { APP_ENV: "production" });
+
+    // Color request fails closed
+    await expect(
+      readiness.check({
+        paperSize: "A4",
+        colorMode: "COLOR",
+        sides: "SINGLE",
+      }),
+    ).resolves.toEqual({
+      ready: false,
+      reason: "COLOR_MODE_UNSUPPORTED",
+      message:
+        "Colour printing is currently unavailable on connected printers.",
+    });
+
+    // Duplex request fails closed
+    await expect(
+      readiness.check({
+        paperSize: "A4",
+        colorMode: "BW",
+        sides: "DOUBLE",
+      }),
+    ).resolves.toEqual({
+      ready: false,
+      reason: "SIDES_MODE_UNSUPPORTED",
+      message:
+        "Double-sided printing is currently unavailable on connected printers.",
+    });
+
+    // A3 request fails closed
+    await expect(
+      readiness.check({
+        paperSize: "A3",
+        colorMode: "BW",
+        sides: "SINGLE",
+      }),
+    ).resolves.toEqual({
+      ready: false,
+      reason: "PAPER_SIZE_UNSUPPORTED",
+      message: "A3 paper printing is currently unavailable.",
+    });
+
+    // B&W Simplex A4 succeeds
+    await expect(
+      readiness.check({
+        paperSize: "A4",
+        colorMode: "BW",
+        sides: "SINGLE",
+      }),
+    ).resolves.toEqual({
+      ready: true,
+      source: "LIVE_AGENT",
+      printerId: "printer_color_laser",
+    });
+  });
+
+  it("regression: default mono printer offline, secondary color printer online without fallback fails closed", async () => {
+    const mockDb = createMockDb({
+      installation: () =>
+        Promise.resolve({
+          online_printing_enabled: 1,
+          default_production_printer_id: "printer_mono",
+        }),
+      agents: () => Promise.resolve([{ id: "agent_1" }]),
+      printers: () =>
+        Promise.resolve([
+          {
+            id: "printer_mono",
+            status: "OFFLINE",
+            auto_fallback_enabled: 0,
+            fallback_printer_id: null,
+            capabilities_json: JSON.stringify({
+              colour: false,
+              duplex: false,
+              paperSizes: ["A4"],
+            }),
+          },
+          {
+            id: "printer_color",
+            status: "ONLINE",
+            capabilities_json: JSON.stringify({
+              colour: true,
+              duplex: true,
+              paperSizes: ["A4", "A3"],
+            }),
+          },
+        ]),
+    });
+    const readiness = new D1PaymentReadiness(mockDb, { APP_ENV: "production" });
+
+    // Must NOT accept color order just because printer_color exists when printer_mono is the default without fallback
+    await expect(
+      readiness.check({
+        paperSize: "A4",
+        colorMode: "COLOR",
+        sides: "SINGLE",
+      }),
+    ).resolves.toEqual({
+      ready: false,
+      reason: "PRINTER_UNAVAILABLE",
+      message:
+        "The configured default printer is offline, blocked, or in an error state.",
+    });
+  });
+
+  it("regression: default mono printer offline, secondary color printer online with valid fallback succeeds", async () => {
+    const mockDb = createMockDb({
+      installation: () =>
+        Promise.resolve({
+          online_printing_enabled: 1,
+          default_production_printer_id: "printer_mono",
+        }),
+      agents: () => Promise.resolve([{ id: "agent_1" }]),
+      printers: () =>
+        Promise.resolve([
+          {
+            id: "printer_mono",
+            status: "OFFLINE",
+            auto_fallback_enabled: 1,
+            fallback_printer_id: "printer_color",
+            capabilities_json: JSON.stringify({
+              colour: false,
+              duplex: false,
+              paperSizes: ["A4"],
+            }),
+          },
+          {
+            id: "printer_color",
+            status: "ONLINE",
+            auto_fallback_enabled: 0,
+            fallback_printer_id: null,
+            capabilities_json: JSON.stringify({
+              colour: true,
+              duplex: true,
+              paperSizes: ["A4", "A3"],
+            }),
+          },
+        ]),
+    });
+    const readiness = new D1PaymentReadiness(mockDb, { APP_ENV: "production" });
+
+    await expect(
+      readiness.check({
+        paperSize: "A4",
+        colorMode: "COLOR",
+        sides: "SINGLE",
+      }),
+    ).resolves.toEqual({
+      ready: true,
+      source: "LIVE_AGENT",
+      printerId: "printer_color",
+    });
+  });
+
+  it("Phase 3 smart capability routing: default mono printer online routes color order to online secondary color printer", async () => {
+    const mockDb = createMockDb({
+      installation: () =>
+        Promise.resolve({
+          online_printing_enabled: 1,
+          default_production_printer_id: "printer_mono",
+        }),
+      agents: () => Promise.resolve([{ id: "agent_1" }]),
+      printers: () =>
+        Promise.resolve([
+          {
+            id: "printer_mono",
+            status: "ONLINE",
+            auto_fallback_enabled: 1,
+            fallback_printer_id: "printer_color",
+            capabilities_json: JSON.stringify({
+              colour: false,
+              duplex: false,
+              paperSizes: ["A4"],
+            }),
+          },
+          {
+            id: "printer_color",
+            status: "ONLINE",
+            capabilities_json: JSON.stringify({
+              colour: true,
+              duplex: true,
+              paperSizes: ["A4"],
+            }),
+          },
+        ]),
+    });
+    const readiness = new D1PaymentReadiness(mockDb, { APP_ENV: "production" });
+
+    // Phase 3 Smart Routing: Because primary is mono, readiness routes color order to secondary color printer
+    await expect(
+      readiness.check({
+        paperSize: "A4",
+        colorMode: "COLOR",
+        sides: "SINGLE",
+      }),
+    ).resolves.toEqual({
+      ready: true,
+      source: "LIVE_AGENT",
+      printerId: "printer_color",
+    });
+  });
+
+  it("regression: multiple printers with no default configured fails closed as NO_CONFIGURED_PRINTER", async () => {
+    const mockDb = createMockDb({
+      installation: () =>
+        Promise.resolve({
+          online_printing_enabled: 1,
+          default_production_printer_id: null,
+        }),
+      agents: () => Promise.resolve([{ id: "agent_1" }]),
+      printers: () =>
+        Promise.resolve([
+          {
+            id: "printer_a",
+            status: "ONLINE",
+            capabilities_json: JSON.stringify({
+              colour: false,
+              duplex: false,
+              paperSizes: ["A4"],
+            }),
+          },
+          {
+            id: "printer_b",
+            status: "ONLINE",
+            capabilities_json: JSON.stringify({
+              colour: true,
+              duplex: true,
+              paperSizes: ["A4"],
+            }),
+          },
+        ]),
+    });
+    const readiness = new D1PaymentReadiness(mockDb, { APP_ENV: "production" });
+
+    await expect(
+      readiness.check({
+        paperSize: "A4",
+        colorMode: "BW",
+        sides: "SINGLE",
+      }),
+    ).resolves.toEqual({
+      ready: false,
+      reason: "NO_CONFIGURED_PRINTER",
+      message:
+        "No default production printer is configured. Please select a default printer in Admin settings.",
+    });
+  });
+
+  it("regression: printer with requiresReview=true fails closed", async () => {
+    const mockDb = createMockDb({
+      installation: () =>
+        Promise.resolve({
+          online_printing_enabled: 1,
+          default_production_printer_id: "printer_flagged",
+        }),
+      agents: () => Promise.resolve([{ id: "agent_1" }]),
+      printers: () =>
+        Promise.resolve([
+          {
+            id: "printer_flagged",
+            status: "ONLINE",
+            verified_capabilities_json: JSON.stringify({
+              verified: {
+                bw: true,
+                color: true,
+                duplex: true,
+                a4: true,
+                a3: true,
+              },
+              enabled: {
+                bw: true,
+                color: true,
+                duplex: true,
+                a4: true,
+                a3: true,
+              },
+              requiresReview: true,
+            }),
+            enabled_services_json: JSON.stringify({
+              bw: true,
+              color: true,
+              duplex: true,
+              a4: true,
+              a3: true,
+            }),
+          },
+        ]),
+    });
+    const readiness = new D1PaymentReadiness(mockDb, { APP_ENV: "production" });
+
+    await expect(
+      readiness.check({
+        paperSize: "A4",
+        colorMode: "COLOR",
+        sides: "SINGLE",
+      }),
+    ).resolves.toEqual({
+      ready: false,
+      reason: "PRINTER_UNAVAILABLE",
+      message:
+        "The target printer configuration requires administrative review.",
+    });
+  });
+
+  it("regression: legacy UNKNOWN capabilities never grant positive authorization", async () => {
+    const mockDb = createMockDb({
+      installation: () =>
+        Promise.resolve({
+          online_printing_enabled: 1,
+          default_production_printer_id: "printer_unknowns",
+        }),
+      agents: () => Promise.resolve([{ id: "agent_1" }]),
+      printers: () =>
+        Promise.resolve([
+          {
+            id: "printer_unknowns",
+            status: "ONLINE",
+            capabilities_json: JSON.stringify({
+              colour: "UNKNOWN",
+              duplex: "UNKNOWN",
+              paperSizes: ["A4"],
+            }),
+          },
+        ]),
+    });
+    const readiness = new D1PaymentReadiness(mockDb, { APP_ENV: "production" });
+
+    // Color fails closed
+    await expect(
+      readiness.check({
+        paperSize: "A4",
+        colorMode: "COLOR",
+        sides: "SINGLE",
+      }),
+    ).resolves.toEqual({
+      ready: false,
+      reason: "COLOR_MODE_UNSUPPORTED",
+      message:
+        "Colour printing is currently unavailable on connected printers.",
+    });
+
+    // Duplex fails closed
+    await expect(
+      readiness.check({
+        paperSize: "A4",
+        colorMode: "BW",
+        sides: "DOUBLE",
+      }),
+    ).resolves.toEqual({
+      ready: false,
+      reason: "SIDES_MODE_UNSUPPORTED",
+      message:
+        "Double-sided printing is currently unavailable on connected printers.",
+    });
+
+    // Baseline BW single-sided A4 succeeds
+    await expect(
+      readiness.check({
+        paperSize: "A4",
+        colorMode: "BW",
+        sides: "SINGLE",
+      }),
+    ).resolves.toEqual({
+      ready: true,
+      source: "LIVE_AGENT",
+      printerId: "printer_unknowns",
+    });
+  });
 });

@@ -1,7 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOST="${PRINTGO_REMOTE_HOST:-printgo-windows}"
+
+# Check connection with auto-discovery fallback
+if ! ssh -o BatchMode=yes -o ConnectTimeout=2 "$HOST" "hostname" >/dev/null 2>&1; then
+  echo "Attempting automatic discovery of Windows laptop..."
+  bash "$SCRIPT_DIR/discover-windows.sh" || true
+fi
+
 AGENT_DIR="C:\\PrintGo\\agent"
 
 action="${1:-help}"
@@ -51,14 +59,19 @@ if ($procs) {
     exit 0
 }
 
-$exePath = "C:\PrintGo\agent\PrintGo-Agent.exe"
+$exePath = "C:\Users\MANTH\AppData\Local\Programs\PrintGo\PrintGo-Agent.exe"
+$workingDir = "C:\Users\MANTH\AppData\Local\Programs\PrintGo"
 if (-not (Test-Path $exePath)) {
-    Write-Error "PrintGo-Agent.exe not found at C:\PrintGo\agent\PrintGo-Agent.exe. Please deploy first."
+    $exePath = "C:\PrintGo\agent\PrintGo-Agent.exe"
+    $workingDir = "C:\PrintGo\agent"
+}
+if (-not (Test-Path $exePath)) {
+    Write-Error "PrintGo-Agent.exe not found at $exePath. Please deploy first."
     exit 1
 }
 
 Write-Host "Launching PrintGo-Agent detached process..." -ForegroundColor Green
-$result = ([wmiclass]'win32_process').Create($exePath, "C:\PrintGo\agent", $null)
+$result = ([wmiclass]'win32_process').Create($exePath, $workingDir, $null)
 if ($result.ReturnValue -eq 0) {
     Start-Sleep -Seconds 2
     $newProc = Get-Process -Id $result.ProcessId -ErrorAction SilentlyContinue

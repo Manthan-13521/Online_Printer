@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { AgentPrintJob } from "@printgo/api-contract";
+
 import { AgentApiError, AgentAuthError, AgentClient } from "./agent-client";
 
 function mockResponse(status: number, ok: boolean, body: unknown): Response {
@@ -202,5 +204,48 @@ describe("AgentClient", () => {
         },
       ),
     ).rejects.toThrow(AgentAuthError);
+  });
+
+  it("reports preflight failure successfully", async () => {
+    global.fetch = vi.fn().mockResolvedValueOnce(
+      mockResponse(200, true, {
+        ok: true,
+        data: {
+          action: "BLOCKED_RELEASED",
+          orderId: "ord_1",
+          message: "Unstarved",
+          retryAfterMs: 30000,
+        },
+      }),
+    );
+
+    const client = new AgentClient();
+    const mockJob = {
+      orderId: "ord_1",
+      currentStep: { stepId: "step_1" },
+      claimId: "claim_1",
+    } as unknown as AgentPrintJob;
+
+    const result = await client.reportPreflightFailure(
+      "https://api.printgo.shop",
+      "agent_99",
+      "secret_abc",
+      mockJob,
+      "OFFLINE",
+      "Printer is offline",
+    );
+
+    expect(result.action).toBe("BLOCKED_RELEASED");
+    expect(global.fetch).toHaveBeenCalledWith(
+      "https://api.printgo.shop/api/agent/print-jobs/ord_1/steps/step_1/preflight-failure",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          claimId: "claim_1",
+          failureCode: "OFFLINE",
+          failureDetail: "Printer is offline",
+        }),
+      }),
+    );
   });
 });

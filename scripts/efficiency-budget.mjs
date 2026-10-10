@@ -6,7 +6,7 @@ export function efficiencyBudget(ordersPerDay = 60) {
     visits = ordersPerDay * 4,
     failed = ordersPerDay * 0.05;
   const agentPulses = (hours * 3600) / 5,
-    heartbeatWrites = hours * 60;
+    heartbeatWrites = Math.floor(hours * 30);
   // Worst case: dashboard AND Live Orders visible for the whole day.
   const dashboard = (hours * 3600) / 30,
     live = (hours * 3600) / 20;

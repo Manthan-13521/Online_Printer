@@ -8,6 +8,9 @@ import type {
   AgentPrintJob,
   AgentPrintStepResponse,
   AgentReportPrintStepRequest,
+  AgentPreflightFailureRequest,
+  AgentPreflightFailureData,
+  AgentPreflightFailureResponse,
   AgentReportCommandRequest,
   AgentReportCommandResponse,
 } from "@printgo/api-contract";
@@ -164,6 +167,61 @@ export class AgentClient {
       "result",
       { claimId: job.claimId, ...report },
     );
+  }
+
+  async reportPreflightFailure(
+    serverUrl: string,
+    agentId: string,
+    agentSecret: string,
+    job: AgentPrintJob,
+    failureCode: string,
+    failureDetail?: string | null,
+  ): Promise<AgentPreflightFailureData> {
+    const cleanUrl = normalizeAgentServerUrl(serverUrl);
+    const payload: AgentPreflightFailureRequest = {
+      claimId: job.claimId,
+      failureCode,
+      failureDetail: failureDetail ?? null,
+    };
+
+    let response: Response;
+    try {
+      response = await fetch(
+        `${cleanUrl}/api/agent/print-jobs/${encodeURIComponent(job.orderId)}/steps/${encodeURIComponent(job.currentStep.stepId)}/preflight-failure`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${agentSecret}`,
+            "X-PrintGo-Agent-Id": agentId,
+          },
+          body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(15_000),
+        },
+      );
+    } catch (error) {
+      throw new AgentApiError(
+        "NETWORK_ERROR",
+        0,
+        `Preflight failure reporting network error: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+
+    if (response.status === 401) {
+      throw new AgentAuthError(
+        "Agent authentication failed while reporting preflight failure.",
+      );
+    }
+
+    const data = (await response.json()) as AgentPreflightFailureResponse;
+    if (!response.ok || !data.ok) {
+      throw new AgentApiError(
+        data.ok ? "PREFLIGHT_FAILURE_FAILED" : data.error.code,
+        response.status,
+        data.ok ? "Preflight failure handling failed." : data.error.message,
+      );
+    }
+    return data.data;
   }
 
   async pair(

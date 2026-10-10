@@ -12,6 +12,7 @@ import {
   InvalidPrintSettingError,
   UnsupportedPrintSettingError,
 } from "./printer-adapter.js";
+export { InvalidPrintSettingError, UnsupportedPrintSettingError };
 
 export interface NormalizedPrintSettings extends PrintSettings {
   printerName: string;
@@ -74,16 +75,31 @@ export function validateAndNormalizePrintSettings(
       `Unsupported paper size '${String(paperSize)}'. Supported sizes are A4 and A3.`,
     );
   }
-  if (
-    capabilities &&
-    capabilities.paperSizes &&
-    capabilities.paperSizes.length > 0
-  ) {
-    const supportedUpper = capabilities.paperSizes.map((s) => s.toUpperCase());
-    if (!supportedUpper.includes(paperSize)) {
-      throw new UnsupportedPrintSettingError(
-        `Printer '${printerName}' does not support paper size '${paperSize}'. Silent downgrade is prohibited.`,
+  if (!submission.isDiagnosticTestPrint) {
+    if (submission.verifiedCapabilities) {
+      if (paperSize === "A3" && submission.verifiedCapabilities.a3 !== true) {
+        throw new UnsupportedPrintSettingError(
+          `Printer '${printerName}' does not support paper size '${paperSize}'. Silent downgrade is prohibited.`,
+        );
+      }
+      if (paperSize === "A4" && submission.verifiedCapabilities.a4 !== true) {
+        throw new UnsupportedPrintSettingError(
+          `Printer '${printerName}' does not support paper size '${paperSize}'. Silent downgrade is prohibited.`,
+        );
+      }
+    } else if (
+      capabilities &&
+      capabilities.paperSizes &&
+      capabilities.paperSizes.length > 0
+    ) {
+      const supportedUpper = capabilities.paperSizes.map((s) =>
+        s.toUpperCase(),
       );
+      if (!supportedUpper.includes(paperSize)) {
+        throw new UnsupportedPrintSettingError(
+          `Printer '${printerName}' does not support paper size '${paperSize}'. Silent downgrade is prohibited.`,
+        );
+      }
     }
   }
 
@@ -94,10 +110,18 @@ export function validateAndNormalizePrintSettings(
       `Unsupported color mode '${String(colorMode)}'. Supported modes are COLOUR and BLACK_AND_WHITE.`,
     );
   }
-  if (colorMode === "COLOUR" && capabilities && capabilities.colour === false) {
-    throw new UnsupportedPrintSettingError(
-      `Printer '${printerName}' does not support colour printing. Silent downgrade to black and white is prohibited.`,
-    );
+  if (colorMode === "COLOUR" && !submission.isDiagnosticTestPrint) {
+    if (submission.verifiedCapabilities) {
+      if (submission.verifiedCapabilities.color !== true) {
+        throw new UnsupportedPrintSettingError(
+          `Printer '${printerName}' does not support colour printing. Silent downgrade to black and white is prohibited.`,
+        );
+      }
+    } else if (!capabilities || capabilities.colour !== true) {
+      throw new UnsupportedPrintSettingError(
+        `Printer '${printerName}' does not support colour printing. Silent downgrade to black and white is prohibited.`,
+      );
+    }
   }
 
   // 4. Sides (duplex) validation (Fail closed on silent downgrade)
@@ -111,10 +135,18 @@ export function validateAndNormalizePrintSettings(
       `Unsupported sides option '${String(sides)}'. Supported options are ONE_SIDED, TWO_SIDED_LONG, TWO_SIDED_SHORT.`,
     );
   }
-  if (sides !== "ONE_SIDED" && capabilities && capabilities.duplex === false) {
-    throw new UnsupportedPrintSettingError(
-      `Printer '${printerName}' does not support double-sided (duplex) printing. Silent downgrade to single-sided is prohibited.`,
-    );
+  if (sides !== "ONE_SIDED" && !submission.isDiagnosticTestPrint) {
+    if (submission.verifiedCapabilities) {
+      if (submission.verifiedCapabilities.duplex !== true) {
+        throw new UnsupportedPrintSettingError(
+          `Printer '${printerName}' does not support double-sided (duplex) printing. Silent downgrade to single-sided is prohibited.`,
+        );
+      }
+    } else if (!capabilities || capabilities.duplex !== true) {
+      throw new UnsupportedPrintSettingError(
+        `Printer '${printerName}' does not support double-sided (duplex) printing. Silent downgrade to single-sided is prohibited.`,
+      );
+    }
   }
 
   // 5. Page range validation
@@ -133,6 +165,17 @@ export function validateAndNormalizePrintSettings(
     }
   }
 
+  // 6. Orientation validation
+  let orientation: "portrait" | "landscape" | undefined = undefined;
+  if (raw.orientation) {
+    if (raw.orientation !== "portrait" && raw.orientation !== "landscape") {
+      throw new InvalidPrintSettingError(
+        `Unsupported orientation '${String(raw.orientation)}'. Supported options are portrait and landscape.`,
+      );
+    }
+    orientation = raw.orientation;
+  }
+
   return {
     printerName,
     paperSize,
@@ -140,5 +183,6 @@ export function validateAndNormalizePrintSettings(
     sides,
     copies,
     pageRange,
+    ...(orientation ? { orientation } : {}),
   };
 }

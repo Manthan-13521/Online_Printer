@@ -1,49 +1,49 @@
 {
   "httpRequests": 10800,
-  "tableRowsChanged": 900,
-  "statements": 11700,
+  "tableRowsChanged": 830,
+  "statements": 11630,
   "returnedRows": 10800,
-  "localWallMs": 1549.822834,
+  "localWallMs": 1721.9644999999998,
   "requests": 10801,
   "latency": {
     "count": 10801,
     "p50": 0.1,
     "p90": 0.3,
-    "p95": 0.5,
+    "p95": 0.6,
     "p99": 0.7,
-    "max": 2.56495799999999,
-    "mean": 0.13217874511619296
+    "max": 3.90099999999984,
+    "mean": 0.1482360746227215
   },
   "routes": {
     "agent-heartbeat": {
       "hist": {
         "count": 1,
-        "p50": 2.6,
-        "p90": 2.6,
-        "p95": 2.6,
-        "p99": 2.6,
-        "max": 2.56495799999999,
-        "mean": 2.56495799999999
+        "p50": 2.4,
+        "p90": 2.4,
+        "p95": 2.4,
+        "p99": 2.4,
+        "max": 2.371458999999959,
+        "mean": 2.371458999999959
       },
       "statements": 4,
       "returnedRows": 2,
       "changedRows": 1,
-      "queryMs": 0.44295899999997346
+      "queryMs": 0.4367910000000279
     },
     "agent-pulse": {
       "hist": {
         "count": 10800,
         "p50": 0.1,
         "p90": 0.3,
-        "p95": 0.5,
+        "p95": 0.6,
         "p99": 0.7,
-        "max": 1.6612499999999955,
-        "mean": 0.13195348777777782
+        "max": 3.90099999999984,
+        "mean": 0.14803022064814955
       },
-      "statements": 11700,
+      "statements": 11630,
       "returnedRows": 10800,
-      "changedRows": 900,
-      "queryMs": 795.3578089999932
+      "changedRows": 830,
+      "queryMs": 967.7001070000092
     }
   }
 }

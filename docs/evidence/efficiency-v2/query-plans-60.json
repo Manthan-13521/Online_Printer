@@ -59,7 +59,7 @@
     "plan": []
   },
   {
-    "sql": "SELECT id, display_name, is_active, last_heartbeat_at_ms,\n          (SELECT online_printing_enabled FROM installation WHERE id = 1) online_printing_enabled,\n          EXISTS(SELECT 1 FROM printer_test_commands c WHERE c.agent_id = agents.id AND c.status = 'PENDING') has_pending_command,\n          EXISTS(SELECT 1 FROM orders WHERE status IN ('QUEUED','CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED')) has_print_work\n         FROM agents WHERE credential_hash = ?",
+    "sql": "SELECT id, display_name, is_active, last_heartbeat_at_ms,\n          (SELECT online_printing_enabled FROM installation WHERE id = 1) online_printing_enabled,\n          EXISTS(SELECT 1 FROM printer_test_commands c WHERE c.agent_id = agents.id AND c.status = 'PENDING') has_pending_command,\n          (EXISTS(\n            SELECT 1 FROM orders\n            WHERE status IN ('QUEUED','CLAIMED','SPOOLING','PRINTING')\n               OR (status IN ('PRINT_BLOCKED','RETRY_PENDING') AND (next_retry_at_ms IS NULL OR next_retry_at_ms <= ?))\n          ) OR EXISTS(\n            SELECT 1 FROM orders\n            WHERE status = 'PRINT_FAILED' AND cleanup_state = 'ACTIVE' AND updated_at_ms <= (? - 60000)\n          )) has_print_work\n         FROM agents WHERE credential_hash = ?",
     "calls": 184,
     "plan": [
       {
@@ -89,7 +89,7 @@
       {
         "id": 32,
         "parent": 28,
-        "notused": 54,
+        "notused": 53,
         "detail": "SEARCH c USING COVERING INDEX printer_test_commands_agent_status_idx (agent_id=? AND status=?)"
       },
       {
@@ -99,15 +99,51 @@
         "detail": "SCALAR SUBQUERY 3"
       },
       {
-        "id": 48,
+        "id": 50,
         "parent": 44,
-        "notused": 76,
-        "detail": "SEARCH orders USING COVERING INDEX orders_status_completed_idx (status=?)"
+        "notused": 0,
+        "detail": "MULTI-INDEX OR"
+      },
+      {
+        "id": 51,
+        "parent": 50,
+        "notused": 0,
+        "detail": "INDEX 1"
+      },
+      {
+        "id": 77,
+        "parent": 51,
+        "notused": 81,
+        "detail": "SEARCH orders USING INDEX idx_orders_claim_priority_queue (status=?)"
+      },
+      {
+        "id": 83,
+        "parent": 50,
+        "notused": 0,
+        "detail": "INDEX 2"
+      },
+      {
+        "id": 107,
+        "parent": 83,
+        "notused": 62,
+        "detail": "SEARCH orders USING COVERING INDEX idx_orders_blocked_retry (status=?)"
+      },
+      {
+        "id": 121,
+        "parent": 0,
+        "notused": 0,
+        "detail": "SCALAR SUBQUERY 4"
+      },
+      {
+        "id": 126,
+        "parent": 121,
+        "notused": 61,
+        "detail": "SEARCH orders USING INDEX idx_orders_claim_priority_queue (status=?)"
       }
     ]
   },
   {
-    "sql": "SELECT id, windows_printer_name, display_name, enabled, status,\n                status_reason, capabilities_json, is_production_eligible,\n                is_virtual, port_name, driver_name\n         FROM printers WHERE agent_id = ?",
+    "sql": "SELECT id, windows_printer_name, display_name, enabled, status,\n                status_reason, capabilities_json, verified_capabilities_json, is_production_eligible,\n                is_virtual, port_name, driver_name\n         FROM printers WHERE agent_id = ?",
     "calls": 124,
     "plan": [
       {
@@ -131,7 +167,7 @@
     ]
   },
   {
-    "sql": "UPDATE installation\n           SET default_production_printer_id = (\n             SELECT id FROM printers\n             WHERE enabled = 1 AND is_production_eligible = 1 AND is_virtual = 0\n             ORDER BY id ASC LIMIT 1\n           ), updated_at_ms = ?\n           WHERE id = 1 AND (\n             default_production_printer_id IS NULL\n             OR NOT EXISTS (\n               SELECT 1 FROM printers p\n               WHERE p.id = installation.default_production_printer_id\n                 AND p.is_production_eligible = 1 AND p.is_virtual = 0\n             )\n           )\n           AND EXISTS (\n             SELECT 1 FROM printers\n             WHERE enabled = 1 AND is_production_eligible = 1 AND is_virtual = 0\n           )",
+    "sql": "UPDATE installation\n           SET default_production_printer_id = (\n             SELECT p.id FROM printers p\n             JOIN agents a ON p.agent_id = a.id\n             WHERE a.is_active = 1 AND p.enabled = 1 AND p.is_production_eligible = 1 AND p.is_virtual = 0\n             ORDER BY p.id ASC LIMIT 1\n           ), updated_at_ms = ?\n           WHERE id = 1 AND (\n             default_production_printer_id IS NULL\n             OR NOT EXISTS (\n               SELECT 1 FROM printers p\n               JOIN agents a ON p.agent_id = a.id\n               WHERE p.id = installation.default_production_printer_id\n                 AND a.is_active = 1\n                 AND p.is_production_eligible = 1 AND p.is_virtual = 0\n             )\n           )\n           AND EXISTS (\n             SELECT 1 FROM printers p\n             JOIN agents a ON p.agent_id = a.id\n             WHERE a.is_active = 1 AND p.enabled = 1 AND p.is_production_eligible = 1 AND p.is_virtual = 0\n           )",
     "calls": 124,
     "plan": [
       {
@@ -147,45 +183,63 @@
         "detail": "SCALAR SUBQUERY 3"
       },
       {
-        "id": 14,
+        "id": 16,
         "parent": 9,
         "notused": 61,
-        "detail": "SEARCH printers USING INDEX printers_status_idx (enabled=?)"
+        "detail": "SEARCH p USING INDEX printers_status_idx (enabled=?)"
       },
       {
-        "id": 31,
+        "id": 25,
+        "parent": 9,
+        "notused": 46,
+        "detail": "SEARCH a USING INDEX sqlite_autoindex_agents_1 (id=?)"
+      },
+      {
+        "id": 40,
         "parent": 0,
         "notused": 0,
         "detail": "CORRELATED SCALAR SUBQUERY 2"
       },
       {
-        "id": 36,
-        "parent": 31,
-        "notused": 39,
+        "id": 47,
+        "parent": 40,
+        "notused": 46,
         "detail": "SEARCH p USING INDEX sqlite_autoindex_printers_1 (id=?)"
       },
       {
-        "id": 66,
+        "id": 57,
+        "parent": 40,
+        "notused": 46,
+        "detail": "SEARCH a USING INDEX sqlite_autoindex_agents_1 (id=?)"
+      },
+      {
+        "id": 84,
         "parent": 0,
         "notused": 0,
         "detail": "SCALAR SUBQUERY 1"
       },
       {
-        "id": 72,
-        "parent": 66,
+        "id": 92,
+        "parent": 84,
         "notused": 61,
-        "detail": "SEARCH printers USING INDEX printers_status_idx (enabled=?)"
+        "detail": "SEARCH p USING INDEX printers_status_idx (enabled=?)"
       },
       {
-        "id": 90,
-        "parent": 66,
+        "id": 101,
+        "parent": 84,
+        "notused": 46,
+        "detail": "SEARCH a USING INDEX sqlite_autoindex_agents_1 (id=?)"
+      },
+      {
+        "id": 117,
+        "parent": 84,
         "notused": 0,
         "detail": "USE TEMP B-TREE FOR ORDER BY"
       }
     ]
   },
   {
-    "sql": "SELECT logo_key, shop_name, contact_phone, customer_notice,\n                       online_printing_enabled, max_pdf_size_bytes\n                FROM installation WHERE id = 1",
+    "sql": "SELECT logo_key, app_name, shop_name, contact_phone, address, customer_notice,\n                online_printing_enabled, max_pdf_size_bytes, max_order_upload_bytes,\n                priority_printing_enabled, priority_fee_paise,\n                id_requirement_mode, id_threshold_paise\n         FROM installation WHERE id = 1",
     "calls": 360,
     "plan": [
       {
@@ -197,7 +251,7 @@
     ]
   },
   {
-    "sql": "SELECT paper_size, color_mode, sides FROM print_rates\n                WHERE enabled = 1 ORDER BY paper_size, color_mode, sides",
+    "sql": "SELECT paper_size, color_mode, sides, price_per_page_paise FROM print_rates\n         WHERE enabled = 1 ORDER BY paper_size, color_mode, sides",
     "calls": 360,
     "plan": [
       {
@@ -205,6 +259,36 @@
         "parent": 0,
         "notused": 225,
         "detail": "SCAN print_rates USING INDEX sqlite_autoindex_print_rates_2"
+      }
+    ]
+  },
+  {
+    "sql": "SELECT id, name, pricing_type, fixed_price_paise\n         FROM addon_services WHERE enabled = 1\n         ORDER BY display_order, name",
+    "calls": 360,
+    "plan": [
+      {
+        "id": 3,
+        "parent": 0,
+        "notused": 216,
+        "detail": "SCAN addon_services"
+      },
+      {
+        "id": 15,
+        "parent": 0,
+        "notused": 0,
+        "detail": "USE TEMP B-TREE FOR ORDER BY"
+      }
+    ]
+  },
+  {
+    "sql": "SELECT id, min_subtotal_paise, discount_percent\n         FROM discount_rules WHERE enabled = 1\n         ORDER BY min_subtotal_paise ASC",
+    "calls": 360,
+    "plan": [
+      {
+        "id": 4,
+        "parent": 0,
+        "notused": 61,
+        "detail": "SEARCH discount_rules USING INDEX idx_discount_rules (enabled=?)"
       }
     ]
   },
@@ -223,7 +307,56 @@
   {
     "sql": "INSERT INTO orders\n        (id, customer_name, customer_phone, original_filename, source_page_count,\n         color_mode, paper_size, sides, instructions, status, created_at_ms,\n         updated_at_ms, draft_token_hash, draft_expires_at_ms)\n        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'UPLOADING', ?, ?, ?, ?)",
     "calls": 60,
-    "plan": []
+    "plan": [
+      {
+        "id": 476,
+        "parent": 0,
+        "notused": 54,
+        "detail": "SEARCH order_events USING COVERING INDEX order_events_order_created_idx (order_id=?)"
+      },
+      {
+        "id": 484,
+        "parent": 0,
+        "notused": 55,
+        "detail": "SEARCH order_addon_services USING COVERING INDEX sqlite_autoindex_order_addon_services_1 (order_id=?)"
+      },
+      {
+        "id": 492,
+        "parent": 0,
+        "notused": 53,
+        "detail": "SEARCH order_files USING COVERING INDEX order_files_order_position_idx (order_id=?)"
+      },
+      {
+        "id": 500,
+        "parent": 0,
+        "notused": 54,
+        "detail": "SEARCH print_attempt_steps USING COVERING INDEX print_attempt_steps_order_status_idx (order_id=?)"
+      },
+      {
+        "id": 508,
+        "parent": 0,
+        "notused": 53,
+        "detail": "SEARCH print_attempts USING COVERING INDEX print_attempts_order_attempt_idx (order_id=?)"
+      },
+      {
+        "id": 516,
+        "parent": 0,
+        "notused": 53,
+        "detail": "SEARCH payment_provider_events USING COVERING INDEX payment_provider_events_order_idx (related_order_id=?)"
+      },
+      {
+        "id": 524,
+        "parent": 0,
+        "notused": 53,
+        "detail": "SEARCH payments USING COVERING INDEX payments_order_created_idx (order_id=?)"
+      },
+      {
+        "id": 532,
+        "parent": 0,
+        "notused": 39,
+        "detail": "SEARCH uploads USING COVERING INDEX sqlite_autoindex_uploads_2 (order_id=?)"
+      }
+    ]
   },
   {
     "sql": "INSERT INTO uploads\n        (id, order_id, r2_object_key, original_filename, storage_status,\n         retention_reason, delete_after_ms, created_at_ms, updated_at_ms,\n         expected_size_bytes)\n        VALUES (?, ?, ?, ?, 'PENDING', 'UNPAID', ?, ?, ?, ?)",
@@ -231,20 +364,43 @@
     "plan": []
   },
   {
-    "sql": "SELECT o.id AS order_id, u.id AS upload_id,\n      u.r2_object_key, u.expected_size_bytes, u.size_bytes, o.source_page_count,\n      o.status, u.storage_status, o.draft_expires_at_ms\n      FROM orders o JOIN uploads u ON u.order_id = o.id\n      WHERE o.draft_token_hash = ?",
+    "sql": "INSERT INTO order_files\n          (id, order_id, position, original_filename, r2_object_key,\n           expected_size_bytes, source_page_count, paper_size, color_mode, sides,\n           created_at_ms, updated_at_ms)\n          VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    "calls": 60,
+    "plan": []
+  },
+  {
+    "sql": "SELECT id, customer_name, customer_phone, instructions, status,\n                draft_expires_at_ms\n         FROM orders WHERE draft_token_hash = ? AND cleanup_state = 'ACTIVE'",
     "calls": 120,
     "plan": [
       {
-        "id": 5,
+        "id": 3,
         "parent": 0,
-        "notused": 45,
-        "detail": "SEARCH o USING INDEX orders_draft_token_hash_uq (draft_token_hash=?)"
+        "notused": 61,
+        "detail": "SEARCH orders USING INDEX orders_draft_token_lookup_idx (draft_token_hash=?)"
+      }
+    ]
+  },
+  {
+    "sql": "SELECT f.id, f.order_id, f.position, f.original_filename,\n  f.r2_object_key, f.expected_size_bytes, f.size_bytes, f.source_page_count,\n  f.selected_pages, f.selected_page_count, f.copies, f.paper_size,\n  f.color_mode, f.sides, f.printing_amount_paise, f.service_charge_paise,\n  f.upload_status, f.print_status, o.draft_expires_at_ms\n  FROM order_files f JOIN orders o ON o.id = f.order_id\n         WHERE o.draft_token_hash = ? AND o.cleanup_state = 'ACTIVE'\n           AND f.id = COALESCE(?, f.id)\n         ORDER BY f.position LIMIT 1",
+    "calls": 60,
+    "plan": [
+      {
+        "id": 7,
+        "parent": 0,
+        "notused": 61,
+        "detail": "SEARCH o USING INDEX orders_draft_token_lookup_idx (draft_token_hash=?)"
       },
       {
-        "id": 12,
+        "id": 16,
         "parent": 0,
-        "notused": 46,
-        "detail": "SEARCH u USING INDEX sqlite_autoindex_uploads_2 (order_id=?)"
+        "notused": 61,
+        "detail": "SEARCH f USING INDEX order_files_order_position_idx (order_id=?)"
+      },
+      {
+        "id": 54,
+        "parent": 0,
+        "notused": 0,
+        "detail": "USE TEMP B-TREE FOR ORDER BY"
       }
     ]
   },
@@ -261,7 +417,19 @@
     ]
   },
   {
-    "sql": "UPDATE orders SET status = 'UPLOADED', updated_at_ms = ?,\n        draft_expires_at_ms = ? WHERE id = ? AND status = 'UPLOADING'",
+    "sql": "UPDATE order_files SET size_bytes = ?, mime_type = 'application/pdf',\n           upload_status = 'UPLOADED', uploaded_at_ms = ?, updated_at_ms = ?,\n           validation_error_code = NULL\n           WHERE id = ? AND order_id = ? AND upload_status = 'PENDING'",
+    "calls": 60,
+    "plan": [
+      {
+        "id": 5,
+        "parent": 0,
+        "notused": 39,
+        "detail": "SEARCH order_files USING INDEX sqlite_autoindex_order_files_1 (id=?)"
+      }
+    ]
+  },
+  {
+    "sql": "UPDATE orders SET status = CASE\n             WHEN NOT EXISTS (SELECT 1 FROM order_files WHERE order_id = ? AND upload_status <> 'UPLOADED')\n             THEN 'UPLOADED' ELSE 'UPLOADING' END,\n           updated_at_ms = ?, draft_expires_at_ms = ?\n           WHERE id = ? AND status IN ('UPLOADING','UPLOADED','PAYMENT_PENDING')",
     "calls": 60,
     "plan": [
       {
@@ -269,6 +437,42 @@
         "parent": 0,
         "notused": 39,
         "detail": "SEARCH orders USING INDEX sqlite_autoindex_orders_1 (id=?)"
+      },
+      {
+        "id": 122,
+        "parent": 0,
+        "notused": 0,
+        "detail": "SCALAR SUBQUERY 1"
+      },
+      {
+        "id": 127,
+        "parent": 122,
+        "notused": 61,
+        "detail": "SEARCH order_files USING INDEX order_files_order_position_idx (order_id=?)"
+      }
+    ]
+  },
+  {
+    "sql": "SELECT f.id, f.order_id, f.position, f.original_filename,\n  f.r2_object_key, f.expected_size_bytes, f.size_bytes, f.source_page_count,\n  f.selected_pages, f.selected_page_count, f.copies, f.paper_size,\n  f.color_mode, f.sides, f.printing_amount_paise, f.service_charge_paise,\n  f.upload_status, f.print_status, o.draft_expires_at_ms\n  FROM order_files f JOIN orders o ON o.id = f.order_id\n         WHERE o.draft_token_hash = ? AND o.cleanup_state = 'ACTIVE'\n         ORDER BY f.position",
+    "calls": 60,
+    "plan": [
+      {
+        "id": 6,
+        "parent": 0,
+        "notused": 61,
+        "detail": "SEARCH o USING INDEX orders_draft_token_lookup_idx (draft_token_hash=?)"
+      },
+      {
+        "id": 15,
+        "parent": 0,
+        "notused": 61,
+        "detail": "SEARCH f USING INDEX order_files_order_position_idx (order_id=?)"
+      },
+      {
+        "id": 43,
+        "parent": 0,
+        "notused": 0,
+        "detail": "USE TEMP B-TREE FOR ORDER BY"
       }
     ]
   },
@@ -309,29 +513,155 @@
     ]
   },
   {
-    "sql": "UPDATE orders SET selected_pages = ?, copies = ?, paper_size = ?,\n      color_mode = ?, sides = ?, printing_amount_paise = ?, service_charge_paise = ?,\n      total_amount_paise = ?, status = 'PAYMENT_PENDING', updated_at_ms = ?\n      WHERE id = ? AND status IN ('UPLOADED', 'PAYMENT_PENDING')\n        AND (status <> 'PAYMENT_PENDING' OR selected_pages IS NOT ? OR copies IS NOT ? OR paper_size IS NOT ?\n          OR color_mode IS NOT ? OR sides IS NOT ? OR printing_amount_paise IS NOT ?\n          OR service_charge_paise IS NOT ? OR total_amount_paise IS NOT ?)",
+    "sql": "SELECT COALESCE(SUM(snapshot_price_charged_online_paise), 0) as total\n         FROM order_addon_services WHERE order_id = ?",
+    "calls": 120,
+    "plan": [
+      {
+        "id": 4,
+        "parent": 0,
+        "notused": 62,
+        "detail": "SEARCH order_addon_services USING INDEX sqlite_autoindex_order_addon_services_1 (order_id=?)"
+      }
+    ]
+  },
+  {
+    "sql": "SELECT service_id, snapshot_name, snapshot_pricing_type,\n                snapshot_price_charged_online_paise, snapshot_handling_mode\n         FROM order_addon_services WHERE order_id = ?\n         ORDER BY rowid",
+    "calls": 60,
+    "plan": [
+      {
+        "id": 4,
+        "parent": 0,
+        "notused": 62,
+        "detail": "SEARCH order_addon_services USING INDEX sqlite_autoindex_order_addon_services_1 (order_id=?)"
+      },
+      {
+        "id": 20,
+        "parent": 0,
+        "notused": 0,
+        "detail": "USE TEMP B-TREE FOR ORDER BY"
+      }
+    ]
+  },
+  {
+    "sql": "SELECT priority_printing_enabled, priority_fee_paise,\n                id_requirement_mode, id_threshold_paise\n         FROM installation WHERE id = 1",
+    "calls": 120,
+    "plan": [
+      {
+        "id": 2,
+        "parent": 0,
+        "notused": 33,
+        "detail": "SEARCH installation USING INTEGER PRIMARY KEY (rowid=?)"
+      }
+    ]
+  },
+  {
+    "sql": "SELECT min_subtotal_paise, discount_percent\n         FROM discount_rules WHERE enabled = 1\n         ORDER BY min_subtotal_paise DESC",
+    "calls": 120,
+    "plan": [
+      {
+        "id": 4,
+        "parent": 0,
+        "notused": 61,
+        "detail": "SEARCH discount_rules USING INDEX idx_discount_rules (enabled=?)"
+      }
+    ]
+  },
+  {
+    "sql": "UPDATE order_files SET selected_pages = ?, selected_page_count = ?,\n             copies = ?, paper_size = ?, color_mode = ?, sides = ?,\n             printing_amount_paise = ?, service_charge_paise = ?, updated_at_ms = ?\n             WHERE id = ? AND order_id = (\n               SELECT id FROM orders WHERE draft_token_hash = ?\n                 AND cleanup_state = 'ACTIVE'\n                 AND status IN ('UPLOADED','PAYMENT_PENDING','PAYMENT_FAILED','PAYMENT_CANCELLED')\n                 AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.order_id = orders.id\n                   AND p.status IN ('CREATED','PENDING','PAID'))\n             ) AND upload_status = 'UPLOADED'",
     "calls": 60,
     "plan": [
       {
         "id": 5,
         "parent": 0,
         "notused": 39,
-        "detail": "SEARCH orders USING INDEX sqlite_autoindex_orders_1 (id=?)"
+        "detail": "SEARCH order_files USING INDEX sqlite_autoindex_order_files_1 (id=?)"
+      },
+      {
+        "id": 17,
+        "parent": 0,
+        "notused": 0,
+        "detail": "SCALAR SUBQUERY 2"
+      },
+      {
+        "id": 22,
+        "parent": 17,
+        "notused": 61,
+        "detail": "SEARCH orders USING INDEX orders_draft_token_lookup_idx (draft_token_hash=?)"
+      },
+      {
+        "id": 52,
+        "parent": 17,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 1"
+      },
+      {
+        "id": 57,
+        "parent": 52,
+        "notused": 61,
+        "detail": "SEARCH p USING INDEX payments_order_created_idx (order_id=?)"
       }
     ]
   },
   {
-    "sql": "SELECT o.id AS order_id, u.id AS upload_id, u.r2_object_key,\n          o.customer_name, o.customer_phone, o.original_filename,\n          o.source_page_count, o.selected_pages, o.copies, o.paper_size,\n          o.color_mode, o.sides, o.printing_amount_paise,\n          o.service_charge_paise, o.total_amount_paise, o.currency,\n          o.status AS order_status, o.public_job_code,\n          u.expected_size_bytes, u.size_bytes, u.storage_status,\n          o.draft_expires_at_ms, u.delete_after_ms\n        FROM orders o JOIN uploads u ON u.order_id = o.id\n        WHERE o.draft_token_hash = ?",
+    "sql": "UPDATE orders SET selected_pages = ?, copies = ?, paper_size = ?,\n           color_mode = ?, sides = ?, printing_amount_paise = ?,\n           service_charge_paise = ?, total_amount_paise = ?,\n           is_priority = ?, priority_fee_paise = ?,\n           discount_amount_paise = ?, snapshot_discount_threshold_paise = ?,\n           snapshot_discount_percent = ?, identification_required = ?,\n           status = 'PAYMENT_PENDING', draft_expires_at_ms = ?, updated_at_ms = ?\n           WHERE draft_token_hash = ? AND cleanup_state = 'ACTIVE'\n             AND status IN ('UPLOADED','PAYMENT_PENDING','PAYMENT_FAILED','PAYMENT_CANCELLED')\n             AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.order_id = orders.id\n               AND p.status IN ('CREATED','PENDING','PAID'))\n             AND (SELECT COUNT(*) FROM order_files WHERE order_id = orders.id\n                    AND upload_status = 'UPLOADED') = ?\n             AND (SELECT COUNT(*) FROM order_files WHERE order_id = orders.id) = ?",
+    "calls": 60,
+    "plan": [
+      {
+        "id": 5,
+        "parent": 0,
+        "notused": 61,
+        "detail": "SEARCH orders USING INDEX orders_draft_token_lookup_idx (draft_token_hash=?)"
+      },
+      {
+        "id": 35,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 1"
+      },
+      {
+        "id": 40,
+        "parent": 35,
+        "notused": 61,
+        "detail": "SEARCH p USING INDEX payments_order_created_idx (order_id=?)"
+      },
+      {
+        "id": 69,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 2"
+      },
+      {
+        "id": 75,
+        "parent": 69,
+        "notused": 61,
+        "detail": "SEARCH order_files USING INDEX order_files_order_position_idx (order_id=?)"
+      },
+      {
+        "id": 91,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 3"
+      },
+      {
+        "id": 96,
+        "parent": 91,
+        "notused": 53,
+        "detail": "SEARCH order_files USING COVERING INDEX order_files_order_position_idx (order_id=?)"
+      }
+    ]
+  },
+  {
+    "sql": "SELECT o.id AS order_id, u.id AS upload_id, u.r2_object_key,\n          o.customer_name, o.customer_phone, o.original_filename,\n          o.source_page_count, o.selected_pages, o.copies, o.paper_size,\n          o.color_mode, o.sides, o.printing_amount_paise,\n          o.service_charge_paise, o.total_amount_paise, o.is_priority, o.currency,\n          o.status AS order_status, o.public_job_code,\n          u.expected_size_bytes, u.size_bytes, u.storage_status,\n          o.draft_expires_at_ms, u.delete_after_ms\n        FROM orders o JOIN uploads u ON u.order_id = o.id\n        WHERE o.draft_token_hash = ? AND o.cleanup_state = 'ACTIVE'",
     "calls": 120,
     "plan": [
       {
         "id": 5,
         "parent": 0,
-        "notused": 45,
-        "detail": "SEARCH o USING INDEX orders_draft_token_hash_uq (draft_token_hash=?)"
+        "notused": 61,
+        "detail": "SEARCH o USING INDEX orders_draft_token_lookup_idx (draft_token_hash=?)"
       },
       {
-        "id": 12,
+        "id": 14,
         "parent": 0,
         "notused": 46,
         "detail": "SEARCH u USING INDEX sqlite_autoindex_uploads_2 (order_id=?)"
@@ -339,7 +669,19 @@
     ]
   },
   {
-    "sql": "SELECT p.id, p.order_id, p.provider_order_id, p.provider_payment_id,\n          p.amount_paise, o.total_amount_paise AS order_amount_paise,\n          p.currency, p.status, o.public_job_code,\n          o.status AS order_status\n        FROM payments p JOIN orders o ON o.id = p.order_id\n        WHERE p.order_id = ? AND p.status IN ('CREATED', 'PENDING')\n        ORDER BY p.created_at_ms DESC LIMIT 1",
+    "sql": "SELECT id, position, r2_object_key, original_filename,\n          source_page_count, selected_pages, selected_page_count, copies,\n          paper_size, color_mode, sides, expected_size_bytes, size_bytes,\n          upload_status\n         FROM order_files WHERE order_id = ? ORDER BY position",
+    "calls": 120,
+    "plan": [
+      {
+        "id": 4,
+        "parent": 0,
+        "notused": 61,
+        "detail": "SEARCH order_files USING INDEX order_files_order_position_idx (order_id=?)"
+      }
+    ]
+  },
+  {
+    "sql": "SELECT p.id, p.order_id, p.provider_order_id, p.provider_payment_id,\n          p.amount_paise, o.total_amount_paise AS order_amount_paise,\n          p.currency, p.status, o.public_job_code,\n          o.status AS order_status, o.pickup_code, o.is_priority, o.identification_required\n        FROM payments p JOIN orders o ON o.id = p.order_id\n        WHERE p.order_id = ? AND p.status IN ('CREATED', 'PENDING')\n        ORDER BY p.created_at_ms DESC LIMIT 1",
     "calls": 60,
     "plan": [
       {
@@ -357,7 +699,7 @@
     ]
   },
   {
-    "sql": "UPDATE orders SET selected_pages = ?, printing_amount_paise = ?,\n          service_charge_paise = ?, total_amount_paise = ?,\n          status = 'PAYMENT_PENDING', updated_at_ms = ?\n        WHERE id = ? AND status IN\n          ('UPLOADED', 'PAYMENT_PENDING', 'PAYMENT_FAILED', 'PAYMENT_CANCELLED')\n          AND (status <> 'PAYMENT_PENDING' OR selected_pages IS NOT ? OR printing_amount_paise IS NOT ?\n            OR service_charge_paise IS NOT ? OR total_amount_paise IS NOT ?)",
+    "sql": "UPDATE orders SET selected_pages = ?, printing_amount_paise = ?,\n          service_charge_paise = ?, total_amount_paise = ?,\n          is_priority = ?, priority_fee_paise = ?, discount_amount_paise = ?,\n          snapshot_discount_threshold_paise = ?, snapshot_discount_percent = ?,\n          identification_required = ?,\n          status = 'PAYMENT_PENDING', updated_at_ms = ?\n        WHERE id = ? AND status IN\n          ('UPLOADED', 'PAYMENT_PENDING', 'PAYMENT_FAILED', 'PAYMENT_CANCELLED')\n          AND cleanup_state = 'ACTIVE'\n          AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.order_id = orders.id\n            AND p.status IN ('CREATED', 'PENDING', 'PAID'))\n          AND (status <> 'PAYMENT_PENDING' OR selected_pages IS NOT ? OR printing_amount_paise IS NOT ?\n            OR service_charge_paise IS NOT ? OR total_amount_paise IS NOT ?\n            OR is_priority IS NOT ? OR priority_fee_paise IS NOT ? OR discount_amount_paise IS NOT ?\n            OR snapshot_discount_threshold_paise IS NOT ? OR snapshot_discount_percent IS NOT ?\n            OR identification_required IS NOT ?)",
     "calls": 60,
     "plan": [
       {
@@ -365,11 +707,23 @@
         "parent": 0,
         "notused": 39,
         "detail": "SEARCH orders USING INDEX sqlite_autoindex_orders_1 (id=?)"
+      },
+      {
+        "id": 57,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 1"
+      },
+      {
+        "id": 62,
+        "parent": 57,
+        "notused": 61,
+        "detail": "SEARCH p USING INDEX payments_order_created_idx (order_id=?)"
       }
     ]
   },
   {
-    "sql": "SELECT 1 FROM orders WHERE id = ? AND status = 'PAYMENT_PENDING'\n      AND selected_pages IS ? AND printing_amount_paise IS ? AND service_charge_paise IS ? AND total_amount_paise IS ?",
+    "sql": "SELECT 1 FROM orders WHERE id = ? AND status = 'PAYMENT_PENDING'\n      AND cleanup_state = 'ACTIVE'\n      AND selected_pages IS ? AND printing_amount_paise IS ? AND service_charge_paise IS ? AND total_amount_paise IS ?\n      AND is_priority IS ? AND priority_fee_paise IS ? AND discount_amount_paise IS ?\n      AND snapshot_discount_threshold_paise IS ? AND snapshot_discount_percent IS ?\n      AND identification_required IS ?",
     "calls": 60,
     "plan": [
       {
@@ -405,21 +759,58 @@
     ]
   },
   {
-    "sql": "SELECT id, agent_id, display_name, windows_printer_name, status, status_reason, capabilities_json\n         FROM printers\n         WHERE enabled = 1 AND is_production_eligible = 1 AND is_virtual = 0 AND agent_id IN (?)",
+    "sql": "SELECT id, agent_id, display_name, windows_printer_name, status, status_reason,\n                is_paused, auto_fallback_enabled, fallback_printer_id, priority,\n                capabilities_json, verified_capabilities_json, enabled_services_json\n         FROM printers\n         WHERE enabled = 1 AND is_production_eligible = 1 AND is_virtual = 0 AND agent_id IN (?)\n         ORDER BY priority DESC, id ASC",
     "calls": 60,
     "plan": [
       {
-        "id": 3,
+        "id": 4,
         "parent": 0,
-        "notused": 60,
+        "notused": 59,
         "detail": "SEARCH printers USING INDEX printers_production_eligible_idx (agent_id=? AND is_production_eligible=? AND enabled=?)"
+      },
+      {
+        "id": 31,
+        "parent": 0,
+        "notused": 0,
+        "detail": "USE TEMP B-TREE FOR ORDER BY"
       }
     ]
   },
   {
-    "sql": "INSERT INTO payments\n            (id, order_id, provider_order_id, amount_paise, currency, status,\n             created_at_ms, updated_at_ms)\n          VALUES (?, ?, ?, ?, 'INR', 'CREATED', ?, ?)",
+    "sql": "INSERT INTO payments\n            (id, order_id, provider_order_id, amount_paise, currency, status,\n             created_at_ms, updated_at_ms)\n          SELECT ?, o.id, ?, ?, 'INR', 'CREATED', ?, ? FROM orders o\n          WHERE o.id = ? AND o.cleanup_state = 'ACTIVE'\n            AND o.status IN ('PAYMENT_PENDING','PAYMENT_FAILED','PAYMENT_CANCELLED')\n            AND o.total_amount_paise = ?\n            AND EXISTS (SELECT 1 FROM order_files f WHERE f.order_id = o.id)\n            AND NOT EXISTS (SELECT 1 FROM order_files f WHERE f.order_id = o.id\n              AND f.upload_status <> 'UPLOADED')",
     "calls": 60,
-    "plan": []
+    "plan": [
+      {
+        "id": 6,
+        "parent": 0,
+        "notused": 46,
+        "detail": "SEARCH o USING INDEX sqlite_autoindex_orders_1 (id=?)"
+      },
+      {
+        "id": 35,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 2"
+      },
+      {
+        "id": 40,
+        "parent": 35,
+        "notused": 61,
+        "detail": "SEARCH f USING INDEX order_files_order_position_idx (order_id=?)"
+      },
+      {
+        "id": 53,
+        "parent": 0,
+        "notused": 53,
+        "detail": "SEARCH f EXISTS USING COVERING INDEX order_files_order_position_idx (order_id=?)"
+      },
+      {
+        "id": 203,
+        "parent": 0,
+        "notused": 53,
+        "detail": "SEARCH payment_provider_events USING COVERING INDEX payment_provider_events_payment_idx (related_payment_id=?)"
+      }
+    ]
   },
   {
     "sql": "INSERT OR IGNORE INTO order_events\n            (id, order_id, event_type, from_status, to_status, actor_type,\n             details_json, created_at_ms, idempotency_key)\n          SELECT ?, id, 'PAYMENT_ORDER_CREATED', status, 'PAYMENT_PENDING',\n            'CUSTOMER', ?, ?, ? FROM orders WHERE id = ?",
@@ -458,7 +849,7 @@
     ]
   },
   {
-    "sql": "SELECT p.id, p.order_id, p.provider_order_id, p.provider_payment_id,\n          p.amount_paise, o.total_amount_paise AS order_amount_paise,\n          p.currency, p.status, o.public_job_code,\n          o.status AS order_status\n        FROM payments p JOIN orders o ON o.id = p.order_id\n        WHERE p.provider = 'RAZORPAY' AND p.provider_order_id = ? ORDER BY p.created_at_ms DESC LIMIT 1",
+    "sql": "SELECT p.id, p.order_id, p.provider_order_id, p.provider_payment_id,\n          p.amount_paise, o.total_amount_paise AS order_amount_paise,\n          p.currency, p.status, o.public_job_code,\n          o.status AS order_status, o.pickup_code, o.is_priority, o.identification_required\n        FROM payments p JOIN orders o ON o.id = p.order_id\n        WHERE p.provider = 'RAZORPAY' AND p.provider_order_id = ? ORDER BY p.created_at_ms DESC LIMIT 1",
     "calls": 61,
     "plan": [
       {
@@ -476,7 +867,7 @@
     ]
   },
   {
-    "sql": "SELECT p.id, p.order_id, p.provider_order_id, p.provider_payment_id,\n          p.amount_paise, o.total_amount_paise AS order_amount_paise,\n          p.currency, p.status, o.public_job_code,\n          o.status AS order_status\n        FROM payments p JOIN orders o ON o.id = p.order_id\n        WHERE p.provider = 'RAZORPAY' AND p.id = ? ORDER BY p.created_at_ms DESC LIMIT 1",
+    "sql": "SELECT p.id, p.order_id, p.provider_order_id, p.provider_payment_id,\n          p.amount_paise, o.total_amount_paise AS order_amount_paise,\n          p.currency, p.status, o.public_job_code,\n          o.status AS order_status, o.pickup_code, o.is_priority, o.identification_required\n        FROM payments p JOIN orders o ON o.id = p.order_id\n        WHERE p.provider = 'RAZORPAY' AND p.id = ? ORDER BY p.created_at_ms DESC LIMIT 1",
     "calls": 120,
     "plan": [
       {
@@ -494,6 +885,66 @@
     ]
   },
   {
+    "sql": "SELECT pickup_code FROM orders WHERE id = ?",
+    "calls": 60,
+    "plan": [
+      {
+        "id": 3,
+        "parent": 0,
+        "notused": 39,
+        "detail": "SEARCH orders USING INDEX sqlite_autoindex_orders_1 (id=?)"
+      }
+    ]
+  },
+  {
+    "sql": "SELECT next_pickup_code_index FROM installation WHERE id = 1",
+    "calls": 60,
+    "plan": [
+      {
+        "id": 2,
+        "parent": 0,
+        "notused": 33,
+        "detail": "SEARCH installation USING INTEGER PRIMARY KEY (rowid=?)"
+      }
+    ]
+  },
+  {
+    "sql": "SELECT 1 FROM orders\n           WHERE pickup_code = ?\n             AND cleanup_state = 'ACTIVE'\n           LIMIT 1",
+    "calls": 60,
+    "plan": [
+      {
+        "id": 4,
+        "parent": 0,
+        "notused": 39,
+        "detail": "SEARCH orders USING INDEX sqlite_autoindex_orders_3 (pickup_code=?)"
+      }
+    ]
+  },
+  {
+    "sql": "UPDATE installation SET next_pickup_code_index = ?, updated_at_ms = ? WHERE id = 1",
+    "calls": 60,
+    "plan": [
+      {
+        "id": 4,
+        "parent": 0,
+        "notused": 33,
+        "detail": "SEARCH installation USING INTEGER PRIMARY KEY (rowid=?)"
+      }
+    ]
+  },
+  {
+    "sql": "UPDATE orders SET public_job_code = COALESCE(public_job_code, ?),\n          pickup_code = COALESCE(pickup_code, ?),\n          status = 'QUEUED', paid_at_ms = COALESCE(paid_at_ms, ?),\n          queued_at_ms = COALESCE(queued_at_ms, ?), updated_at_ms = ?\n         WHERE id = ? AND cleanup_state = 'ACTIVE' AND (\n           status IN ('PAYMENT_PENDING', 'PAYMENT_FAILED', 'PAYMENT_CANCELLED', 'PAID')\n           OR (status = 'QUEUED' AND public_job_code = ?)\n         )",
+    "calls": 60,
+    "plan": [
+      {
+        "id": 5,
+        "parent": 0,
+        "notused": 39,
+        "detail": "SEARCH orders USING INDEX sqlite_autoindex_orders_1 (id=?)"
+      }
+    ]
+  },
+  {
     "sql": "UPDATE payments SET provider_payment_id = ?, status = 'PAID',\n            verified_at_ms = ?, updated_at_ms = ?\n          WHERE id = ? AND status IN ('CREATED', 'PENDING', 'FAILED', 'CANCELLED')",
     "calls": 60,
     "plan": [
@@ -502,18 +953,6 @@
         "parent": 0,
         "notused": 39,
         "detail": "SEARCH payments USING INDEX sqlite_autoindex_payments_1 (id=?)"
-      }
-    ]
-  },
-  {
-    "sql": "UPDATE orders SET public_job_code = COALESCE(public_job_code, ?),\n            status = 'QUEUED', paid_at_ms = COALESCE(paid_at_ms, ?),\n            queued_at_ms = COALESCE(queued_at_ms, ?), updated_at_ms = ?\n          WHERE id = ? AND status IN\n            ('PAYMENT_PENDING', 'PAYMENT_FAILED', 'PAYMENT_CANCELLED', 'PAID')",
-    "calls": 60,
-    "plan": [
-      {
-        "id": 5,
-        "parent": 0,
-        "notused": 39,
-        "detail": "SEARCH orders USING INDEX sqlite_autoindex_orders_1 (id=?)"
       }
     ]
   },
@@ -545,6 +984,18 @@
     "plan": []
   },
   {
+    "sql": "SELECT 1 FROM order_addon_services\n         WHERE order_id = ? AND snapshot_handling_mode = 'MANUAL_PRINT'\n         LIMIT 1",
+    "calls": 60,
+    "plan": [
+      {
+        "id": 4,
+        "parent": 0,
+        "notused": 62,
+        "detail": "SEARCH order_addon_services USING INDEX sqlite_autoindex_order_addon_services_1 (order_id=?)"
+      }
+    ]
+  },
+  {
     "sql": "SELECT id, public_job_code, status, tracking_token_hash,\n          tracking_created_at_ms, tracking_expires_at_ms\n        FROM orders WHERE id = ?",
     "calls": 120,
     "plan": [
@@ -557,7 +1008,7 @@
     ]
   },
   {
-    "sql": "UPDATE orders SET tracking_token_hash = ?, tracking_created_at_ms = ?,\n          tracking_expires_at_ms = ?, updated_at_ms = ?\n        WHERE id = ? AND tracking_token_hash IS NULL\n          AND public_job_code IS NOT NULL\n          AND status IN ('PAID', 'QUEUED', 'CLAIMED', 'SPOOLING', 'PRINTING',\n            'PRINT_BLOCKED', 'PRINT_FAILED', 'ADMIN_ACTION_REQUIRED', 'PRINTED',\n            'COMPLETED', 'CANCELLED')",
+    "sql": "UPDATE orders SET tracking_token_hash = ?, tracking_created_at_ms = ?,\n          tracking_expires_at_ms = ?, updated_at_ms = ?\n        WHERE id = ? AND tracking_token_hash IS NULL\n          AND public_job_code IS NOT NULL\n          AND status IN ('PAID', 'QUEUED', 'CLAIMED', 'SPOOLING', 'PRINTING',\n            'PRINT_BLOCKED', 'PRINT_FAILED', 'RETRY_PENDING', 'NEEDS_ADMIN',\n            'COMPLETION_UNKNOWN', 'ADMIN_ACTION_REQUIRED', 'PRINTED',\n            'MANUAL_PRINT', 'AWAITING_FINISHING', 'COMPLETED', 'CANCELLED')",
     "calls": 60,
     "plan": [
       {
@@ -569,29 +1020,29 @@
     ]
   },
   {
-    "sql": "SELECT o.id, o.public_job_code, o.customer_name, o.status,\n          o.created_at_ms, o.updated_at_ms, o.paid_at_ms, o.selected_pages,\n          o.copies, o.paper_size, o.color_mode, o.sides, o.instructions,\n          o.pii_purged_at_ms, o.tracking_expires_at_ms, p.amount_paise, p.currency,\n          u.storage_status, u.delete_after_ms\n        FROM orders o\n        JOIN uploads u ON u.order_id = o.id\n        JOIN payments p ON p.order_id = o.id AND p.status = 'PAID'\n        WHERE o.public_job_code = ? AND o.tracking_token_hash = ?\n          AND o.tracking_created_at_ms IS NOT NULL\n          AND o.tracking_expires_at_ms IS NOT NULL\n          AND o.paid_at_ms IS NOT NULL\n        ORDER BY p.verified_at_ms DESC LIMIT 1",
+    "sql": "SELECT o.id, o.public_job_code, o.pickup_code, o.customer_name, o.status,\n          o.created_at_ms, o.updated_at_ms, o.paid_at_ms, o.selected_pages,\n          o.copies, o.paper_size, o.color_mode, o.sides, o.instructions,\n          o.pii_purged_at_ms, o.tracking_expires_at_ms, p.amount_paise, p.currency,\n          u.storage_status, u.delete_after_ms\n        FROM orders o\n        JOIN uploads u ON u.order_id = o.id\n        JOIN payments p ON p.order_id = o.id AND p.status = 'PAID'\n        WHERE (o.public_job_code = ? OR o.pickup_code = ?) AND o.tracking_token_hash = ?\n          AND o.tracking_created_at_ms IS NOT NULL\n          AND o.tracking_expires_at_ms IS NOT NULL\n          AND o.paid_at_ms IS NOT NULL\n        ORDER BY p.verified_at_ms DESC LIMIT 1",
     "calls": 60,
     "plan": [
       {
         "id": 10,
         "parent": 0,
         "notused": 46,
-        "detail": "SEARCH o USING INDEX sqlite_autoindex_orders_3 (tracking_token_hash=?)"
+        "detail": "SEARCH o USING INDEX sqlite_autoindex_orders_4 (tracking_token_hash=?)"
       },
       {
-        "id": 25,
+        "id": 27,
         "parent": 0,
         "notused": 46,
         "detail": "SEARCH u USING INDEX sqlite_autoindex_uploads_2 (order_id=?)"
       },
       {
-        "id": 33,
+        "id": 35,
         "parent": 0,
         "notused": 61,
         "detail": "SEARCH p USING INDEX payments_order_created_idx (order_id=?)"
       },
       {
-        "id": 71,
+        "id": 74,
         "parent": 0,
         "notused": 0,
         "detail": "USE TEMP B-TREE FOR ORDER BY"
@@ -599,7 +1050,7 @@
     ]
   },
   {
-    "sql": "SELECT event_type, to_status, created_at_ms\n        FROM order_events\n        WHERE order_id = ? AND (\n          event_type = 'PAYMENT_VERIFIED' OR\n          to_status IN ('QUEUED', 'CLAIMED', 'SPOOLING', 'PRINTING',\n            'PRINT_BLOCKED', 'PRINT_FAILED', 'ADMIN_ACTION_REQUIRED',\n            'PRINTED', 'COMPLETED', 'CANCELLED')\n        )\n        ORDER BY created_at_ms ASC, id ASC",
+    "sql": "SELECT event_type, to_status, created_at_ms\n        FROM order_events\n        WHERE order_id = ? AND (\n          event_type = 'PAYMENT_VERIFIED' OR\n          to_status IN ('QUEUED', 'CLAIMED', 'SPOOLING', 'PRINTING',\n            'PRINT_BLOCKED', 'PRINT_FAILED', 'RETRY_PENDING', 'NEEDS_ADMIN',\n            'COMPLETION_UNKNOWN', 'ADMIN_ACTION_REQUIRED',\n            'MANUAL_PRINT', 'AWAITING_FINISHING',\n            'PRINTED', 'COMPLETED', 'CANCELLED')\n        )\n        ORDER BY created_at_ms ASC, id ASC",
     "calls": 60,
     "plan": [
       {
@@ -611,14 +1062,50 @@
     ]
   },
   {
-    "sql": "SELECT 1 FROM orders WHERE status IN ('QUEUED','CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED') LIMIT 1",
+    "sql": "SELECT 1 FROM orders\n         WHERE status IN ('QUEUED','CLAIMED','SPOOLING','PRINTING')\n            OR (status IN ('PRINT_BLOCKED','RETRY_PENDING') AND (next_retry_at_ms IS NULL OR next_retry_at_ms <= ?))\n            OR (status = 'PRINT_FAILED' AND cleanup_state = 'ACTIVE' AND updated_at_ms <= ?)\n         LIMIT 1",
     "calls": 180,
     "plan": [
       {
-        "id": 3,
+        "id": 5,
         "parent": 0,
-        "notused": 76,
-        "detail": "SEARCH orders USING COVERING INDEX orders_status_completed_idx (status=?)"
+        "notused": 0,
+        "detail": "MULTI-INDEX OR"
+      },
+      {
+        "id": 6,
+        "parent": 5,
+        "notused": 0,
+        "detail": "INDEX 1"
+      },
+      {
+        "id": 32,
+        "parent": 6,
+        "notused": 81,
+        "detail": "SEARCH orders USING INDEX idx_orders_claim_priority_queue (status=?)"
+      },
+      {
+        "id": 38,
+        "parent": 5,
+        "notused": 0,
+        "detail": "INDEX 2"
+      },
+      {
+        "id": 62,
+        "parent": 38,
+        "notused": 71,
+        "detail": "SEARCH orders USING INDEX idx_orders_blocked_retry (status=?)"
+      },
+      {
+        "id": 68,
+        "parent": 5,
+        "notused": 0,
+        "detail": "INDEX 3"
+      },
+      {
+        "id": 78,
+        "parent": 68,
+        "notused": 61,
+        "detail": "SEARCH orders USING INDEX idx_orders_claim_priority_queue (status=?)"
       }
     ]
   },
@@ -678,10 +1165,52 @@
         "id": 12,
         "parent": 8,
         "notused": 81,
-        "detail": "SEARCH orders USING INDEX orders_status_completed_idx (status=?)"
+        "detail": "SEARCH orders USING INDEX idx_orders_claim_priority_queue (status=?)"
       },
       {
         "id": 43,
+        "parent": 8,
+        "notused": 0,
+        "detail": "CREATE BLOOM FILTER"
+      }
+    ]
+  },
+  {
+    "sql": "UPDATE order_files SET print_status = 'UNCERTAIN', updated_at_ms = ?\n           WHERE id IN (\n             SELECT pa.order_file_id FROM print_attempts pa JOIN orders o ON o.id = pa.order_id\n             JOIN print_attempt_steps ps ON ps.print_attempt_id = pa.id\n             WHERE o.claim_expires_at_ms <= ? AND o.status IN ('CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED')\n               AND ps.step_type = 'CUSTOMER_DOCUMENT'\n               AND ps.status IN ('SUBMISSION_STARTED','SUBMITTED','BLOCKED','UNCERTAIN')\n           )",
+    "calls": 180,
+    "plan": [
+      {
+        "id": 4,
+        "parent": 0,
+        "notused": 90,
+        "detail": "SEARCH order_files USING COVERING INDEX sqlite_autoindex_order_files_1 (id=?)"
+      },
+      {
+        "id": 8,
+        "parent": 0,
+        "notused": 0,
+        "detail": "LIST SUBQUERY 1"
+      },
+      {
+        "id": 17,
+        "parent": 8,
+        "notused": 81,
+        "detail": "SEARCH o USING INDEX idx_orders_claim_priority_queue (status=?)"
+      },
+      {
+        "id": 44,
+        "parent": 8,
+        "notused": 61,
+        "detail": "SEARCH pa USING INDEX print_attempts_order_attempt_idx (order_id=?)"
+      },
+      {
+        "id": 49,
+        "parent": 8,
+        "notused": 46,
+        "detail": "SEARCH ps USING INDEX sqlite_autoindex_print_attempt_steps_3 (print_attempt_id=? AND step_type=?)"
+      },
+      {
+        "id": 79,
         "parent": 8,
         "notused": 0,
         "detail": "CREATE BLOOM FILTER"
@@ -696,7 +1225,7 @@
         "id": 5,
         "parent": 0,
         "notused": 81,
-        "detail": "SEARCH orders USING INDEX orders_status_completed_idx (status=?)"
+        "detail": "SEARCH orders USING INDEX idx_orders_claim_priority_queue (status=?)"
       },
       {
         "id": 33,
@@ -738,7 +1267,7 @@
         "id": 13,
         "parent": 9,
         "notused": 61,
-        "detail": "SEARCH orders USING INDEX orders_status_completed_idx (status=?)"
+        "detail": "SEARCH orders USING INDEX idx_orders_claim_priority_queue (status=?)"
       },
       {
         "id": 24,
@@ -768,7 +1297,7 @@
         "id": 5,
         "parent": 0,
         "notused": 61,
-        "detail": "SEARCH orders USING INDEX orders_status_completed_idx (status=?)"
+        "detail": "SEARCH orders USING INDEX idx_orders_claim_priority_queue (status=?)"
       },
       {
         "id": 13,
@@ -791,167 +1320,323 @@
     ]
   },
   {
-    "sql": "SELECT o.id order_id, pa.id attempt_id, ps.id step_id,\n          ps.status step_status, ps.spooler_job_id, o.status order_status,\n          o.claim_id\n        FROM orders o JOIN print_attempts pa ON pa.order_id = o.id\n        JOIN print_attempt_steps ps ON ps.print_attempt_id = pa.id\n        WHERE o.claimed_by_agent_id = ?\n          AND o.status IN ('SPOOLING','PRINTING','PRINT_BLOCKED','PRINTED')\n          AND pa.status IN ('SUBMITTING','SPOOLING','PRINTING','BLOCKED')\n          AND NOT EXISTS (SELECT 1 FROM print_attempt_steps pending\n            WHERE pending.print_attempt_id = pa.id AND pending.status <> 'SUCCEEDED')\n        ORDER BY ps.sequence_number DESC LIMIT 1",
+    "sql": "SELECT id, status FROM orders\n         WHERE cleanup_state = 'ACTIVE'\n           AND status = 'PRINT_FAILED'\n           AND updated_at_ms <= ?\n           AND (SELECT COUNT(*) FROM print_attempts WHERE order_id = orders.id) < 5\n         ORDER BY updated_at_ms ASC LIMIT 5",
     "calls": 180,
     "plan": [
       {
-        "id": 10,
+        "id": 5,
         "parent": 0,
         "notused": 61,
-        "detail": "SEARCH o USING INDEX orders_agent_status_idx (claimed_by_agent_id=? AND status=?)"
+        "detail": "SEARCH orders USING INDEX idx_orders_claim_priority_queue (status=?)"
+      },
+      {
+        "id": 15,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 1"
+      },
+      {
+        "id": 20,
+        "parent": 15,
+        "notused": 53,
+        "detail": "SEARCH print_attempts USING COVERING INDEX print_attempts_order_attempt_idx (order_id=?)"
+      },
+      {
+        "id": 42,
+        "parent": 0,
+        "notused": 0,
+        "detail": "USE TEMP B-TREE FOR ORDER BY"
+      }
+    ]
+  },
+  {
+    "sql": "SELECT o.id order_id, pa.id attempt_id, ps.id step_id,\n          ps.status step_status, ps.spooler_job_id, o.status order_status,\n          ps.step_type, pa.order_file_id, o.claim_id\n        FROM orders o JOIN print_attempts pa ON pa.order_id = o.id\n        JOIN print_attempt_steps ps ON ps.print_attempt_id = pa.id\n        WHERE o.claimed_by_agent_id = ?\n          AND o.status IN ('SPOOLING','PRINTING','PRINT_BLOCKED','PRINTED')\n          AND pa.status IN ('SUBMITTING','SPOOLING','PRINTING','BLOCKED')\n          AND NOT EXISTS (SELECT 1 FROM print_attempt_steps pending\n            WHERE pending.print_attempt_id = pa.id AND pending.status <> 'SUCCEEDED')\n        GROUP BY o.id\n        ORDER BY ps.sequence_number DESC",
+    "calls": 180,
+    "plan": [
+      {
+        "id": 13,
+        "parent": 0,
+        "notused": 81,
+        "detail": "SEARCH pa USING INDEX print_attempts_status_observed_idx (status=?)"
       },
       {
         "id": 39,
         "parent": 0,
-        "notused": 61,
-        "detail": "SEARCH pa USING INDEX print_attempts_order_status_idx (order_id=? AND status=?)"
-      },
-      {
-        "id": 68,
-        "parent": 0,
         "notused": 0,
         "detail": "CORRELATED SCALAR SUBQUERY 1"
       },
       {
-        "id": 72,
-        "parent": 68,
+        "id": 43,
+        "parent": 39,
         "notused": 54,
         "detail": "SEARCH pending USING COVERING INDEX print_attempt_steps_attempt_status_idx (print_attempt_id=?)"
       },
       {
-        "id": 83,
-        "parent": 0,
-        "notused": 61,
-        "detail": "SEARCH ps USING INDEX sqlite_autoindex_print_attempt_steps_2 (print_attempt_id=?)"
-      },
-      {
-        "id": 110,
-        "parent": 0,
-        "notused": 0,
-        "detail": "USE TEMP B-TREE FOR ORDER BY"
-      }
-    ]
-  },
-  {
-    "sql": "SELECT o.id order_id, pa.id attempt_id, o.claim_id, o.claim_expires_at_ms,\n        o.public_job_code, o.printer_id, p.windows_printer_name, u.r2_object_key,\n        u.size_bytes, o.source_page_count, o.selected_pages, o.copies,\n        o.paper_size, o.color_mode, o.sides, o.customer_name, o.customer_phone,\n        o.instructions, o.total_amount_paise, o.currency, o.paid_at_ms,\n        i.shop_name, EXISTS(SELECT 1 FROM print_attempt_steps ids WHERE ids.print_attempt_id = pa.id AND ids.step_type = 'IDENTIFICATION_SHEET') identification_sheet_enabled, ps.id step_id,\n        ps.sequence_number, ps.step_type, ps.status step_status, ps.spooler_job_id\n      FROM orders o\n      JOIN print_attempts pa ON pa.order_id = o.id\n        AND pa.status IN ('CREATED','SUBMITTING','SPOOLING','PRINTING','BLOCKED')\n      JOIN print_attempt_steps ps ON ps.print_attempt_id = pa.id\n        AND ps.status <> 'SUCCEEDED'\n      JOIN printers p ON p.id = o.printer_id AND p.agent_id = o.claimed_by_agent_id\n      JOIN uploads u ON u.order_id = o.id\n      JOIN installation i ON i.id = 1\n      WHERE o.claimed_by_agent_id = ?\n        AND o.status IN ('CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED')\n      ORDER BY ps.sequence_number LIMIT 1",
-    "calls": 240,
-    "plan": [
-      {
-        "id": 18,
-        "parent": 0,
-        "notused": 45,
-        "detail": "SEARCH i USING INTEGER PRIMARY KEY (rowid=?)"
-      },
-      {
-        "id": 21,
-        "parent": 0,
-        "notused": 61,
-        "detail": "SEARCH o USING INDEX orders_agent_status_idx (claimed_by_agent_id=? AND status=?)"
-      },
-      {
-        "id": 50,
-        "parent": 0,
-        "notused": 45,
-        "detail": "SEARCH pa USING INDEX print_attempts_order_status_idx (order_id=? AND status=?)"
-      },
-      {
-        "id": 84,
-        "parent": 0,
-        "notused": 46,
-        "detail": "SEARCH p USING INDEX sqlite_autoindex_printers_3 (id=? AND agent_id=?)"
-      },
-      {
-        "id": 93,
-        "parent": 0,
-        "notused": 46,
-        "detail": "SEARCH u USING INDEX sqlite_autoindex_uploads_2 (order_id=?)"
-      },
-      {
-        "id": 101,
-        "parent": 0,
-        "notused": 61,
-        "detail": "SEARCH ps USING INDEX sqlite_autoindex_print_attempt_steps_2 (print_attempt_id=?)"
-      },
-      {
-        "id": 137,
-        "parent": 0,
-        "notused": 0,
-        "detail": "CORRELATED SCALAR SUBQUERY 1"
-      },
-      {
-        "id": 141,
-        "parent": 137,
-        "notused": 39,
-        "detail": "SEARCH ids USING COVERING INDEX sqlite_autoindex_print_attempt_steps_3 (print_attempt_id=? AND step_type=?)"
-      },
-      {
-        "id": 163,
-        "parent": 0,
-        "notused": 0,
-        "detail": "USE TEMP B-TREE FOR ORDER BY"
-      }
-    ]
-  },
-  {
-    "sql": "SELECT o.id order_id, p.id printer_id, i.identification_sheet_enabled,\n        i.identification_sheet_placement\n      FROM orders o\n      JOIN uploads u ON u.order_id = o.id\n      JOIN payments pay ON pay.order_id = o.id AND pay.status = 'PAID'\n        AND pay.provider_payment_id IS NOT NULL AND pay.verified_at_ms IS NOT NULL\n      JOIN agents a ON a.id = ? AND a.is_active = 1 AND a.last_heartbeat_at_ms >= ?\n      JOIN printers p ON p.agent_id = a.id AND p.enabled = 1 AND p.status = 'ONLINE'\n        AND p.is_production_eligible = 1 AND p.is_virtual = 0\n        AND p.capabilities_json IS NOT NULL\n      JOIN installation i ON i.id = 1\n        AND (i.default_production_printer_id IS NULL OR p.id = i.default_production_printer_id)\n      WHERE o.status = 'QUEUED' AND o.public_job_code IS NOT NULL\n        AND o.source_page_count IS NOT NULL AND u.storage_status = 'UPLOADED'\n        AND u.size_bytes IS NOT NULL AND u.deleted_at_ms IS NULL\n        AND (u.delete_after_ms IS NULL OR u.delete_after_ms > ?)\n        AND (o.color_mode = 'BW' OR json_extract(p.capabilities_json, '$.colour') = 1)\n        AND (o.sides = 'SINGLE' OR json_extract(p.capabilities_json, '$.duplex') = 1)\n        AND EXISTS (SELECT 1 FROM json_each(p.capabilities_json, '$.paperSizes')\n          WHERE upper(value) = o.paper_size)\n        AND NOT EXISTS (SELECT 1 FROM orders busy WHERE busy.claimed_by_agent_id = a.id\n          AND busy.status IN ('CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED'))\n      ORDER BY o.queued_at_ms, o.id, p.id LIMIT 1",
-    "calls": 60,
-    "plan": [
-      {
-        "id": 20,
-        "parent": 0,
-        "notused": 46,
-        "detail": "SEARCH a USING INDEX sqlite_autoindex_agents_1 (id=?)"
-      },
-      {
-        "id": 32,
-        "parent": 0,
-        "notused": 0,
-        "detail": "CORRELATED SCALAR SUBQUERY 2"
-      },
-      {
-        "id": 36,
-        "parent": 32,
-        "notused": 53,
-        "detail": "SEARCH busy USING COVERING INDEX orders_agent_status_idx (claimed_by_agent_id=? AND status=?)"
-      },
-      {
-        "id": 71,
-        "parent": 0,
-        "notused": 45,
-        "detail": "SEARCH i USING INTEGER PRIMARY KEY (rowid=?)"
-      },
-      {
-        "id": 74,
-        "parent": 0,
-        "notused": 61,
-        "detail": "SEARCH pay USING INDEX payments_status_created_idx (status=?)"
-      },
-      {
-        "id": 83,
+        "id": 54,
         "parent": 0,
         "notused": 46,
         "detail": "SEARCH o USING INDEX sqlite_autoindex_orders_1 (id=?)"
       },
       {
-        "id": 94,
+        "id": 81,
+        "parent": 0,
+        "notused": 61,
+        "detail": "SEARCH ps USING INDEX sqlite_autoindex_print_attempt_steps_2 (print_attempt_id=?)"
+      },
+      {
+        "id": 86,
+        "parent": 0,
+        "notused": 0,
+        "detail": "USE TEMP B-TREE FOR GROUP BY"
+      },
+      {
+        "id": 139,
+        "parent": 0,
+        "notused": 0,
+        "detail": "USE TEMP B-TREE FOR ORDER BY"
+      }
+    ]
+  },
+  {
+    "sql": "UPDATE orders SET claim_expires_at_ms = ?, updated_at_ms = ?\n       WHERE claimed_by_agent_id = ?\n         AND claim_expires_at_ms > ? AND claim_expires_at_ms <= ?\n         AND status IN ('CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED')",
+    "calls": 180,
+    "plan": [
+      {
+        "id": 5,
+        "parent": 0,
+        "notused": 81,
+        "detail": "SEARCH orders USING INDEX idx_orders_claim_priority_queue (status=?)"
+      }
+    ]
+  },
+  {
+    "sql": "SELECT o.id order_id, o.status order_status, p.id printer_id,\n          COALESCE(p.physical_device_id, 'AGENT_LOCK_' || p.agent_id) physical_device_id,\n          i.identification_sheet_enabled,\n          i.identification_sheet_placement, i.id_sheet_min_pages, i.id_sheet_min_amount_paise,\n          o.total_amount_paise,\n          (SELECT SUM(COALESCE(op.selected_page_count, op.source_page_count, 1) * op.copies)\n           FROM order_files op WHERE op.order_id = o.id) total_printed_pages,\n          o.identification_required, f.id file_id, f.position file_position,\n          (SELECT COUNT(*) FROM order_files all_files WHERE all_files.order_id = o.id) file_count,\n          (SELECT COUNT(*) FROM order_files remaining WHERE remaining.order_id = o.id\n            AND remaining.print_status <> 'PRINTED') remaining_files,\n          CASE WHEN i.default_production_printer_id IS NOT NULL\n                    AND p.id <> i.default_production_printer_id\n               THEN i.default_production_printer_id\n               ELSE NULL\n          END AS fallback_from_printer_id\n        FROM orders o\n        JOIN order_files f ON f.order_id = o.id AND f.id = COALESCE((\n          SELECT next_file.id FROM order_files next_file\n          WHERE next_file.order_id = o.id AND next_file.print_status <> 'PRINTED'\n          ORDER BY next_file.position LIMIT 1\n        ), (SELECT last_file.id FROM order_files last_file\n            WHERE last_file.order_id = o.id ORDER BY last_file.position DESC LIMIT 1))\n        JOIN payments pay ON pay.order_id = o.id AND pay.status = 'PAID'\n          AND pay.provider_payment_id IS NOT NULL AND pay.verified_at_ms IS NOT NULL\n        JOIN agents a ON a.id = ? AND a.is_active = 1 AND a.last_heartbeat_at_ms >= ?\n        JOIN printers p ON p.agent_id = a.id AND p.enabled = 1 AND p.status = 'ONLINE'\n          AND COALESCE(p.is_paused, 0) = 0\n          AND p.is_production_eligible = 1 AND p.is_virtual = 0\n          AND p.capabilities_json IS NOT NULL\n        JOIN installation i ON i.id = 1\n          AND (\n            (o.printer_id IS NOT NULL AND p.id = o.printer_id)\n            OR (o.printer_id IS NULL AND (\n              (i.default_production_printer_id IS NULL AND (\n                p.id = (\n                  SELECT p_first.id FROM printers p_first\n                  WHERE p_first.agent_id = a.id AND p_first.enabled = 1\n                    AND p_first.is_production_eligible = 1 AND p_first.is_virtual = 0\n                  ORDER BY p_first.priority DESC, p_first.id ASC LIMIT 1\n                )\n              ))\n              OR p.id = i.default_production_printer_id\n              OR (\n                -- Subcase B1: Capability routing — default printer is ONLINE and NOT paused,\n                -- but lacks the specific capability requested by file f\n                p.id <> i.default_production_printer_id\n                AND EXISTS (\n                  SELECT 1 FROM printers def\n                  WHERE def.id = i.default_production_printer_id\n                    AND def.enabled = 1 AND def.status = 'ONLINE' AND COALESCE(def.is_paused, 0) = 0\n                    AND (\n                      (f.color_mode = 'COLOR' AND (\n                        (def.verified_capabilities_json IS NOT NULL AND (json_extract(def.verified_capabilities_json, '$.verified.color') <> 1 OR json_extract(def.enabled_services_json, '$.color') <> 1))\n                        OR (def.verified_capabilities_json IS NULL AND json_extract(def.capabilities_json, '$.colour') <> 1 AND json_extract(def.capabilities_json, '$.colour') <> 'true')\n                      ))\n                      OR (f.sides <> 'SINGLE' AND (\n                        (def.verified_capabilities_json IS NOT NULL AND (json_extract(def.verified_capabilities_json, '$.verified.duplex') <> 1 OR json_extract(def.enabled_services_json, '$.duplex') <> 1))\n                        OR (def.verified_capabilities_json IS NULL AND json_extract(def.capabilities_json, '$.duplex') <> 1 AND json_extract(def.capabilities_json, '$.duplex') <> 'true')\n                      ))\n                      OR (f.paper_size = 'A3' AND (\n                        (def.verified_capabilities_json IS NOT NULL AND (json_extract(def.verified_capabilities_json, '$.verified.a3') <> 1 OR json_extract(def.enabled_services_json, '$.a3') <> 1))\n                        OR (def.verified_capabilities_json IS NULL AND json_extract(def.capabilities_json, '$.paperSizes') NOT LIKE '%A3%')\n                      ))\n                    )\n                )\n              )\n              OR (\n                -- Subcase B2: Fallback routing — default printer is OFFLINE or PAUSED,\n                -- and auto-fallback is enabled pointing to this printer\n                p.id <> i.default_production_printer_id\n                AND EXISTS (\n                  SELECT 1 FROM printers def\n                  WHERE def.id = i.default_production_printer_id\n                    AND def.auto_fallback_enabled = 1\n                    AND def.fallback_printer_id = p.id\n                    AND (def.enabled = 0 OR def.status <> 'ONLINE' OR COALESCE(def.is_paused, 0) = 1)\n                )\n                AND COALESCE(p.fallback_printer_id, '') <> i.default_production_printer_id\n              )\n              OR (\n                -- Subcase B3: Parallel routing — default printer is busy on its physical device,\n                -- and printer p is on an independent, idle physical device that matches all capabilities\n                p.id <> i.default_production_printer_id\n                AND EXISTS (\n                  SELECT 1 FROM printers def\n                  WHERE def.id = i.default_production_printer_id\n                    AND COALESCE(def.physical_device_id, 'AGENT_LOCK_' || def.agent_id) <> COALESCE(p.physical_device_id, 'AGENT_LOCK_' || p.agent_id)\n                    AND EXISTS (\n                      SELECT 1 FROM orders busy\n                      JOIN printers busy_p ON busy_p.id = busy.printer_id\n                      WHERE busy.id <> o.id\n                        AND busy.status IN ('CLAIMED','SPOOLING','PRINTING','ADMIN_ACTION_REQUIRED','COMPLETION_UNKNOWN','NEEDS_ADMIN')\n                        AND COALESCE(busy.physical_device_id, COALESCE(busy_p.physical_device_id, 'AGENT_LOCK_' || busy_p.agent_id)) = COALESCE(def.physical_device_id, 'AGENT_LOCK_' || def.agent_id)\n                    )\n                )\n              )\n            ))\n          )\n        WHERE ((o.status = 'QUEUED')\n               OR (o.status IN ('RETRY_PENDING', 'PRINT_BLOCKED') AND (o.next_retry_at_ms IS NULL OR o.next_retry_at_ms <= ?)))\n          AND o.public_job_code IS NOT NULL\n          AND o.cleanup_state = 'ACTIVE' AND f.upload_status = 'UPLOADED'\n          AND f.size_bytes IS NOT NULL\n          AND (f.position <> 1 OR EXISTS (SELECT 1 FROM uploads u\n            WHERE u.order_id = o.id AND u.r2_object_key = f.r2_object_key\n              AND u.storage_status = 'UPLOADED'))\n          AND (\n            p.verified_capabilities_json IS NULL\n            OR COALESCE(json_extract(p.verified_capabilities_json, '$.requiresReview'), 0) NOT IN (1, 'true')\n          )\n          AND (\n            CASE\n              WHEN p.verified_capabilities_json IS NOT NULL AND p.enabled_services_json IS NOT NULL THEN\n                (\n                  (f.color_mode = 'BW' AND json_extract(p.verified_capabilities_json, '$.verified.bw') = 1 AND json_extract(p.enabled_services_json, '$.bw') = 1)\n                  OR\n                  (f.color_mode = 'COLOR' AND json_extract(p.verified_capabilities_json, '$.verified.color') = 1 AND json_extract(p.enabled_services_json, '$.color') = 1)\n                )\n              ELSE\n                (f.color_mode = 'BW' OR json_extract(p.capabilities_json, '$.colour') = 1 OR json_extract(p.capabilities_json, '$.colour') = 'true')\n            END\n          )\n          AND (\n            CASE\n              WHEN p.verified_capabilities_json IS NOT NULL AND p.enabled_services_json IS NOT NULL THEN\n                (\n                  f.sides = 'SINGLE'\n                  OR\n                  (json_extract(p.verified_capabilities_json, '$.verified.duplex') = 1 AND json_extract(p.enabled_services_json, '$.duplex') = 1)\n                )\n              ELSE\n                (f.sides = 'SINGLE' OR json_extract(p.capabilities_json, '$.duplex') = 1 OR json_extract(p.capabilities_json, '$.duplex') = 'true')\n            END\n          )\n          AND (\n            CASE\n              WHEN p.verified_capabilities_json IS NOT NULL AND p.enabled_services_json IS NOT NULL THEN\n                (\n                  (f.paper_size = 'A4' AND json_extract(p.verified_capabilities_json, '$.verified.a4') = 1 AND json_extract(p.enabled_services_json, '$.a4') = 1)\n                  OR\n                  (f.paper_size = 'A3' AND json_extract(p.verified_capabilities_json, '$.verified.a3') = 1 AND json_extract(p.enabled_services_json, '$.a3') = 1)\n                )\n              ELSE\n                EXISTS (SELECT 1 FROM json_each(p.capabilities_json, '$.paperSizes') WHERE upper(value) = f.paper_size)\n            END\n          )\n          AND NOT EXISTS (\n            SELECT 1 FROM orders busy\n            JOIN printers busy_p ON busy_p.id = busy.printer_id\n            WHERE busy.id <> o.id\n              AND busy.status IN ('CLAIMED','SPOOLING','PRINTING','ADMIN_ACTION_REQUIRED','COMPLETION_UNKNOWN','NEEDS_ADMIN')\n              AND COALESCE(busy.physical_device_id, COALESCE(busy_p.physical_device_id, 'AGENT_LOCK_' || busy_p.agent_id)) = COALESCE(p.physical_device_id, 'AGENT_LOCK_' || p.agent_id)\n          )\n        ORDER BY\n          o.is_priority DESC,\n          (CASE WHEN o.status = 'QUEUED' THEN 0 WHEN o.status = 'RETRY_PENDING' THEN 1 ELSE 2 END) ASC,\n          o.queued_at_ms ASC,\n          o.id ASC,\n          CASE WHEN p.id = i.default_production_printer_id THEN 0 ELSE 1 END ASC,\n          CASE WHEN EXISTS (\n            SELECT 1 FROM printers def\n            WHERE def.id = i.default_production_printer_id\n              AND def.auto_fallback_enabled = 1\n              AND def.fallback_printer_id = p.id\n              AND (def.enabled = 0 OR def.status <> 'ONLINE' OR COALESCE(def.is_paused, 0) = 1)\n          ) THEN 0 ELSE 1 END ASC,\n          p.priority DESC,\n          p.id ASC\n        LIMIT 1",
+    "calls": 240,
+    "plan": [
+      {
+        "id": 18,
         "parent": 0,
         "notused": 46,
-        "detail": "SEARCH u USING INDEX sqlite_autoindex_uploads_2 (order_id=?)"
+        "detail": "SEARCH a USING INDEX sqlite_autoindex_agents_1 (id=?)"
+      },
+      {
+        "id": 29,
+        "parent": 0,
+        "notused": 45,
+        "detail": "SEARCH i USING INTEGER PRIMARY KEY (rowid=?)"
+      },
+      {
+        "id": 32,
+        "parent": 0,
+        "notused": 61,
+        "detail": "SEARCH pay USING INDEX payments_status_created_idx (status=?)"
+      },
+      {
+        "id": 41,
+        "parent": 0,
+        "notused": 46,
+        "detail": "SEARCH o USING INDEX sqlite_autoindex_orders_1 (id=?)"
+      },
+      {
+        "id": 59,
+        "parent": 0,
+        "notused": 46,
+        "detail": "SEARCH f USING INDEX sqlite_autoindex_order_files_1 (id=?)"
+      },
+      {
+        "id": 61,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 4"
+      },
+      {
+        "id": 67,
+        "parent": 61,
+        "notused": 61,
+        "detail": "SEARCH next_file USING INDEX order_files_order_position_idx (order_id=?)"
+      },
+      {
+        "id": 81,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 5"
+      },
+      {
+        "id": 87,
+        "parent": 81,
+        "notused": 61,
+        "detail": "SEARCH last_file USING INDEX order_files_order_position_idx (order_id=?)"
       },
       {
         "id": 112,
         "parent": 0,
-        "notused": 59,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 11"
+      },
+      {
+        "id": 117,
+        "parent": 112,
+        "notused": 39,
+        "detail": "SEARCH u USING INDEX sqlite_autoindex_uploads_3 (r2_object_key=?)"
+      },
+      {
+        "id": 131,
+        "parent": 0,
+        "notused": 58,
         "detail": "SEARCH p USING INDEX printers_production_eligible_idx (agent_id=? AND is_production_eligible=? AND enabled=? AND status=?)"
       },
       {
-        "id": 140,
+        "id": 293,
         "parent": 0,
         "notused": 0,
-        "detail": "SCAN json_each EXISTS VIRTUAL TABLE INDEX 3:"
+        "detail": "CORRELATED SCALAR SUBQUERY 12"
       },
       {
-        "id": 166,
+        "id": 297,
+        "parent": 293,
+        "notused": 0,
+        "detail": "SCAN json_each VIRTUAL TABLE INDEX 3:"
+      },
+      {
+        "id": 314,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 13"
+      },
+      {
+        "id": 321,
+        "parent": 314,
+        "notused": 87,
+        "detail": "SEARCH busy USING INDEX idx_orders_claim_priority_queue (status=?)"
+      },
+      {
+        "id": 355,
+        "parent": 314,
+        "notused": 46,
+        "detail": "SEARCH busy_p USING INDEX sqlite_autoindex_printers_1 (id=?)"
+      },
+      {
+        "id": 392,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 6"
+      },
+      {
+        "id": 398,
+        "parent": 392,
+        "notused": 59,
+        "detail": "SEARCH p_first USING INDEX printers_production_eligible_idx (agent_id=? AND is_production_eligible=? AND enabled=?)"
+      },
+      {
+        "id": 418,
+        "parent": 392,
+        "notused": 0,
+        "detail": "USE TEMP B-TREE FOR ORDER BY"
+      },
+      {
+        "id": 428,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 7"
+      },
+      {
+        "id": 433,
+        "parent": 428,
+        "notused": 39,
+        "detail": "SEARCH def USING INDEX sqlite_autoindex_printers_1 (id=?)"
+      },
+      {
+        "id": 512,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 8"
+      },
+      {
+        "id": 517,
+        "parent": 512,
+        "notused": 39,
+        "detail": "SEARCH def USING INDEX sqlite_autoindex_printers_1 (id=?)"
+      },
+      {
+        "id": 544,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 10"
+      },
+      {
+        "id": 549,
+        "parent": 544,
+        "notused": 39,
+        "detail": "SEARCH def USING INDEX sqlite_autoindex_printers_1 (id=?)"
+      },
+      {
+        "id": 565,
+        "parent": 544,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 9"
+      },
+      {
+        "id": 572,
+        "parent": 565,
+        "notused": 87,
+        "detail": "SEARCH busy USING INDEX idx_orders_claim_priority_queue (status=?)"
+      },
+      {
+        "id": 606,
+        "parent": 565,
+        "notused": 46,
+        "detail": "SEARCH busy_p USING INDEX sqlite_autoindex_printers_1 (id=?)"
+      },
+      {
+        "id": 652,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 14"
+      },
+      {
+        "id": 657,
+        "parent": 652,
+        "notused": 39,
+        "detail": "SEARCH def USING INDEX sqlite_autoindex_printers_1 (id=?)"
+      },
+      {
+        "id": 701,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 1"
+      },
+      {
+        "id": 707,
+        "parent": 701,
+        "notused": 61,
+        "detail": "SEARCH op USING INDEX order_files_order_position_idx (order_id=?)"
+      },
+      {
+        "id": 730,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 2"
+      },
+      {
+        "id": 735,
+        "parent": 730,
+        "notused": 53,
+        "detail": "SEARCH all_files USING COVERING INDEX order_files_order_position_idx (order_id=?)"
+      },
+      {
+        "id": 747,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 3"
+      },
+      {
+        "id": 752,
+        "parent": 747,
+        "notused": 54,
+        "detail": "SEARCH remaining USING COVERING INDEX order_files_order_print_idx (order_id=?)"
+      },
+      {
+        "id": 777,
         "parent": 0,
         "notused": 0,
         "detail": "USE TEMP B-TREE FOR ORDER BY"
@@ -971,7 +1656,7 @@
     ]
   },
   {
-    "sql": "UPDATE orders SET status = 'CLAIMED', claimed_by_agent_id = ?, claim_id = ?,\n          claim_expires_at_ms = ?, printer_id = ?, claimed_at_ms = ?, updated_at_ms = ?\n        WHERE id = ? AND status = 'QUEUED' AND EXISTS (\n          SELECT 1 FROM payments WHERE order_id = orders.id AND status = 'PAID'\n            AND provider_payment_id IS NOT NULL AND verified_at_ms IS NOT NULL\n        ) AND EXISTS (\n          SELECT 1 FROM uploads WHERE order_id = orders.id AND storage_status = 'UPLOADED'\n            AND deleted_at_ms IS NULL AND size_bytes IS NOT NULL\n            AND (delete_after_ms IS NULL OR delete_after_ms > ?)\n        ) AND EXISTS (\n          SELECT 1 FROM printers p JOIN agents a ON a.id = p.agent_id\n          WHERE p.id = ? AND p.agent_id = ? AND p.enabled = 1 AND p.status = 'ONLINE'\n            AND p.is_production_eligible = 1 AND p.is_virtual = 0\n            AND a.is_active = 1 AND a.last_heartbeat_at_ms >= ?\n            AND p.capabilities_json IS NOT NULL\n            AND (orders.color_mode = 'BW' OR json_extract(p.capabilities_json, '$.colour') = 1)\n            AND (orders.sides = 'SINGLE' OR json_extract(p.capabilities_json, '$.duplex') = 1)\n            AND EXISTS (SELECT 1 FROM json_each(p.capabilities_json, '$.paperSizes')\n              WHERE upper(value) = orders.paper_size)\n        )",
+    "sql": "UPDATE orders SET status = 'CLAIMED', claimed_by_agent_id = ?, claim_id = ?,\n          claim_expires_at_ms = ?, printer_id = ?, physical_device_id = ?, claimed_at_ms = ?, updated_at_ms = ?\n        WHERE id = ? AND status IN ('QUEUED', 'RETRY_PENDING', 'PRINT_BLOCKED') AND cleanup_state = 'ACTIVE'\n          AND NOT EXISTS (\n            SELECT 1 FROM orders busy\n            WHERE busy.id <> orders.id\n              AND busy.status IN ('CLAIMED','SPOOLING','PRINTING','ADMIN_ACTION_REQUIRED','COMPLETION_UNKNOWN','NEEDS_ADMIN')\n              AND busy.physical_device_id = ?\n          )\n          AND EXISTS (\n          SELECT 1 FROM payments WHERE order_id = orders.id AND status = 'PAID'\n            AND provider_payment_id IS NOT NULL AND verified_at_ms IS NOT NULL\n        ) AND EXISTS (\n          SELECT 1 FROM order_files WHERE id = ? AND order_id = orders.id\n            AND upload_status = 'UPLOADED' AND size_bytes IS NOT NULL\n        ) AND EXISTS (\n          SELECT 1 FROM printers p\n          JOIN agents a ON a.id = p.agent_id\n          JOIN order_files f ON f.id = ? AND f.order_id = orders.id\n          WHERE p.id = ? AND p.agent_id = ? AND p.enabled = 1 AND p.status = 'ONLINE'\n            AND p.is_production_eligible = 1 AND p.is_virtual = 0\n            AND a.is_active = 1 AND a.last_heartbeat_at_ms >= ?\n            AND p.capabilities_json IS NOT NULL\n            AND (\n              p.verified_capabilities_json IS NULL\n              OR COALESCE(json_extract(p.verified_capabilities_json, '$.requiresReview'), 0) NOT IN (1, 'true')\n            )\n            AND (\n              CASE\n                WHEN p.verified_capabilities_json IS NOT NULL AND p.enabled_services_json IS NOT NULL THEN\n                  (\n                    (f.color_mode = 'BW' AND json_extract(p.verified_capabilities_json, '$.verified.bw') = 1 AND json_extract(p.enabled_services_json, '$.bw') = 1)\n                    OR\n                    (f.color_mode = 'COLOR' AND json_extract(p.verified_capabilities_json, '$.verified.color') = 1 AND json_extract(p.enabled_services_json, '$.color') = 1)\n                  )\n                ELSE\n                  (f.color_mode = 'BW' OR json_extract(p.capabilities_json, '$.colour') = 1 OR json_extract(p.capabilities_json, '$.colour') = 'true')\n              END\n            )\n            AND (\n              CASE\n                WHEN p.verified_capabilities_json IS NOT NULL AND p.enabled_services_json IS NOT NULL THEN\n                  (\n                    f.sides = 'SINGLE'\n                    OR\n                    (json_extract(p.verified_capabilities_json, '$.verified.duplex') = 1 AND json_extract(p.enabled_services_json, '$.duplex') = 1)\n                  )\n                ELSE\n                  (f.sides = 'SINGLE' OR json_extract(p.capabilities_json, '$.duplex') = 1 OR json_extract(p.capabilities_json, '$.duplex') = 'true')\n              END\n            )\n            AND (\n              CASE\n                WHEN p.verified_capabilities_json IS NOT NULL AND p.enabled_services_json IS NOT NULL THEN\n                  (\n                    (f.paper_size = 'A4' AND json_extract(p.verified_capabilities_json, '$.verified.a4') = 1 AND json_extract(p.enabled_services_json, '$.a4') = 1)\n                    OR\n                    (f.paper_size = 'A3' AND json_extract(p.verified_capabilities_json, '$.verified.a3') = 1 AND json_extract(p.enabled_services_json, '$.a3') = 1)\n                  )\n                ELSE\n                  EXISTS (SELECT 1 FROM json_each(p.capabilities_json, '$.paperSizes')\n                    WHERE upper(value) = f.paper_size)\n              END\n            )\n        )",
     "calls": 60,
     "plan": [
       {
@@ -981,64 +1666,88 @@
         "detail": "SEARCH orders USING INDEX sqlite_autoindex_orders_1 (id=?)"
       },
       {
-        "id": 15,
+        "id": 32,
         "parent": 0,
         "notused": 0,
         "detail": "CORRELATED SCALAR SUBQUERY 1"
       },
       {
-        "id": 20,
-        "parent": 15,
-        "notused": 61,
-        "detail": "SEARCH payments USING INDEX payments_status_created_idx (status=?)"
+        "id": 37,
+        "parent": 32,
+        "notused": 45,
+        "detail": "SEARCH busy USING INDEX idx_active_physical_device_reservation (physical_device_id=?)"
       },
       {
-        "id": 38,
+        "id": 52,
         "parent": 0,
         "notused": 0,
         "detail": "CORRELATED SCALAR SUBQUERY 2"
       },
       {
-        "id": 43,
-        "parent": 38,
-        "notused": 39,
-        "detail": "SEARCH uploads USING INDEX sqlite_autoindex_uploads_2 (order_id=?)"
+        "id": 57,
+        "parent": 52,
+        "notused": 61,
+        "detail": "SEARCH payments USING INDEX payments_status_created_idx (status=?)"
       },
       {
-        "id": 63,
+        "id": 75,
         "parent": 0,
         "notused": 0,
-        "detail": "CORRELATED SCALAR SUBQUERY 4"
+        "detail": "CORRELATED SCALAR SUBQUERY 3"
       },
       {
-        "id": 72,
-        "parent": 63,
+        "id": 80,
+        "parent": 75,
+        "notused": 39,
+        "detail": "SEARCH order_files USING INDEX sqlite_autoindex_order_files_1 (id=?)"
+      },
+      {
+        "id": 99,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 5"
+      },
+      {
+        "id": 109,
+        "parent": 99,
         "notused": 46,
         "detail": "SEARCH p USING INDEX sqlite_autoindex_printers_3 (id=? AND agent_id=?)"
       },
       {
-        "id": 101,
-        "parent": 63,
+        "id": 141,
+        "parent": 99,
         "notused": 46,
         "detail": "SEARCH a USING INDEX sqlite_autoindex_agents_1 (id=?)"
       },
       {
-        "id": 111,
-        "parent": 63,
+        "id": 151,
+        "parent": 99,
+        "notused": 46,
+        "detail": "SEARCH f USING INDEX sqlite_autoindex_order_files_1 (id=?)"
+      },
+      {
+        "id": 293,
+        "parent": 99,
         "notused": 0,
-        "detail": "SCAN json_each EXISTS VIRTUAL TABLE INDEX 3:"
+        "detail": "CORRELATED SCALAR SUBQUERY 4"
+      },
+      {
+        "id": 297,
+        "parent": 293,
+        "notused": 0,
+        "detail": "SCAN json_each VIRTUAL TABLE INDEX 3:"
       }
     ]
   },
   {
-    "sql": "INSERT INTO print_attempts (id, order_id, attempt_number, agent_id, printer_id,\n          status, identification_sheet_included, created_at_ms, updated_at_ms)\n        SELECT ?, id, COALESCE((SELECT MAX(attempt_number) + 1 FROM print_attempts\n          WHERE order_id = orders.id), 1), ?, ?, 'CREATED', ?, ?, ?\n        FROM orders WHERE id = ? AND claim_id = ? AND claimed_by_agent_id = ?",
+    "sql": "INSERT INTO print_attempts (id, order_id, attempt_number, agent_id, printer_id,\n          physical_device_id, status, identification_sheet_included, created_at_ms, updated_at_ms,\n          order_file_id, file_position, fallback_from_printer_id)\n        SELECT ?, id, COALESCE((SELECT MAX(attempt_number) + 1 FROM print_attempts\n          WHERE order_id = orders.id), 1), ?, ?, ?, 'CREATED', ?, ?, ?, ?, ?, ?\n        FROM orders WHERE id = ? AND claim_id = ? AND claimed_by_agent_id = ?",
     "calls": 60,
     "plan": [
       {
         "id": 4,
         "parent": 0,
         "notused": 39,
-        "detail": "SEARCH orders USING INDEX sqlite_autoindex_orders_4 (claim_id=?)"
+        "detail": "SEARCH orders USING INDEX sqlite_autoindex_orders_5 (claim_id=?)"
       },
       {
         "id": 18,
@@ -1053,7 +1762,7 @@
         "detail": "SEARCH print_attempts USING COVERING INDEX print_attempts_order_attempt_idx (order_id=?)"
       },
       {
-        "id": 272,
+        "id": 285,
         "parent": 0,
         "notused": 53,
         "detail": "SEARCH print_attempt_steps USING COVERING INDEX sqlite_autoindex_print_attempt_steps_2 (print_attempt_id=?)"
@@ -1085,14 +1794,128 @@
     ]
   },
   {
-    "sql": "INSERT INTO order_events (id, order_id, event_type, from_status, to_status,\n          actor_type, actor_id, created_at_ms)\n        SELECT ?, id, 'PRINT_JOB_CLAIMED', 'QUEUED', 'CLAIMED', 'AGENT', ?, ?\n        FROM orders WHERE id = ? AND claim_id = ?",
+    "sql": "INSERT INTO order_events (id, order_id, event_type, from_status, to_status,\n          actor_type, actor_id, created_at_ms)\n        SELECT ?, id, 'PRINT_JOB_CLAIMED', ?, 'CLAIMED', 'AGENT', ?, ?\n        FROM orders WHERE id = ? AND claim_id = ?",
     "calls": 60,
     "plan": [
       {
         "id": 4,
         "parent": 0,
         "notused": 39,
-        "detail": "SEARCH orders USING INDEX sqlite_autoindex_orders_4 (claim_id=?)"
+        "detail": "SEARCH orders USING INDEX sqlite_autoindex_orders_5 (claim_id=?)"
+      }
+    ]
+  },
+  {
+    "sql": "SELECT o.id order_id, pa.id attempt_id, o.claim_id, o.claim_expires_at_ms,\n        o.public_job_code, o.pickup_code, o.due_at_pickup_paise, o.printer_id, p.windows_printer_name,\n        COALESCE(o.physical_device_id, COALESCE(p.physical_device_id, 'AGENT_LOCK_' || p.agent_id)) physical_device_id,\n        p.verified_capabilities_json, p.enabled_services_json, p.capabilities_json,\n        f.r2_object_key,\n        f.size_bytes, f.source_page_count, f.selected_pages, f.copies,\n        f.paper_size, f.color_mode, f.sides, o.customer_name, o.customer_phone,\n        o.instructions, o.total_amount_paise, o.currency, o.paid_at_ms,\n        f.id file_id, f.position file_position, f.original_filename,\n        (SELECT COUNT(*) FROM order_files WHERE order_id = o.id) file_count,\n        i.shop_name, EXISTS(SELECT 1 FROM print_attempt_steps ids WHERE ids.print_attempt_id = pa.id AND ids.step_type = 'IDENTIFICATION_SHEET') identification_sheet_enabled, ps.id step_id,\n        ps.sequence_number, ps.step_type, ps.status step_status, ps.spooler_job_id,\n        (SELECT json_group_array(json_object(\n          'name', snapshot_name,\n          'pricingType', snapshot_pricing_type,\n          'priceChargedOnlinePaise', snapshot_price_charged_online_paise,\n          'handlingMode', snapshot_handling_mode\n        )) FROM order_addon_services WHERE order_id = o.id) addon_services_json\n      FROM orders o\n      JOIN print_attempts pa ON pa.order_id = o.id\n        AND pa.status IN ('CREATED','SUBMITTING','SPOOLING','PRINTING','BLOCKED')\n      JOIN print_attempt_steps ps ON ps.id = (\n        SELECT next_s.id FROM print_attempt_steps next_s\n        WHERE next_s.print_attempt_id = pa.id AND next_s.status <> 'SUCCEEDED'\n        ORDER BY CASE WHEN next_s.status IN ('PENDING', 'SUBMISSION_STARTED') THEN 0 ELSE 1 END ASC,\n                 next_s.sequence_number ASC\n        LIMIT 1\n      )\n      JOIN printers p ON p.id = o.printer_id AND p.agent_id = o.claimed_by_agent_id\n      JOIN order_files f ON f.id = COALESCE(pa.order_file_id,\n        (SELECT legacy.id FROM order_files legacy WHERE legacy.order_id = o.id ORDER BY legacy.position LIMIT 1))\n      JOIN installation i ON i.id = 1\n      WHERE o.claimed_by_agent_id = ?\n        AND o.status IN ('CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED')\n      ORDER BY o.queued_at_ms ASC, o.id ASC",
+    "calls": 240,
+    "plan": [
+      {
+        "id": 17,
+        "parent": 0,
+        "notused": 45,
+        "detail": "SEARCH i USING INTEGER PRIMARY KEY (rowid=?)"
+      },
+      {
+        "id": 20,
+        "parent": 0,
+        "notused": 81,
+        "detail": "SEARCH o USING INDEX idx_orders_status_created (status=?)"
+      },
+      {
+        "id": 47,
+        "parent": 0,
+        "notused": 45,
+        "detail": "SEARCH pa USING INDEX print_attempts_order_status_idx (order_id=? AND status=?)"
+      },
+      {
+        "id": 78,
+        "parent": 0,
+        "notused": 46,
+        "detail": "SEARCH p USING INDEX sqlite_autoindex_printers_3 (id=? AND agent_id=?)"
+      },
+      {
+        "id": 87,
+        "parent": 0,
+        "notused": 46,
+        "detail": "SEARCH ps USING INDEX sqlite_autoindex_print_attempt_steps_1 (id=?)"
+      },
+      {
+        "id": 89,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 4"
+      },
+      {
+        "id": 95,
+        "parent": 89,
+        "notused": 61,
+        "detail": "SEARCH next_s USING INDEX sqlite_autoindex_print_attempt_steps_2 (print_attempt_id=?)"
+      },
+      {
+        "id": 119,
+        "parent": 89,
+        "notused": 0,
+        "detail": "USE TEMP B-TREE FOR ORDER BY"
+      },
+      {
+        "id": 128,
+        "parent": 0,
+        "notused": 46,
+        "detail": "SEARCH f USING INDEX sqlite_autoindex_order_files_1 (id=?)"
+      },
+      {
+        "id": 132,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 5"
+      },
+      {
+        "id": 138,
+        "parent": 132,
+        "notused": 61,
+        "detail": "SEARCH legacy USING INDEX order_files_order_position_idx (order_id=?)"
+      },
+      {
+        "id": 188,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 1"
+      },
+      {
+        "id": 193,
+        "parent": 188,
+        "notused": 53,
+        "detail": "SEARCH order_files USING COVERING INDEX order_files_order_position_idx (order_id=?)"
+      },
+      {
+        "id": 206,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 2"
+      },
+      {
+        "id": 210,
+        "parent": 206,
+        "notused": 39,
+        "detail": "SEARCH ids USING COVERING INDEX sqlite_autoindex_print_attempt_steps_3 (print_attempt_id=? AND step_type=?)"
+      },
+      {
+        "id": 225,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 3"
+      },
+      {
+        "id": 231,
+        "parent": 225,
+        "notused": 62,
+        "detail": "SEARCH order_addon_services USING INDEX sqlite_autoindex_order_addon_services_1 (order_id=?)"
+      },
+      {
+        "id": 257,
+        "parent": 0,
+        "notused": 0,
+        "detail": "USE TEMP B-TREE FOR ORDER BY"
       }
     ]
   },
@@ -1109,23 +1932,23 @@
     ]
   },
   {
-    "sql": "SELECT o.id order_id, pa.id attempt_id, ps.id step_id, ps.status step_status,\n        ps.spooler_job_id, o.status order_status\n      FROM orders o JOIN print_attempts pa ON pa.order_id = o.id\n      JOIN print_attempt_steps ps ON ps.print_attempt_id = pa.id\n      WHERE o.id = ? AND ps.id = ? AND o.claimed_by_agent_id = ?\n        AND o.claim_id = ? AND o.claim_expires_at_ms > ?",
+    "sql": "SELECT o.id order_id, pa.id attempt_id, ps.id step_id, ps.status step_status,\n        ps.spooler_job_id, o.status order_status, ps.step_type, pa.order_file_id,\n        pa.attempt_number, pa.printer_id\n      FROM orders o JOIN print_attempts pa ON pa.order_id = o.id\n      JOIN print_attempt_steps ps ON ps.print_attempt_id = pa.id\n      WHERE o.id = ? AND ps.id = ? AND o.claimed_by_agent_id = ?\n        AND o.claim_id = ? AND o.claim_expires_at_ms > ?\n        AND o.cleanup_state = 'ACTIVE'",
     "calls": 720,
     "plan": [
       {
         "id": 8,
         "parent": 0,
         "notused": 46,
-        "detail": "SEARCH o USING INDEX sqlite_autoindex_orders_4 (claim_id=?)"
+        "detail": "SEARCH o USING INDEX sqlite_autoindex_orders_5 (claim_id=?)"
       },
       {
-        "id": 21,
+        "id": 23,
         "parent": 0,
         "notused": 46,
         "detail": "SEARCH ps USING INDEX sqlite_autoindex_print_attempt_steps_1 (id=?)"
       },
       {
-        "id": 28,
+        "id": 30,
         "parent": 0,
         "notused": 46,
         "detail": "SEARCH pa USING INDEX sqlite_autoindex_print_attempts_1 (id=?)"
@@ -1133,7 +1956,7 @@
     ]
   },
   {
-    "sql": "UPDATE print_attempt_steps SET status = 'SUBMISSION_STARTED',\n          submission_started_at_ms = ?, updated_at_ms = ?\n        WHERE id = ? AND print_attempt_id = ? AND status = 'PENDING'",
+    "sql": "UPDATE print_attempt_steps SET status = 'SUBMISSION_STARTED',\n          submission_started_at_ms = ?, updated_at_ms = ?\n        WHERE id = ? AND print_attempt_id = ? AND status = 'PENDING'\n          AND EXISTS (SELECT 1 FROM orders o\n            WHERE o.id = print_attempt_steps.order_id AND o.cleanup_state = 'ACTIVE'\n              AND o.claim_id = ?)",
     "calls": 120,
     "plan": [
       {
@@ -1141,6 +1964,18 @@
         "parent": 0,
         "notused": 39,
         "detail": "SEARCH print_attempt_steps USING INDEX sqlite_autoindex_print_attempt_steps_1 (id=?)"
+      },
+      {
+        "id": 17,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 1"
+      },
+      {
+        "id": 22,
+        "parent": 17,
+        "notused": 39,
+        "detail": "SEARCH o USING INDEX sqlite_autoindex_orders_5 (claim_id=?)"
       }
     ]
   },
@@ -1164,7 +1999,7 @@
         "id": 5,
         "parent": 0,
         "notused": 39,
-        "detail": "SEARCH orders USING INDEX sqlite_autoindex_orders_4 (claim_id=?)"
+        "detail": "SEARCH orders USING INDEX sqlite_autoindex_orders_5 (claim_id=?)"
       }
     ]
   },
@@ -1181,7 +2016,7 @@
     ]
   },
   {
-    "sql": "UPDATE print_attempt_steps SET status = 'SUBMITTED', spooler_job_id = ?,\n          submitted_at_ms = ?, last_observed_at_ms = ?, updated_at_ms = ?\n        WHERE id = ? AND status = 'SUBMISSION_STARTED' AND spooler_job_id IS NULL",
+    "sql": "UPDATE print_attempt_steps SET status = 'SUBMITTED', spooler_job_id = ?,\n          submitted_at_ms = ?, last_observed_at_ms = ?, updated_at_ms = ?\n        WHERE id = ? AND status = 'SUBMISSION_STARTED' AND spooler_job_id IS NULL\n          AND EXISTS (SELECT 1 FROM orders o\n            WHERE o.id = print_attempt_steps.order_id AND o.cleanup_state = 'ACTIVE'\n              AND o.claim_id = ?)",
     "calls": 120,
     "plan": [
       {
@@ -1189,6 +2024,18 @@
         "parent": 0,
         "notused": 39,
         "detail": "SEARCH print_attempt_steps USING INDEX sqlite_autoindex_print_attempt_steps_1 (id=?)"
+      },
+      {
+        "id": 17,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 1"
+      },
+      {
+        "id": 22,
+        "parent": 17,
+        "notused": 39,
+        "detail": "SEARCH o USING INDEX sqlite_autoindex_orders_5 (claim_id=?)"
       }
     ]
   },
@@ -1212,12 +2059,12 @@
         "id": 5,
         "parent": 0,
         "notused": 39,
-        "detail": "SEARCH orders USING INDEX sqlite_autoindex_orders_4 (claim_id=?)"
+        "detail": "SEARCH orders USING INDEX sqlite_autoindex_orders_5 (claim_id=?)"
       }
     ]
   },
   {
-    "sql": "UPDATE print_attempt_steps SET status = ?, spooler_job_id = COALESCE(spooler_job_id, ?),\n        failure_code = ?, failure_detail = ?, last_observed_at_ms = ?, finished_at_ms = ?,\n        updated_at_ms = ? WHERE id = ? AND status = ?",
+    "sql": "UPDATE print_attempt_steps SET status = ?, spooler_job_id = COALESCE(spooler_job_id, ?),\n        failure_code = ?, failure_detail = ?, last_observed_at_ms = ?, finished_at_ms = ?,\n        updated_at_ms = ? WHERE id = ? AND status = ?\n          AND EXISTS (SELECT 1 FROM orders o\n            WHERE o.id = print_attempt_steps.order_id AND o.cleanup_state = 'ACTIVE'\n              AND o.claim_id = ?)",
     "calls": 120,
     "plan": [
       {
@@ -1225,6 +2072,42 @@
         "parent": 0,
         "notused": 39,
         "detail": "SEARCH print_attempt_steps USING INDEX sqlite_autoindex_print_attempt_steps_1 (id=?)"
+      },
+      {
+        "id": 15,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 1"
+      },
+      {
+        "id": 20,
+        "parent": 15,
+        "notused": 39,
+        "detail": "SEARCH o USING INDEX sqlite_autoindex_orders_5 (claim_id=?)"
+      }
+    ]
+  },
+  {
+    "sql": "UPDATE order_files SET print_status = ?,\n           spooler_job_id = COALESCE(spooler_job_id, ?),\n           printed_at_ms = CASE WHEN ? = 'PRINTED' THEN ? ELSE printed_at_ms END,\n           updated_at_ms = ? WHERE id = ?\n             AND EXISTS (SELECT 1 FROM orders o\n               WHERE o.id = order_files.order_id AND o.cleanup_state = 'ACTIVE')",
+    "calls": 60,
+    "plan": [
+      {
+        "id": 5,
+        "parent": 0,
+        "notused": 39,
+        "detail": "SEARCH order_files USING INDEX sqlite_autoindex_order_files_1 (id=?)"
+      },
+      {
+        "id": 13,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 1"
+      },
+      {
+        "id": 18,
+        "parent": 13,
+        "notused": 39,
+        "detail": "SEARCH o USING INDEX sqlite_autoindex_orders_1 (id=?)"
       }
     ]
   },
@@ -1260,7 +2143,43 @@
         "id": 5,
         "parent": 0,
         "notused": 39,
-        "detail": "SEARCH orders USING INDEX sqlite_autoindex_orders_4 (claim_id=?)"
+        "detail": "SEARCH orders USING INDEX sqlite_autoindex_orders_5 (claim_id=?)"
+      }
+    ]
+  },
+  {
+    "sql": "SELECT COUNT(*) count FROM order_files\n         WHERE order_id = ? AND print_status <> 'PRINTED'",
+    "calls": 60,
+    "plan": [
+      {
+        "id": 3,
+        "parent": 0,
+        "notused": 54,
+        "detail": "SEARCH order_files USING COVERING INDEX order_files_order_print_idx (order_id=?)"
+      }
+    ]
+  },
+  {
+    "sql": "SELECT 1 FROM order_addon_services\n         WHERE order_id = ? AND snapshot_handling_mode = 'POST_PRINT'\n         LIMIT 1",
+    "calls": 60,
+    "plan": [
+      {
+        "id": 4,
+        "parent": 0,
+        "notused": 62,
+        "detail": "SEARCH order_addon_services USING INDEX sqlite_autoindex_order_addon_services_1 (order_id=?)"
+      }
+    ]
+  },
+  {
+    "sql": "SELECT order_retention_hours FROM installation WHERE id = 1",
+    "calls": 60,
+    "plan": [
+      {
+        "id": 2,
+        "parent": 0,
+        "notused": 33,
+        "detail": "SEARCH installation USING INTEGER PRIMARY KEY (rowid=?)"
       }
     ]
   },
@@ -1277,19 +2196,55 @@
     ]
   },
   {
-    "sql": "UPDATE orders SET status = 'COMPLETED', printed_at_ms = COALESCE(printed_at_ms, ?), completed_at_ms = COALESCE(completed_at_ms, ?), updated_at_ms = ? WHERE id = ? AND claim_id = ? AND status <> 'COMPLETED'",
+    "sql": "UPDATE orders SET status = 'COMPLETED', printed_at_ms = COALESCE(printed_at_ms, ?),\n             completed_at_ms = COALESCE(completed_at_ms, ?), purge_at_ms = COALESCE(purge_at_ms, ?),\n             error_category = NULL, raw_error = NULL, next_retry_at_ms = NULL, updated_at_ms = ?\n             WHERE id = ? AND claim_id = ? AND status IN ('CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED')\n               AND EXISTS (SELECT 1 FROM order_files WHERE order_id = orders.id)\n               AND NOT EXISTS (SELECT 1 FROM order_files\n                 WHERE order_id = orders.id AND print_status <> 'PRINTED')\n               AND NOT EXISTS (SELECT 1 FROM order_addon_services\n                 WHERE order_id = orders.id AND snapshot_handling_mode IN ('MANUAL_PRINT','POST_PRINT'))",
     "calls": 60,
     "plan": [
       {
         "id": 5,
         "parent": 0,
         "notused": 39,
-        "detail": "SEARCH orders USING INDEX sqlite_autoindex_orders_4 (claim_id=?)"
+        "detail": "SEARCH orders USING INDEX sqlite_autoindex_orders_5 (claim_id=?)"
+      },
+      {
+        "id": 35,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 1"
+      },
+      {
+        "id": 39,
+        "parent": 35,
+        "notused": 53,
+        "detail": "SEARCH order_files USING COVERING INDEX order_files_order_position_idx (order_id=?)"
+      },
+      {
+        "id": 49,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 2"
+      },
+      {
+        "id": 53,
+        "parent": 49,
+        "notused": 54,
+        "detail": "SEARCH order_files USING COVERING INDEX order_files_order_print_idx (order_id=?)"
+      },
+      {
+        "id": 65,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 3"
+      },
+      {
+        "id": 70,
+        "parent": 65,
+        "notused": 62,
+        "detail": "SEARCH order_addon_services USING INDEX sqlite_autoindex_order_addon_services_1 (order_id=?)"
       }
     ]
   },
   {
-    "sql": "UPDATE uploads SET retention_reason = 'COMPLETED', delete_after_ms = ?, updated_at_ms = ? WHERE order_id = ? AND storage_status = 'UPLOADED' AND retention_reason IS NOT 'COMPLETED'",
+    "sql": "UPDATE uploads SET retention_reason = 'COMPLETED', delete_after_ms = ?, updated_at_ms = ?\n             WHERE order_id = ? AND storage_status = 'UPLOADED' AND retention_reason IS NOT 'COMPLETED'\n               AND EXISTS (SELECT 1 FROM orders WHERE id = uploads.order_id AND status = 'COMPLETED')",
     "calls": 60,
     "plan": [
       {
@@ -1297,18 +2252,49 @@
         "parent": 0,
         "notused": 39,
         "detail": "SEARCH uploads USING INDEX sqlite_autoindex_uploads_2 (order_id=?)"
+      },
+      {
+        "id": 17,
+        "parent": 0,
+        "notused": 0,
+        "detail": "CORRELATED SCALAR SUBQUERY 1"
+      },
+      {
+        "id": 22,
+        "parent": 17,
+        "notused": 39,
+        "detail": "SEARCH orders USING INDEX sqlite_autoindex_orders_1 (id=?)"
       }
     ]
   },
   {
-    "sql": "INSERT OR IGNORE INTO order_events (id, order_id, event_type, from_status,\n            to_status, actor_type, actor_id, idempotency_key, created_at_ms)\n          VALUES (?, ?, 'ORDER_PRINTED', ?, 'PRINTED', 'AGENT', ?, ?, ?)",
+    "sql": "INSERT OR IGNORE INTO order_events (id, order_id, event_type, from_status,\n              to_status, actor_type, actor_id, idempotency_key, created_at_ms)\n            VALUES (?, ?, 'ORDER_PRINTED', ?, 'PRINTED', 'AGENT', ?, ?, ?)",
     "calls": 60,
     "plan": []
   },
   {
-    "sql": "INSERT OR IGNORE INTO order_events (id, order_id, event_type, from_status,\n            to_status, actor_type, actor_id, idempotency_key, created_at_ms)\n          VALUES (?, ?, 'ORDER_COMPLETED', 'PRINTED', 'COMPLETED', 'AGENT', ?, ?, ?)",
+    "sql": "INSERT OR IGNORE INTO order_events (id, order_id, event_type, from_status,\n              to_status, actor_type, actor_id, idempotency_key, created_at_ms)\n            SELECT ?, o.id, 'ORDER_COMPLETED', 'PRINTED', 'COMPLETED', 'AGENT', ?, ?, ?\n            FROM orders o WHERE o.id = ? AND o.status = 'COMPLETED'",
     "calls": 60,
-    "plan": []
+    "plan": [
+      {
+        "id": 4,
+        "parent": 0,
+        "notused": 39,
+        "detail": "SEARCH o USING INDEX sqlite_autoindex_orders_1 (id=?)"
+      }
+    ]
+  },
+  {
+    "sql": "SELECT 1 FROM retained_provider_events\n         WHERE provider = 'RAZORPAY' AND provider_event_id = ?",
+    "calls": 2,
+    "plan": [
+      {
+        "id": 2,
+        "parent": 0,
+        "notused": 39,
+        "detail": "SEARCH retained_provider_events USING COVERING INDEX sqlite_autoindex_retained_provider_events_2 (provider=? AND provider_event_id=?)"
+      }
+    ]
   },
   {
     "sql": "INSERT INTO payment_provider_events\n            (id, provider_event_id, event_type, received_at_ms, processing_status)\n          VALUES (?, ?, ?, ?, 'PROCESSING')",
@@ -1358,8 +2344,14 @@
       {
         "id": 7,
         "parent": 0,
-        "notused": 49,
-        "detail": "SEARCH orders USING INDEX orders_status_completed_idx (status=? AND completed_at_ms>? AND completed_at_ms<?)"
+        "notused": 61,
+        "detail": "SEARCH orders USING INDEX idx_orders_claim_priority_queue (status=?)"
+      },
+      {
+        "id": 30,
+        "parent": 0,
+        "notused": 0,
+        "detail": "USE TEMP B-TREE FOR ORDER BY"
       }
     ]
   },

@@ -1,4 +1,7 @@
-import type { PrinterFailureCode } from "@printgo/domain";
+import type {
+  PrinterCapabilityFeatures,
+  PrinterFailureCode,
+} from "@printgo/domain";
 
 export type PrinterAvailability =
   "ONLINE" | "AVAILABLE" | "OFFLINE" | "BLOCKED" | "ERROR" | "UNKNOWN";
@@ -28,6 +31,8 @@ export type PrintPaperSize = "A4" | "A3";
 export type PrintColorMode = "COLOUR" | "BLACK_AND_WHITE";
 export type PrintSides = "ONE_SIDED" | "TWO_SIDED_LONG" | "TWO_SIDED_SHORT";
 
+export type PrintOrientation = "portrait" | "landscape";
+
 export interface PrintSettings {
   printerName?: string | undefined;
   paperSize: PrintPaperSize;
@@ -35,6 +40,7 @@ export interface PrintSettings {
   sides: PrintSides;
   copies: number;
   pageRange?: string | undefined;
+  orientation?: PrintOrientation | undefined;
 }
 
 export interface PrintSubmission {
@@ -43,6 +49,8 @@ export interface PrintSubmission {
   copies?: number | undefined;
   documentTitle?: string | undefined;
   settings?: Partial<PrintSettings> | undefined;
+  verifiedCapabilities?: PrinterCapabilityFeatures | null | undefined;
+  isDiagnosticTestPrint?: boolean | undefined;
 }
 
 export interface SubmittedPrintJob {

@@ -1,5 +1,7 @@
 import {
   AGENT_HEARTBEAT_TIMEOUT_MS,
+  checkOrderCapabilitiesSupport,
+  resolveEffectiveFeatures,
   type ColorMode,
   type PaperSize,
   type SidesMode,
@@ -108,9 +110,12 @@ export class D1PaymentReadiness implements PaymentReadiness {
     const placeholders = onlineAgentIds.map(() => "?").join(",");
     const printersResult = await this.db
       .prepare(
-        `SELECT id, agent_id, display_name, windows_printer_name, status, status_reason, capabilities_json
+        `SELECT id, agent_id, display_name, windows_printer_name, status, status_reason,
+                is_paused, auto_fallback_enabled, fallback_printer_id, priority,
+                capabilities_json, verified_capabilities_json, enabled_services_json
          FROM printers
-         WHERE enabled = 1 AND is_production_eligible = 1 AND is_virtual = 0 AND agent_id IN (${placeholders})`,
+         WHERE enabled = 1 AND is_production_eligible = 1 AND is_virtual = 0 AND agent_id IN (${placeholders})
+         ORDER BY priority DESC, id ASC`,
       )
       .bind(...onlineAgentIds)
       .all<{
@@ -120,7 +125,13 @@ export class D1PaymentReadiness implements PaymentReadiness {
         windows_printer_name: string;
         status: string;
         status_reason: string | null;
+        is_paused?: number | null;
+        auto_fallback_enabled?: number | null;
+        fallback_printer_id?: string | null;
+        priority?: number | null;
         capabilities_json: string | null;
+        verified_capabilities_json: string | null;
+        enabled_services_json: string | null;
       }>();
 
     if (printersResult.results.length === 0) {
@@ -131,11 +142,21 @@ export class D1PaymentReadiness implements PaymentReadiness {
       };
     }
 
-    const availablePrinters = printersResult.results.filter(
-      (p) => p.status === "ONLINE",
+    const defaultPrinterId = installation.default_production_printer_id;
+    if (!defaultPrinterId && printersResult.results.length > 1) {
+      return {
+        ready: false,
+        reason: "NO_CONFIGURED_PRINTER",
+        message:
+          "No default production printer is configured. Please select a default printer in Admin settings.",
+      };
+    }
+
+    const onlinePrinters = printersResult.results.filter(
+      (p) => p.status === "ONLINE" && p.is_paused !== 1,
     );
 
-    if (availablePrinters.length === 0) {
+    if (onlinePrinters.length === 0) {
       return {
         ready: false,
         reason: "PRINTER_UNAVAILABLE",
@@ -144,115 +165,204 @@ export class D1PaymentReadiness implements PaymentReadiness {
       };
     }
 
-    const defaultPrinterId = installation.default_production_printer_id;
-    let targetPrinters = availablePrinters;
-    if (defaultPrinterId) {
-      const defaultMatch = availablePrinters.filter(
-        (p) => p.id === defaultPrinterId,
-      );
-      if (defaultMatch.length > 0) {
-        targetPrinters = defaultMatch;
-      } else if (availablePrinters.length > 0) {
-        targetPrinters = availablePrinters;
+    // Default printer resolution
+    const defaultPrinter = defaultPrinterId
+      ? printersResult.results.find((p) => p.id === defaultPrinterId)
+      : printersResult.results.length === 1
+        ? printersResult.results[0]
+        : undefined;
+
+    if (defaultPrinterId && !defaultPrinter) {
+      return {
+        ready: false,
+        reason: "PRINTER_UNAVAILABLE",
+        message: "The configured default printer is disabled or unavailable.",
+      };
+    }
+
+    // If default printer is offline or paused
+    if (
+      defaultPrinter &&
+      (defaultPrinter.status !== "ONLINE" || defaultPrinter.is_paused === 1)
+    ) {
+      if (
+        defaultPrinter.auto_fallback_enabled === 1 &&
+        defaultPrinter.fallback_printer_id
+      ) {
+        const fallback = onlinePrinters.find(
+          (p) =>
+            p.id === defaultPrinter.fallback_printer_id &&
+            p.fallback_printer_id !== defaultPrinter.id,
+        );
+        if (!fallback) {
+          return {
+            ready: false,
+            reason: "PRINTER_UNAVAILABLE",
+            message:
+              "The configured fallback printer is offline, blocked, or in an error state.",
+          };
+        }
+
+        const fallbackFeatures = resolveEffectiveFeatures(fallback);
+        if (!fallbackFeatures) {
+          return {
+            ready: false,
+            reason: "PRINTER_UNAVAILABLE",
+            message:
+              "The target printer configuration requires administrative review.",
+          };
+        }
+
+        if (!requirements) {
+          return { ready: true, source: "LIVE_AGENT", printerId: fallback.id };
+        }
+
+        const check = checkOrderCapabilitiesSupport(
+          fallbackFeatures,
+          requirements,
+        );
+        if (check.supported) {
+          return { ready: true, source: "LIVE_AGENT", printerId: fallback.id };
+        }
+
+        if (check.missingFeature === "color") {
+          return {
+            ready: false,
+            reason: "COLOR_MODE_UNSUPPORTED",
+            message:
+              "Colour printing is currently unavailable on connected printers.",
+          };
+        }
+        if (check.missingFeature === "duplex") {
+          return {
+            ready: false,
+            reason: "SIDES_MODE_UNSUPPORTED",
+            message:
+              "Double-sided printing is currently unavailable on connected printers.",
+          };
+        }
+        return {
+          ready: false,
+          reason: "PAPER_SIZE_UNSUPPORTED",
+          message: `${requirements.paperSize} paper printing is currently unavailable.`,
+        };
       } else {
         return {
           ready: false,
           reason: "PRINTER_UNAVAILABLE",
           message:
-            "The configured default printer is offline, blocked, or in an error state.",
+            defaultPrinter.status === "ONLINE" && defaultPrinter.is_paused === 1
+              ? "The configured default printer is currently paused."
+              : "The configured default printer is offline, blocked, or in an error state.",
         };
       }
     }
 
-    if (!requirements) {
-      const first = targetPrinters[0];
-      return {
-        ready: true,
-        source: "LIVE_AGENT",
-        ...(first ? { printerId: first.id } : {}),
-      };
-    }
-
-    interface PrinterCapsParsed {
-      colour?: boolean | "UNKNOWN";
-      duplex?: boolean | "UNKNOWN";
-      paperSizes?: string[];
-    }
-
-    let paperSizeMatch = false;
-    let colorModeMatch = false;
-    let sidesMatch = false;
-
-    for (const printer of targetPrinters) {
-      let caps: PrinterCapsParsed | null = null;
-
-      if (printer.capabilities_json) {
-        try {
-          caps = JSON.parse(printer.capabilities_json) as PrinterCapsParsed;
-        } catch {
-          caps = null;
-        }
+    // Default printer is ONLINE
+    const targetPrinter = defaultPrinter;
+    if (targetPrinter) {
+      const defaultFeatures = resolveEffectiveFeatures(targetPrinter);
+      if (!defaultFeatures) {
+        return {
+          ready: false,
+          reason: "PRINTER_UNAVAILABLE",
+          message:
+            "The target printer configuration requires administrative review.",
+        };
       }
 
-      const supportsPaperSize =
-        !caps?.paperSizes ||
-        caps.paperSizes.length === 0 ||
-        caps.paperSizes.includes(requirements.paperSize);
-      if (supportsPaperSize) paperSizeMatch = true;
-
-      const supportsColor =
-        requirements.colorMode === "BW" ||
-        caps?.colour === true ||
-        caps?.colour === "UNKNOWN";
-      if (supportsColor) colorModeMatch = true;
-
-      const supportsSides =
-        requirements.sides === "SINGLE" ||
-        caps?.duplex === true ||
-        caps?.duplex === "UNKNOWN" ||
-        caps?.duplex === undefined ||
-        caps?.duplex === false; // Always permit double-sided jobs; physical printer/driver will handle it
-      if (supportsSides) sidesMatch = true;
-
-      if (supportsPaperSize && supportsColor && supportsSides) {
+      if (!requirements) {
         return {
           ready: true,
           source: "LIVE_AGENT",
-          printerId: printer.id,
+          printerId: targetPrinter.id,
         };
       }
-    }
 
-    if (!colorModeMatch) {
+      const defaultCheck = checkOrderCapabilitiesSupport(
+        defaultFeatures,
+        requirements,
+      );
+      if (defaultCheck.supported) {
+        return {
+          ready: true,
+          source: "LIVE_AGENT",
+          printerId: targetPrinter.id,
+        };
+      }
+
+      // Default printer lacks the requested capability (e.g. default is mono, order is color)
+      // Phase 3 Smart Routing: search other online printers for one that can fulfill it
+      const capableSecondary = onlinePrinters.find((p) => {
+        if (p.id === targetPrinter.id) return false;
+        const feat = resolveEffectiveFeatures(p);
+        if (!feat) return false;
+        return checkOrderCapabilitiesSupport(feat, requirements).supported;
+      });
+
+      if (capableSecondary) {
+        return {
+          ready: true,
+          source: "LIVE_AGENT",
+          printerId: capableSecondary.id,
+        };
+      }
+
+      if (defaultCheck.missingFeature === "color") {
+        return {
+          ready: false,
+          reason: "COLOR_MODE_UNSUPPORTED",
+          message:
+            "Colour printing is currently unavailable on connected printers.",
+        };
+      }
+      if (defaultCheck.missingFeature === "duplex") {
+        return {
+          ready: false,
+          reason: "SIDES_MODE_UNSUPPORTED",
+          message:
+            "Double-sided printing is currently unavailable on connected printers.",
+        };
+      }
+      const paperSizeStr = String(requirements.paperSize);
+      if (paperSizeStr !== "A4" && paperSizeStr !== "A3") {
+        return {
+          ready: false,
+          reason: "PAPER_SIZE_UNSUPPORTED",
+          message: `${paperSizeStr} paper printing is currently unavailable.`,
+        };
+      }
+      if (
+        defaultCheck.missingFeature === "a3" ||
+        requirements.paperSize === "A3"
+      ) {
+        return {
+          ready: false,
+          reason: "PAPER_SIZE_UNSUPPORTED",
+          message: "A3 paper printing is currently unavailable.",
+        };
+      }
+      if (defaultCheck.missingFeature === "a4") {
+        return {
+          ready: false,
+          reason: "PAPER_SIZE_UNSUPPORTED",
+          message: "A4 paper printing is currently unavailable.",
+        };
+      }
       return {
         ready: false,
-        reason: "COLOR_MODE_UNSUPPORTED",
+        reason: "PRINTER_UNAVAILABLE",
         message:
-          "Colour printing is currently unavailable on connected printers.",
-      };
-    }
-
-    if (!paperSizeMatch) {
-      return {
-        ready: false,
-        reason: "PAPER_SIZE_UNSUPPORTED",
-        message: `${requirements.paperSize} paper printing is currently unavailable.`,
-      };
-    }
-
-    if (!sidesMatch) {
-      return {
-        ready: false,
-        reason: "SIDES_MODE_UNSUPPORTED",
-        message:
-          "Double-sided printing is currently unavailable on connected printers.",
+          defaultCheck.reason ??
+          "No connected printer can handle the requested print options.",
       };
     }
 
     return {
       ready: false,
       reason: "PRINTER_UNAVAILABLE",
-      message: "No connected printer can handle the requested print options.",
+      message:
+        "The shop printer is currently offline, blocked, or in an error state.",
     };
   }
 }

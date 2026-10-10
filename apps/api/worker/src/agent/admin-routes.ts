@@ -1,4 +1,8 @@
-import { validateUpdatePrinterInput } from "@printgo/validation";
+import type { AdminRequestTestPrintRequest } from "@printgo/api-contract";
+import {
+  validateUpdatePrinterInput,
+  validateVerifyCapabilitiesInput,
+} from "@printgo/validation";
 
 import {
   adminRequestErrorResponse,
@@ -108,10 +112,18 @@ export async function handleAdminPrinterRequest(
       /^\/api\/admin\/printers\/([^/]+)\/test-print$/u.exec(pathname);
     if (request.method === "POST" && testPrintMatch) {
       const printerId = decodeURIComponent(testPrintMatch[1] ?? "");
-      const testPrint = await agentService.requestTestPrint(
-        printerId,
-        session.admin.id,
-      );
+      let body: AdminRequestTestPrintRequest | undefined = undefined;
+      try {
+        const rawBody = await readAdminJson(request, MAX_JSON_BYTES);
+        if (rawBody && typeof rawBody === "object") {
+          body = rawBody;
+        }
+      } catch {
+        // empty body allowed for standard test print
+      }
+      const testPrint = await (body
+        ? agentService.requestTestPrint(printerId, session.admin.id, body)
+        : agentService.requestTestPrint(printerId, session.admin.id));
       return withAdminCors(ok({ testPrint }, 201), env.ADMIN_ALLOWED_ORIGIN);
     }
 
@@ -119,6 +131,31 @@ export async function handleAdminPrinterRequest(
       const printerId = decodeURIComponent(testPrintMatch[1] ?? "");
       const testPrint = await agentService.getLatestTestPrint(printerId);
       return withAdminCors(ok({ testPrint }, 200), env.ADMIN_ALLOWED_ORIGIN);
+    }
+
+    const verifyCapabilitiesMatch =
+      /^\/api\/admin\/printers\/([^/]+)\/verify-capabilities$/u.exec(pathname);
+    if (request.method === "POST" && verifyCapabilitiesMatch) {
+      const printerId = decodeURIComponent(verifyCapabilitiesMatch[1] ?? "");
+      const rawBody = await readAdminJson(request, MAX_JSON_BYTES);
+      const validation = validateVerifyCapabilitiesInput(rawBody);
+      if (!validation.ok) {
+        return withAdminCors(
+          error(
+            400,
+            "VALIDATION_ERROR",
+            validation.issues[0]?.message ??
+              "Invalid capability verification request.",
+          ),
+          env.ADMIN_ALLOWED_ORIGIN,
+        );
+      }
+      const result = await agentService.verifyPrinterCapabilities(
+        printerId,
+        session.admin.id,
+        validation.value,
+      );
+      return withAdminCors(ok(result, 200), env.ADMIN_ALLOWED_ORIGIN);
     }
 
     const checkHealthMatch =
@@ -150,8 +187,10 @@ export async function handleAdminPrinterRequest(
       if (
         validation.value.displayName === undefined &&
         validation.value.priority === undefined &&
+        validation.value.physicalDeviceId === undefined &&
         validation.value.fallbackPrinterId === undefined &&
         validation.value.autoFallbackEnabled === undefined &&
+        validation.value.enabledServices === undefined &&
         typeof validation.value.enabled === "boolean"
       ) {
         await agentService.togglePrinter(

@@ -11,6 +11,7 @@ import type {
   AdminPricingResponse,
   AdminPricingUpdateRequest,
   AdminPrintersResponse,
+  AdminRequestTestPrintRequest,
   AdminRevokeAgentResponse,
   AdminSettingsResponse,
   AdminSettingsUpdateRequest,
@@ -18,6 +19,8 @@ import type {
   AdminTogglePrinterResponse,
   AdminUpdatePrinterRequest,
   AdminUpdatePrinterResponse,
+  AdminVerifyCapabilitiesRequest,
+  AdminVerifyCapabilitiesResponse,
   AdminManualCompleteOrderResponse,
   AdminRetryOrderResponse,
   AdminOrderPdfUrlResponse,
@@ -306,12 +309,27 @@ export const adminApi = {
       body: JSON.stringify({ enabled }),
     });
   },
-  requestTestPrint(printerId: string): Promise<AdminTestPrintResponse> {
+  requestTestPrint(
+    printerId: string,
+    input?: AdminRequestTestPrintRequest,
+  ): Promise<AdminTestPrintResponse> {
     return request(
       `/api/admin/printers/${encodeURIComponent(printerId)}/test-print`,
       {
         method: "POST",
-        body: "{}",
+        body: JSON.stringify(input ?? {}),
+      },
+    );
+  },
+  verifyPrinterCapabilities(
+    printerId: string,
+    input: AdminVerifyCapabilitiesRequest,
+  ): Promise<AdminVerifyCapabilitiesResponse> {
+    return request(
+      `/api/admin/printers/${encodeURIComponent(printerId)}/verify-capabilities`,
+      {
+        method: "POST",
+        body: JSON.stringify(input),
       },
     );
   },

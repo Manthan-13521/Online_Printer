@@ -502,6 +502,9 @@ Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $printer } | Select-O
     if (settings.pageRange) {
       settingsParts.push(settings.pageRange);
     }
+    if (settings.orientation) {
+      settingsParts.push(settings.orientation);
+    }
     settingsParts.push("fit");
     const settingsString = settingsParts.join(",");
 

@@ -1,8 +1,10 @@
 import type {
+  CapabilityVerificationRecord,
   ColorMode,
   CustomerOrderStatus,
   IdentificationSheetPlacement,
   PaperSize,
+  PrinterCapabilityFeatures,
   SidesMode,
 } from "@printgo/domain";
 
@@ -584,6 +586,16 @@ export interface AgentTestPrintCommand {
   printerDisplayName: string;
   shopName: string;
   expiresAtMs: number;
+  testType?:
+    ("STANDARD" | "COLOR" | "DUPLEX" | "A3" | "CUSTOM") | null | undefined;
+  testSettings?:
+    | {
+        colorMode?: ("BW" | "COLOR") | undefined;
+        sides?: ("SINGLE" | "DOUBLE") | undefined;
+        paperSize?: ("A4" | "A3") | undefined;
+      }
+    | null
+    | undefined;
 }
 
 export interface AgentHeartbeatData {
@@ -592,6 +604,7 @@ export interface AgentHeartbeatData {
   onlinePrintingEnabled?: boolean;
   nextCommand?: AgentTestPrintCommand | null;
   printJob?: AgentPrintJob | null;
+  printJobs?: readonly AgentPrintJob[];
 }
 
 export type AgentHeartbeatResponse = ApiResponse<AgentHeartbeatData>;
@@ -642,6 +655,7 @@ export interface AgentPrintJob {
   originalFilename?: string;
   printerId: string;
   windowsPrinterName: string;
+  physicalDeviceId?: string;
   download: { url: string; expiresAtMs: number; expectedSizeBytes: number };
   sourcePageCount: number;
   settings: {
@@ -653,6 +667,7 @@ export interface AgentPrintJob {
   };
   identificationSheet: IdentificationSheetData | null;
   currentStep: AgentPrintJobStep;
+  verifiedFeatures?: PrinterCapabilityFeatures | null | undefined;
 }
 
 export interface AgentStartPrintStepRequest {
@@ -678,6 +693,33 @@ export interface AgentPrintStepData {
   orderStatus: string;
 }
 export type AgentPrintStepResponse = ApiResponse<AgentPrintStepData>;
+
+export interface AgentPreflightFailureRequest {
+  claimId: string;
+  failureCode: string;
+  failureDetail?: string | null;
+}
+
+export type AgentPreflightFailureData =
+  | {
+      action: "FALLBACK_ASSIGNED";
+      printJob: AgentPrintJob;
+      fallbackPrinterName: string;
+    }
+  | {
+      action: "BLOCKED_RELEASED";
+      orderId: string;
+      message: string;
+      retryAfterMs: number;
+    }
+  | {
+      action: "ACTION_REQUIRED";
+      orderId: string;
+      message: string;
+    };
+
+export type AgentPreflightFailureResponse =
+  ApiResponse<AgentPreflightFailureData>;
 
 export interface AdminLiveOrder {
   orderId: string;
@@ -754,6 +796,15 @@ export interface AdminTestPrintDetails {
   expiresAt: string;
   claimedAt: string | null;
   finishedAt: string | null;
+  testType?: string | null | undefined;
+  testSettings?:
+    | {
+        colorMode?: ("BW" | "COLOR") | undefined;
+        sides?: ("SINGLE" | "DOUBLE") | undefined;
+        paperSize?: ("A4" | "A3") | undefined;
+      }
+    | null
+    | undefined;
 }
 
 export interface AdminTestPrintResponseData {
@@ -761,6 +812,33 @@ export interface AdminTestPrintResponseData {
 }
 
 export type AdminTestPrintResponse = ApiResponse<AdminTestPrintResponseData>;
+
+export interface AdminRequestTestPrintRequest {
+  testType?: "STANDARD" | "COLOR" | "DUPLEX" | "A3" | "CUSTOM" | undefined;
+  testSettings?:
+    | {
+        colorMode?: "BW" | "COLOR" | undefined;
+        sides?: "SINGLE" | "DOUBLE" | undefined;
+        paperSize?: "A4" | "A3" | undefined;
+      }
+    | undefined;
+}
+
+export interface AdminVerifyCapabilitiesRequest {
+  verified: PrinterCapabilityFeatures;
+  enabled: PrinterCapabilityFeatures;
+  notes?: string | undefined;
+}
+
+export interface AdminVerifyCapabilitiesResponseData {
+  printerId: string;
+  verifiedCapabilities: CapabilityVerificationRecord;
+  enabledServices: PrinterCapabilityFeatures;
+  verifiedAt?: string;
+}
+
+export type AdminVerifyCapabilitiesResponse =
+  ApiResponse<AdminVerifyCapabilitiesResponseData>;
 
 export interface AdminPrinterDetails {
   id: string;
@@ -771,6 +849,8 @@ export interface AdminPrinterDetails {
   status: "ONLINE" | "OFFLINE" | "BLOCKED" | "ERROR" | "UNKNOWN";
   statusReason: string | null;
   capabilities: PrinterCapabilitySummary | null;
+  verifiedCapabilities?: CapabilityVerificationRecord | null;
+  enabledServices?: PrinterCapabilityFeatures | null;
   lastStatusAt: string | null;
   latestTestPrint?: AdminTestPrintDetails | null;
   isProductionEligible: boolean;
@@ -789,6 +869,8 @@ export interface AdminPrinterDetails {
   autoFallbackEnabled?: boolean;
   /** Routing priority (higher values = higher priority; default 0). */
   priority?: number;
+  /** Physical hardware device ID for mutual exclusion. Queues sharing this ID will never execute concurrently. */
+  physicalDeviceId?: string | null;
 }
 
 export interface AdminCheckPrinterHealthResponseData {
@@ -819,11 +901,14 @@ export interface AdminPrintersData {
 export type AdminPrintersResponse = ApiResponse<AdminPrintersData>;
 
 export interface AdminUpdatePrinterRequest {
-  enabled?: boolean;
-  displayName?: string;
-  priority?: number;
-  fallbackPrinterId?: string | null;
-  autoFallbackEnabled?: boolean;
+  enabled?: boolean | undefined;
+  displayName?: string | undefined;
+  priority?: number | undefined;
+  physicalDeviceId?: string | null | undefined;
+  fallbackPrinterId?: string | null | undefined;
+  autoFallbackEnabled?: boolean | undefined;
+  verifiedCapabilities?: CapabilityVerificationRecord | undefined;
+  enabledServices?: PrinterCapabilityFeatures | undefined;
 }
 
 export type AdminUpdatePrinterResponse = ApiResponse<{
@@ -831,8 +916,11 @@ export type AdminUpdatePrinterResponse = ApiResponse<{
   enabled: boolean;
   displayName?: string;
   priority?: number;
+  physicalDeviceId?: string | null;
   fallbackPrinterId?: string | null;
   autoFallbackEnabled?: boolean;
+  verifiedCapabilities?: CapabilityVerificationRecord | null;
+  enabledServices?: PrinterCapabilityFeatures | null;
 }>;
 
 export type AdminTogglePrinterRequest = AdminUpdatePrinterRequest;

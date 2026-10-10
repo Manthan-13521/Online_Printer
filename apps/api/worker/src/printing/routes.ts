@@ -61,7 +61,7 @@ export async function handleAgentPrintingRequest(
       NO_STORE,
     );
   const match =
-    /^\/api\/agent\/print-jobs\/([^/]+)\/steps\/([^/]+)\/(start|submitted|result)$/u.exec(
+    /^\/api\/agent\/print-jobs\/([^/]+)\/steps\/([^/]+)\/(start|submitted|result|preflight-failure)$/u.exec(
       new URL(request.url).pathname,
     );
   if (request.method !== "POST" || !match)
@@ -107,6 +107,29 @@ export async function handleAgentPrintingRequest(
           stepId,
           claimId,
           spoolerJobId,
+        ),
+        200,
+        NO_STORE,
+      );
+    }
+    if (match[3] === "preflight-failure") {
+      const failureCode = shortText(input.failureCode, 50);
+      if (!failureCode)
+        return error(
+          400,
+          "VALIDATION_ERROR",
+          "Failure code is required.",
+          NO_STORE,
+        );
+      const failureDetail = shortText(input.failureDetail, 500);
+      return ok(
+        await service.handlePreflightFailure(
+          token,
+          orderId,
+          stepId,
+          claimId,
+          failureCode,
+          failureDetail,
         ),
         200,
         NO_STORE,

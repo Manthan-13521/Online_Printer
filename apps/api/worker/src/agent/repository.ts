@@ -11,6 +11,8 @@ import {
   AGENT_HEARTBEAT_TIMEOUT_MS,
   normalizePrinterFailure,
   isPrinterWideFailure,
+  type CapabilityVerificationRecord,
+  type PrinterCapabilityFeatures,
 } from "@printgo/domain";
 import type { ValidatedPrinterReport } from "@printgo/validation";
 
@@ -44,6 +46,8 @@ export interface PrinterTestCommandRow {
   expires_at_ms: number;
   claimed_at_ms: number | null;
   finished_at_ms: number | null;
+  test_type?: string | null;
+  test_settings_json?: string | null;
 }
 
 export function toAdminTestPrintDetails(
@@ -57,6 +61,16 @@ export function toAdminTestPrintDetails(
     nowMs >= row.expires_at_ms
   ) {
     status = "EXPIRED";
+  }
+  let testSettings: AdminTestPrintDetails["testSettings"] = null;
+  if (row.test_settings_json) {
+    try {
+      testSettings = JSON.parse(
+        row.test_settings_json,
+      ) as AdminTestPrintDetails["testSettings"];
+    } catch {
+      testSettings = null;
+    }
   }
   return {
     commandId: row.id,
@@ -74,6 +88,8 @@ export function toAdminTestPrintDetails(
     finishedAt: row.finished_at_ms
       ? new Date(row.finished_at_ms).toISOString()
       : null,
+    testType: row.test_type ?? "STANDARD",
+    testSettings,
   };
 }
 
@@ -123,6 +139,11 @@ export interface AgentRepository {
     status: string;
     isProductionEligible: boolean;
     isVirtual: boolean;
+    portName?: string | null;
+    driverName?: string | null;
+    capabilitiesJson?: string | null;
+    verifiedCapabilities?: CapabilityVerificationRecord | null;
+    enabledServices?: PrinterCapabilityFeatures | null;
   } | null>;
   setDefaultProductionPrinter(input: {
     printerId: string;
@@ -137,6 +158,14 @@ export interface AgentRepository {
     adminId: string;
     expiresAtMs: number;
     nowMs: number;
+    testType?: string | undefined;
+    testSettings?:
+      | {
+          colorMode?: ("BW" | "COLOR") | undefined;
+          sides?: ("SINGLE" | "DOUBLE") | undefined;
+          paperSize?: ("A4" | "A3") | undefined;
+        }
+      | undefined;
   }): Promise<AdminTestPrintDetails>;
   claimPendingTestPrintCommand(
     agentId: string,
@@ -171,8 +200,11 @@ export interface AgentRepository {
     enabled?: boolean | undefined;
     displayName?: string | undefined;
     priority?: number | undefined;
+    physicalDeviceId?: string | null | undefined;
     fallbackPrinterId?: string | null | undefined;
     autoFallbackEnabled?: boolean | undefined;
+    verifiedCapabilities?: CapabilityVerificationRecord | undefined;
+    enabledServices?: PrinterCapabilityFeatures | undefined;
     adminId: string;
     nowMs: number;
   }): Promise<{
@@ -180,8 +212,11 @@ export interface AgentRepository {
     enabled: boolean;
     displayName: string;
     priority: number;
+    physicalDeviceId?: string | null;
     fallbackPrinterId: string | null;
     autoFallbackEnabled: boolean;
+    verifiedCapabilities?: CapabilityVerificationRecord | null;
+    enabledServices?: PrinterCapabilityFeatures | null;
   }>;
   checkPrinterHealth(
     printerId: string,
@@ -207,6 +242,9 @@ interface PrinterRow {
   status: "ONLINE" | "OFFLINE" | "BLOCKED" | "ERROR" | "UNKNOWN";
   status_reason: string | null;
   capabilities_json: string | null;
+  verified_capabilities_json?: string | null;
+  enabled_services_json?: string | null;
+  capabilities_updated_at_ms?: number | null;
   last_status_at_ms: number | null;
   is_production_eligible: number;
   is_virtual: number;
@@ -220,6 +258,7 @@ interface PrinterRow {
   fallback_printer_id?: string | null;
   auto_fallback_enabled?: number | null;
   priority?: number | null;
+  physical_device_id?: string | null;
 }
 
 export class D1AgentRepository implements AgentRepository {
@@ -360,14 +399,15 @@ export class D1AgentRepository implements AgentRepository {
           EXISTS(SELECT 1 FROM printer_test_commands c WHERE c.agent_id = agents.id AND c.status = 'PENDING') has_pending_command,
           (EXISTS(
             SELECT 1 FROM orders
-            WHERE status IN ('QUEUED','CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED','RETRY_PENDING')
+            WHERE status IN ('QUEUED','CLAIMED','SPOOLING','PRINTING')
+               OR (status IN ('PRINT_BLOCKED','RETRY_PENDING') AND (next_retry_at_ms IS NULL OR next_retry_at_ms <= ?))
           ) OR EXISTS(
             SELECT 1 FROM orders
             WHERE status = 'PRINT_FAILED' AND cleanup_state = 'ACTIVE' AND updated_at_ms <= (? - 60000)
           )) has_print_work
          FROM agents WHERE credential_hash = ?`,
       )
-      .bind(nowMs, credentialHash)
+      .bind(nowMs, nowMs, credentialHash)
       .first<{
         id: string;
         display_name: string;
@@ -432,7 +472,7 @@ export class D1AgentRepository implements AgentRepository {
     const existingPrinters = await this.db
       .prepare(
         `SELECT id, windows_printer_name, display_name, enabled, status,
-                status_reason, capabilities_json, is_production_eligible,
+                status_reason, capabilities_json, verified_capabilities_json, is_production_eligible,
                 is_virtual, port_name, driver_name
          FROM printers WHERE agent_id = ?`,
       )
@@ -445,6 +485,7 @@ export class D1AgentRepository implements AgentRepository {
         status: string;
         status_reason: string | null;
         capabilities_json: string | null;
+        verified_capabilities_json: string | null;
         is_production_eligible: number;
         is_virtual: number;
         port_name: string | null;
@@ -476,7 +517,21 @@ export class D1AgentRepository implements AgentRepository {
         const portChanged = existing.port_name !== (p.portName ?? null);
         const driverChanged = existing.driver_name !== (p.driverName ?? null);
         const hardwareChanged = portChanged || driverChanged;
-        const forceDisable = (p.isVirtual || hardwareChanged) && existing.enabled === 1;
+        const forceDisable =
+          (p.isVirtual || hardwareChanged) && existing.enabled === 1;
+
+        let nextVerifiedCapsJson = existing.verified_capabilities_json;
+        if (hardwareChanged && existing.verified_capabilities_json) {
+          try {
+            const parsed = JSON.parse(
+              existing.verified_capabilities_json,
+            ) as CapabilityVerificationRecord;
+            parsed.requiresReview = true;
+            nextVerifiedCapsJson = JSON.stringify(parsed);
+          } catch {
+            // Keep unchanged if malformed
+          }
+        }
 
         if (
           capsChanged ||
@@ -492,8 +547,8 @@ export class D1AgentRepository implements AgentRepository {
               .prepare(
                 `UPDATE printers
                  SET display_name = ?, status = ?, status_reason = ?,
-                     capabilities_json = ?, is_production_eligible = ?,
-                     is_virtual = ?, port_name = ?, driver_name = ?,
+                     capabilities_json = ?, verified_capabilities_json = ?,
+                     is_production_eligible = ?, is_virtual = ?, port_name = ?, driver_name = ?,
                      enabled = CASE WHEN ? = 1 THEN 0 ELSE enabled END,
                      last_status_at_ms = ?, updated_at_ms = ?
                  WHERE id = ?`,
@@ -503,6 +558,7 @@ export class D1AgentRepository implements AgentRepository {
                 effectiveStatus,
                 p.statusReason,
                 capsJson,
+                nextVerifiedCapsJson,
                 p.isProductionEligible ? 1 : 0,
                 p.isVirtual ? 1 : 0,
                 p.portName ?? null,
@@ -623,16 +679,16 @@ export class D1AgentRepository implements AgentRepository {
         ),
         this.db.prepare(
           `SELECT id, agent_id, display_name, windows_printer_name, enabled,
-                status, status_reason, capabilities_json, last_status_at_ms,
+                status, status_reason, capabilities_json, verified_capabilities_json, enabled_services_json, last_status_at_ms,
                 is_production_eligible, is_virtual, port_name, driver_name,
                 is_paused, paused_reason, paused_at_ms, last_health_check_at_ms, health_check_requested,
-                fallback_printer_id, auto_fallback_enabled, priority
+                fallback_printer_id, auto_fallback_enabled, priority, physical_device_id
          FROM printers ORDER BY priority DESC, windows_printer_name ASC`,
         ),
         this.db.prepare(
           `SELECT ptc.id, ptc.printer_id, ptc.agent_id, ptc.status, ptc.spooler_job_id,
                 ptc.failure_code, ptc.failure_detail, ptc.created_at_ms, ptc.expires_at_ms,
-                ptc.claimed_at_ms, ptc.finished_at_ms
+                ptc.claimed_at_ms, ptc.finished_at_ms, ptc.test_type, ptc.test_settings_json
          FROM printers p JOIN printer_test_commands ptc ON ptc.id = (
             SELECT id FROM printer_test_commands WHERE printer_id = p.id
             ORDER BY created_at_ms DESC, id DESC LIMIT 1
@@ -674,6 +730,26 @@ export class D1AgentRepository implements AgentRepository {
           capabilities = null;
         }
       }
+      let verifiedCapabilities: CapabilityVerificationRecord | null = null;
+      if (pr.verified_capabilities_json) {
+        try {
+          verifiedCapabilities = JSON.parse(
+            pr.verified_capabilities_json,
+          ) as CapabilityVerificationRecord;
+        } catch {
+          verifiedCapabilities = null;
+        }
+      }
+      let enabledServices: PrinterCapabilityFeatures | null = null;
+      if (pr.enabled_services_json) {
+        try {
+          enabledServices = JSON.parse(
+            pr.enabled_services_json,
+          ) as PrinterCapabilityFeatures;
+        } catch {
+          enabledServices = null;
+        }
+      }
       const list = printersByAgent.get(pr.agent_id) ?? [];
       list.push({
         id: pr.id,
@@ -684,6 +760,8 @@ export class D1AgentRepository implements AgentRepository {
         status: pr.status,
         statusReason: pr.status_reason,
         capabilities,
+        verifiedCapabilities,
+        enabledServices,
         lastStatusAt: pr.last_status_at_ms
           ? new Date(pr.last_status_at_ms).toISOString()
           : null,
@@ -705,6 +783,7 @@ export class D1AgentRepository implements AgentRepository {
         fallbackPrinterId: pr.fallback_printer_id ?? null,
         autoFallbackEnabled: pr.auto_fallback_enabled === 1,
         priority: pr.priority ?? 0,
+        physicalDeviceId: pr.physical_device_id ?? null,
       });
       printersByAgent.set(pr.agent_id, list);
     }
@@ -793,8 +872,11 @@ export class D1AgentRepository implements AgentRepository {
     enabled?: boolean | undefined;
     displayName?: string | undefined;
     priority?: number | undefined;
+    physicalDeviceId?: string | null | undefined;
     fallbackPrinterId?: string | null | undefined;
     autoFallbackEnabled?: boolean | undefined;
+    verifiedCapabilities?: CapabilityVerificationRecord | undefined;
+    enabledServices?: PrinterCapabilityFeatures | undefined;
     adminId: string;
     nowMs: number;
   }): Promise<{
@@ -802,13 +884,17 @@ export class D1AgentRepository implements AgentRepository {
     enabled: boolean;
     displayName: string;
     priority: number;
+    physicalDeviceId?: string | null;
     fallbackPrinterId: string | null;
     autoFallbackEnabled: boolean;
+    verifiedCapabilities?: CapabilityVerificationRecord | null;
+    enabledServices?: PrinterCapabilityFeatures | null;
   }> {
     const printer = await this.db
       .prepare(
         `SELECT id, is_virtual, is_production_eligible, enabled, display_name,
-                fallback_printer_id, auto_fallback_enabled, priority
+                fallback_printer_id, auto_fallback_enabled, priority, physical_device_id,
+                verified_capabilities_json, enabled_services_json
          FROM printers WHERE id = ?`,
       )
       .bind(input.printerId)
@@ -821,6 +907,9 @@ export class D1AgentRepository implements AgentRepository {
         fallback_printer_id: string | null;
         auto_fallback_enabled: number | null;
         priority: number | null;
+        physical_device_id: string | null;
+        verified_capabilities_json: string | null;
+        enabled_services_json: string | null;
       }>();
 
     if (!printer) {
@@ -859,6 +948,10 @@ export class D1AgentRepository implements AgentRepository {
         : printer.display_name;
     const nextPriority =
       input.priority !== undefined ? input.priority : (printer.priority ?? 0);
+    const nextPhysicalDeviceId =
+      input.physicalDeviceId !== undefined
+        ? input.physicalDeviceId
+        : printer.physical_device_id;
     const nextFallback =
       input.fallbackPrinterId !== undefined
         ? input.fallbackPrinterId
@@ -869,6 +962,36 @@ export class D1AgentRepository implements AgentRepository {
           ? 1
           : 0
         : (printer.auto_fallback_enabled ?? 0);
+
+    let parsedVerifiedCaps: CapabilityVerificationRecord | null = null;
+    if (printer.verified_capabilities_json) {
+      try {
+        parsedVerifiedCaps = JSON.parse(
+          printer.verified_capabilities_json,
+        ) as CapabilityVerificationRecord;
+      } catch {
+        parsedVerifiedCaps = null;
+      }
+    }
+    const nextVerifiedCaps =
+      input.verifiedCapabilities !== undefined
+        ? input.verifiedCapabilities
+        : parsedVerifiedCaps;
+
+    let parsedEnabledServices: PrinterCapabilityFeatures | null = null;
+    if (printer.enabled_services_json) {
+      try {
+        parsedEnabledServices = JSON.parse(
+          printer.enabled_services_json,
+        ) as PrinterCapabilityFeatures;
+      } catch {
+        parsedEnabledServices = null;
+      }
+    }
+    const nextEnabledServices =
+      input.enabledServices !== undefined
+        ? input.enabledServices
+        : parsedEnabledServices;
 
     const updates: string[] = ["updated_at_ms = ?"];
     const bindings: (string | number | null)[] = [input.nowMs];
@@ -885,6 +1008,10 @@ export class D1AgentRepository implements AgentRepository {
       updates.push("priority = ?");
       bindings.push(nextPriority);
     }
+    if (input.physicalDeviceId !== undefined) {
+      updates.push("physical_device_id = ?");
+      bindings.push(nextPhysicalDeviceId);
+    }
     if (input.fallbackPrinterId !== undefined) {
       updates.push("fallback_printer_id = ?");
       bindings.push(nextFallback);
@@ -893,19 +1020,43 @@ export class D1AgentRepository implements AgentRepository {
       updates.push("auto_fallback_enabled = ?");
       bindings.push(nextAutoFallback);
     }
+    if (input.verifiedCapabilities !== undefined) {
+      updates.push("verified_capabilities_json = ?");
+      bindings.push(
+        input.verifiedCapabilities
+          ? JSON.stringify(input.verifiedCapabilities)
+          : null,
+      );
+      updates.push("capabilities_updated_at_ms = ?");
+      bindings.push(input.nowMs);
+    }
+    if (input.enabledServices !== undefined) {
+      updates.push("enabled_services_json = ?");
+      bindings.push(
+        input.enabledServices ? JSON.stringify(input.enabledServices) : null,
+      );
+      if (input.verifiedCapabilities === undefined) {
+        updates.push("capabilities_updated_at_ms = ?");
+        bindings.push(input.nowMs);
+      }
+    }
 
     bindings.push(input.printerId);
 
     const auditAction =
-      input.enabled !== undefined &&
-      input.displayName === undefined &&
-      input.priority === undefined &&
-      input.fallbackPrinterId === undefined &&
-      input.autoFallbackEnabled === undefined
-        ? input.enabled
-          ? "PRINTER_ENABLED"
-          : "PRINTER_DISABLED"
-        : "PRINTER_CONFIGURED";
+      input.verifiedCapabilities !== undefined
+        ? "PRINTER_CAPABILITIES_VERIFIED"
+        : input.enabled !== undefined &&
+            input.displayName === undefined &&
+            input.priority === undefined &&
+            input.physicalDeviceId === undefined &&
+            input.fallbackPrinterId === undefined &&
+            input.autoFallbackEnabled === undefined &&
+            input.enabledServices === undefined
+          ? input.enabled
+            ? "PRINTER_ENABLED"
+            : "PRINTER_DISABLED"
+          : "PRINTER_CONFIGURED";
 
     await this.db.batch([
       this.db
@@ -931,8 +1082,11 @@ export class D1AgentRepository implements AgentRepository {
       enabled: nextEnabled === 1,
       displayName: nextDisplayName,
       priority: nextPriority,
+      physicalDeviceId: nextPhysicalDeviceId,
       fallbackPrinterId: nextFallback,
       autoFallbackEnabled: nextAutoFallback === 1,
+      verifiedCapabilities: nextVerifiedCaps,
+      enabledServices: nextEnabledServices,
     };
   }
 
@@ -960,11 +1114,17 @@ export class D1AgentRepository implements AgentRepository {
     status: string;
     isProductionEligible: boolean;
     isVirtual: boolean;
+    portName?: string | null;
+    driverName?: string | null;
+    capabilitiesJson?: string | null;
+    verifiedCapabilities?: CapabilityVerificationRecord | null;
+    enabledServices?: PrinterCapabilityFeatures | null;
   } | null> {
     const row = await this.db
       .prepare(
         `SELECT id, agent_id, display_name, windows_printer_name, enabled, status,
-                is_production_eligible, is_virtual
+                is_production_eligible, is_virtual, port_name, driver_name,
+                capabilities_json, verified_capabilities_json, enabled_services_json
          FROM printers WHERE id = ?`,
       )
       .bind(printerId)
@@ -977,19 +1137,51 @@ export class D1AgentRepository implements AgentRepository {
         status: string;
         is_production_eligible: number;
         is_virtual: number;
+        port_name: string | null;
+        driver_name: string | null;
+        capabilities_json: string | null;
+        verified_capabilities_json: string | null;
+        enabled_services_json: string | null;
       }>();
-    return row
-      ? {
-          id: row.id,
-          agentId: row.agent_id,
-          displayName: row.display_name,
-          windowsPrinterName: row.windows_printer_name,
-          enabled: row.enabled === 1,
-          status: row.status,
-          isProductionEligible: row.is_production_eligible === 1,
-          isVirtual: row.is_virtual === 1,
-        }
-      : null;
+    if (!row) return null;
+
+    let verifiedCapabilities: CapabilityVerificationRecord | null = null;
+    if (row.verified_capabilities_json) {
+      try {
+        verifiedCapabilities = JSON.parse(
+          row.verified_capabilities_json,
+        ) as CapabilityVerificationRecord;
+      } catch {
+        verifiedCapabilities = null;
+      }
+    }
+
+    let enabledServices: PrinterCapabilityFeatures | null = null;
+    if (row.enabled_services_json) {
+      try {
+        enabledServices = JSON.parse(
+          row.enabled_services_json,
+        ) as PrinterCapabilityFeatures;
+      } catch {
+        enabledServices = null;
+      }
+    }
+
+    return {
+      id: row.id,
+      agentId: row.agent_id,
+      displayName: row.display_name,
+      windowsPrinterName: row.windows_printer_name,
+      enabled: row.enabled === 1,
+      status: row.status,
+      isProductionEligible: row.is_production_eligible === 1,
+      isVirtual: row.is_virtual === 1,
+      portName: row.port_name,
+      driverName: row.driver_name,
+      capabilitiesJson: row.capabilities_json,
+      verifiedCapabilities,
+      enabledServices,
+    };
   }
 
   async getDefaultProductionPrinterId(): Promise<string | null> {
@@ -1062,18 +1254,33 @@ export class D1AgentRepository implements AgentRepository {
     adminId: string;
     expiresAtMs: number;
     nowMs: number;
+    testType?: string | undefined;
+    testSettings?:
+      | {
+          colorMode?: ("BW" | "COLOR") | undefined;
+          sides?: ("SINGLE" | "DOUBLE") | undefined;
+          paperSize?: ("A4" | "A3") | undefined;
+        }
+      | undefined;
   }): Promise<AdminTestPrintDetails> {
+    const testType = input.testType ?? "STANDARD";
+    const testSettingsJson = input.testSettings
+      ? JSON.stringify(input.testSettings)
+      : null;
+
     await this.db.batch([
       this.db
         .prepare(
           `INSERT INTO printer_test_commands (
-             id, printer_id, agent_id, status, created_at_ms, expires_at_ms
-           ) VALUES (?, ?, ?, 'PENDING', ?, ?)`,
+             id, printer_id, agent_id, status, test_type, test_settings_json, created_at_ms, expires_at_ms
+           ) VALUES (?, ?, ?, 'PENDING', ?, ?, ?, ?)`,
         )
         .bind(
           input.id,
           input.printerId,
           input.agentId,
+          testType,
+          testSettingsJson,
           input.nowMs,
           input.expiresAtMs,
         ),
@@ -1098,6 +1305,8 @@ export class D1AgentRepository implements AgentRepository {
       expiresAt: new Date(input.expiresAtMs).toISOString(),
       claimedAt: null,
       finishedAt: null,
+      testType,
+      testSettings: input.testSettings ?? null,
     };
   }
 
@@ -1125,7 +1334,7 @@ export class D1AgentRepository implements AgentRepository {
     // 2. Find oldest pending command with printer info
     const pending = await this.db
       .prepare(
-        `SELECT c.id, c.printer_id, c.expires_at_ms,
+        `SELECT c.id, c.printer_id, c.expires_at_ms, c.test_type, c.test_settings_json,
                 p.windows_printer_name, p.display_name AS printer_display_name,
                 i.shop_name
          FROM printer_test_commands c
@@ -1141,6 +1350,8 @@ export class D1AgentRepository implements AgentRepository {
         id: string;
         printer_id: string;
         expires_at_ms: number;
+        test_type: string | null;
+        test_settings_json: string | null;
         windows_printer_name: string;
         printer_display_name: string;
         shop_name: string;
@@ -1164,6 +1375,17 @@ export class D1AgentRepository implements AgentRepository {
       return null;
     }
 
+    let testSettings: AgentTestPrintCommand["testSettings"] = undefined;
+    if (pending.test_settings_json) {
+      try {
+        testSettings = JSON.parse(
+          pending.test_settings_json,
+        ) as AgentTestPrintCommand["testSettings"];
+      } catch {
+        testSettings = undefined;
+      }
+    }
+
     return {
       commandId: pending.id,
       type: "TEST_PRINT",
@@ -1172,6 +1394,9 @@ export class D1AgentRepository implements AgentRepository {
       printerDisplayName: pending.printer_display_name,
       shopName: pending.shop_name,
       expiresAtMs: pending.expires_at_ms,
+      testType:
+        (pending.test_type as AgentTestPrintCommand["testType"]) ?? "STANDARD",
+      testSettings,
     };
   }
 

@@ -27,6 +27,9 @@ const migrations = [
   "0020_order_retention_duration.sql",
   "0023_identification_sheet_conditions.sql",
   "0024_printer_priority.sql",
+  "0025_verified_printer_capabilities.sql",
+  "0026_phase4_fallback_recovery.sql",
+  "0027_parallel_physical_printer_locks.sql",
 ].map((name) =>
   readFileSync(
     new URL(`../../../../../database/migrations/${name}`, import.meta.url),
@@ -922,5 +925,116 @@ describe("paid-print D1 safety", () => {
         nowMs: 2_000,
       }),
     ).rejects.toThrow("ORDER_CANNOT_BE_DELETED");
+  });
+
+  describe("capability and fallback claim parity regression tests", () => {
+    it("rejects claiming a double-sided order on a printer with duplex=0, UNKNOWN, or missing", async () => {
+      seed(db, {
+        paid: true,
+        capabilities: { colour: true, duplex: 0, paperSizes: ["A4"] },
+      });
+
+      const claimed = await repository.claimOrRenew(ids.agent1, 1_000);
+      expect(claimed).toBeNull();
+    });
+
+    it("rejects claiming a color order on a printer with colour=UNKNOWN", async () => {
+      seed(db, {
+        paid: true,
+        capabilities: { colour: "UNKNOWN", duplex: true, paperSizes: ["A4"] },
+      });
+
+      const claimed = await repository.claimOrRenew(ids.agent1, 1_000);
+      expect(claimed).toBeNull();
+    });
+
+    it("rejects claiming when enabled_services_json explicitly disables color even if WMI reported colour=true", async () => {
+      seed(db, { paid: true });
+
+      // Admin verified B&W only and disabled color
+      db.prepare(
+        `UPDATE printers SET
+          verified_capabilities_json = json_object(
+            'verified', json_object('bw', 1, 'color', 0, 'duplex', 1, 'a4', 1, 'a3', 0),
+            'enabled', json_object('bw', 1, 'color', 0, 'duplex', 1, 'a4', 1, 'a3', 0),
+            'requiresReview', 0
+          ),
+          enabled_services_json = json_object('bw', 1, 'color', 0, 'duplex', 1, 'a4', 1, 'a3', 0)
+        WHERE id = ?`,
+      ).run(ids.printer1);
+
+      // Order is COLOR, so it must not be claimed
+      const claimed = await repository.claimOrRenew(ids.agent1, 1_000);
+      expect(claimed).toBeNull();
+    });
+
+    it("rejects claiming when printer requiresReview=true due to hardware fingerprint change", async () => {
+      seed(db, { paid: true });
+
+      db.prepare(
+        `UPDATE printers SET
+          verified_capabilities_json = json_object(
+            'verified', json_object('bw', 1, 'color', 1, 'duplex', 1, 'a4', 1, 'a3', 1),
+            'enabled', json_object('bw', 1, 'color', 1, 'duplex', 1, 'a4', 1, 'a3', 1),
+            'requiresReview', 1
+          ),
+          enabled_services_json = json_object('bw', 1, 'color', 1, 'duplex', 1, 'a4', 1, 'a3', 1)
+        WHERE id = ?`,
+      ).run(ids.printer1);
+
+      const claimed = await repository.claimOrRenew(ids.agent1, 1_000);
+      expect(claimed).toBeNull();
+    });
+
+    it("allows claiming on configured fallback printer when primary is offline", async () => {
+      seed(db, { paid: true });
+
+      // Set printer1 as default, but OFFLINE with fallback to printer2
+      // Both printers owned by agent1 for this multi-printer claim test
+      db.prepare("UPDATE printers SET agent_id = ? WHERE id = ?").run(
+        ids.agent1,
+        ids.printer2,
+      );
+      db.prepare(
+        "UPDATE installation SET default_production_printer_id = ? WHERE id = 1",
+      ).run(ids.printer1);
+      db.prepare(
+        `
+        UPDATE printers SET
+          status = 'OFFLINE',
+          auto_fallback_enabled = 1,
+          fallback_printer_id = ?
+        WHERE id = ?
+      `,
+      ).run(ids.printer2, ids.printer1);
+
+      const claimed = await repository.claimOrRenew(ids.agent1, 1_000);
+      expect(claimed).not.toBeNull();
+      expect(claimed?.printerId).toBe(ids.printer2);
+    });
+
+    it("does NOT claim on secondary printer when primary is offline and fallback is disabled", async () => {
+      seed(db, { paid: true });
+
+      db.prepare("UPDATE printers SET agent_id = ? WHERE id = ?").run(
+        ids.agent1,
+        ids.printer2,
+      );
+      db.prepare(
+        "UPDATE installation SET default_production_printer_id = ? WHERE id = 1",
+      ).run(ids.printer1);
+      db.prepare(
+        `
+        UPDATE printers SET
+          status = 'OFFLINE',
+          auto_fallback_enabled = 0,
+          fallback_printer_id = NULL
+        WHERE id = ?
+      `,
+      ).run(ids.printer1);
+
+      const claimed = await repository.claimOrRenew(ids.agent1, 1_000);
+      expect(claimed).toBeNull();
+    });
   });
 });

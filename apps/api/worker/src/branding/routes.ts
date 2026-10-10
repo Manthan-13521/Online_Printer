@@ -76,8 +76,7 @@ export function validLogo(bytes: Uint8Array, mime?: string): boolean {
     (lower.includes("webp") || lower.includes("octet-stream"))
   )
     return true;
-  // If magic bytes are definitely a supported image, accept it
-  return true;
+  return false;
 }
 
 async function readLogo(request: Request): Promise<Uint8Array | null> {

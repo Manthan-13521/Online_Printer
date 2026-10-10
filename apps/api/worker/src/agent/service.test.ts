@@ -606,4 +606,141 @@ describe("AgentService", () => {
       }),
     );
   });
+
+  describe("verifyPrinterCapabilities", () => {
+    it("verifies printer capabilities, clamps unverified services, and records fingerprint", async () => {
+      const repo = createMockRepository({
+        findPrinterById: vi.fn(() =>
+          Promise.resolve({
+            id: "printer_1",
+            agentId: "agent_123",
+            displayName: "Office Canon",
+            windowsPrinterName: "Canon_LBP2900",
+            portName: "USB001",
+            driverName: "Canon Advanced Printing System",
+            enabled: true,
+            isProductionEligible: true,
+            isVirtual: false,
+            status: "ONLINE",
+            statusReason: null,
+            isPaused: false,
+            capabilitiesJson: null,
+            verifiedCapabilitiesJson: null,
+            enabledServicesJson: null,
+            capabilitiesUpdatedAtMs: null,
+            priority: 0,
+            fallbackPrinterId: null,
+            autoFallbackEnabled: false,
+            lastStatusAtMs: 1_000_000,
+            createdAtMs: 1_000_000,
+            updatedAtMs: 1_000_000,
+          }),
+        ),
+        updatePrinterConfig: vi.fn(
+          (params: Parameters<AgentRepository["updatePrinterConfig"]>[0]) =>
+            Promise.resolve({
+              id: params.printerId,
+              enabled: true,
+              displayName: "Office Canon",
+              priority: 0,
+              fallbackPrinterId: null,
+              autoFallbackEnabled: false,
+            }),
+        ),
+      });
+
+      const service = new AgentService(repo, () => 1_500_000);
+
+      const result = await service.verifyPrinterCapabilities(
+        "printer_1",
+        "admin_super",
+        {
+          verified: {
+            bw: true,
+            color: false, // Color NOT physically verified
+            duplex: true,
+            a4: true,
+            a3: false, // A3 NOT physically verified
+          },
+          enabled: {
+            bw: true,
+            color: true, // Attempted enable without verification
+            duplex: true,
+            a4: true,
+            a3: true, // Attempted enable without verification
+          },
+          notes: "Physical test sheet verified in person.",
+        },
+      );
+
+      expect(result.printerId).toBe("printer_1");
+      expect(result.verifiedCapabilities.verified).toEqual({
+        bw: true,
+        color: false,
+        duplex: true,
+        a4: true,
+        a3: false,
+      });
+      // Verification clamp invariant: color and a3 MUST be forced false
+      expect(result.enabledServices).toEqual({
+        bw: true,
+        color: false,
+        duplex: true,
+        a4: true,
+        a3: false,
+      });
+      expect(result.verifiedCapabilities.verifiedByAdminId).toBe("admin_super");
+      expect(result.verifiedCapabilities.verifiedAtMs).toBe(1_500_000);
+      expect(result.verifiedCapabilities.notes).toBe(
+        "Physical test sheet verified in person.",
+      );
+      expect(result.verifiedCapabilities.fingerprint).toBeTruthy();
+
+      expect(repo.updatePrinterConfig).toHaveBeenCalledWith(
+        expect.objectContaining({
+          printerId: "printer_1",
+          adminId: "admin_super",
+          nowMs: 1_500_000,
+          enabledServices: {
+            bw: true,
+            color: false,
+            duplex: true,
+            a4: true,
+            a3: false,
+          },
+        }),
+      );
+    });
+
+    it("throws PRINTER_NOT_FOUND when printer does not exist", async () => {
+      const repo = createMockRepository({
+        findPrinterById: vi.fn(() => Promise.resolve(null)),
+      });
+
+      const service = new AgentService(repo, () => 1_500_000);
+
+      await expect(
+        service.verifyPrinterCapabilities("printer_missing", "admin_super", {
+          verified: {
+            bw: true,
+            color: false,
+            duplex: false,
+            a4: true,
+            a3: false,
+          },
+          enabled: {
+            bw: true,
+            color: false,
+            duplex: false,
+            a4: true,
+            a3: false,
+          },
+        }),
+      ).rejects.toEqual(
+        expect.objectContaining({
+          code: "PRINTER_NOT_FOUND",
+        }),
+      );
+    });
+  });
 });

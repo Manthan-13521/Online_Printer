@@ -1,12 +1,13 @@
 import type {
   AgentPrintJob,
   AgentReportPrintStepRequest,
+  AgentPreflightFailureData,
   PrintPlanStepStatus,
 } from "@printgo/api-contract";
 import { hashSessionToken } from "@printgo/auth";
 
 import type { DownloadSigner } from "../storage/r2-upload-signer";
-import type { PrintingRepository } from "./repository";
+import type { ClaimedPrintJobRecord, PrintingRepository } from "./repository";
 
 export type PrintingErrorCode =
   | "AGENT_UNAUTHORIZED"
@@ -35,9 +36,9 @@ export class PrintingService {
     private readonly now: () => number = Date.now,
   ) {}
 
-  async claimOrRenew(agentId: string): Promise<AgentPrintJob | null> {
-    const record = await this.repository.claimOrRenew(agentId, this.now());
-    if (!record) return null;
+  private async mapToPrintJob(
+    record: ClaimedPrintJobRecord,
+  ): Promise<AgentPrintJob> {
     const authorization = await this.downloadSigner.createDownloadAuthorization(
       record.objectKey,
     );
@@ -60,6 +61,9 @@ export class PrintingService {
         : {}),
       printerId: record.printerId,
       windowsPrinterName: record.windowsPrinterName,
+      ...(record.physicalDeviceId
+        ? { physicalDeviceId: record.physicalDeviceId }
+        : {}),
       download: {
         url: authorization.url,
         expiresAtMs: authorization.expiresAtMs,
@@ -75,7 +79,19 @@ export class PrintingService {
       },
       identificationSheet: record.identificationSheet,
       currentStep: record.currentStep,
+      verifiedFeatures: record.verifiedFeatures,
     };
+  }
+
+  async claimOrRenew(agentId: string): Promise<AgentPrintJob | null> {
+    const record = await this.repository.claimOrRenew(agentId, this.now());
+    if (!record) return null;
+    return this.mapToPrintJob(record);
+  }
+
+  async claimOrRenewAll(agentId: string): Promise<AgentPrintJob[]> {
+    const records = await this.repository.claimOrRenewAll(agentId, this.now());
+    return Promise.all(records.map((r) => this.mapToPrintJob(r)));
   }
 
   private async agentId(rawSecret: string): Promise<string> {
@@ -149,6 +165,89 @@ export class PrintingService {
     });
     if (!row) throw new PrintingError("PRINT_STEP_CONFLICT");
     return this.response(row);
+  }
+
+  async handlePreflightFailure(
+    rawSecret: string,
+    orderId: string,
+    stepId: string,
+    claimId: string,
+    failureCode: string,
+    failureDetail?: string | null,
+  ): Promise<AgentPreflightFailureData> {
+    const agentId = await this.agentId(rawSecret);
+    const result = await this.repository.handlePreflightFailure({
+      agentId,
+      orderId,
+      stepId,
+      claimId,
+      failureCode,
+      failureDetail: failureDetail ?? null,
+      nowMs: this.now(),
+    });
+
+    if (result.action === "FALLBACK_ASSIGNED" && result.printJob) {
+      const record = result.printJob;
+      const authorization =
+        await this.downloadSigner.createDownloadAuthorization(record.objectKey);
+      const printJob: AgentPrintJob = {
+        type: "PAID_PRINT_JOB",
+        orderId: record.orderId,
+        attemptId: record.attemptId,
+        claimId: record.claimId,
+        leaseExpiresAtMs: record.leaseExpiresAtMs,
+        jobCode: record.jobCode,
+        ...(record.fileId ? { fileId: record.fileId } : {}),
+        ...(record.filePosition !== undefined
+          ? { filePosition: record.filePosition }
+          : {}),
+        ...(record.fileCount !== undefined
+          ? { fileCount: record.fileCount }
+          : {}),
+        ...(record.originalFilename
+          ? { originalFilename: record.originalFilename }
+          : {}),
+        printerId: record.printerId,
+        windowsPrinterName: record.windowsPrinterName,
+        download: {
+          url: authorization.url,
+          expiresAtMs: authorization.expiresAtMs,
+          expectedSizeBytes: record.expectedSizeBytes,
+        },
+        sourcePageCount: record.sourcePageCount,
+        settings: {
+          pageRange: record.pageRange,
+          copies: record.copies,
+          paperSize: record.paperSize,
+          colorMode: record.colorMode,
+          sides: record.sides,
+        },
+        identificationSheet: record.identificationSheet,
+        currentStep: record.currentStep,
+        verifiedFeatures: record.verifiedFeatures,
+      };
+      return {
+        action: "FALLBACK_ASSIGNED",
+        printJob,
+        fallbackPrinterName:
+          result.fallbackPrinterName ?? record.windowsPrinterName,
+      };
+    }
+
+    if (result.action === "BLOCKED_RELEASED") {
+      return {
+        action: "BLOCKED_RELEASED",
+        orderId: result.orderId,
+        message: result.message,
+        retryAfterMs: result.retryAfterMs ?? 30_000,
+      };
+    }
+
+    return {
+      action: "ACTION_REQUIRED",
+      orderId: result.orderId,
+      message: result.message,
+    };
   }
 
   private response(row: {

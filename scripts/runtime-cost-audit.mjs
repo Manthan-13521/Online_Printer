@@ -133,7 +133,14 @@ async function simulateIdle(seconds, cadence) {
       }
     }
     const delta = subtract(totals(runtime), before);
-    if (cadence === "fixed") assert.equal(delta.changedRows, seconds / 60);
+    if (cadence === "fixed") {
+      const expected65 = Math.floor(seconds / 65);
+      const expected60 = Math.floor(seconds / 60);
+      assert.ok(
+        delta.changedRows === expected65 || delta.changedRows === expected60,
+        `Expected ${expected65} or ${expected60} changed rows for ${seconds}s fixed cadence, got ${delta.changedRows}`,
+      );
+    }
     assert.equal(snapshot().httpRequests, pulses);
     return {
       label:

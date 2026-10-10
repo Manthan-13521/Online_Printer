@@ -109,6 +109,25 @@ function createMockAgentService(
     ),
     getDefaultProductionPrinterId: vi.fn(() => Promise.resolve(null)),
     setDefaultProductionPrinter: vi.fn(() => Promise.resolve()),
+    verifyPrinterCapabilities: vi.fn(
+      (
+        printerId: string,
+        adminId: string,
+        input: Parameters<AgentService["verifyPrinterCapabilities"]>[2],
+      ) =>
+        Promise.resolve({
+          printerId,
+          verifiedCapabilities: {
+            verified: input.verified,
+            enabled: input.enabled,
+            verifiedAtMs: 1700000000000,
+            verifiedByAdminId: adminId,
+            notes: input.notes ?? null,
+          },
+          enabledServices: input.enabled,
+          verifiedAt: new Date(1700000000000).toISOString(),
+        }),
+    ),
     ...overrides,
   } as unknown as AgentService;
 }
@@ -462,6 +481,110 @@ describe("Admin Printer & Agent HTTP Routes", () => {
     expect(await response.json()).toMatchObject({
       ok: false,
       error: { code: "AGENT_OFFLINE" },
+    });
+  });
+
+  it("handles verify printer capabilities request", async () => {
+    const authService = createMockAuth();
+    const agentService = createMockAgentService();
+
+    const request = new Request(
+      "https://api.example.com/api/admin/printers/printer_1/verify-capabilities",
+      {
+        method: "POST",
+        headers: {
+          Origin: env.ADMIN_ALLOWED_ORIGIN,
+          Cookie: "__Host-printgo_admin=valid_token",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          verified: {
+            bw: true,
+            color: false,
+            duplex: true,
+            a4: true,
+            a3: false,
+          },
+          enabled: {
+            bw: true,
+            color: false,
+            duplex: true,
+            a4: true,
+            a3: false,
+          },
+          notes: "Duplex flip verified via physical print.",
+        }),
+      },
+    );
+
+    const response = await handleAdminPrinterRequest(
+      request,
+      env,
+      agentService,
+      authService,
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      data: {
+        printerId: "printer_1",
+        verifiedCapabilities: {
+          verified: {
+            bw: true,
+            color: false,
+            duplex: true,
+            a4: true,
+            a3: false,
+          },
+          enabled: {
+            bw: true,
+            color: false,
+            duplex: true,
+            a4: true,
+            a3: false,
+          },
+          notes: "Duplex flip verified via physical print.",
+        },
+      },
+    });
+    const calls = vi.mocked(agentService.verifyPrinterCapabilities).mock.calls;
+    expect(calls[0]?.[0]).toBe("printer_1");
+    expect(calls[0]?.[1]).toBe("admin_100");
+    expect(calls[0]?.[2].verified.duplex).toBe(true);
+    expect(calls[0]?.[2].notes).toBe(
+      "Duplex flip verified via physical print.",
+    );
+  });
+
+  it("rejects invalid verify capabilities request with 400", async () => {
+    const authService = createMockAuth();
+    const agentService = createMockAgentService();
+
+    const request = new Request(
+      "https://api.example.com/api/admin/printers/printer_1/verify-capabilities",
+      {
+        method: "POST",
+        headers: {
+          Origin: env.ADMIN_ALLOWED_ORIGIN,
+          Cookie: "__Host-printgo_admin=valid_token",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          verified: "not-an-object",
+        }),
+      },
+    );
+
+    const response = await handleAdminPrinterRequest(
+      request,
+      env,
+      agentService,
+      authService,
+    );
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      ok: false,
+      error: { code: "VALIDATION_ERROR" },
     });
   });
 });

@@ -1,7 +1,9 @@
 import type {
   AdminAgentDetails,
   AdminCheckPrinterHealthResponseData,
+  AdminRequestTestPrintRequest,
   AdminTestPrintDetails,
+  AdminVerifyCapabilitiesResponseData,
   AgentHeartbeatData,
   AgentPairData,
   AgentReportCommandData,
@@ -11,6 +13,9 @@ import {
   AGENT_HEARTBEAT_TIMEOUT_MS,
   AGENT_PAIR_CODE_LIFETIME_MS,
   TEST_PRINT_COMMAND_LIFETIME_MS,
+  computePrinterFingerprint,
+  type CapabilityVerificationRecord,
+  type PrinterCapabilityFeatures,
 } from "@printgo/domain";
 import type {
   ValidatedAgentHeartbeatInput,
@@ -164,10 +169,15 @@ export class AgentService {
       agent.hasPendingCommand === false
         ? null
         : await this.repository.claimPendingTestPrintCommand(agent.id, nowMs);
-    const printJob =
+    const printJobs =
       agent.hasPrintWork === false
-        ? null
-        : await this.printing?.claimOrRenew(agent.id);
+        ? []
+        : ((await (this.printing?.claimOrRenewAll
+            ? this.printing.claimOrRenewAll(agent.id)
+            : this.printing
+                ?.claimOrRenew(agent.id)
+                .then((j) => (j ? [j] : [])))) ?? []);
+    const printJob = printJobs[0] ?? null;
 
     return {
       acknowledged: true,
@@ -175,6 +185,7 @@ export class AgentService {
       onlinePrintingEnabled: agent.onlinePrintingEnabled ?? true,
       ...(nextCommand ? { nextCommand } : {}),
       ...(printJob ? { printJob } : {}),
+      ...(printJobs.length > 0 ? { printJobs } : {}),
     };
   }
 
@@ -203,8 +214,11 @@ export class AgentService {
     enabled: boolean;
     displayName: string;
     priority: number;
+    physicalDeviceId?: string | null;
     fallbackPrinterId: string | null;
     autoFallbackEnabled: boolean;
+    verifiedCapabilities?: CapabilityVerificationRecord | null;
+    enabledServices?: PrinterCapabilityFeatures | null;
   }> {
     try {
       return await this.repository.updatePrinterConfig({
@@ -212,8 +226,10 @@ export class AgentService {
         enabled: input.enabled,
         displayName: input.displayName,
         priority: input.priority,
+        physicalDeviceId: input.physicalDeviceId,
         fallbackPrinterId: input.fallbackPrinterId,
         autoFallbackEnabled: input.autoFallbackEnabled,
+        enabledServices: input.enabledServices,
         adminId,
         nowMs: this.now(),
       });
@@ -296,6 +312,7 @@ export class AgentService {
   async requestTestPrint(
     printerId: string,
     adminId: string,
+    options?: AdminRequestTestPrintRequest,
   ): Promise<AdminTestPrintDetails> {
     const printer = await this.repository.findPrinterById(printerId);
     if (!printer) {
@@ -341,7 +358,65 @@ export class AgentService {
       adminId,
       expiresAtMs,
       nowMs,
+      testType: options?.testType ?? "STANDARD",
+      testSettings: options?.testSettings,
     });
+  }
+
+  async verifyPrinterCapabilities(
+    printerId: string,
+    adminId: string,
+    input: {
+      verified: PrinterCapabilityFeatures;
+      enabled: PrinterCapabilityFeatures;
+      notes?: string;
+    },
+  ): Promise<AdminVerifyCapabilitiesResponseData> {
+    const printer = await this.repository.findPrinterById(printerId);
+    if (!printer) {
+      throw new AgentError("PRINTER_NOT_FOUND");
+    }
+
+    const nowMs = this.now();
+    const hardwareFingerprint = computePrinterFingerprint(
+      printer.windowsPrinterName,
+      printer.portName,
+      printer.driverName,
+    );
+
+    // Safety invariant: enabled services CANNOT enable a feature that is not verified
+    const clampedEnabledServices: PrinterCapabilityFeatures = {
+      bw: input.verified.bw ? input.enabled.bw : false,
+      color: input.verified.color ? input.enabled.color : false,
+      duplex: input.verified.duplex ? input.enabled.duplex : false,
+      a4: input.verified.a4 ? input.enabled.a4 : false,
+      a3: input.verified.a3 ? input.enabled.a3 : false,
+    };
+
+    const verificationRecord: CapabilityVerificationRecord = {
+      verified: input.verified,
+      enabled: clampedEnabledServices,
+      verifiedByAdminId: adminId,
+      verifiedAtMs: nowMs,
+      fingerprint: hardwareFingerprint,
+      requiresReview: false,
+      notes: input.notes,
+    };
+
+    await this.repository.updatePrinterConfig({
+      printerId,
+      verifiedCapabilities: verificationRecord,
+      enabledServices: clampedEnabledServices,
+      adminId,
+      nowMs,
+    });
+
+    return {
+      printerId,
+      verifiedCapabilities: verificationRecord,
+      enabledServices: clampedEnabledServices,
+      verifiedAt: new Date(nowMs).toISOString(),
+    };
   }
 
   async reportCommand(

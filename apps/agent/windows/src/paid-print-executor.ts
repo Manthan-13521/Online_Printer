@@ -30,20 +30,22 @@ export class PaidPrintExecutor {
   async handle(
     credentials: AgentCredentials,
     job: AgentPrintJob,
-  ): Promise<"PREFLIGHT_DEFERRED" | void> {
+  ): Promise<
+    "PREFLIGHT_DEFERRED" | "BLOCKED_RELEASED" | "ACTION_REQUIRED" | void
+  > {
     const timing = (event: string, atMs = Date.now()) =>
       this.log(
         `PRINT_TIMING step=${job.currentStep.stepId} event=${event} atMs=${atMs}`,
       );
     timing("preparation_start");
-    const saved = await this.journal.load();
+    const saved = await this.journal.load(job.orderId);
     const matching =
       saved?.orderId === job.orderId &&
       saved.attemptId === job.attemptId &&
       saved.stepId === job.currentStep.stepId
         ? saved
         : null;
-    if (saved && !matching) await this.journal.clear();
+    if (saved && !matching) await this.journal.clear(job.orderId);
 
     if (job.currentStep.status === "SUBMISSION_STARTED") {
       if (!matching?.spoolerJobId) {
@@ -59,7 +61,7 @@ export class PaidPrintExecutor {
               "Agent restarted after submission began; no confirmed spooler job identity is available.",
           },
         );
-        await this.journal.clear();
+        await this.journal.clear(job.orderId);
         return;
       }
       await this.client.submitPrintStep(
@@ -88,7 +90,7 @@ export class PaidPrintExecutor {
             failureDetail: "Submitted step has no spooler job identity.",
           },
         );
-        await this.journal.clear();
+        await this.journal.clear(job.orderId);
         return;
       }
       await this.observe(credentials, job, spoolerJobId);
@@ -118,9 +120,48 @@ export class PaidPrintExecutor {
           printerStatus.availability === "BLOCKED")
       ) {
         this.log(
-          `Printer ${job.windowsPrinterName} is not online (${printerStatus.availability}: ${printerStatus.message ?? "Not ready"}). Waiting before print submission.`,
+          `Printer ${job.windowsPrinterName} is not online (${printerStatus.availability}: ${printerStatus.message ?? "Not ready"}). Requesting server-authorized safe fallback or queue unstarvation.`,
         );
-        return "PREFLIGHT_DEFERRED";
+
+        try {
+          const fallbackRes = await this.client.reportPreflightFailure(
+            credentials.serverUrl,
+            credentials.agentId,
+            credentials.agentSecret,
+            job,
+            printerStatus.availability,
+            printerStatus.message ??
+              `Printer ${job.windowsPrinterName} is ${printerStatus.availability}`,
+          );
+
+          if (fallbackRes.action === "FALLBACK_ASSIGNED") {
+            this.log(
+              `Server authorized safe fallback to printer ${fallbackRes.fallbackPrinterName}. Re-executing preflight.`,
+            );
+            return this.handle(credentials, fallbackRes.printJob);
+          }
+
+          if (fallbackRes.action === "BLOCKED_RELEASED") {
+            this.log(
+              `No fallback available for order ${job.orderId}. Lease released to unstarve queue. Retry scheduled.`,
+            );
+            await this.journal.clear(job.orderId);
+            return "BLOCKED_RELEASED";
+          }
+
+          if (fallbackRes.action === "ACTION_REQUIRED") {
+            this.log(
+              `Order ${job.orderId} requires admin action: ${fallbackRes.message}`,
+            );
+            await this.journal.clear(job.orderId);
+            return "ACTION_REQUIRED";
+          }
+        } catch (err: unknown) {
+          this.log(
+            `Failed to communicate preflight failure to server: ${err instanceof Error ? err.message : String(err)}. Deferring print.`,
+          );
+          return "PREFLIGHT_DEFERRED";
+        }
       }
     }
 
@@ -188,6 +229,7 @@ export class PaidPrintExecutor {
         documentTitle: `${isId ? "printgo-id" : "printgo-order"}-${job.identificationSheet?.pickupCode ?? job.jobCode}-${job.currentStep.stepId}`,
         copies: settings.copies,
         settings: { ...settings, printerName: job.windowsPrinterName },
+        verifiedCapabilities: job.verifiedFeatures,
       });
       if (submitted.timings) {
         timing("sumatra_start", submitted.timings.processStartedAtMs);
@@ -221,7 +263,7 @@ export class PaidPrintExecutor {
               "Windows accepted the print command but the spooler job could not be correlated safely.",
           },
         );
-        await this.journal.clear();
+        await this.journal.clear(job.orderId);
         return;
       }
       await this.client.submitPrintStep(
@@ -254,7 +296,7 @@ export class PaidPrintExecutor {
             },
           )
           .catch(() => undefined);
-        await this.journal.clear();
+        await this.journal.clear(job.orderId);
       } else {
         const errDetails =
           error instanceof Error ? error.stack || error.message : String(error);
@@ -262,7 +304,7 @@ export class PaidPrintExecutor {
           `Print submission result is unresolved (${errDetails}); human review required.`,
         );
         // Keep a positively correlated local spool identity if the server is unreachable.
-        const savedSubmission = await this.journal.load();
+        const savedSubmission = await this.journal.load(job.orderId);
         try {
           await this.client.reportPrintStep(
             credentials.serverUrl,
@@ -277,7 +319,7 @@ export class PaidPrintExecutor {
                 "Print submission failed with an unexpected error; outcome uncertain.",
             },
           );
-          await this.journal.clear();
+          await this.journal.clear(job.orderId);
         } catch {
           this.log(
             "Uncertain print report is pending; recovery journal retained.",
@@ -361,7 +403,7 @@ export class PaidPrintExecutor {
           failureDetail: observed.message ?? "Spooler rejected the print job.",
         },
       );
-      await this.journal.clear();
+      await this.journal.clear(job.orderId);
       return;
     }
 
@@ -389,7 +431,7 @@ export class PaidPrintExecutor {
         failureDetail: observed.message ?? null,
       },
     );
-    await this.journal.clear();
+    await this.journal.clear(job.orderId);
     if (status === "SUCCEEDED") {
       this.log(
         `PRINT_TIMING step=${job.currentStep.stepId} event=step_acknowledged atMs=${Date.now()}`,

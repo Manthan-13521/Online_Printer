@@ -8,12 +8,16 @@ echo "          PrintGo Windows Environment & Agent Status"
 echo "============================================================"
 echo "Target Host: $HOST"
 
-# 1. SSH Reachability check
+# 1. SSH Reachability check with auto-discovery fallback
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if ! ssh -o BatchMode=yes -o ConnectTimeout=3 "$HOST" "hostname" >/dev/null 2>&1; then
-  echo "Windows Reachable: NO"
-  echo "SSH Connection:    FAILED"
-  echo "Please check that the Windows laptop is online and on the same LAN."
-  exit 1
+  echo "Attempting automatic discovery of Windows laptop..."
+  if ! bash "$SCRIPT_DIR/discover-windows.sh"; then
+    echo "Windows Reachable: NO"
+    echo "SSH Connection:    FAILED"
+    echo "Please check that the Windows laptop is online and on the same LAN."
+    exit 1
+  fi
 fi
 
 echo "Windows Reachable: YES"
@@ -26,11 +30,14 @@ $hostname = $env:COMPUTERNAME
 Write-Host "Hostname:          $hostname"
 Write-Host "Operating System:  $os"
 
-$exePath = "C:\PrintGo\agent\PrintGo-Agent.exe"
+$exePath = "C:\Users\MANTH\AppData\Local\Programs\PrintGo\PrintGo-Agent.exe"
+if (-not (Test-Path $exePath)) {
+    $exePath = "C:\PrintGo\agent\PrintGo-Agent.exe"
+}
 if (Test-Path $exePath) {
     $hash = (Get-FileHash -Path $exePath -Algorithm SHA256).Hash.Substring(0, 16) + '...'
     $mtime = (Get-Item $exePath).LastWriteTime.ToString('yyyy-MM-dd HH:mm:ss')
-    Write-Host "Agent Installed:   YES (SHA256: $hash | Modified: $mtime)"
+    Write-Host "Agent Installed:   YES ($exePath | SHA256: $hash | Modified: $mtime)"
 } else {
     Write-Host "Agent Installed:   NO (Run deploy-agent-windows.sh)" -ForegroundColor Yellow
 }

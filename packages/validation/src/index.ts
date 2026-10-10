@@ -10,10 +10,12 @@ import {
   MAX_PRINT_COPIES,
   ORDER_RETENTION_HOURS_OPTIONS,
   classifyPrinter,
+  type CapabilityVerificationRecord,
   type ColorMode,
   type IdentificationSheetPlacement,
   type OrderStatus,
   type PaperSize,
+  type PrinterCapabilityFeatures,
   type SidesMode,
 } from "@printgo/domain";
 
@@ -829,8 +831,85 @@ export interface ValidatedUpdatePrinterInput {
   enabled?: boolean;
   displayName?: string;
   priority?: number;
+  physicalDeviceId?: string | null;
   fallbackPrinterId?: string | null;
   autoFallbackEnabled?: boolean;
+  verifiedCapabilities?: CapabilityVerificationRecord;
+  enabledServices?: PrinterCapabilityFeatures;
+}
+
+export function validateFeaturesRecord(
+  record: unknown,
+  fieldPath: string,
+): ValidationResult<PrinterCapabilityFeatures> {
+  if (typeof record !== "object" || record === null) {
+    return {
+      ok: false,
+      issues: [
+        {
+          path: [fieldPath],
+          code: "INVALID_FEATURES",
+          message: `${fieldPath} must be an object.`,
+        },
+      ],
+    };
+  }
+  const r = record as Record<string, unknown>;
+  const features: PrinterCapabilityFeatures = {
+    bw: typeof r.bw === "boolean" ? r.bw : true,
+    color: typeof r.color === "boolean" ? r.color : false,
+    duplex: typeof r.duplex === "boolean" ? r.duplex : false,
+    a4: typeof r.a4 === "boolean" ? r.a4 : true,
+    a3: typeof r.a3 === "boolean" ? r.a3 : false,
+  };
+  return { ok: true, value: features };
+}
+
+export interface ValidatedVerifyCapabilitiesInput {
+  verified: PrinterCapabilityFeatures;
+  enabled: PrinterCapabilityFeatures;
+  notes?: string;
+}
+
+export function validateVerifyCapabilitiesInput(
+  value: unknown,
+): ValidationResult<ValidatedVerifyCapabilitiesInput> {
+  if (typeof value !== "object" || value === null) {
+    return {
+      ok: false,
+      issues: [
+        { path: [], code: "INVALID_BODY", message: "Invalid request body." },
+      ],
+    };
+  }
+  const record = value as Record<string, unknown>;
+  const issues: ValidationIssue[] = [];
+
+  const verifiedRes = validateFeaturesRecord(record.verified, "verified");
+  if (!verifiedRes.ok) issues.push(...verifiedRes.issues);
+
+  const enabledRes = validateFeaturesRecord(record.enabled, "enabled");
+  if (!enabledRes.ok) issues.push(...enabledRes.issues);
+
+  let notes: string | undefined = undefined;
+  if (record.notes !== undefined) {
+    if (typeof record.notes === "string") {
+      notes = record.notes.trim().slice(0, 500);
+    }
+  }
+
+  if (issues.length > 0 || !verifiedRes.ok || !enabledRes.ok) {
+    return { ok: false, issues };
+  }
+
+  return {
+    ok: true,
+    value: {
+      verified: verifiedRes.value,
+      enabled: enabledRes.value,
+      ...(notes ? { notes } : {}),
+    },
+  };
 }
 
 export function validateUpdatePrinterInput(
@@ -892,6 +971,27 @@ export function validateUpdatePrinterInput(
     }
   }
 
+  if (record.physicalDeviceId !== undefined) {
+    if (
+      record.physicalDeviceId !== null &&
+      (typeof record.physicalDeviceId !== "string" ||
+        record.physicalDeviceId.trim().length === 0 ||
+        record.physicalDeviceId.trim().length > 100)
+    ) {
+      issues.push({
+        path: ["physicalDeviceId"],
+        code: "INVALID_PHYSICAL_DEVICE_ID",
+        message:
+          "Physical device ID must be a non-empty string up to 100 characters, or null.",
+      });
+    } else {
+      result.physicalDeviceId =
+        record.physicalDeviceId === null
+          ? null
+          : record.physicalDeviceId.trim();
+    }
+  }
+
   if (record.fallbackPrinterId !== undefined) {
     if (
       record.fallbackPrinterId !== null &&
@@ -923,12 +1023,23 @@ export function validateUpdatePrinterInput(
     }
   }
 
+  if (record.enabledServices !== undefined) {
+    const enabledRes = validateFeaturesRecord(
+      record.enabledServices,
+      "enabledServices",
+    );
+    if (!enabledRes.ok) issues.push(...enabledRes.issues);
+    else result.enabledServices = enabledRes.value;
+  }
+
   if (
     result.enabled === undefined &&
     result.displayName === undefined &&
     result.priority === undefined &&
+    result.physicalDeviceId === undefined &&
     result.fallbackPrinterId === undefined &&
-    result.autoFallbackEnabled === undefined
+    result.autoFallbackEnabled === undefined &&
+    result.enabledServices === undefined
   ) {
     return {
       ok: false,
@@ -1194,6 +1305,78 @@ export function validateReportCommandInput(
       status,
       spoolerJobId,
       failureCode,
+      failureDetail,
+    },
+  };
+}
+
+export interface ValidatedAgentPreflightFailureInput {
+  claimId: string;
+  failureCode: string;
+  failureDetail: string | null;
+}
+
+export function validateAgentPreflightFailureInput(
+  value: unknown,
+): ValidationResult<ValidatedAgentPreflightFailureInput> {
+  if (typeof value !== "object" || value === null) {
+    return {
+      ok: false,
+      issues: [
+        {
+          path: [],
+          code: "INVALID_REQUEST",
+          message: "Request body must be a JSON object.",
+        },
+      ],
+    };
+  }
+
+  const record = value as Record<string, unknown>;
+
+  if (
+    typeof record.claimId !== "string" ||
+    record.claimId.trim().length === 0
+  ) {
+    return {
+      ok: false,
+      issues: [
+        {
+          path: ["claimId"],
+          code: "REQUIRED_CLAIM_ID",
+          message: "Claim credential is required.",
+        },
+      ],
+    };
+  }
+
+  if (
+    typeof record.failureCode !== "string" ||
+    record.failureCode.trim().length === 0
+  ) {
+    return {
+      ok: false,
+      issues: [
+        {
+          path: ["failureCode"],
+          code: "REQUIRED_FAILURE_CODE",
+          message: "Failure code is required.",
+        },
+      ],
+    };
+  }
+
+  const failureDetail =
+    typeof record.failureDetail === "string" &&
+    record.failureDetail.trim().length > 0
+      ? record.failureDetail.trim().slice(0, 500)
+      : null;
+
+  return {
+    ok: true,
+    value: {
+      claimId: record.claimId.trim().slice(0, 100),
+      failureCode: record.failureCode.trim().slice(0, 50),
       failureDetail,
     },
   };

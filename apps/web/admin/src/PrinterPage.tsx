@@ -4,6 +4,7 @@ import type {
   AdminPrinterDetails,
   AdminTestPrintDetails,
 } from "@printgo/api-contract";
+import type { PrinterCapabilityFeatures } from "@printgo/domain";
 import { useEffect, useState } from "react";
 
 import { adminApi, AdminApiError, friendlyAdminError } from "./api";
@@ -61,9 +62,16 @@ function friendlyPrinterMessage(
     case "TONER_LOW":
       return "Toner or ink is low.";
     case "OFFLINE":
+    case "PRINTER_OFFLINE":
       return "Printer is powered off or disconnected.";
+    case "CONNECTION_LOST":
+      return "Printer communication link lost. Please check cable or network.";
+    case "SPOOLER_ERROR":
+      return "Windows print spooler needs attention.";
     case "USER_INTERVENTION":
       return "Printer requires attention.";
+    case "PRINTER_ERROR":
+      return "Printer hardware reported an error.";
     default:
       return "Printer reported an issue.";
   }
@@ -119,7 +127,36 @@ export function PrinterPage({
   const [formEnabled, setFormEnabled] = useState(true);
   const [formFallbackId, setFormFallbackId] = useState<string>("");
   const [formAutoFallback, setFormAutoFallback] = useState(false);
+  const [formEnabledServices, setFormEnabledServices] =
+    useState<PrinterCapabilityFeatures | null>(null);
+  const [formPhysicalDeviceId, setFormPhysicalDeviceId] = useState<string>("");
   const [savingSettings, setSavingSettings] = useState(false);
+
+  // Guided Verification modal state
+  const [verifyingPrinter, setVerifyingPrinter] =
+    useState<AdminPrinterDetails | null>(null);
+  const [verifyingFeatures, setVerifyingFeatures] =
+    useState<PrinterCapabilityFeatures>({
+      bw: true,
+      color: false,
+      duplex: false,
+      a4: true,
+      a3: false,
+    });
+  const [verifyingEnabled, setVerifyingEnabled] =
+    useState<PrinterCapabilityFeatures>({
+      bw: true,
+      color: false,
+      duplex: false,
+      a4: true,
+      a3: false,
+    });
+  const [verificationNotes, setVerificationNotes] = useState("");
+  const [savingVerification, setSavingVerification] = useState(false);
+
+  // Test print selection state
+  const [testPrintMenuPrinter, setTestPrintMenuPrinter] =
+    useState<AdminPrinterDetails | null>(null);
 
   async function handleCheckHealth(printerId: string) {
     setCheckingHealthId(printerId);
@@ -303,18 +340,32 @@ export function PrinterPage({
     }
   }
 
-  async function handleRequestTestPrint(printer: AdminPrinterDetails) {
+  async function handleRequestTestPrint(
+    printer: AdminPrinterDetails,
+    type?: "STANDARD" | "COLOR" | "DUPLEX" | "A3",
+  ) {
     setRequestingTestPrintId(printer.id);
     setError(null);
     setNotice(null);
     try {
-      const res = await adminApi.requestTestPrint(printer.id);
+      const res = await (type && type !== "STANDARD"
+        ? adminApi.requestTestPrint(printer.id, {
+            testType: type,
+            testSettings: {
+              colorMode: type === "COLOR" ? "COLOR" : "BW",
+              sides: type === "DUPLEX" ? "DOUBLE" : "SINGLE",
+              paperSize: type === "A3" ? "A3" : "A4",
+            },
+          })
+        : adminApi.requestTestPrint(printer.id));
       if (res.ok) {
         setTestPrints((prev) => ({
           ...prev,
           [printer.id]: res.data.testPrint,
         }));
-        setNotice(`Test print requested for "${printer.displayName}".`);
+        setNotice(
+          `${type ?? "Standard"} test page sent to "${printer.displayName}". Please inspect the physical printout.`,
+        );
       }
     } catch (caught: unknown) {
       if (caught instanceof AdminApiError && caught.status === 401) {
@@ -324,6 +375,59 @@ export function PrinterPage({
       setError(friendlyAdminError(caught));
     } finally {
       setRequestingTestPrintId(null);
+      setTestPrintMenuPrinter(null);
+    }
+  }
+
+  function openVerificationModal(printer: AdminPrinterDetails) {
+    setVerifyingPrinter(printer);
+    const existingVerified = printer.verifiedCapabilities?.verified;
+    const initialVerified: PrinterCapabilityFeatures = existingVerified ?? {
+      bw: true,
+      color: Boolean(
+        printer.capabilities?.colour === true ||
+        printer.capabilities?.colour === "UNKNOWN",
+      ),
+      duplex: Boolean(printer.capabilities?.duplex === true),
+      a4:
+        !printer.capabilities?.paperSizes ||
+        printer.capabilities.paperSizes.includes("A4"),
+      a3: Boolean(printer.capabilities?.paperSizes?.includes("A3")),
+    };
+    setVerifyingFeatures(initialVerified);
+    setVerifyingEnabled(printer.enabledServices ?? initialVerified);
+    setVerificationNotes(printer.verifiedCapabilities?.notes ?? "");
+  }
+
+  async function handleSaveVerification() {
+    if (!verifyingPrinter) return;
+    setSavingVerification(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await adminApi.verifyPrinterCapabilities(
+        verifyingPrinter.id,
+        {
+          verified: verifyingFeatures,
+          enabled: verifyingEnabled,
+          notes: verificationNotes.trim() || undefined,
+        },
+      );
+      if (res.ok) {
+        setNotice(
+          `Hardware capabilities verified & certified for "${verifyingPrinter.displayName}".`,
+        );
+        setVerifyingPrinter(null);
+        await loadPrinters();
+      }
+    } catch (caught: unknown) {
+      if (caught instanceof AdminApiError && caught.status === 401) {
+        onSessionExpired("Your session has expired. Please sign in again.");
+        return;
+      }
+      setError(friendlyAdminError(caught));
+    } finally {
+      setSavingVerification(false);
     }
   }
 
@@ -358,6 +462,8 @@ export function PrinterPage({
     setFormEnabled(printer.enabled);
     setFormFallbackId(printer.fallbackPrinterId ?? "");
     setFormAutoFallback(printer.autoFallbackEnabled ?? false);
+    setFormEnabledServices(printer.enabledServices ?? null);
+    setFormPhysicalDeviceId(printer.physicalDeviceId ?? "");
   }
 
   async function handleSaveSettings() {
@@ -372,6 +478,14 @@ export function PrinterPage({
         enabled: formEnabled,
         fallbackPrinterId: formFallbackId.trim() || null,
         autoFallbackEnabled: formAutoFallback,
+        ...(formPhysicalDeviceId.trim()
+          ? { physicalDeviceId: formPhysicalDeviceId.trim() }
+          : settingsPrinter.physicalDeviceId
+            ? { physicalDeviceId: null }
+            : {}),
+        ...(formEnabledServices
+          ? { enabledServices: formEnabledServices }
+          : {}),
       });
       if (res.ok) {
         setNotice(
@@ -1006,6 +1120,29 @@ export function PrinterPage({
                                 Priority {p.priority}
                               </span>
                             )}
+                            {p.physicalDeviceId && (
+                              <span
+                                style={{
+                                  fontSize: "0.75rem",
+                                  fontWeight: 600,
+                                  backgroundColor: "#f1f5f9",
+                                  color: "#475569",
+                                  padding: "0.15rem 0.5rem",
+                                  borderRadius: "9999px",
+                                }}
+                                title={`Physical Connection: ${p.physicalDeviceId === "machine-2" ? "Machine 2" : p.physicalDeviceId === "machine-3" ? "Machine 3" : p.physicalDeviceId === "machine-4" ? "Machine 4" : p.physicalDeviceId === "machine-5" ? "Machine 5" : p.physicalDeviceId}`}
+                              >
+                                {p.physicalDeviceId === "machine-2"
+                                  ? "Machine 2"
+                                  : p.physicalDeviceId === "machine-3"
+                                    ? "Machine 3"
+                                    : p.physicalDeviceId === "machine-4"
+                                      ? "Machine 4"
+                                      : p.physicalDeviceId === "machine-5"
+                                        ? "Machine 5"
+                                        : p.physicalDeviceId}
+                              </span>
+                            )}
                             {!p.enabled && (
                               <span
                                 style={{
@@ -1021,15 +1158,83 @@ export function PrinterPage({
                               </span>
                             )}
                           </div>
-                          <p
-                            className="muted"
+                          <div
                             style={{
-                              margin: "0.25rem 0 0 0",
-                              fontSize: "0.8rem",
+                              marginTop: "0.4rem",
+                              display: "flex",
+                              flexWrap: "wrap",
+                              gap: "0.4rem",
+                              alignItems: "center",
                             }}
                           >
-                            {formatSimpleCapabilities(p.capabilities)}
-                          </p>
+                            {p.verifiedCapabilities &&
+                            !p.verifiedCapabilities.requiresReview ? (
+                              <span
+                                style={{
+                                  fontSize: "0.75rem",
+                                  fontWeight: 600,
+                                  backgroundColor: "#ecfdf5",
+                                  color: "#065f46",
+                                  border: "1px solid #a7f3d0",
+                                  padding: "0.15rem 0.55rem",
+                                  borderRadius: "6px",
+                                }}
+                              >
+                                ✓ Verified:{" "}
+                                {[
+                                  p.verifiedCapabilities.verified.bw && "B&W",
+                                  p.verifiedCapabilities.verified.color &&
+                                    "Color",
+                                  p.verifiedCapabilities.verified.duplex &&
+                                    "Duplex",
+                                  p.verifiedCapabilities.verified.a4 && "A4",
+                                  p.verifiedCapabilities.verified.a3 && "A3",
+                                ]
+                                  .filter(Boolean)
+                                  .join(" • ")}
+                              </span>
+                            ) : (
+                              <span
+                                style={{
+                                  fontSize: "0.75rem",
+                                  fontWeight: 600,
+                                  backgroundColor: "#fffbeb",
+                                  color: "#92400e",
+                                  border: "1px solid #fde68a",
+                                  padding: "0.15rem 0.55rem",
+                                  borderRadius: "6px",
+                                }}
+                              >
+                                {p.verifiedCapabilities?.requiresReview
+                                  ? "⚠ Hardware/Driver Changed — Needs Re-Verification"
+                                  : `⚠ Unverified: ${formatSimpleCapabilities(p.capabilities)}`}
+                              </span>
+                            )}
+                            {p.portName && (
+                              <span
+                                style={{
+                                  fontSize: "0.72rem",
+                                  color: "#64748b",
+                                }}
+                              >
+                                Port: {p.portName}
+                              </span>
+                            )}
+                            {p.fallbackPrinterId && (
+                              <span
+                                style={{
+                                  fontSize: "0.72rem",
+                                  color: "#64748b",
+                                }}
+                              >
+                                Fallback:{" "}
+                                {displayedPrinters.find(
+                                  (dp) => dp.id === p.fallbackPrinterId,
+                                )?.displayName ?? "Configured"}
+                                {p.autoFallbackEnabled ? " (Auto)" : ""}
+                              </span>
+                            )}
+                          </div>
                         </div>
 
                         {/* Status Badge */}
@@ -1161,7 +1366,22 @@ export function PrinterPage({
                                   : ""}
                               </span>
                             ) : tp.status === "SUCCEEDED" ? (
-                              <span>Test page submitted successfully.</span>
+                              <span>
+                                Test page submitted successfully.{" "}
+                                <button
+                                  type="button"
+                                  className="text-button"
+                                  style={{
+                                    color: "#15803d",
+                                    fontWeight: 700,
+                                    textDecoration: "underline",
+                                    cursor: "pointer",
+                                  }}
+                                  onClick={() => openVerificationModal(p)}
+                                >
+                                  Verify Output & Certify →
+                                </button>
+                              </span>
                             ) : tp.status === "BLOCKED" ? (
                               <span>
                                 Printer needs attention:{" "}
@@ -1200,14 +1420,22 @@ export function PrinterPage({
                           gap: "0.5rem",
                         }}
                       >
-                        <div style={{ display: "flex", gap: "0.4rem" }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: "0.4rem",
+                            flexWrap: "wrap",
+                          }}
+                        >
                           <button
                             type="button"
                             className="secondary-button compact"
                             disabled={
                               !activeAgent?.isOnline || Boolean(isTesting)
                             }
-                            onClick={() => void handleRequestTestPrint(p)}
+                            onClick={() =>
+                              void handleRequestTestPrint(p, "STANDARD")
+                            }
                             title={
                               !activeAgent?.isOnline
                                 ? "Agent is offline"
@@ -1219,6 +1447,39 @@ export function PrinterPage({
                               : tp
                                 ? "Try Test Print Again"
                                 : "Test Print"}
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary-button compact"
+                            disabled={
+                              !activeAgent?.isOnline || Boolean(isTesting)
+                            }
+                            onClick={() => setTestPrintMenuPrinter(p)}
+                            title="Choose diagnostic test type (Color, Duplex, A3, Standard)"
+                            style={{
+                              paddingLeft: "0.35rem",
+                              paddingRight: "0.35rem",
+                            }}
+                          >
+                            ▾
+                          </button>
+                          <button
+                            type="button"
+                            className="primary-button compact"
+                            style={{
+                              backgroundColor:
+                                p.verifiedCapabilities &&
+                                !p.verifiedCapabilities.requiresReview
+                                  ? "#059669"
+                                  : "#d97706",
+                              borderColor: "transparent",
+                            }}
+                            onClick={() => openVerificationModal(p)}
+                          >
+                            {p.verifiedCapabilities &&
+                            !p.verifiedCapabilities.requiresReview
+                              ? "Verify Hardware"
+                              : "Verify Hardware ⚠"}
                           </button>
                           <button
                             type="button"
@@ -1934,6 +2195,35 @@ export function PrinterPage({
                     </p>
                   </div>
 
+                  {/* Physical Hardware ID (Mutual Exclusion Group) */}
+                  <div>
+                    <label
+                      htmlFor="printer-physical-device"
+                      style={{ display: "block", marginBottom: "0.35rem" }}
+                    >
+                      Physical Hardware Connection:
+                    </label>
+                    <select
+                      id="printer-physical-device"
+                      value={formPhysicalDeviceId}
+                      onChange={(e) => setFormPhysicalDeviceId(e.target.value)}
+                    >
+                      <option value="">Primary Machine (Shared Default)</option>
+                      <option value="machine-2">Independent Machine 2</option>
+                      <option value="machine-3">Independent Machine 3</option>
+                      <option value="machine-4">Independent Machine 4</option>
+                      <option value="machine-5">Independent Machine 5</option>
+                    </select>
+                    <p
+                      className="muted"
+                      style={{ fontSize: "0.75rem", margin: "0.25rem 0 0 0" }}
+                    >
+                      If multiple print queues connect to the same physical
+                      hardware, put them in the same group so they do not jam by
+                      printing at the same time.
+                    </p>
+                  </div>
+
                   {/* Fallback Printer */}
                   <div>
                     <label
@@ -1975,14 +2265,116 @@ export function PrinterPage({
                           onChange={(e) =>
                             setFormAutoFallback(e.target.checked)
                           }
-                          disabled
                         />
-                        <span style={{ opacity: 0.7 }}>
-                          Auto-reroute to fallback printer when this printer is
-                          paused or offline <i>(Routing coming in Phase 3)</i>
+                        <span>
+                          Auto-route new unprinted orders to fallback printer
+                          when this printer is paused or offline
                         </span>
                       </label>
                     ) : null}
+                  </div>
+
+                  {/* Enabled Customer Services */}
+                  <div
+                    style={{
+                      borderTop: "1px solid #e2e8f0",
+                      paddingTop: "0.75rem",
+                    }}
+                  >
+                    <label
+                      style={{
+                        display: "block",
+                        marginBottom: "0.35rem",
+                        fontWeight: 600,
+                      }}
+                    >
+                      Enabled Services for Online Orders:
+                    </label>
+                    <p
+                      className="muted"
+                      style={{ fontSize: "0.75rem", margin: "0 0 0.5rem 0" }}
+                    >
+                      Toggle which services customers can select for this
+                      printer. Only verified capabilities can be enabled.
+                    </p>
+                    {formEnabledServices && (
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "1fr 1fr",
+                          gap: "0.5rem",
+                        }}
+                      >
+                        {[
+                          {
+                            key: "bw" as const,
+                            label: "B&W Orders",
+                            verified:
+                              settingsPrinter.verifiedCapabilities?.verified
+                                .bw ?? true,
+                          },
+                          {
+                            key: "color" as const,
+                            label: "Color Orders",
+                            verified:
+                              settingsPrinter.verifiedCapabilities?.verified
+                                .color ?? false,
+                          },
+                          {
+                            key: "duplex" as const,
+                            label: "Duplex Orders",
+                            verified:
+                              settingsPrinter.verifiedCapabilities?.verified
+                                .duplex ?? false,
+                          },
+                          {
+                            key: "a4" as const,
+                            label: "A4 Paper Orders",
+                            verified:
+                              settingsPrinter.verifiedCapabilities?.verified
+                                .a4 ?? true,
+                          },
+                          {
+                            key: "a3" as const,
+                            label: "A3 Paper Orders",
+                            verified:
+                              settingsPrinter.verifiedCapabilities?.verified
+                                .a3 ?? false,
+                          },
+                        ].map((item) => (
+                          <label
+                            key={item.key}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "0.4rem",
+                              fontSize: "0.825rem",
+                              opacity: item.verified ? 1 : 0.45,
+                              cursor: item.verified ? "pointer" : "not-allowed",
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={Boolean(formEnabledServices[item.key])}
+                              disabled={!item.verified}
+                              onChange={(e) =>
+                                setFormEnabledServices((prev) =>
+                                  prev
+                                    ? {
+                                        ...prev,
+                                        [item.key]: e.target.checked,
+                                      }
+                                    : null,
+                                )
+                              }
+                            />
+                            <span>
+                              {item.label} {!item.verified && "(Unverified)"}
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   {/* Advanced Technical Details */}
@@ -2063,6 +2455,424 @@ export function PrinterPage({
                     onClick={() => void handleSaveSettings()}
                   >
                     {savingSettings ? "Saving…" : "Save Settings"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TEST PRINT SELECTION MODAL */}
+          {testPrintMenuPrinter && (
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="test-print-menu-title"
+              style={{
+                position: "fixed",
+                inset: 0,
+                backgroundColor: "rgba(0, 0, 0, 0.5)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                zIndex: 110,
+                padding: "1rem",
+              }}
+            >
+              <div
+                style={{
+                  backgroundColor: "#ffffff",
+                  borderRadius: "12px",
+                  maxWidth: "460px",
+                  width: "100%",
+                  padding: "1.25rem 1.5rem",
+                  boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1)",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginBottom: "1rem",
+                  }}
+                >
+                  <h3
+                    id="test-print-menu-title"
+                    style={{ margin: 0, fontSize: "1.1rem" }}
+                  >
+                    Select Test Print for {testPrintMenuPrinter.displayName}
+                  </h3>
+                  <button
+                    type="button"
+                    className="text-button"
+                    onClick={() => setTestPrintMenuPrinter(null)}
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "0.6rem",
+                  }}
+                >
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    style={{ textAlign: "left", padding: "0.75rem 1rem" }}
+                    onClick={() =>
+                      void handleRequestTestPrint(
+                        testPrintMenuPrinter,
+                        "STANDARD",
+                      )
+                    }
+                  >
+                    <strong>📄 Standard Test (B&W Simplex A4)</strong>
+                    <div style={{ fontSize: "0.75rem", color: "#64748b" }}>
+                      Basic alignment, header text, and printer diagnostic info.
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    style={{ textAlign: "left", padding: "0.75rem 1rem" }}
+                    onClick={() =>
+                      void handleRequestTestPrint(testPrintMenuPrinter, "COLOR")
+                    }
+                  >
+                    <strong>🎨 Color Calibration Test</strong>
+                    <div style={{ fontSize: "0.75rem", color: "#64748b" }}>
+                      Prints CMYK/RGB calibration bars to verify ink/toner
+                      reproduction.
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    style={{ textAlign: "left", padding: "0.75rem 1rem" }}
+                    onClick={() =>
+                      void handleRequestTestPrint(
+                        testPrintMenuPrinter,
+                        "DUPLEX",
+                      )
+                    }
+                  >
+                    <strong>🔄 Duplex 2-Page Flip Test</strong>
+                    <div style={{ fontSize: "0.75rem", color: "#64748b" }}>
+                      Prints 2 pages to verify automatic double-sided paper
+                      turnaround.
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    style={{ textAlign: "left", padding: "0.75rem 1rem" }}
+                    onClick={() =>
+                      void handleRequestTestPrint(testPrintMenuPrinter, "A3")
+                    }
+                  >
+                    <strong>📐 A3 Large Format Test</strong>
+                    <div style={{ fontSize: "0.75rem", color: "#64748b" }}>
+                      Tests oversized paper tray feeding and border margins.
+                    </div>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* GUIDED CAPABILITY VERIFICATION MODAL */}
+          {verifyingPrinter && (
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="verify-caps-title"
+              style={{
+                position: "fixed",
+                inset: 0,
+                backgroundColor: "rgba(0, 0, 0, 0.5)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                zIndex: 110,
+                padding: "1rem",
+              }}
+            >
+              <div
+                style={{
+                  backgroundColor: "#ffffff",
+                  borderRadius: "12px",
+                  maxWidth: "540px",
+                  width: "100%",
+                  maxHeight: "90vh",
+                  display: "flex",
+                  flexDirection: "column",
+                  boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1)",
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    padding: "1.25rem 1.5rem",
+                    borderBottom: "1px solid #e2e8f0",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                  }}
+                >
+                  <div>
+                    <h2
+                      id="verify-caps-title"
+                      style={{ margin: 0, fontSize: "1.2rem" }}
+                    >
+                      Certify Hardware Capabilities
+                    </h2>
+                    <p
+                      className="muted"
+                      style={{ margin: "0.25rem 0 0 0", fontSize: "0.85rem" }}
+                    >
+                      {verifyingPrinter.displayName} (
+                      {verifyingPrinter.windowsPrinterName})
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="text-button"
+                    onClick={() => setVerifyingPrinter(null)}
+                    style={{ fontSize: "1.25rem", padding: "0.25rem 0.5rem" }}
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div
+                  style={{
+                    padding: "1.25rem 1.5rem",
+                    overflowY: "auto",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "1.2rem",
+                  }}
+                >
+                  <div
+                    style={{
+                      padding: "0.75rem 1rem",
+                      backgroundColor: "#f0fdf4",
+                      border: "1px solid #bbf7d0",
+                      borderRadius: "8px",
+                      fontSize: "0.85rem",
+                      color: "#166534",
+                    }}
+                  >
+                    <strong>Operator Instructions:</strong> Inspect the test
+                    sheet printed by this physical machine. Only check the boxes
+                    below for features that printed successfully without
+                    distortion or jamming.
+                  </div>
+
+                  {/* Section 1: Physical Verification */}
+                  <div>
+                    <h3
+                      style={{
+                        fontSize: "0.95rem",
+                        margin: "0 0 0.5rem 0",
+                        color: "#1e293b",
+                      }}
+                    >
+                      1. Confirmed Physical Hardware Output
+                    </h3>
+                    <div style={{ display: "grid", gap: "0.5rem" }}>
+                      {[
+                        {
+                          key: "bw" as const,
+                          label: "Black & White Printing",
+                          desc: "Text and graphics printed crisp black & monochrome.",
+                        },
+                        {
+                          key: "color" as const,
+                          label: "Full Color Printing",
+                          desc: "RGB/CMYK colored bars printed in proper full color.",
+                        },
+                        {
+                          key: "duplex" as const,
+                          label: "Automatic Double-Sided (Duplex)",
+                          desc: "Printer mechanically flipped sheet and printed both sides.",
+                        },
+                        {
+                          key: "a4" as const,
+                          label: "A4 Paper Size Support",
+                          desc: "Fed and aligned correctly from A4 paper tray.",
+                        },
+                        {
+                          key: "a3" as const,
+                          label: "A3 Paper Size Support",
+                          desc: "Fed and aligned correctly on A3 paper tray/feed.",
+                        },
+                      ].map((item) => (
+                        <label
+                          key={item.key}
+                          style={{
+                            display: "flex",
+                            alignItems: "flex-start",
+                            gap: "0.6rem",
+                            padding: "0.5rem 0.75rem",
+                            border: "1px solid #e2e8f0",
+                            borderRadius: "6px",
+                            backgroundColor: verifyingFeatures[item.key]
+                              ? "#f8fafc"
+                              : "#ffffff",
+                            cursor: "pointer",
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={verifyingFeatures[item.key]}
+                            style={{ marginTop: "0.2rem" }}
+                            onChange={(e) => {
+                              const checked = e.target.checked;
+                              setVerifyingFeatures((prev) => ({
+                                ...prev,
+                                [item.key]: checked,
+                              }));
+                              if (!checked) {
+                                setVerifyingEnabled((prev) => ({
+                                  ...prev,
+                                  [item.key]: false,
+                                }));
+                              }
+                            }}
+                          />
+                          <div>
+                            <strong>{item.label}</strong>
+                            <div
+                              style={{
+                                fontSize: "0.75rem",
+                                color: "#64748b",
+                              }}
+                            >
+                              {item.desc}
+                            </div>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Section 2: Enabled Services for Customers */}
+                  <div>
+                    <h3
+                      style={{
+                        fontSize: "0.95rem",
+                        margin: "0 0 0.5rem 0",
+                        color: "#1e293b",
+                      }}
+                    >
+                      2. Enable for Customer Online Orders
+                    </h3>
+                    <p
+                      className="muted"
+                      style={{
+                        fontSize: "0.8rem",
+                        margin: "0 0 0.5rem 0",
+                      }}
+                    >
+                      Uncheck any service that you do not want customers to
+                      order on this printer right now:
+                    </p>
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "1fr 1fr",
+                        gap: "0.4rem",
+                      }}
+                    >
+                      {[
+                        { key: "bw" as const, label: "Allow B&W" },
+                        { key: "color" as const, label: "Allow Color" },
+                        { key: "duplex" as const, label: "Allow 2-Sided" },
+                        { key: "a4" as const, label: "Allow A4" },
+                        { key: "a3" as const, label: "Allow A3" },
+                      ].map((svc) => (
+                        <label
+                          key={svc.key}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "0.4rem",
+                            fontSize: "0.825rem",
+                            opacity: verifyingFeatures[svc.key] ? 1 : 0.4,
+                            cursor: verifyingFeatures[svc.key]
+                              ? "pointer"
+                              : "not-allowed",
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={verifyingEnabled[svc.key]}
+                            disabled={!verifyingFeatures[svc.key]}
+                            onChange={(e) =>
+                              setVerifyingEnabled((prev) => ({
+                                ...prev,
+                                [svc.key]: e.target.checked,
+                              }))
+                            }
+                          />
+                          <span>{svc.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Section 3: Notes */}
+                  <div>
+                    <label
+                      htmlFor="verification-notes"
+                      style={{
+                        display: "block",
+                        marginBottom: "0.3rem",
+                        fontSize: "0.85rem",
+                        fontWeight: 600,
+                      }}
+                    >
+                      Operator / Technician Notes (Optional):
+                    </label>
+                    <input
+                      id="verification-notes"
+                      type="text"
+                      placeholder="e.g. Tested on Brother HL-L2321D, toner 85%, duplex tested."
+                      value={verificationNotes}
+                      maxLength={500}
+                      onChange={(e) => setVerificationNotes(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    padding: "1rem 1.5rem",
+                    borderTop: "1px solid #e2e8f0",
+                    display: "flex",
+                    justifyContent: "flex-end",
+                    gap: "0.5rem",
+                  }}
+                >
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => setVerifyingPrinter(null)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="primary-button"
+                    disabled={savingVerification}
+                    onClick={() => void handleSaveVerification()}
+                  >
+                    {savingVerification
+                      ? "Saving…"
+                      : "Certify & Save Capabilities"}
                   </button>
                 </div>
               </div>
