@@ -39,7 +39,7 @@ WHERE status = 'DUPLICATE_CAPTURED'
       )
   );
 
--- Purge old inactive agents, duplicate printers, test commands, and pair code links,
+-- Purge old inactive agents, duplicate printers, test commands, and pair codes,
 -- keeping only active production agents and preserving development seed.
 DELETE FROM printer_test_commands
 WHERE agent_id IN (SELECT id FROM agents WHERE is_active = 0 AND id NOT LIKE '30000000-%');
@@ -47,8 +47,7 @@ WHERE agent_id IN (SELECT id FROM agents WHERE is_active = 0 AND id NOT LIKE '30
 DELETE FROM printers
 WHERE agent_id IN (SELECT id FROM agents WHERE is_active = 0 AND id NOT LIKE '30000000-%');
 
-UPDATE agent_pair_codes
-SET paired_agent_id = NULL
+DELETE FROM agent_pair_codes
 WHERE paired_agent_id IN (SELECT id FROM agents WHERE is_active = 0 AND id NOT LIKE '30000000-%');
 
 DELETE FROM agents
