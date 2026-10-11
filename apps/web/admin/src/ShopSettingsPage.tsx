@@ -318,6 +318,35 @@ export function ShopSettingsPage({
           </div>
         </section>
 
+        <section className="panel setting-card important-setting">
+          <div>
+            <h2>Accept Cash Orders</h2>
+            <p className="muted">
+              Controls whether customers can choose to pay cash at the counter
+              during checkout.
+            </p>
+          </div>
+          <div
+            style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}
+          >
+            <span style={{ fontWeight: "bold", fontSize: "0.95rem" }}>
+              {settings.cashOrdersEnabled ? "On" : "Off"}
+            </span>
+            <label className="toggle-switch">
+              <input
+                aria-label="Accept Cash Orders"
+                checked={Boolean(settings.cashOrdersEnabled)}
+                onChange={(event) => {
+                  patch({ cashOrdersEnabled: event.target.checked });
+                }}
+                role="switch"
+                type="checkbox"
+              />
+              <span className="toggle-slider" />
+            </label>
+          </div>
+        </section>
+
         <section className="panel form-section">
           <h2>PDF upload limit</h2>
           <label htmlFor="pdf-limit">Maximum PDF size</label>

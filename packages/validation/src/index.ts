@@ -270,6 +270,7 @@ export interface ValidatedShopSettings {
   nextCleanupAt?: string | null;
   lastCleanupResult?: string | null;
   orderRetentionHours?: number;
+  cashOrdersEnabled?: boolean;
 }
 
 function optionalPlainText(
@@ -542,6 +543,9 @@ export function validateShopSettingsInput(
           address,
           customerNotice,
           onlinePrintingEnabled: record.onlinePrintingEnabled as boolean,
+          ...(typeof record.cashOrdersEnabled === "boolean"
+            ? { cashOrdersEnabled: record.cashOrdersEnabled }
+            : {}),
           maxPdfSizeBytes: record.maxPdfSizeBytes as number,
           identificationSheetEnabled:
             record.identificationSheetEnabled as boolean,
@@ -1240,6 +1244,7 @@ export function validateAgentHeartbeatInput(
 export interface ValidatedReportCommandInput {
   status: "SUBMITTED" | "BLOCKED" | "SUCCEEDED" | "FAILED";
   spoolerJobId: string | null;
+  cancelledJobIds?: string[] | null;
   failureCode: string | null;
   failureDetail: string | null;
 }
@@ -1299,11 +1304,18 @@ export function validateReportCommandInput(
       ? record.failureDetail.trim().slice(0, 500)
       : null;
 
+  const cancelledJobIds = Array.isArray(record.cancelledJobIds)
+    ? record.cancelledJobIds
+        .filter((id): id is string => typeof id === "string" && id.length > 0)
+        .slice(0, 100)
+    : null;
+
   return {
     ok: true,
     value: {
       status,
       spoolerJobId,
+      cancelledJobIds,
       failureCode,
       failureDetail,
     },

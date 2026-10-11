@@ -4,6 +4,7 @@ import type {
   AgentPrinterReport,
   AgentPrintJob,
   AgentTestPrintCommand,
+  AgentClearSpoolerCommand,
 } from "@printgo/api-contract";
 import { AgentAuthError, AgentClient } from "./agent-client.js";
 import { createDiagnosticPdfFile } from "./printing/diagnostic-pdf.js";
@@ -19,6 +20,7 @@ import {
   writeAgentStatus,
   type PrinterStatusInfo,
 } from "./storage/status-file.js";
+import { type AgentLogger, getAgentLogger } from "./logging/agent-logger.js";
 
 export interface AgentDaemonOptions {
   client?: AgentClient;
@@ -30,6 +32,7 @@ export interface AgentDaemonOptions {
   agentVersion?: string;
   onStatusChange?: (status: string) => void;
   onError?: (err: Error) => void;
+  logger?: AgentLogger;
 }
 
 export class AgentDaemon {
@@ -40,6 +43,9 @@ export class AgentDaemon {
   private readonly agentVersion: string;
   private readonly onStatusChange: ((status: string) => void) | undefined;
   private readonly onError: ((err: Error) => void) | undefined;
+  private readonly logger: AgentLogger | undefined;
+  private hasReportedConnected = false;
+  private hasReportedPrinterReady = false;
 
   private readonly printerRefreshMs: number;
   private readonly random: () => number;
@@ -85,6 +91,7 @@ export class AgentDaemon {
     this.agentVersion = options.agentVersion ?? "2.0.0";
     this.onStatusChange = options.onStatusChange;
     this.onError = options.onError;
+    this.logger = options.logger;
     this.paidPrintExecutor = new PaidPrintExecutor(
       this.client,
       this.printerAdapter,
@@ -94,6 +101,7 @@ export class AgentDaemon {
         this.nextDelayMs = 0;
         this.reschedulePulse();
       },
+      this.logger,
     );
   }
 
@@ -154,6 +162,7 @@ export class AgentDaemon {
     }
 
     this.running = true;
+    this.logger?.starting();
     this.log(
       `Starting heartbeat daemon for agent ${this.credentials.agentId} (${this.credentials.displayName})...`,
     );
@@ -263,8 +272,11 @@ export class AgentDaemon {
       this.ws = null;
     }
     this.running = false;
+    this.hasReportedConnected = false;
+    this.hasReportedPrinterReady = false;
     this.activeLanes.clear();
     this.activePhysicalDevices.clear();
+    this.logger?.info("Stopped");
     this.log("Agent daemon stopped.");
     void writeAgentStatus({
       operationalState: "OFFLINE",
@@ -347,12 +359,27 @@ export class AgentDaemon {
 
       this.lastReportedPrinters = printerSnapshot;
       this.failures = 0;
+      if (!this.hasReportedConnected) {
+        this.hasReportedConnected = true;
+        this.logger?.connected();
+        this.log("AGENT_CONNECTED");
+      }
       const ready = printerReports.some(
         (p) =>
           p.status === "ONLINE" &&
           p.isEligibleForProductionPrint !== false &&
           !p.isVirtual,
       );
+      if (ready) {
+        if (!this.hasReportedPrinterReady) {
+          this.hasReportedPrinterReady = true;
+          this.logger?.printerReady();
+          this.log("PRINTER_READY");
+        }
+      } else {
+        this.hasReportedPrinterReady = false;
+        this.logger?.setPrinterNotReady();
+      }
       const rawJobs: AgentPrintJob[] = [];
       if (heartbeatData.printJobs && heartbeatData.printJobs.length > 0) {
         for (const job of heartbeatData.printJobs) {
@@ -404,9 +431,19 @@ export class AgentDaemon {
         }).catch(() => undefined);
       }
 
-      // Check if server returned a diagnostic test command
+      // Check if server returned a diagnostic test or recovery control command
       if (heartbeatData.nextCommand?.type === "TEST_PRINT") {
         await this.handleTestPrintCommand(heartbeatData.nextCommand);
+      } else if (heartbeatData.nextCommand?.type === "CLEAR_SPOOLER") {
+        const clearSucceeded = await this.handleClearSpoolerCommand(
+          heartbeatData.nextCommand,
+        );
+        if (!clearSucceeded) {
+          this.log(
+            "CLEAR_SPOOLER command was not cleared successfully. Aborting job processing for printer safety.",
+          );
+          return;
+        }
       }
 
       const lanePromises: Promise<void>[] = [];
@@ -464,6 +501,8 @@ export class AgentDaemon {
         );
       }
     } catch (err: unknown) {
+      this.hasReportedConnected = false;
+      this.logger?.setDisconnected();
       if (err instanceof AgentAuthError) {
         this.log(
           `Agent authorization failed: ${err.message}. Stopping daemon.`,
@@ -639,18 +678,94 @@ export class AgentDaemon {
     }
   }
 
+  private async handleClearSpoolerCommand(
+    command: AgentClearSpoolerCommand,
+  ): Promise<boolean> {
+    if (!this.credentials) return false;
+
+    if (this.executedCommandIds.has(command.commandId)) {
+      this.log(`Command ${command.commandId} was already executed. Ignoring.`);
+      return true;
+    }
+    if (Date.now() >= command.expiresAtMs) {
+      this.log(`Command ${command.commandId} has expired. Ignoring.`);
+      return false;
+    }
+    for (const [id, expiry] of this.executedCommandIds) {
+      if (expiry <= Date.now()) this.executedCommandIds.delete(id);
+    }
+    this.executedCommandIds.set(command.commandId, command.expiresAtMs);
+
+    this.log(
+      `Executing CLEAR_SPOOLER command ${command.commandId} for printer ${command.windowsPrinterName}...`,
+    );
+
+    try {
+      let cancelledJobIds: string[] = [];
+      if (typeof this.printerAdapter.clearPrintGoSpoolJobs === "function") {
+        const result = await this.printerAdapter.clearPrintGoSpoolJobs(
+          command.windowsPrinterName,
+        );
+        cancelledJobIds = result.cancelledJobIds;
+      }
+      this.log(
+        `CLEAR_SPOOLER cancelled ${cancelledJobIds.length} PrintGo job(s) from spooler for printer ${command.windowsPrinterName}.`,
+      );
+
+      // Report SUCCEEDED to server
+      await this.client.reportCommand(
+        this.credentials.serverUrl,
+        this.credentials.agentId,
+        this.credentials.agentSecret,
+        command.commandId,
+        {
+          status: "SUCCEEDED",
+          cancelledJobIds,
+        },
+      );
+      return true;
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      this.log(`CLEAR_SPOOLER failed: ${errorMsg}`);
+      await this.client
+        .reportCommand(
+          this.credentials.serverUrl,
+          this.credentials.agentId,
+          this.credentials.agentSecret,
+          command.commandId,
+          {
+            status: "FAILED",
+            failureCode: "PRINTER_ERROR",
+            failureDetail: errorMsg,
+          },
+        )
+        .catch(() => undefined);
+      return false;
+    }
+  }
+
   private log(message: string): void {
     if (this.onStatusChange) {
       try {
         this.onStatusChange(message);
       } catch (err: unknown) {
-        console.error(
-          "[PrintGo Agent] Status callback failed:",
-          err instanceof Error ? err.message : String(err),
-        );
+        if (this.logger) {
+          this.logger.error(
+            `Status callback failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        } else {
+          console.error(
+            "[PGO] Status callback failed:",
+            err instanceof Error ? err.message : String(err),
+          );
+        }
       }
     } else {
-      console.log(`[PrintGo Agent] ${message}`);
+      if (this.logger) {
+        this.logger.handleDaemonStatus(message);
+      } else {
+        getAgentLogger().handleDaemonStatus(message);
+      }
     }
   }
 

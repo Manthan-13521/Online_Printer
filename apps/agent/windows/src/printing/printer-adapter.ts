@@ -114,4 +114,7 @@ export interface PrinterAdapter {
   submitPdfJob(submission: PrintSubmission): Promise<SubmittedPrintJob>;
   getJobStatus(printerId: string, spoolJobId: string): Promise<PrintJobStatus>;
   cancelJob(printerId: string, spoolJobId: string): Promise<void>;
+  clearPrintGoSpoolJobs?(
+    printerId: string,
+  ): Promise<{ cancelledJobIds: string[] }>;
 }

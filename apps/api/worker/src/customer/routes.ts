@@ -56,6 +56,10 @@ export interface CustomerActions {
     fileId: string,
   ): ReturnType<CustomerService["removeFile"]>;
   getDraft(token: string): ReturnType<CustomerService["getDraft"]>;
+  getDraftStatus(token: string): ReturnType<CustomerService["getDraftStatus"]>;
+  selectCashPayment(
+    token: string,
+  ): ReturnType<CustomerService["selectCashPayment"]>;
   quote(
     token: string,
     input: CustomerPrintSettingsRequest,
@@ -119,6 +123,8 @@ function actionsFromEnv(env: WorkerEnv): CustomerActions {
     addFile: (token, input) => service.addFile(token, input),
     removeFile: (token, fileId) => service.removeFile(token, fileId),
     getDraft: (token) => service.getDraft(token),
+    getDraftStatus: (token) => service.getDraftStatus(token),
+    selectCashPayment: (token) => service.selectCashPayment(token),
     quote: (token, input) => service.quote(token, input),
     quoteOrder: (token, input) => service.quoteOrder(token, input),
     createPayment: (token, input) =>
@@ -458,6 +464,7 @@ function mapCustomerError(caught: unknown, env: WorkerEnv): Response {
   if (!(caught instanceof CustomerError)) throw caught;
   const statuses: Record<string, number> = {
     ONLINE_PRINTING_DISABLED: 503,
+    CASH_ORDERS_DISABLED: 403,
     DRAFT_INVALID: 401,
     DRAFT_EXPIRED: 410,
     UPLOAD_NOT_FOUND: 409,
@@ -480,7 +487,9 @@ function mapCustomerError(caught: unknown, env: WorkerEnv): Response {
       ? "No active order found for that pickup code."
       : caught.code === "ONLINE_PRINTING_DISABLED"
         ? "Online printing is currently unavailable."
-        : "The customer draft request could not be completed.",
+        : caught.code === "CASH_ORDERS_DISABLED"
+          ? "Cash orders are currently disabled."
+          : "The customer draft request could not be completed.",
     corsHeaders(env),
   );
 }
@@ -605,6 +614,15 @@ export async function handleCustomerRequest(
     }
     if (request.method === "GET" && pathname === "/api/customer/draft") {
       return ok(await actions.getDraft(token), 200, corsHeaders(env));
+    }
+    if (request.method === "GET" && pathname === "/api/customer/draft/status") {
+      return ok(await actions.getDraftStatus(token), 200, corsHeaders(env));
+    }
+    if (
+      request.method === "POST" &&
+      pathname === "/api/customer/payments/cash-select"
+    ) {
+      return ok(await actions.selectCashPayment(token), 200, corsHeaders(env));
     }
     if (request.method === "POST" && pathname === "/api/customer/draft/files") {
       const input = validateFile(await readJson(request));

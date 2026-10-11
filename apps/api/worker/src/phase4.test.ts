@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 
@@ -13,31 +13,11 @@ import { D1PrintingRepository } from "./printing/repository.js";
 
 function createTestDatabase(): DatabaseSync {
   const db = new DatabaseSync(":memory:");
-  const migrationFiles = [
-    "0001_initial_schema.sql",
-    "0002_customer_draft_upload.sql",
-    "0003_payment_idempotency.sql",
-    "0004_customer_tracking.sql",
-    "0005_printer_test_commands.sql",
-    "0006_paid_print_execution.sql",
-    "0007_performance_optimization_indexes.sql",
-    "0008_production_printer_reliability.sql",
-    "0009_retention_and_pii_purge.sql",
-    "0010_efficiency_and_branding.sql",
-    "0011_retention_retry_schedule.sql",
-    "0012_multi_file_cleanup_and_app_branding.sql",
-    "0013_d1_usage_optimization.sql",
-    "0014_addon_services.sql",
-    "0015_phase3_priority_tracking_discounts.sql",
-    "0016_phase4_failure_recovery_and_pause.sql",
-    "0017_phase5_fallback_and_reprint_protection.sql",
-    "0018_phase6_history_cleanup.sql",
-    "0023_identification_sheet_conditions.sql",
-    "0024_printer_priority.sql",
-    "0025_verified_printer_capabilities.sql",
-    "0026_phase4_fallback_recovery.sql",
-    "0027_parallel_physical_printer_locks.sql",
-  ];
+  const migrationFiles = readdirSync(
+    new URL("../../../../database/migrations", import.meta.url),
+  )
+    .filter((f) => f.endsWith(".sql"))
+    .sort();
   for (const name of migrationFiles) {
     db.exec(
       readFileSync(

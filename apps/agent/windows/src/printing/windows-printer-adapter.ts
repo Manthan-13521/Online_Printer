@@ -935,6 +935,46 @@ if ($job) {
       // Best-effort cancellation
     }
   }
+
+  async clearPrintGoSpoolJobs(
+    printerId: string,
+  ): Promise<{ cancelledJobIds: string[] }> {
+    this.ensureWindows();
+    const escapedPrinterName = printerId.replace(/'/g, "''");
+
+    const psScript = `
+$printer = '${escapedPrinterName}'
+$jobs = @(Get-CimInstance Win32_PrintJob -ErrorAction SilentlyContinue | Where-Object {
+  $_.Name.StartsWith("$printer,") -and ($_.Document -and ($_.Document.StartsWith("printgo-") -or $_.Document.Contains("printgo-")))
+})
+$cancelled = @()
+foreach ($j in $jobs) {
+  $id = [string]$j.JobId
+  try {
+    $j | Remove-CimInstance -ErrorAction Stop
+    $cancelled += $id
+  } catch {
+    # Ignore individual job removal error
+  }
+}
+@{ cancelledJobIds = $cancelled } | ConvertTo-Json -Compress
+`.trim();
+
+    try {
+      const output = await this.executor(psScript);
+      const parsed = JSON.parse(output.trim()) as {
+        cancelledJobIds?: string[] | string;
+      };
+      const cancelled = Array.isArray(parsed.cancelledJobIds)
+        ? parsed.cancelledJobIds.map(String)
+        : parsed.cancelledJobIds
+          ? [String(parsed.cancelledJobIds)]
+          : [];
+      return { cancelledJobIds: cancelled };
+    } catch {
+      return { cancelledJobIds: [] };
+    }
+  }
 }
 
 /**
@@ -984,6 +1024,7 @@ export class DevelopmentPrinterAdapter implements PrinterAdapter {
       printerId: string;
       submittedAt: number;
       mockStatus?: PrintJobStatus;
+      documentTitle?: string | undefined;
     }
   >();
 
@@ -1021,10 +1062,11 @@ export class DevelopmentPrinterAdapter implements PrinterAdapter {
   async submitPdfJob(submission: PrintSubmission): Promise<SubmittedPrintJob> {
     const caps = await this.getCapabilities(submission.printerId);
     validateAndNormalizePrintSettings(submission, caps);
-    const spoolJobId = `dev-spool-${Date.now()}`;
+    const spoolJobId = `dev-spool-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     this.simulatedJobs.set(spoolJobId, {
       printerId: submission.printerId,
       submittedAt: Date.now(),
+      documentTitle: submission.documentTitle,
     });
     return { spoolJobId, engineUsed: "simulated" };
   }
@@ -1060,6 +1102,22 @@ export class DevelopmentPrinterAdapter implements PrinterAdapter {
     void printerId;
     this.simulatedJobs.delete(spoolJobId);
     return Promise.resolve();
+  }
+
+  clearPrintGoSpoolJobs(
+    printerId: string,
+  ): Promise<{ cancelledJobIds: string[] }> {
+    void printerId;
+    const cancelledJobIds: string[] = [];
+    for (const [spoolId, job] of this.simulatedJobs.entries()) {
+      if (!job.documentTitle || job.documentTitle.startsWith("printgo-")) {
+        cancelledJobIds.push(spoolId);
+      }
+    }
+    for (const id of cancelledJobIds) {
+      this.simulatedJobs.delete(id);
+    }
+    return Promise.resolve({ cancelledJobIds });
   }
 }
 

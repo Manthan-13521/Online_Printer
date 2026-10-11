@@ -1,10 +1,12 @@
 import type {
   AdminChangePasswordRequest,
   AdminChangePasswordResponse,
+  AdminClearSpoolerResponse,
   AdminCreatePairCodeResponse,
   AdminLoginRequest,
   AdminLoginResponse,
   AdminLiveOrdersResponse,
+  AdminQueueRecoverResponse,
   AdminOrderHistoryResponse,
   AdminLogoutResponse,
   AdminMeResponse,
@@ -41,6 +43,8 @@ import type {
   AdminDiscountRulesResponse,
   AdminDiscountRuleResponse,
   AdminResetPickupCodeResponse,
+  AdminCashOrdersListResponse,
+  AdminConfirmCashPaymentResponse,
 } from "@printgo/api-contract";
 
 const API_BASE_URL =
@@ -396,6 +400,18 @@ export const adminApi = {
       method: "DELETE",
     });
   },
+  recoverQueue(): Promise<AdminQueueRecoverResponse> {
+    return request("/api/admin/queue/recover", {
+      method: "POST",
+      body: "{}",
+    });
+  },
+  clearSpooler(printerId?: string): Promise<AdminClearSpoolerResponse> {
+    return request("/api/admin/queue/clear-spooler", {
+      method: "POST",
+      body: JSON.stringify(printerId ? { printerId } : {}),
+    });
+  },
   // ── Add-on Services ──────────────────────────────────────────────
   listAddonServices(): Promise<AdminAddonServicesResponse> {
     return request("/api/admin/addon-services");
@@ -503,6 +519,20 @@ export const adminApi = {
       method: "POST",
       body: "{}",
     });
+  },
+  // ── Cash Orders ───────────────────────────────────────────────────
+  getCashOrders(): Promise<AdminCashOrdersListResponse> {
+    return request("/api/admin/orders/cash");
+  },
+  confirmCashPayment(
+    orderId: string,
+  ): Promise<AdminConfirmCashPaymentResponse> {
+    return request(
+      `/api/admin/orders/${encodeURIComponent(orderId)}/confirm-cash`,
+      {
+        method: "POST",
+      },
+    );
   },
   // ── Fallback Configuration ──────────────────────────────────────
   configureFallback(

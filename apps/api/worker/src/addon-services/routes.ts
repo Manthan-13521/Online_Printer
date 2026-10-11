@@ -19,6 +19,7 @@ import { D1AdminAuthRepository } from "../auth/repository";
 import { AdminAuthService, AuthError } from "../auth/service";
 import type { WorkerEnv } from "../env";
 import { error, ok } from "../http";
+import { D1PaymentRepository } from "../payments/repository";
 import { AddonServiceError, D1AddonServiceRepository } from "./repository";
 
 const MAX_BODY_BYTES = 16 * 1024;
@@ -228,8 +229,12 @@ export async function handleAdminManualOrdersRequest(
   try {
     await sessions.requireSession(rawToken);
 
-    // GET /api/admin/orders/manual
-    if (
+    // GET /api/admin/orders/cash
+    if (request.method === "GET" && url.pathname === "/api/admin/orders/cash") {
+      const paymentRepo = new D1PaymentRepository(db);
+      const orders = await paymentRepo.listPendingCashOrders(Date.now());
+      response = ok({ orders });
+    } else if (
       request.method === "GET" &&
       url.pathname === "/api/admin/orders/manual"
     ) {
@@ -467,6 +472,54 @@ export async function handleAdminManualOrdersRequest(
               nowMs,
             );
             response = ok({ orderId, dueAtPickupPaise: rec.dueAtPickupPaise });
+          }
+        } else if (action === "confirm-cash") {
+          const session = await sessions.requireSession(rawToken);
+          const paymentRepo = new D1PaymentRepository(db);
+          try {
+            const confirmed = await paymentRepo.confirmCashPayment({
+              orderId,
+              adminId: session.admin.id,
+              nowMs,
+            });
+            void import("../agent/wake").then((m) => m.wakeAgent(env));
+            response = ok(confirmed);
+          } catch (caught) {
+            if (
+              caught instanceof Error &&
+              caught.message === "CASH_ORDER_EXPIRED"
+            ) {
+              response = error(
+                410,
+                "CASH_ORDER_EXPIRED",
+                "Cash order has expired and can no longer be confirmed.",
+              );
+            } else if (
+              caught instanceof Error &&
+              caught.message === "ALREADY_PAID_ONLINE"
+            ) {
+              response = error(
+                409,
+                "ALREADY_PAID_ONLINE",
+                "Order has already been paid online.",
+              );
+            } else if (
+              caught instanceof Error &&
+              caught.message === "ORDER_NOT_FOUND"
+            ) {
+              response = error(404, "ORDER_NOT_FOUND", "Order not found.");
+            } else if (
+              caught instanceof Error &&
+              caught.message === "ORDER_NOT_ELIGIBLE"
+            ) {
+              response = error(
+                409,
+                "ORDER_NOT_ELIGIBLE",
+                "Order is not eligible for cash payment confirmation.",
+              );
+            } else {
+              throw caught;
+            }
           }
         } else {
           response = error(404, "NOT_FOUND", "Not found.");

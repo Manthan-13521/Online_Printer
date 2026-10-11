@@ -17,6 +17,7 @@ import {
 import { monitorSpoolJob } from "./printing/spool-monitor.js";
 import type { AgentCredentials } from "./storage/credential-store.js";
 import { ExecutionJournalStore } from "./storage/execution-journal.js";
+import type { AgentLogger } from "./logging/agent-logger.js";
 
 export class PaidPrintExecutor {
   constructor(
@@ -25,6 +26,7 @@ export class PaidPrintExecutor {
     private readonly journal: ExecutionJournalStore = new ExecutionJournalStore(),
     private readonly log: (message: string) => void = () => undefined,
     private readonly onStepFinished: () => void = () => undefined,
+    private readonly logger?: AgentLogger | undefined,
   ) {}
 
   async handle(
@@ -38,6 +40,8 @@ export class PaidPrintExecutor {
         `PRINT_TIMING step=${job.currentStep.stepId} event=${event} atMs=${atMs}`,
       );
     timing("preparation_start");
+    this.logger?.printing();
+    this.log("PRINT_EVENT printing");
     const saved = await this.journal.load(job.orderId);
     const matching =
       saved?.orderId === job.orderId &&
@@ -436,6 +440,8 @@ export class PaidPrintExecutor {
       this.log(
         `PRINT_TIMING step=${job.currentStep.stepId} event=step_acknowledged atMs=${Date.now()}`,
       );
+      this.logger?.printCompleted();
+      this.log("PRINT_EVENT completed");
       this.onStepFinished();
     }
   }

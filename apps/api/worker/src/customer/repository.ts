@@ -49,6 +49,11 @@ export interface CustomerDraftSummary {
   instructions: string | null;
   status: string;
   expiresAtMs: number;
+  publicJobCode?: string | null;
+  pickupCode?: string | null;
+  paymentMethod?: "ONLINE" | "CASH";
+  cashExpiresAtMs?: number | null;
+  cashGraceUntilMs?: number | null;
 }
 
 export interface CustomerRepository {
@@ -59,6 +64,18 @@ export interface CustomerRepository {
     colorMode: "BW" | "COLOR";
     sides: "SINGLE" | "DOUBLE";
   } | null>;
+  selectCashPayment(input: {
+    tokenHash: string;
+    nowMs: number;
+    cashPaymentWindowMs: number;
+    cashMaxPendingMs: number;
+  }): Promise<{
+    orderId: string;
+    publicJobCode: string | null;
+    payableAmountPaise: number;
+    cashExpiresAtMs: number;
+    cashGraceUntilMs: number;
+  }>;
   createDraft(input: {
     orderId: string;
     uploadId: string;
@@ -251,7 +268,7 @@ export class D1CustomerRepository implements CustomerRepository {
           `SELECT logo_key, app_name, shop_name, contact_phone, address, customer_notice,
                 online_printing_enabled, max_pdf_size_bytes, max_order_upload_bytes,
                 priority_printing_enabled, priority_fee_paise,
-                id_requirement_mode, id_threshold_paise
+                id_requirement_mode, id_threshold_paise, cash_orders_enabled
          FROM installation WHERE id = 1`,
         ),
         this.db.prepare(
@@ -285,6 +302,7 @@ export class D1CustomerRepository implements CustomerRepository {
           priority_fee_paise?: number;
           id_requirement_mode?: "OFF" | "ALWAYS" | "ABOVE_THRESHOLD";
           id_threshold_paise?: number;
+          cash_orders_enabled?: number;
         }
       | undefined;
     if (!installation) return null;
@@ -299,6 +317,7 @@ export class D1CustomerRepository implements CustomerRepository {
       address: installation.address,
       customerNotice: installation.customer_notice,
       onlinePrintingEnabled: installation.online_printing_enabled === 1,
+      cashOrdersEnabled: (installation.cash_orders_enabled ?? 0) === 1,
       maxPdfSizeBytes: installation.max_pdf_size_bytes,
       maxOrderUploadBytes: installation.max_order_upload_bytes,
       maxOrderFiles: 10,
@@ -675,7 +694,8 @@ export class D1CustomerRepository implements CustomerRepository {
     const row = await this.db
       .prepare(
         `SELECT id, customer_name, customer_phone, instructions, status,
-                draft_expires_at_ms
+                draft_expires_at_ms, public_job_code, pickup_code,
+                payment_method, cash_expires_at_ms, cash_grace_until_ms
          FROM orders WHERE draft_token_hash = ? AND cleanup_state = 'ACTIVE'`,
       )
       .bind(tokenHash)
@@ -686,6 +706,11 @@ export class D1CustomerRepository implements CustomerRepository {
         instructions: string | null;
         status: string;
         draft_expires_at_ms: number;
+        public_job_code: string | null;
+        pickup_code: string | null;
+        payment_method: "ONLINE" | "CASH" | null;
+        cash_expires_at_ms: number | null;
+        cash_grace_until_ms: number | null;
       }>();
     return row
       ? {
@@ -695,8 +720,107 @@ export class D1CustomerRepository implements CustomerRepository {
           instructions: row.instructions,
           status: row.status,
           expiresAtMs: row.draft_expires_at_ms,
+          publicJobCode: row.public_job_code,
+          pickupCode: row.pickup_code,
+          paymentMethod: row.payment_method ?? "ONLINE",
+          cashExpiresAtMs: row.cash_expires_at_ms,
+          cashGraceUntilMs: row.cash_grace_until_ms,
         }
       : null;
+  }
+
+  async selectCashPayment(input: {
+    tokenHash: string;
+    nowMs: number;
+    cashPaymentWindowMs: number;
+    cashMaxPendingMs: number;
+  }): Promise<{
+    orderId: string;
+    publicJobCode: string | null;
+    payableAmountPaise: number;
+    cashExpiresAtMs: number;
+    cashGraceUntilMs: number;
+  }> {
+    const draft = await this.db
+      .prepare(
+        `SELECT id, status, total_amount_paise, public_job_code
+         FROM orders
+         WHERE draft_token_hash = ? AND cleanup_state = 'ACTIVE'`,
+      )
+      .bind(input.tokenHash)
+      .first<{
+        id: string;
+        status: string;
+        total_amount_paise: number;
+        public_job_code: string | null;
+      }>();
+
+    if (!draft) {
+      throw new Error("DRAFT_NOT_FOUND");
+    }
+    if (!["UPLOADED", "PAYMENT_PENDING"].includes(draft.status)) {
+      throw new Error("ORDER_NOT_ELIGIBLE");
+    }
+    if (draft.total_amount_paise <= 0) {
+      throw new Error("QUOTE_INVALID");
+    }
+
+    const cashExpiresAtMs = input.nowMs + input.cashPaymentWindowMs;
+    const cashGraceUntilMs = input.nowMs + input.cashMaxPendingMs;
+
+    await this.db.batch([
+      this.db
+        .prepare(
+          `UPDATE orders
+           SET payment_method = 'CASH',
+               cash_selected_at_ms = ?,
+               cash_expires_at_ms = ?,
+               cash_grace_until_ms = ?,
+               draft_expires_at_ms = ?,
+               status = 'PAYMENT_PENDING',
+               updated_at_ms = ?
+           WHERE id = ? AND cleanup_state = 'ACTIVE' AND status IN ('UPLOADED', 'PAYMENT_PENDING')`,
+        )
+        .bind(
+          input.nowMs,
+          cashExpiresAtMs,
+          cashGraceUntilMs,
+          cashGraceUntilMs,
+          input.nowMs,
+          draft.id,
+        ),
+      this.db
+        .prepare(
+          `UPDATE uploads
+           SET delete_after_ms = ?,
+               updated_at_ms = ?
+           WHERE order_id = ?`,
+        )
+        .bind(cashGraceUntilMs, input.nowMs, draft.id),
+      this.db
+        .prepare(
+          `INSERT INTO order_events
+           (id, order_id, event_type, from_status, to_status, actor_type,
+            details_json, created_at_ms, idempotency_key)
+           VALUES (?, ?, 'CASH_PAYMENT_SELECTED', ?, 'PAYMENT_PENDING', 'CUSTOMER', ?, ?, ?)`,
+        )
+        .bind(
+          crypto.randomUUID(),
+          draft.id,
+          draft.status,
+          JSON.stringify({ cashExpiresAtMs, cashGraceUntilMs }),
+          input.nowMs,
+          `${draft.id}:cash_selected:${input.nowMs}`,
+        ),
+    ]);
+
+    return {
+      orderId: draft.id,
+      publicJobCode: draft.public_job_code,
+      payableAmountPaise: draft.total_amount_paise,
+      cashExpiresAtMs,
+      cashGraceUntilMs,
+    };
   }
 
   async listFiles(tokenHash: string): Promise<CustomerFileRecord[]> {

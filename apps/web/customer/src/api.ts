@@ -18,6 +18,7 @@ import type {
   UploadAuthorization,
   AddCustomerFileData,
   AddCustomerFileRequest,
+  SelectCustomerCashPaymentData,
   VerifyCustomerPaymentRequest,
 } from "@printgo/api-contract";
 
@@ -130,6 +131,21 @@ export const customerApi = {
     jsonRequest<PublicOrderTrackingData>(
       `/api/customer/track/${encodeURIComponent(pickupCode)}`,
     ),
+  selectCashPayment: (token: string) =>
+    jsonRequest<SelectCustomerCashPaymentData>(
+      "/api/customer/payments/cash-select",
+      authorized(token, { method: "POST" }),
+    ),
+  getDraftStatus: (token: string) =>
+    jsonRequest<{
+      orderId: string;
+      status: string;
+      paymentMethod: "ONLINE" | "CASH";
+      publicJobCode: string | null;
+      pickupCode: string | null;
+      cashExpiresAtMs: number | null;
+      cashGraceUntilMs: number | null;
+    }>("/api/customer/draft/status", authorized(token)),
 };
 
 export function uploadDirectly(

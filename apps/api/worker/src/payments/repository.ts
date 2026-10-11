@@ -1,9 +1,14 @@
+import type {
+  AdminCashOrder,
+  AdminConfirmCashPaymentData,
+} from "@printgo/api-contract";
 import {
   indexToPickupCode,
   TOTAL_PICKUP_CODES,
   UNRESOLVED_PAID_FAILURE_RETENTION_MS,
   WEBHOOK_PROCESSING_STALE_TIMEOUT_MS,
 } from "@printgo/domain";
+import { generateJobCode } from "./job-code";
 
 export interface PayableDraftRecord {
   orderId: string;
@@ -58,7 +63,14 @@ export interface PaymentRecord {
   amountPaise: number;
   orderAmountPaise: number;
   currency: "INR";
-  status: "CREATED" | "PENDING" | "PAID" | "FAILED" | "CANCELLED" | "REFUNDED";
+  status:
+    | "CREATED"
+    | "PENDING"
+    | "PAID"
+    | "FAILED"
+    | "CANCELLED"
+    | "REFUNDED"
+    | "DUPLICATE_CAPTURED";
   publicJobCode: string | null;
   orderStatus: string;
   pickupCode?: string | null;
@@ -212,6 +224,12 @@ export interface PaymentRepository {
    * Safe to call even when no addons are present (no-op in that case).
    */
   routeOrderAfterPayment(orderId: string, nowMs: number): Promise<void>;
+  listPendingCashOrders(nowMs: number): Promise<AdminCashOrder[]>;
+  confirmCashPayment(input: {
+    orderId: string;
+    adminId: string;
+    nowMs: number;
+  }): Promise<AdminConfirmCashPaymentData>;
 }
 
 export class D1PaymentRepository implements PaymentRepository {
@@ -594,8 +612,52 @@ export class D1PaymentRepository implements PaymentRepository {
         input.jobCode,
       )
       .run();
-    if (orderUpdate.meta.changes !== 1)
+    if (orderUpdate.meta.changes !== 1) {
+      const existingPaid = await this.db
+        .prepare(
+          `SELECT id, status, provider FROM payments WHERE order_id = ? AND status = 'PAID' LIMIT 1`,
+        )
+        .bind(before.orderId)
+        .first<{ id: string; status: string; provider: string }>();
+      if (existingPaid) {
+        await this.db.batch([
+          this.db
+            .prepare(
+              `UPDATE payments SET provider_payment_id = ?, status = 'DUPLICATE_CAPTURED',
+                 verified_at_ms = ?, updated_at_ms = ?
+               WHERE id = ?`,
+            )
+            .bind(
+              input.providerPaymentId,
+              input.nowMs,
+              input.nowMs,
+              input.paymentId,
+            ),
+          this.db
+            .prepare(
+              `INSERT OR IGNORE INTO order_events
+                (id, order_id, event_type, from_status, to_status, actor_type,
+                 details_json, created_at_ms, idempotency_key)
+               VALUES (?, ?, 'PAYMENT_DUPLICATE_CAPTURED', 'PAID', 'PAID', ?, ?, ?, ?)`,
+            )
+            .bind(
+              crypto.randomUUID(),
+              before.orderId,
+              input.actorType,
+              JSON.stringify({
+                paymentId: input.paymentId,
+                providerPaymentId: input.providerPaymentId,
+                reason: `ORDER_ALREADY_PAID_VIA_${existingPaid.provider}`,
+              }),
+              input.nowMs,
+              `payment:${input.paymentId}:duplicate_captured`,
+            ),
+        ]);
+        const duplicateRecord = await this.findPayment("p.id", input.paymentId);
+        if (duplicateRecord) return duplicateRecord;
+      }
       throw new Error("Payment order is no longer eligible for finalization.");
+    }
     await this.db.batch([
       this.db
         .prepare(
@@ -846,5 +908,237 @@ export class D1PaymentRepository implements PaymentRepository {
       )
       .bind(nowMs, orderId)
       .run();
+  }
+
+  async listPendingCashOrders(nowMs: number): Promise<AdminCashOrder[]> {
+    const result = await this.db
+      .prepare(
+        `SELECT id, public_job_code, customer_name, customer_phone,
+                total_amount_paise, status, cash_expires_at_ms,
+                cash_grace_until_ms, created_at_ms
+         FROM orders
+         WHERE payment_method = 'CASH'
+           AND status = 'PAYMENT_PENDING'
+           AND cleanup_state = 'ACTIVE'
+           AND cash_grace_until_ms > ?
+         ORDER BY cash_expires_at_ms ASC`,
+      )
+      .bind(nowMs)
+      .all<{
+        id: string;
+        public_job_code: string | null;
+        customer_name: string;
+        customer_phone: string;
+        total_amount_paise: number;
+        status: string;
+        cash_expires_at_ms: number;
+        cash_grace_until_ms: number;
+        created_at_ms: number;
+      }>();
+
+    return result.results.map((row) => ({
+      orderId: row.id,
+      publicJobCode: row.public_job_code,
+      customerName: row.customer_name,
+      customerPhone: row.customer_phone,
+      payableAmountPaise: row.total_amount_paise,
+      status: row.status,
+      cashExpiresAtMs: row.cash_expires_at_ms,
+      cashGraceUntilMs: row.cash_grace_until_ms,
+      createdAtMs: row.created_at_ms,
+    }));
+  }
+
+  async confirmCashPayment(input: {
+    orderId: string;
+    adminId: string;
+    nowMs: number;
+  }): Promise<AdminConfirmCashPaymentData> {
+    const order = await this.db
+      .prepare(
+        `SELECT id, status, payment_method, total_amount_paise,
+                cash_grace_until_ms, public_job_code, pickup_code
+         FROM orders
+         WHERE id = ? AND cleanup_state = 'ACTIVE'`,
+      )
+      .bind(input.orderId)
+      .first<{
+        id: string;
+        status: string;
+        payment_method: string | null;
+        total_amount_paise: number;
+        cash_grace_until_ms: number | null;
+        public_job_code: string | null;
+        pickup_code: string | null;
+      }>();
+
+    if (!order) {
+      throw new Error("ORDER_NOT_FOUND");
+    }
+    const paidOnlinePayment = await this.db
+      .prepare(
+        `SELECT id FROM payments WHERE order_id = ? AND status = 'PAID' AND provider <> 'CASH' LIMIT 1`,
+      )
+      .bind(input.orderId)
+      .first<{ id: string }>();
+    if (paidOnlinePayment) {
+      throw new Error("ALREADY_PAID_ONLINE");
+    }
+
+    if (order.payment_method !== "CASH" || order.status !== "PAYMENT_PENDING") {
+      throw new Error("ORDER_NOT_ELIGIBLE");
+    }
+    if (
+      order.cash_grace_until_ms !== null &&
+      order.cash_grace_until_ms <= input.nowMs
+    ) {
+      throw new Error("CASH_ORDER_EXPIRED");
+    }
+
+    const jobCode = order.public_job_code || generateJobCode();
+    const pickupCode =
+      order.pickup_code || (await this.allocatePickupCode(input.nowMs));
+
+    const orderUpdate = await this.db
+      .prepare(
+        `UPDATE orders SET
+           public_job_code = COALESCE(public_job_code, ?),
+           pickup_code = COALESCE(pickup_code, ?),
+           status = 'QUEUED',
+           paid_at_ms = COALESCE(paid_at_ms, ?),
+           queued_at_ms = COALESCE(queued_at_ms, ?),
+           cash_confirmed_at_ms = ?,
+           cash_confirmed_by_admin_id = ?,
+           updated_at_ms = ?
+         WHERE id = ?
+           AND payment_method = 'CASH'
+           AND status = 'PAYMENT_PENDING'
+           AND cleanup_state = 'ACTIVE'
+           AND (cash_grace_until_ms IS NULL OR cash_grace_until_ms > ?)
+           AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.order_id = orders.id AND p.status = 'PAID')`,
+      )
+      .bind(
+        jobCode,
+        pickupCode,
+        input.nowMs,
+        input.nowMs,
+        input.nowMs,
+        input.adminId,
+        input.nowMs,
+        input.orderId,
+        input.nowMs,
+      )
+      .run();
+
+    if (orderUpdate.meta.changes !== 1) {
+      const existingPaidOnline = await this.db
+        .prepare(
+          `SELECT 1 FROM payments WHERE order_id = ? AND status = 'PAID' AND provider <> 'CASH' LIMIT 1`,
+        )
+        .bind(input.orderId)
+        .first();
+      if (existingPaidOnline) {
+        throw new Error("ALREADY_PAID_ONLINE");
+      }
+
+      const current = await this.db
+        .prepare(`SELECT status, cash_grace_until_ms FROM orders WHERE id = ?`)
+        .bind(input.orderId)
+        .first<{ status: string; cash_grace_until_ms: number | null }>();
+      if (
+        current?.cash_grace_until_ms !== null &&
+        (current?.cash_grace_until_ms ?? 0) <= input.nowMs
+      ) {
+        throw new Error("CASH_ORDER_EXPIRED");
+      }
+      throw new Error("ORDER_NOT_ELIGIBLE");
+    }
+
+    const paymentId = crypto.randomUUID();
+    const providerOrderId = `cash_${input.orderId.replaceAll("-", "").slice(0, 20)}`;
+    const providerPaymentId = `cash_${input.adminId}_${input.nowMs}`;
+
+    await this.db.batch([
+      this.db
+        .prepare(
+          `INSERT INTO payments (
+             id, order_id, provider, provider_order_id, provider_payment_id,
+             amount_paise, currency, status, verified_at_ms, created_at_ms, updated_at_ms
+           ) VALUES (?, ?, 'CASH', ?, ?, ?, 'INR', 'PAID', ?, ?, ?)`,
+        )
+        .bind(
+          paymentId,
+          input.orderId,
+          providerOrderId,
+          providerPaymentId,
+          order.total_amount_paise,
+          input.nowMs,
+          input.nowMs,
+          input.nowMs,
+        ),
+      this.db
+        .prepare(
+          `UPDATE uploads SET retention_reason = 'UNRESOLVED_PAID_FAILURE', delete_after_ms = ?,
+             updated_at_ms = ? WHERE order_id = ?`,
+        )
+        .bind(
+          input.nowMs + UNRESOLVED_PAID_FAILURE_RETENTION_MS,
+          input.nowMs,
+          input.orderId,
+        ),
+      this.db
+        .prepare(
+          `INSERT OR IGNORE INTO order_events
+            (id, order_id, event_type, from_status, to_status, actor_type,
+             details_json, created_at_ms, idempotency_key)
+           VALUES (?, ?, 'CASH_PAYMENT_CONFIRMED', 'PAYMENT_PENDING', 'PAID', 'ADMIN', ?, ?, ?)`,
+        )
+        .bind(
+          crypto.randomUUID(),
+          input.orderId,
+          JSON.stringify({
+            adminId: input.adminId,
+            paymentId,
+            amountPaise: order.total_amount_paise,
+          }),
+          input.nowMs,
+          `order:${input.orderId}:cash_confirmed`,
+        ),
+      this.db
+        .prepare(
+          `INSERT OR IGNORE INTO order_events
+            (id, order_id, event_type, from_status, to_status, actor_type,
+             details_json, created_at_ms, idempotency_key)
+           VALUES (?, ?, 'QUEUED', 'PAID', 'QUEUED', 'SYSTEM', ?, ?, ?)`,
+        )
+        .bind(
+          crypto.randomUUID(),
+          input.orderId,
+          JSON.stringify({ paymentId }),
+          input.nowMs,
+          `order:${input.orderId}:cash_queued`,
+        ),
+      this.db
+        .prepare(
+          `INSERT INTO audit_logs
+            (id, actor_type, actor_id, action, entity_type, entity_id, created_at_ms)
+           VALUES (?, 'ADMIN', ?, 'CONFIRM_CASH_PAYMENT', 'ORDER', ?, ?)`,
+        )
+        .bind(crypto.randomUUID(), input.adminId, input.orderId, input.nowMs),
+    ]);
+
+    await this.routeOrderAfterPayment(input.orderId, input.nowMs);
+
+    const finalOrder = await this.db
+      .prepare(`SELECT status, public_job_code FROM orders WHERE id = ?`)
+      .bind(input.orderId)
+      .first<{ status: string; public_job_code: string }>();
+
+    return {
+      orderId: input.orderId,
+      publicJobCode: finalOrder?.public_job_code ?? jobCode,
+      status: finalOrder?.status ?? "QUEUED",
+      confirmedAtMs: input.nowMs,
+    };
   }
 }

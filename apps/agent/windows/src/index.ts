@@ -27,6 +27,9 @@ import {
   getDefaultStatusFilePath,
 } from "./storage/status-file.js";
 import { createSupportPackage } from "./support/support-package.js";
+import { getAgentLogger } from "./logging/agent-logger.js";
+
+export { AgentLogger, getAgentLogger } from "./logging/agent-logger.js";
 
 export type {
   PrintJobStatus,
@@ -321,6 +324,11 @@ SumatraPDF:
     configDisplayName ||
     `${os.hostname()} (PrintGo Agent)`;
 
+  if (args.includes("--debug") || args.includes("-d")) {
+    process.env.PRINTGO_LOG_LEVEL = "debug";
+  }
+  const logger = getAgentLogger();
+
   const shouldClear =
     args.includes("--clear") || args.includes("--reset-pairing");
 
@@ -330,11 +338,9 @@ SumatraPDF:
 
   if (shouldClear) {
     await credentialStore.clear();
-    console.log(
-      "[PrintGo Agent] Local pairing credentials have been reset successfully.",
-    );
-    console.log(
-      "[PrintGo Agent] Run PrintGo-Agent.exe again and enter a new pairing code from the Admin panel.",
+    logger.info("Local pairing credentials have been reset successfully.");
+    logger.info(
+      "Run PrintGo-Agent.exe again and enter a new pairing code from the Admin panel.",
     );
     return;
   }
@@ -342,8 +348,8 @@ SumatraPDF:
   // Preflight check for SumatraPDF on Windows
   if (process.platform === "win32") {
     if (!checkSumatraPdfInstalled()) {
-      console.warn(
-        "\n[PrintGo Agent] ⚠️  WARNING: SumatraPDF.exe was not detected in standard locations or PATH.\n" +
+      logger.warn(
+        "SumatraPDF.exe was not detected in standard locations or PATH.\n" +
           "  Deterministic PDF printing requires SumatraPDF.exe.\n" +
           "  Please download SumatraPDF from: https://www.sumatrapdfreader.org/download-free-pdf-viewer\n" +
           "  and place SumatraPDF.exe in the same folder as PrintGo-Agent.exe.\n",
@@ -361,7 +367,7 @@ SumatraPDF:
         output: process.stdout,
       });
       const input = await rl.question(
-        "[PrintGo Agent] No existing pairing credentials found.\nEnter pairing code from PrintGo Admin (format: XXXX-XXXX, or press Enter to skip): ",
+        "[PGO] No existing pairing credentials found.\nEnter pairing code from PrintGo Admin (format: XXXX-XXXX, or press Enter to skip): ",
       );
       rl.close();
       if (input.trim()) {
@@ -385,27 +391,27 @@ SumatraPDF:
     agentVersion: "2.1.0",
     credentialStore,
     printerAdapter,
+    logger,
     onStatusChange: (message) => {
-      console.log(`[PrintGo Agent] ${sanitizeLogContent(message)}`);
+      logger.handleDaemonStatus(message);
       void log
         .write(message)
-        .catch(() => console.error("Agent log could not be saved."));
+        .catch(() => logger.error("Agent log could not be saved."));
     },
     onError: (err: Error) => {
       void log
         .write(`[ERROR] ${sanitizeLogContent(err.message)}`)
         .catch(() => undefined);
+      logger.error(err);
       if (err instanceof AgentAuthError && !authErrorCleared) {
         authErrorCleared = true;
-        console.error(
-          "\n[PrintGo Agent] ❌ Current pairing credentials have been revoked by the administrator or are no longer valid.",
+        logger.error(
+          "Current pairing credentials have been revoked by the administrator or are no longer valid.",
         );
-        console.error(
-          "[PrintGo Agent] Clearing stale local credentials automatically...",
-        );
+        logger.info("Clearing stale local credentials automatically...");
         void credentialStore.clear().then(() => {
-          console.error(
-            "[PrintGo Agent] ✅ Credentials cleared. Please restart PrintGo-Agent.exe and enter a new pairing code from the Admin panel.",
+          logger.info(
+            "Credentials cleared. Please restart PrintGo-Agent.exe and enter a new pairing code from the Admin panel.",
           );
           process.exit(1);
         });
@@ -418,12 +424,12 @@ SumatraPDF:
       throw new Error(
         "The shop server is required. Use the Admin connection link.",
       );
-    console.log("[PrintGo Agent] Initiating pairing...");
+    logger.info("Initiating pairing...");
     try {
       await daemon.pair(serverUrl, pairCodeArg, displayName);
     } catch (err: unknown) {
-      console.error(
-        `[PrintGo Agent] Pairing failed: ${err instanceof Error ? err.message : String(err)}`,
+      logger.error(
+        `Pairing failed: ${err instanceof Error ? err.message : String(err)}`,
       );
       process.exit(1);
     }
@@ -436,14 +442,14 @@ SumatraPDF:
 
   const started = await daemon.start();
   if (!started) {
-    console.log(
-      "[PrintGo Agent] No credentials configured. Use --pair <CODE> or enter pairing code to pair this agent with PrintGo.",
+    logger.info(
+      "No credentials configured. Use --pair <CODE> or enter pairing code to pair this agent with PrintGo.",
     );
     return;
   }
 
   const handleShutdown = () => {
-    console.log("\n[PrintGo Agent] Shutting down agent daemon...");
+    logger.info("Shutting down agent daemon...");
     daemon.stop();
     process.exit(0);
   };
@@ -467,7 +473,9 @@ if (
   process.argv[1].toLowerCase().endsWith(".exe")
 ) {
   runCli().catch((err: unknown) => {
-    console.error("[PrintGo Agent] Fatal error:", err);
+    getAgentLogger().error(
+      `Fatal error: ${err instanceof Error ? err.message : String(err)}`,
+    );
     process.exit(1);
   });
 }

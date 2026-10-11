@@ -1,9 +1,12 @@
 import type {
+  AdminClearSpoolerResponseData,
   AdminLiveOrder,
+  AdminQueueRecoverResponseData,
   AgentPrintJobStep,
   IdentificationSheetAddonService,
   IdentificationSheetData,
   PrintPlanStepStatus,
+  QueueStallDetails,
 } from "@printgo/api-contract";
 import {
   COMPLETED_RETENTION_MS,
@@ -288,6 +291,16 @@ export interface PrintingRepository {
     retryAfterMs?: number;
   }>;
   listLiveOrders(nowMs?: number): Promise<AdminLiveOrder[]>;
+  getQueueStallDetails(nowMs?: number): Promise<QueueStallDetails>;
+  recoverQueue(input: {
+    adminId: string;
+    nowMs: number;
+  }): Promise<AdminQueueRecoverResponseData>;
+  createClearSpoolerCommand(input: {
+    printerId?: string;
+    adminId: string;
+    nowMs: number;
+  }): Promise<AdminClearSpoolerResponseData>;
   manualComplete(input: {
     orderId: string;
     adminId: string;
@@ -393,7 +406,7 @@ export class D1PrintingRepository implements PrintingRepository {
         .prepare(
           `UPDATE orders SET status = 'QUEUED', claimed_by_agent_id = NULL,
           claim_id = NULL, claim_expires_at_ms = NULL, printer_id = NULL,
-          claimed_at_ms = NULL, updated_at_ms = ?
+          physical_device_id = NULL, claimed_at_ms = NULL, updated_at_ms = ?
         WHERE status = 'CLAIMED' AND claim_expires_at_ms <= ?
           AND NOT EXISTS (
             SELECT 1 FROM print_attempts pa JOIN print_attempt_steps ps
@@ -589,6 +602,18 @@ export class D1PrintingRepository implements PrintingRepository {
                   EXISTS (SELECT 1 FROM json_each(p.capabilities_json, '$.paperSizes')
                     WHERE upper(value) = f.paper_size)
               END
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM (
+                SELECT status
+                FROM agent_control_commands
+                WHERE agent_id = p.agent_id
+                  AND (printer_id IS NULL OR printer_id = p.id OR windows_printer_name = p.windows_printer_name)
+                  AND command_type = 'CLEAR_SPOOLER'
+                ORDER BY created_at_ms DESC
+                LIMIT 1
+              ) latest_cmd
+              WHERE latest_cmd.status <> 'SUCCEEDED'
             )
         )`,
         )
@@ -806,14 +831,7 @@ export class D1PrintingRepository implements PrintingRepository {
           AND (
             (o.printer_id IS NOT NULL AND p.id = o.printer_id)
             OR (o.printer_id IS NULL AND (
-              (i.default_production_printer_id IS NULL AND (
-                p.id = (
-                  SELECT p_first.id FROM printers p_first
-                  WHERE p_first.agent_id = a.id AND p_first.enabled = 1
-                    AND p_first.is_production_eligible = 1 AND p_first.is_virtual = 0
-                  ORDER BY p_first.priority DESC, p_first.id ASC LIMIT 1
-                )
-              ))
+              i.default_production_printer_id IS NULL
               OR p.id = i.default_production_printer_id
               OR (
                 -- Subcase B1: Capability routing — default printer is ONLINE and NOT paused,
@@ -925,6 +943,18 @@ export class D1PrintingRepository implements PrintingRepository {
             WHERE busy.id <> o.id
               AND busy.status IN ('CLAIMED','SPOOLING','PRINTING','ADMIN_ACTION_REQUIRED','COMPLETION_UNKNOWN','NEEDS_ADMIN')
               AND COALESCE(busy.physical_device_id, COALESCE(busy_p.physical_device_id, 'AGENT_LOCK_' || busy_p.agent_id)) = COALESCE(p.physical_device_id, 'AGENT_LOCK_' || p.agent_id)
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM (
+              SELECT status
+              FROM agent_control_commands
+              WHERE agent_id = a.id
+                AND (printer_id IS NULL OR printer_id = p.id OR windows_printer_name = p.windows_printer_name)
+                AND command_type = 'CLEAR_SPOOLER'
+              ORDER BY created_at_ms DESC
+              LIMIT 1
+            ) latest_cmd
+            WHERE latest_cmd.status <> 'SUCCEEDED'
           )
         ORDER BY
           o.is_priority DESC,
@@ -1607,37 +1637,85 @@ export class D1PrintingRepository implements PrintingRepository {
 
     // BRANCH B: No compatible fallback printer available.
     // Release active claim to prevent queue starvation of unrelated orders!
+    // Production retry schedule:
+    // Initial attempt fails: wait 60s -> Retry 1
+    // Retry 1 fails: wait 90s -> Retry 2
+    // Retry 2 fails: wait 90s -> Retry 3
+    // Retry 3 fails: STOP automatic retries -> ADMIN_ACTION_REQUIRED
+    const PREFLIGHT_RETRY_SCHEDULE_MS = [60_000, 90_000, 90_000] as const;
     const fallbackCount = (fileMeta?.fallback_count ?? 0) + 1;
-    const backoffMs = Math.min(
-      300_000,
-      30_000 * Math.pow(2, Math.min(fallbackCount - 1, 3)),
-    );
 
+    if (fallbackCount <= PREFLIGHT_RETRY_SCHEDULE_MS.length) {
+      const backoffMs = PREFLIGHT_RETRY_SCHEDULE_MS[fallbackCount - 1]!;
+
+      const statements: D1PreparedStatement[] = [
+        this.db
+          .prepare(
+            `UPDATE orders
+             SET status = 'RETRY_PENDING', claimed_by_agent_id = NULL, claim_id = NULL,
+                 claim_expires_at_ms = NULL, error_category = ?, raw_error = ?,
+                 blocked_reason = ?, fallback_count = ?, attempt_count = ?, next_retry_at_ms = ?,
+                 updated_at_ms = ?
+             WHERE id = ? AND claim_id = ?`,
+          )
+          .bind(
+            normFailure,
+            input.failureDetail ?? "No compatible printer currently available",
+            input.failureDetail ??
+              "Printer is blocked and no fallback available",
+            fallbackCount,
+            fallbackCount,
+            input.nowMs + backoffMs,
+            input.nowMs,
+            input.orderId,
+            input.claimId,
+          ),
+        this.event(
+          input.orderId,
+          "PRINT_UNSTARVED_RETRY",
+          current.order_status,
+          "RETRY_PENDING",
+          input.agentId,
+          input.nowMs,
+        ),
+      ];
+
+      await this.db.batch(statements);
+
+      return {
+        action: "BLOCKED_RELEASED",
+        orderId: input.orderId,
+        message: `No compatible fallback printer available. Automatic retry ${fallbackCount} of 3 scheduled in ${backoffMs / 1000}s.`,
+        retryAfterMs: backoffMs,
+      };
+    }
+
+    // RETRY EXHAUSTION: Maximum 3 automatic retries failed before submission.
+    // Stop automatic retries and transition order to ADMIN_ACTION_REQUIRED.
+    const exhaustionDetail = `Maximum automatic retries (3) exhausted before spooler submission (${input.failureDetail ?? "Printer is blocked and no fallback available"}).`;
     const statements: D1PreparedStatement[] = [
       this.db
         .prepare(
           `UPDATE orders
-           SET status = 'RETRY_PENDING', claimed_by_agent_id = NULL, claim_id = NULL,
-               claim_expires_at_ms = NULL, error_category = ?, raw_error = ?,
-               blocked_reason = ?, fallback_count = ?, next_retry_at_ms = ?,
+           SET status = 'ADMIN_ACTION_REQUIRED', error_category = ?, raw_error = ?,
+               blocked_reason = ?, fallback_count = ?, attempt_count = 3, next_retry_at_ms = NULL,
                updated_at_ms = ?
            WHERE id = ? AND claim_id = ?`,
         )
         .bind(
           normFailure,
-          input.failureDetail ?? "No compatible printer currently available",
-          input.failureDetail ?? "Printer is blocked and no fallback available",
+          exhaustionDetail,
+          exhaustionDetail,
           fallbackCount,
-          input.nowMs + backoffMs,
           input.nowMs,
           input.orderId,
           input.claimId,
         ),
       this.event(
         input.orderId,
-        "PRINT_UNSTARVED_RETRY",
+        "PRINT_NEEDS_ADMIN",
         current.order_status,
-        "RETRY_PENDING",
+        "ADMIN_ACTION_REQUIRED",
         input.agentId,
         input.nowMs,
       ),
@@ -1646,11 +1724,9 @@ export class D1PrintingRepository implements PrintingRepository {
     await this.db.batch(statements);
 
     return {
-      action: "BLOCKED_RELEASED",
+      action: "ACTION_REQUIRED",
       orderId: input.orderId,
-      message:
-        "No compatible fallback printer available. Order claim released to allow other queued orders to progress.",
-      retryAfterMs: backoffMs,
+      message: `${exhaustionDetail} Admin intervention required.`,
     };
   }
 
@@ -2521,6 +2597,7 @@ export class D1PrintingRepository implements PrintingRepository {
            SET status = 'QUEUED', claimed_by_agent_id = NULL, claim_id = NULL,
                claim_expires_at_ms = NULL, printer_id = NULL, claimed_at_ms = NULL,
                error_category = NULL, raw_error = NULL, attempt_count = 0,
+               fallback_count = 0,
                next_retry_at_ms = NULL, queued_at_ms = ?, updated_at_ms = ?
            WHERE id = ? AND cleanup_state = 'ACTIVE'
              AND status IN ('ADMIN_ACTION_REQUIRED','PRINT_FAILED','PRINT_BLOCKED','NEEDS_ADMIN','COMPLETION_UNKNOWN','RETRY_PENDING','COMPLETED','PRINTED')`,
@@ -2795,6 +2872,556 @@ export class D1PrintingRepository implements PrintingRepository {
       orderId: input.orderId,
       deleted: true,
       message: "Order and customer files permanently deleted.",
+    };
+  }
+
+  async getQueueStallDetails(
+    nowMs: number = Date.now(),
+  ): Promise<QueueStallDetails> {
+    const orders = await this.db
+      .prepare(
+        `SELECT id, public_job_code, status, updated_at_ms, queued_at_ms, printer_id, physical_device_id
+         FROM orders
+         WHERE cleanup_state = 'ACTIVE'
+           AND status IN ('QUEUED','CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED',
+                          'PRINT_FAILED','ADMIN_ACTION_REQUIRED','RETRY_PENDING',
+                          'NEEDS_ADMIN','COMPLETION_UNKNOWN')
+         ORDER BY queued_at_ms ASC`,
+      )
+      .all<{
+        id: string;
+        public_job_code: string | null;
+        status: string;
+        updated_at_ms: number;
+        queued_at_ms: number;
+        printer_id: string | null;
+        physical_device_id: string | null;
+      }>();
+
+    const orderRows = orders.results ?? [];
+    let waitingCount = 0;
+    let activeCount = 0;
+    let needsReviewCount = 0;
+
+    const waitingOrders: typeof orderRows = [];
+    const activeOrders: typeof orderRows = [];
+    const reviewOrders: typeof orderRows = [];
+
+    for (const o of orderRows) {
+      if (o.status === "QUEUED" || o.status === "RETRY_PENDING") {
+        waitingCount++;
+        waitingOrders.push(o);
+      } else if (
+        o.status === "CLAIMED" ||
+        o.status === "SPOOLING" ||
+        o.status === "PRINTING"
+      ) {
+        activeCount++;
+        activeOrders.push(o);
+      } else if (
+        o.status === "ADMIN_ACTION_REQUIRED" ||
+        o.status === "COMPLETION_UNKNOWN" ||
+        o.status === "NEEDS_ADMIN" ||
+        o.status === "PRINT_BLOCKED" ||
+        o.status === "PRINT_FAILED"
+      ) {
+        needsReviewCount++;
+        reviewOrders.push(o);
+      }
+    }
+
+    // Check printer statuses
+    const printerRows = await this.db
+      .prepare(
+        `SELECT id, display_name, windows_printer_name, status, status_reason, enabled, is_paused
+         FROM printers
+         WHERE enabled = 1`,
+      )
+      .all<{
+        id: string;
+        display_name: string;
+        windows_printer_name: string;
+        status: string;
+        status_reason: string | null;
+        enabled: number;
+        is_paused: number | null;
+      }>();
+
+    let printerIssue: string | null = null;
+    const activePrinters = printerRows.results ?? [];
+    const troubledPrinter = activePrinters.find(
+      (p) =>
+        p.status !== "ONLINE" ||
+        p.is_paused === 1 ||
+        (p.status_reason &&
+          /(?:jam|offline|door|paper|error|unreachable)/i.test(
+            p.status_reason,
+          )),
+    );
+    if (troubledPrinter) {
+      const reasonDetail = troubledPrinter.status_reason
+        ? ` (${troubledPrinter.status_reason})`
+        : "";
+      printerIssue = `${troubledPrinter.display_name}: ${troubledPrinter.status}${reasonDetail}`;
+    }
+
+    const STALL_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+
+    // 1. Check if an active print job has made no progress for 5+ minutes
+    let stalledActive: (typeof orderRows)[number] | null = null;
+    for (const active of activeOrders) {
+      if (nowMs - active.updated_at_ms >= STALL_THRESHOLD_MS) {
+        stalledActive = active;
+        break;
+      }
+    }
+
+    if (stalledActive) {
+      const durationMs = nowMs - stalledActive.updated_at_ms;
+      return {
+        isStalled: true,
+        stalledSinceMs: stalledActive.updated_at_ms,
+        stalledDurationMs: durationMs,
+        stalledOrderId: stalledActive.id,
+        stalledOrderCode: stalledActive.public_job_code,
+        reason:
+          "Active print job has made no verifiable progress for over 5 minutes.",
+        printerIssue,
+        waitingCount,
+        activeCount,
+        needsReviewCount,
+      };
+    }
+
+    // 2. If no active job is printing, but orders are waiting and either printer issue exists or review order holding lock
+    if (activeCount === 0 && waitingCount > 0 && waitingOrders.length > 0) {
+      const oldestWaiting = waitingOrders[0]!;
+      const waitingDuration = nowMs - oldestWaiting.queued_at_ms;
+
+      // Condition 2A: Waiting orders stalled behind a printer issue or error for 5+ min
+      if (printerIssue && waitingDuration >= STALL_THRESHOLD_MS) {
+        return {
+          isStalled: true,
+          stalledSinceMs: oldestWaiting.queued_at_ms,
+          stalledDurationMs: waitingDuration,
+          stalledOrderId: oldestWaiting.id,
+          stalledOrderCode: oldestWaiting.public_job_code,
+          reason: `Printer offline or error detected with ${waitingCount} order(s) waiting for over 5 minutes.`,
+          printerIssue,
+          waitingCount,
+          activeCount,
+          needsReviewCount,
+        };
+      }
+
+      // Condition 2B: Waiting orders stalled because physical lock held by review order or agent stall for 5+ min
+      if (waitingDuration >= STALL_THRESHOLD_MS) {
+        const reviewWithLock = reviewOrders.find(
+          (r) => r.physical_device_id !== null,
+        );
+        const reason = reviewWithLock
+          ? `Physical printer lock held by review order ${reviewWithLock.public_job_code ?? reviewWithLock.id}.`
+          : `Queue has made no progress for over 5 minutes with ${waitingCount} order(s) waiting.`;
+        return {
+          isStalled: true,
+          stalledSinceMs: oldestWaiting.queued_at_ms,
+          stalledDurationMs: waitingDuration,
+          stalledOrderId: oldestWaiting.id,
+          stalledOrderCode: oldestWaiting.public_job_code,
+          reason,
+          printerIssue,
+          waitingCount,
+          activeCount,
+          needsReviewCount,
+        };
+      }
+    }
+
+    // Otherwise not stalled
+    return {
+      isStalled: false,
+      stalledSinceMs: null,
+      stalledDurationMs: null,
+      stalledOrderId: null,
+      stalledOrderCode: null,
+      reason: null,
+      printerIssue,
+      waitingCount,
+      activeCount,
+      needsReviewCount,
+    };
+  }
+
+  async recoverQueue(input: {
+    adminId: string;
+    nowMs: number;
+  }): Promise<AdminQueueRecoverResponseData> {
+    const STALL_THRESHOLD_MS = 5 * 60 * 1000;
+    const details: string[] = [];
+
+    // 1. Identify primary/active printer and agent connectivity
+    const printerRow = await this.db
+      .prepare(
+        `SELECT p.id, p.agent_id, p.display_name, p.windows_printer_name, p.status, p.status_reason,
+                a.last_heartbeat_at_ms, a.is_active
+         FROM printers p
+         JOIN agents a ON a.id = p.agent_id
+         WHERE p.enabled = 1
+         ORDER BY (p.status = 'ONLINE') DESC, p.priority ASC
+         LIMIT 1`,
+      )
+      .first<{
+        id: string;
+        agent_id: string;
+        display_name: string;
+        windows_printer_name: string;
+        status: string;
+        status_reason: string | null;
+        last_heartbeat_at_ms: number | null;
+        is_active: number;
+      }>();
+
+    const isPrinterOnline = printerRow?.status === "ONLINE";
+    const printerDisplayName = printerRow?.display_name ?? null;
+
+    if (printerRow) {
+      const agentActive =
+        printerRow.is_active === 1 &&
+        printerRow.last_heartbeat_at_ms !== null &&
+        input.nowMs - printerRow.last_heartbeat_at_ms <= 65_000;
+      details.push(
+        `Printer "${printerRow.display_name}" is ${printerRow.status}. Agent is ${
+          agentActive ? "CONNECTED" : "OFFLINE/DISCONNECTED"
+        }.`,
+      );
+    } else {
+      details.push("No enabled production printer found in the shop.");
+    }
+
+    // 2. Identify active stalled jobs that had reached SUBMISSION_STARTED
+    // If an active job has been printing/spooling for 5+ min and reached SUBMISSION_STARTED:
+    // Move it to ADMIN_ACTION_REQUIRED to avoid re-printing sheets already physically in printer.
+    const stalledInFlight = await this.db
+      .prepare(
+        `SELECT o.id, o.public_job_code
+         FROM orders o
+         WHERE o.status IN ('CLAIMED','SPOOLING','PRINTING')
+           AND o.updated_at_ms <= ?
+           AND EXISTS (
+             SELECT 1 FROM print_attempts pa
+             JOIN print_attempt_steps ps ON ps.print_attempt_id = pa.id
+             WHERE pa.order_id = o.id
+               AND ps.status IN ('SUBMISSION_STARTED','SUBMITTED')
+           )`,
+      )
+      .bind(input.nowMs - STALL_THRESHOLD_MS)
+      .all<{ id: string; public_job_code: string }>();
+
+    for (const stalled of stalledInFlight.results ?? []) {
+      await this.db
+        .prepare(
+          `UPDATE orders
+           SET status = 'ADMIN_ACTION_REQUIRED',
+               physical_device_id = NULL,
+               printer_id = NULL,
+               recovered_at_ms = ?,
+               recovery_reason = 'STALLED_IN_SUBMISSION_QUARANTINED',
+               updated_at_ms = ?
+           WHERE id = ?`,
+        )
+        .bind(input.nowMs, input.nowMs, stalled.id)
+        .run();
+
+      await this.db
+        .prepare(
+          `UPDATE print_attempt_steps
+           SET status = 'UNCERTAIN',
+               failure_code = 'UNKNOWN',
+               failure_detail = 'Submission stalled without progress for 5+ minutes during print recovery.',
+               finished_at_ms = ?,
+               updated_at_ms = ?
+           WHERE print_attempt_id IN (SELECT id FROM print_attempts WHERE order_id = ?)
+             AND status IN ('SUBMISSION_STARTED', 'SUBMITTED', 'PENDING')`,
+        )
+        .bind(input.nowMs, input.nowMs, stalled.id)
+        .run();
+
+      details.push(
+        `Job ${stalled.public_job_code ?? stalled.id} was in submission when stalled; quarantined in ADMIN_ACTION_REQUIRED (0 reprint risk).`,
+      );
+    }
+
+    // 3. Reclaim Safe Pre-Submission Failures & Stale Leases back to QUEUED
+    // Orders in CLAIMED, SPOOLING, PRINT_BLOCKED, RETRY_PENDING that NEVER reached SUBMISSION_STARTED
+    const safeReclaimable = await this.db
+      .prepare(
+        `SELECT id, public_job_code FROM orders
+         WHERE status IN ('CLAIMED','SPOOLING','PRINT_BLOCKED','RETRY_PENDING')
+           AND NOT EXISTS (
+             SELECT 1 FROM print_attempts pa
+             JOIN print_attempt_steps ps ON ps.print_attempt_id = pa.id
+             WHERE pa.order_id = orders.id
+               AND ps.status IN ('SUBMISSION_STARTED','SUBMITTED','UNCERTAIN')
+           )`,
+      )
+      .all<{ id: string; public_job_code: string }>();
+
+    let recoveredOrdersCount = 0;
+    const safeRows = safeReclaimable.results ?? [];
+    if (safeRows.length > 0) {
+      await this.db
+        .prepare(
+          `UPDATE orders
+           SET status = 'QUEUED',
+               claimed_by_agent_id = NULL,
+               claim_id = NULL,
+               claim_expires_at_ms = NULL,
+               printer_id = NULL,
+               physical_device_id = NULL,
+               claimed_at_ms = NULL,
+               recovered_at_ms = ?,
+               recovery_reason = 'SAFE_PRE_SUBMISSION_RECLAIM',
+               updated_at_ms = ?
+           WHERE status IN ('CLAIMED','SPOOLING','PRINT_BLOCKED','RETRY_PENDING')
+             AND NOT EXISTS (
+               SELECT 1 FROM print_attempts pa
+               JOIN print_attempt_steps ps ON ps.print_attempt_id = pa.id
+               WHERE pa.order_id = orders.id
+                 AND ps.status IN ('SUBMISSION_STARTED','SUBMITTED','UNCERTAIN')
+             )`,
+        )
+        .bind(input.nowMs, input.nowMs)
+        .run();
+
+      // Cancel unstarted attempt records
+      await this.db
+        .prepare(
+          `UPDATE print_attempts
+           SET status = 'CANCELLED', finished_at_ms = ?, updated_at_ms = ?
+           WHERE order_id IN (${safeRows.map(() => "?").join(",")})
+             AND status IN ('CREATED', 'SUBMITTING', 'SPOOLING', 'BLOCKED')
+             AND NOT EXISTS (
+               SELECT 1 FROM print_attempt_steps ps
+               WHERE ps.print_attempt_id = print_attempts.id
+                 AND ps.status IN ('SUBMISSION_STARTED','SUBMITTED','UNCERTAIN')
+             )`,
+        )
+        .bind(input.nowMs, input.nowMs, ...safeRows.map((r) => r.id))
+        .run();
+
+      recoveredOrdersCount = safeRows.length;
+      details.push(
+        `Reclaimed ${recoveredOrdersCount} pre-submission order(s) safely back to QUEUED (zero duplicate print risk).`,
+      );
+    }
+
+    // 4. Release Physical Printer Locks on Quarantined / Uncertain Orders
+    // This allows subsequent waiting orders to print while preserving quarantined orders for physical inspection!
+    const reviewWithLocks = await this.db
+      .prepare(
+        `SELECT id, public_job_code, status FROM orders
+         WHERE status IN ('ADMIN_ACTION_REQUIRED', 'COMPLETION_UNKNOWN', 'NEEDS_ADMIN')
+           AND (physical_device_id IS NOT NULL OR printer_id IS NOT NULL)`,
+      )
+      .all<{ id: string; public_job_code: string; status: string }>();
+
+    const reviewRows = reviewWithLocks.results ?? [];
+    const uncertainOrdersCount =
+      reviewRows.length + (stalledInFlight.results?.length ?? 0);
+    if (reviewRows.length > 0) {
+      await this.db
+        .prepare(
+          `UPDATE orders
+           SET physical_device_id = NULL,
+               printer_id = NULL,
+               recovered_at_ms = ?,
+               recovery_reason = 'PHYSICAL_LOCK_RELEASED_FOR_QUEUE',
+               updated_at_ms = ?
+           WHERE status IN ('ADMIN_ACTION_REQUIRED', 'COMPLETION_UNKNOWN', 'NEEDS_ADMIN')
+             AND (physical_device_id IS NOT NULL OR printer_id IS NOT NULL)`,
+        )
+        .bind(input.nowMs, input.nowMs)
+        .run();
+
+      details.push(
+        `Released physical printer locks on ${reviewRows.length} quarantined order(s). They remain in Needs Review for physical operator inspection.`,
+      );
+    }
+
+    // 4b. If in-flight stalled jobs or locked review jobs existed, auto-dispatch selective CLEAR_SPOOLER
+    // to Windows Agent. This guarantees the Windows spooler is cleared of stuck PrintGo jobs before
+    // subsequent waiting orders print, preventing duplicate or interleaved prints!
+    if (
+      ((stalledInFlight.results?.length ?? 0) > 0 || reviewRows.length > 0) &&
+      printerRow
+    ) {
+      try {
+        await this.createClearSpoolerCommand({
+          printerId: printerRow.id,
+          adminId: input.adminId,
+          nowMs: input.nowMs,
+        });
+        details.push(
+          `Dispatched selective CLEAR_SPOOLER command to Windows Agent for "${printerRow.display_name}". Any stuck printgo-* jobs will be cleared from Windows spooler before next jobs print.`,
+        );
+      } catch (err) {
+        details.push(
+          `Note: Automatic spooler clear could not be queued: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
+    // 5. Calculate remaining waiting orders count
+    const waitingRes = await this.db
+      .prepare(
+        `SELECT COUNT(*) as count FROM orders
+         WHERE status = 'QUEUED' AND cleanup_state = 'ACTIVE'`,
+      )
+      .first<{ count: number }>();
+
+    const resumedOrdersCount = waitingRes?.count ?? 0;
+    details.push(
+      `Print queue now has ${resumedOrdersCount} order(s) ready to print in FIFO/priority order.`,
+    );
+
+    // 6. Audit log
+    await this.db
+      .prepare(
+        `INSERT INTO audit_logs (id, actor_type, actor_id, action, entity_type, entity_id, metadata_json, created_at_ms)
+         VALUES (?, 'ADMIN', ?, 'QUEUE_RECOVERY_EXECUTED', 'PRINT_QUEUE', 'ALL', ?, ?)`,
+      )
+      .bind(
+        crypto.randomUUID(),
+        input.adminId,
+        JSON.stringify({
+          recoveredOrdersCount,
+          resumedOrdersCount,
+          uncertainOrdersCount,
+        }),
+        input.nowMs,
+      )
+      .run();
+
+    return {
+      recoveredOrdersCount,
+      resumedOrdersCount,
+      uncertainOrdersCount,
+      printerOnline: isPrinterOnline,
+      printerName: printerDisplayName,
+      message: `Print Recovery complete: ${recoveredOrdersCount} order(s) reclaimed safely, ${resumedOrdersCount} order(s) ready in queue. Physical printer locks cleared.`,
+      details,
+    };
+  }
+
+  async createClearSpoolerCommand(input: {
+    printerId?: string;
+    adminId: string;
+    nowMs: number;
+  }): Promise<AdminClearSpoolerResponseData> {
+    let printerRow: {
+      id: string;
+      agent_id: string;
+      display_name: string;
+      windows_printer_name: string;
+    } | null = null;
+
+    if (input.printerId) {
+      printerRow = await this.db
+        .prepare(
+          `SELECT id, agent_id, display_name, windows_printer_name
+           FROM printers WHERE id = ?`,
+        )
+        .bind(input.printerId)
+        .first<{
+          id: string;
+          agent_id: string;
+          display_name: string;
+          windows_printer_name: string;
+        }>();
+    }
+
+    if (!printerRow) {
+      printerRow = await this.db
+        .prepare(
+          `SELECT p.id, p.agent_id, p.display_name, p.windows_printer_name
+           FROM printers p
+           JOIN installation i ON i.id = 1
+           WHERE (i.default_production_printer_id IS NOT NULL AND p.id = i.default_production_printer_id)
+              OR p.enabled = 1
+           ORDER BY (i.default_production_printer_id IS NOT NULL AND p.id = i.default_production_printer_id) DESC,
+                    p.status = 'ONLINE' DESC
+           LIMIT 1`,
+        )
+        .first<{
+          id: string;
+          agent_id: string;
+          display_name: string;
+          windows_printer_name: string;
+        }>();
+    }
+
+    if (!printerRow) {
+      throw new Error("No target printer found to clear spooler.");
+    }
+
+    const commandId = crypto.randomUUID();
+    const expiresAtMs = input.nowMs + 60_000; // 1 minute expiry
+
+    await this.db.batch([
+      this.db
+        .prepare(
+          `UPDATE agent_control_commands
+           SET status = 'EXPIRED', finished_at_ms = ?
+           WHERE agent_id = ? AND (printer_id = ? OR windows_printer_name = ?)
+             AND command_type = 'CLEAR_SPOOLER'
+             AND status IN ('PENDING', 'CLAIMED', 'FAILED')`,
+        )
+        .bind(
+          input.nowMs,
+          printerRow.agent_id,
+          printerRow.id,
+          printerRow.windows_printer_name,
+        ),
+      this.db
+        .prepare(
+          `INSERT INTO agent_control_commands (
+             id, agent_id, command_type, printer_id, windows_printer_name,
+             status, created_at_ms, expires_at_ms
+           ) VALUES (?, ?, 'CLEAR_SPOOLER', ?, ?, 'PENDING', ?, ?)`,
+        )
+        .bind(
+          commandId,
+          printerRow.agent_id,
+          printerRow.id,
+          printerRow.windows_printer_name,
+          input.nowMs,
+          expiresAtMs,
+        ),
+      this.db
+        .prepare(
+          `INSERT INTO audit_logs (
+             id, actor_type, actor_id, action, entity_type, entity_id, metadata_json, created_at_ms
+           ) VALUES (?, 'ADMIN', ?, 'CLEAR_SPOOLER_REQUESTED', 'PRINTER', ?, ?, ?)`,
+        )
+        .bind(
+          crypto.randomUUID(),
+          input.adminId,
+          printerRow.id,
+          JSON.stringify({
+            commandId,
+            windowsPrinterName: printerRow.windows_printer_name,
+          }),
+          input.nowMs,
+        ),
+    ]);
+
+    return {
+      commandId,
+      agentId: printerRow.agent_id,
+      printerId: printerRow.id,
+      windowsPrinterName: printerRow.windows_printer_name,
+      status: "PENDING",
+      message: `Selective spooler clear command dispatched for printer "${printerRow.display_name}". Only PrintGo documents (printgo-*) will be cancelled.`,
     };
   }
 }

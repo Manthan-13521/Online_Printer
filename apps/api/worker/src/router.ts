@@ -64,11 +64,15 @@ export async function routeRequest(
     return handleAdminDiscountRulesRequest(request, env);
   }
 
-  if (url.pathname.startsWith("/api/admin/orders")) {
+  if (
+    url.pathname.startsWith("/api/admin/orders") ||
+    url.pathname.startsWith("/api/admin/queue")
+  ) {
     // Manual orders management (mark-printed, mark-finished, set-pickup-charge, list manual)
     const isManualPath =
       url.pathname === "/api/admin/orders/manual" ||
-      /^\/api\/admin\/orders\/[^/]+\/(mark-printed|mark-finished|set-pickup-charge)$/.test(
+      url.pathname === "/api/admin/orders/cash" ||
+      /^\/api\/admin\/orders\/[^/]+\/(mark-printed|mark-finished|set-pickup-charge|confirm-cash)$/.test(
         url.pathname,
       );
     if (isManualPath) {

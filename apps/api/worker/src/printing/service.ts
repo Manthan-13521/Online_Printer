@@ -1,4 +1,6 @@
 import type {
+  AdminClearSpoolerResponseData,
+  AdminQueueRecoverResponseData,
   AgentPrintJob,
   AgentReportPrintStepRequest,
   AgentPreflightFailureData,
@@ -239,7 +241,7 @@ export class PrintingService {
         action: "BLOCKED_RELEASED",
         orderId: result.orderId,
         message: result.message,
-        retryAfterMs: result.retryAfterMs ?? 30_000,
+        retryAfterMs: result.retryAfterMs ?? 60_000,
       };
     }
 
@@ -360,5 +362,23 @@ export class PrintingService {
       }
       throw err;
     }
+  }
+
+  async recoverQueue(adminId: string): Promise<AdminQueueRecoverResponseData> {
+    return this.repository.recoverQueue({
+      adminId,
+      nowMs: this.now(),
+    });
+  }
+
+  async clearSpooler(
+    adminId: string,
+    printerId?: string,
+  ): Promise<AdminClearSpoolerResponseData> {
+    return this.repository.createClearSpoolerCommand({
+      ...(printerId !== undefined ? { printerId } : {}),
+      adminId,
+      nowMs: this.now(),
+    });
   }
 }

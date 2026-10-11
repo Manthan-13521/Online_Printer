@@ -27,6 +27,9 @@ const migrations = [
   "0025_verified_printer_capabilities.sql",
   "0026_phase4_fallback_recovery.sql",
   "0027_parallel_physical_printer_locks.sql",
+  "0028_fix_physical_device_locks.sql",
+  "0029_cash_orders_and_smart_payment.sql",
+  "0030_smart_print_recovery.sql",
 ].map((name) =>
   readFileSync(
     new URL(`../../../../../database/migrations/${name}`, import.meta.url),

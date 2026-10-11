@@ -10,10 +10,13 @@ import type {
   CustomerPrintSettingsRequest,
   CustomerQuoteData,
   PublicOrderTrackingData,
+  SelectCustomerCashPaymentData,
   UploadAuthorization,
 } from "@printgo/api-contract";
 import { createSessionToken, hashSessionToken } from "@printgo/auth";
 import {
+  CASH_MAX_PENDING_MS,
+  CASH_PAYMENT_WINDOW_MS,
   MAX_ORDER_UPLOAD_BYTES,
   MAX_ORDER_FILES,
   parsePageRange,
@@ -40,6 +43,7 @@ import {
 
 export type CustomerErrorCode =
   | "ONLINE_PRINTING_DISABLED"
+  | "CASH_ORDERS_DISABLED"
   | "PRINT_OPTIONS_UNAVAILABLE"
   | "DRAFT_INVALID"
   | "DRAFT_EXPIRED"
@@ -351,7 +355,61 @@ export class CustomerService {
         serviceChargePaise: file.serviceChargePaise,
         uploadStatus: file.uploadStatus,
       })),
+      publicJobCode: draft.publicJobCode ?? null,
+      ...(draft.paymentMethod ? { paymentMethod: draft.paymentMethod } : {}),
+      cashExpiresAtMs: draft.cashExpiresAtMs ?? null,
+      cashGraceUntilMs: draft.cashGraceUntilMs ?? null,
     };
+  }
+
+  async getDraftStatus(rawToken: string): Promise<{
+    orderId: string;
+    status: string;
+    paymentMethod: "ONLINE" | "CASH";
+    publicJobCode: string | null;
+    pickupCode: string | null;
+    cashExpiresAtMs: number | null;
+    cashGraceUntilMs: number | null;
+  }> {
+    const { draft } = await this.requireSummary(rawToken);
+    return {
+      orderId: draft.orderId,
+      status: draft.status,
+      paymentMethod: draft.paymentMethod ?? "ONLINE",
+      publicJobCode: draft.publicJobCode ?? null,
+      pickupCode: draft.pickupCode ?? null,
+      cashExpiresAtMs: draft.cashExpiresAtMs ?? null,
+      cashGraceUntilMs: draft.cashGraceUntilMs ?? null,
+    };
+  }
+
+  async selectCashPayment(
+    rawToken: string,
+  ): Promise<SelectCustomerCashPaymentData> {
+    const config = await this.repository.getPublicConfig();
+    if (!config?.cashOrdersEnabled) {
+      throw new CustomerError("CASH_ORDERS_DISABLED");
+    }
+    const tokenHash = await hashSessionToken(rawToken);
+    try {
+      return await this.repository.selectCashPayment({
+        tokenHash,
+        nowMs: this.now(),
+        cashPaymentWindowMs: CASH_PAYMENT_WINDOW_MS,
+        cashMaxPendingMs: CASH_MAX_PENDING_MS,
+      });
+    } catch (caught) {
+      if (caught instanceof Error && caught.message === "DRAFT_NOT_FOUND") {
+        throw new CustomerError("DRAFT_INVALID");
+      }
+      if (caught instanceof Error && caught.message === "ORDER_NOT_ELIGIBLE") {
+        throw new CustomerError("QUOTE_STATE_INVALID");
+      }
+      if (caught instanceof Error && caught.message === "QUOTE_INVALID") {
+        throw new CustomerError("QUOTE_INVALID");
+      }
+      throw caught;
+    }
   }
 
   async quote(

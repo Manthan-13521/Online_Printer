@@ -46,10 +46,52 @@ export async function handleAdminOrdersRequest(
 
   try {
     if (request.method === "GET" && pathname === "/api/admin/orders/live") {
+      const orders = await repository.listLiveOrders();
+      const stallDetails = await repository.getQueueStallDetails();
       return withAdminCors(
-        ok({ orders: await repository.listLiveOrders() }),
+        ok({ orders, stallDetails }),
         env.ADMIN_ALLOWED_ORIGIN,
       );
+    }
+
+    if (
+      request.method === "POST" &&
+      (pathname === "/api/admin/queue/recover" ||
+        pathname === "/api/admin/orders/queue/recover")
+    ) {
+      const printingService = createPrintingService(env);
+      const result = await printingService.recoverQueue(session.admin.id);
+      void import("../agent/wake").then((m) => m.wakeAgent(env));
+      return withAdminCors(ok(result, 200), env.ADMIN_ALLOWED_ORIGIN);
+    }
+
+    if (
+      request.method === "POST" &&
+      (pathname === "/api/admin/queue/clear-spooler" ||
+        pathname === "/api/admin/orders/queue/clear-spooler")
+    ) {
+      let printerId: string | undefined;
+      try {
+        const body = (await readAdminJson(request, MAX_JSON_BYTES)) as Record<
+          string,
+          unknown
+        >;
+        if (
+          typeof body.printerId === "string" &&
+          body.printerId.trim().length > 0
+        ) {
+          printerId = body.printerId.trim();
+        }
+      } catch {
+        // empty body is acceptable
+      }
+      const printingService = createPrintingService(env);
+      const result = await printingService.clearSpooler(
+        session.admin.id,
+        printerId,
+      );
+      void import("../agent/wake").then((m) => m.wakeAgent(env));
+      return withAdminCors(ok(result, 200), env.ADMIN_ALLOWED_ORIGIN);
     }
 
     if (request.method === "GET" && pathname === "/api/admin/orders/history") {

@@ -30,6 +30,9 @@ vi.mock("./api", () => ({
     verifyPayment: vi.fn(),
     cancelPayment: vi.fn(),
     tracking: vi.fn(),
+    selectCashPayment: vi.fn(),
+    getDraftStatus: vi.fn(),
+    trackPublic: vi.fn(),
   },
   uploadDirectly: vi.fn(),
 }));
@@ -607,5 +610,48 @@ describe("customer upload app", () => {
     ).toBeTruthy();
     await user.click(screen.getAllByRole("button", { name: "Close" })[0]!);
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("renders Smart Payment options when cashOrdersEnabled is true and transitions to CashWaitingPage on selection", async () => {
+    const user = userEvent.setup();
+    vi.mocked(customerApi.config).mockResolvedValueOnce({
+      ...enabledConfig,
+      cashOrdersEnabled: true,
+    });
+    vi.mocked(customerApi.selectCashPayment).mockResolvedValueOnce({
+      orderId: "order_cash_123",
+      publicJobCode: "PG-CSH001",
+      payableAmountPaise: 2100,
+      cashExpiresAtMs: Date.now() + 600000,
+      cashGraceUntilMs: Date.now() + 720000,
+    });
+
+    render(<App />);
+    await screen.findByText("ABC Xerox");
+    await user.type(screen.getByLabelText("Name"), "Rahul");
+    await user.type(screen.getByLabelText("Phone"), "9876543210");
+    await user.upload(
+      screen.getByLabelText("Choose Files"),
+      new File(["%PDF"], "notes.pdf", { type: "application/pdf" }),
+    );
+    fireEvent.submit(
+      screen.getByRole("button", { name: "Review Order" }).closest("form")!,
+    );
+
+    // Verify both Pay Online and Pay Cash at Counter buttons appear
+    const payOnlineButton = await screen.findByRole("button", {
+      name: /Pay Online/i,
+    });
+    const payCashButton = screen.getByRole("button", {
+      name: /Pay Cash at Counter/i,
+    });
+    expect(payOnlineButton).toBeTruthy();
+    expect(payCashButton).toBeTruthy();
+
+    // Select Cash
+    await user.click(payCashButton);
+    expect(customerApi.selectCashPayment).toHaveBeenCalled();
+    expect(await screen.findByText("Pay Cash at Counter")).toBeTruthy();
+    expect(screen.getByText("PG-CSH001")).toBeTruthy();
   });
 });

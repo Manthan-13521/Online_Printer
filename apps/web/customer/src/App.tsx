@@ -20,6 +20,7 @@ import { inspectPdf } from "./pdf";
 import { PwaInstallBanner } from "./PwaInstallBanner";
 import { TrackingPage } from "./TrackingPage";
 import { PublicTrackingPage } from "./PublicTrackingPage";
+import { CashWaitingPage } from "./CashWaitingPage";
 import { createTrackingToken, trackingStorageKey } from "./tracking-token";
 
 const DRAFT_TOKEN_KEY = "printgo.customerDraftToken";
@@ -98,6 +99,8 @@ function customerErrorMessage(caught: unknown): string {
   const code = caught instanceof Error ? caught.message : "";
   if (code === "ONLINE_PRINTING_DISABLED")
     return "Online printing was switched off. No upload was authorized.";
+  if (code === "CASH_ORDERS_DISABLED")
+    return "Cash orders are currently disabled by the shop.";
   if (code === "DRAFT_EXPIRED")
     return "This upload session expired. Please upload your PDF again.";
   if (code === "UPLOAD_INVALID")
@@ -178,6 +181,14 @@ export function App() {
   const [paymentBusy, setPaymentBusy] = useState(false);
   const [paymentSuccess, setPaymentSuccess] =
     useState<CustomerPaymentSuccessData | null>(null);
+  const [cashWaitingData, setCashWaitingData] = useState<{
+    orderId: string;
+    publicJobCode: string | null;
+    payableAmountPaise: number;
+    cashExpiresAtMs: number;
+    cashGraceUntilMs: number;
+  } | null>(null);
+  const [cashSelecting, setCashSelecting] = useState(false);
   const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>([]);
   const [isPriority, setIsPriority] = useState(false);
   const [trackBoxCode, setTrackBoxCode] = useState("");
@@ -706,6 +717,29 @@ export function App() {
     }
   }
 
+  async function selectCash() {
+    if (
+      !quote ||
+      !draftToken ||
+      paymentBusy ||
+      busy ||
+      cashSelecting ||
+      Boolean(paymentSuccess)
+    )
+      return;
+    setCashSelecting(true);
+    setStatus("Selecting cash payment at counter…");
+    try {
+      const data = await customerApi.selectCashPayment(draftToken);
+      setCashWaitingData(data);
+      setStatus(null);
+    } catch (caught) {
+      setStatus(customerErrorMessage(caught));
+    } finally {
+      setCashSelecting(false);
+    }
+  }
+
   const shopHeader = (
     <header className="hero">
       <div className="hero-top-row">
@@ -809,6 +843,7 @@ export function App() {
       setQuote(null);
       setDraftToken(null);
       setPaymentSuccess(null);
+      setCashWaitingData(null);
       window.history.pushState(null, "", "/");
     };
 
@@ -817,6 +852,41 @@ export function App() {
         {shopHeader}
         <TrackingPage jobCode={trackingJobCode} onBack={handleResetToHome} />
       </>
+    );
+  }
+
+  if (cashWaitingData && draftToken) {
+    return (
+      <main className="page-shell">
+        {shopHeader}
+        <CashWaitingPage
+          draftToken={draftToken}
+          orderId={cashWaitingData.orderId}
+          publicJobCode={cashWaitingData.publicJobCode}
+          payableAmountPaise={cashWaitingData.payableAmountPaise}
+          cashExpiresAtMs={cashWaitingData.cashExpiresAtMs}
+          cashGraceUntilMs={cashWaitingData.cashGraceUntilMs}
+          onPayOnlineInstead={() => {
+            setCashWaitingData(null);
+            void pay();
+          }}
+          onOrderConfirmed={(trackingCode) => {
+            setCashWaitingData(null);
+            setDraftToken(null);
+            sessionStorage.removeItem(DRAFT_TOKEN_KEY);
+            window.history.pushState(
+              null,
+              "",
+              `/track/${encodeURIComponent(trackingCode)}`,
+            );
+            setTrackingJobCode(trackingCode);
+          }}
+          onExpired={() => {
+            setCashWaitingData(null);
+            setStatus("Cash payment window expired. Please review and retry.");
+          }}
+        />
+      </main>
     );
   }
 
@@ -1728,18 +1798,116 @@ export function App() {
                     )}
 
                     {draftToken && (
-                      <button
-                        type="button"
-                        className="pay-button"
-                        onClick={() => void pay()}
-                        disabled={
-                          paymentBusy || busy || Boolean(paymentSuccess)
-                        }
+                      <div
+                        className="payment-methods"
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "0.6rem",
+                          marginTop: "0.75rem",
+                        }}
                       >
-                        {paymentBusy
-                          ? "Confirming payment…"
-                          : `🔒 Pay ${formatInr(quote.totalAmountPaise)}`}
-                      </button>
+                        {config?.cashOrdersEnabled ? (
+                          <>
+                            <button
+                              type="button"
+                              className="pay-button"
+                              onClick={() => void pay()}
+                              disabled={
+                                paymentBusy ||
+                                busy ||
+                                cashSelecting ||
+                                Boolean(paymentSuccess)
+                              }
+                              style={{
+                                display: "flex",
+                                flexDirection: "column",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                padding: "0.75rem 1rem",
+                                cursor: "pointer",
+                              }}
+                            >
+                              <span
+                                style={{ fontSize: "1rem", fontWeight: 700 }}
+                              >
+                                {paymentBusy
+                                  ? "Confirming payment…"
+                                  : `🔒 Pay Online (${formatInr(quote.totalAmountPaise)})`}
+                              </span>
+                              <span
+                                style={{
+                                  fontSize: "0.75rem",
+                                  fontWeight: 400,
+                                  opacity: 0.9,
+                                  marginTop: "0.15rem",
+                                }}
+                              >
+                                Print immediately after payment
+                              </span>
+                            </button>
+
+                            <button
+                              type="button"
+                              className="secondary-button"
+                              onClick={() => void selectCash()}
+                              disabled={
+                                paymentBusy ||
+                                busy ||
+                                cashSelecting ||
+                                Boolean(paymentSuccess)
+                              }
+                              style={{
+                                display: "flex",
+                                flexDirection: "column",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                padding: "0.65rem 1rem",
+                                cursor: "pointer",
+                                border: "1px solid #CBD5E1",
+                                borderRadius: "8px",
+                                backgroundColor: "#FFFFFF",
+                                color: "#1E293B",
+                              }}
+                            >
+                              <span
+                                style={{ fontSize: "0.95rem", fontWeight: 600 }}
+                              >
+                                {cashSelecting
+                                  ? "Selecting cash…"
+                                  : "💵 Pay Cash at Counter"}
+                              </span>
+                              <span
+                                style={{
+                                  fontSize: "0.75rem",
+                                  fontWeight: 400,
+                                  color: "#64748B",
+                                  marginTop: "0.15rem",
+                                }}
+                              >
+                                Printing starts after the shopkeeper confirms
+                                payment
+                              </span>
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            className="pay-button"
+                            onClick={() => void pay()}
+                            disabled={
+                              paymentBusy ||
+                              busy ||
+                              cashSelecting ||
+                              Boolean(paymentSuccess)
+                            }
+                          >
+                            {paymentBusy
+                              ? "Confirming payment…"
+                              : `🔒 Pay ${formatInr(quote.totalAmountPaise)}`}
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
                 </div>

@@ -76,6 +76,7 @@ interface SettingsRow {
   id_threshold_paise?: number;
   next_pickup_code_index?: number;
   order_retention_hours?: number;
+  cash_orders_enabled?: number;
 }
 
 interface PrintRateRow {
@@ -136,7 +137,7 @@ export class D1ConfigurationRepository implements ConfigurationRepository {
                 last_cleanup_at_ms, next_daily_cleanup_at_ms, last_cleanup_result,
                 priority_printing_enabled, priority_fee_paise,
                 id_requirement_mode, id_threshold_paise, next_pickup_code_index,
-                order_retention_hours
+                order_retention_hours, cash_orders_enabled
          FROM installation WHERE id = 1`,
       )
       .first<SettingsRow>();
@@ -151,6 +152,7 @@ export class D1ConfigurationRepository implements ConfigurationRepository {
           address: row.address,
           customerNotice: row.customer_notice,
           onlinePrintingEnabled: row.online_printing_enabled === 1,
+          cashOrdersEnabled: row.cash_orders_enabled === 1,
           maxPdfSizeBytes: row.max_pdf_size_bytes,
           maxOrderUploadBytes: row.max_order_upload_bytes,
           identificationSheetEnabled: row.identification_sheet_enabled === 1,
@@ -202,6 +204,7 @@ export class D1ConfigurationRepository implements ConfigurationRepository {
                id_requirement_mode = COALESCE(?, id_requirement_mode),
                id_threshold_paise = COALESCE(?, id_threshold_paise),
                order_retention_hours = COALESCE(?, order_retention_hours),
+               cash_orders_enabled = COALESCE(?, cash_orders_enabled),
                updated_at_ms = ?
            WHERE id = 1`,
         )
@@ -240,6 +243,11 @@ export class D1ConfigurationRepository implements ConfigurationRepository {
             : null,
           input.settings.orderRetentionHours !== undefined
             ? input.settings.orderRetentionHours
+            : null,
+          input.settings.cashOrdersEnabled !== undefined
+            ? input.settings.cashOrdersEnabled
+              ? 1
+              : 0
             : null,
           input.nowMs,
         ),

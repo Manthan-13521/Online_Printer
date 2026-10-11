@@ -37,6 +37,8 @@ function repository(): PaymentRepository {
     claimProviderEvent: vi.fn(() => Promise.resolve(true)),
     finishProviderEvent: vi.fn(() => Promise.resolve()),
     routeOrderAfterPayment: vi.fn(() => Promise.resolve()),
+    listPendingCashOrders: vi.fn(() => Promise.resolve([])),
+    confirmCashPayment: vi.fn(),
   };
 }
 

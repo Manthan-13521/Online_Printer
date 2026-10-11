@@ -170,7 +170,7 @@ export class AgentService {
         ? null
         : await this.repository.claimPendingTestPrintCommand(agent.id, nowMs);
     const printJobs =
-      agent.hasPrintWork === false
+      agent.hasPrintWork === false || nextCommand?.type === "CLEAR_SPOOLER"
         ? []
         : ((await (this.printing?.claimOrRenewAll
             ? this.printing.claimOrRenewAll(agent.id)
@@ -438,6 +438,7 @@ export class AgentService {
       agentId: agent.id,
       status: input.status,
       spoolerJobId: input.spoolerJobId ?? null,
+      cancelledJobIds: input.cancelledJobIds ?? null,
       failureCode: input.failureCode ?? null,
       failureDetail: input.failureDetail ?? null,
       nowMs,

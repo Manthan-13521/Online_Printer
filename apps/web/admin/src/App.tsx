@@ -26,7 +26,7 @@ import { StoragePrivacySection } from "./StoragePrivacySection";
 const navigation = [
   { label: "Dashboard", path: "/admin" },
   { label: "Live Orders", path: "/admin/live-orders" },
-  { label: "Manual Orders", path: "/admin/manual-orders" },
+  { label: "Cash & Manual Orders", path: "/admin/manual-orders" },
   { label: "Order History", path: "/admin/order-history" },
   { label: "Failed Jobs", path: "/admin/failed-jobs" },
   { label: "Printer", path: "/admin/printer" },

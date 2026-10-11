@@ -98,6 +98,7 @@ export interface ShopSettings {
   idThresholdPaise?: number;
   nextPickupCode?: string;
   orderRetentionHours?: number;
+  cashOrdersEnabled?: boolean;
 }
 
 export interface AdminSettingsData {
@@ -238,6 +239,7 @@ export interface CustomerConfigData {
   address?: string | null;
   customerNotice: string | null;
   onlinePrintingEnabled: boolean;
+  cashOrdersEnabled?: boolean;
   maxPdfSizeBytes: number;
   maxOrderUploadBytes?: number;
   maxOrderFiles?: number;
@@ -390,7 +392,50 @@ export interface CustomerDraftData {
   status: string;
   files: CustomerOrderFileData[];
   isPriority?: boolean;
+  publicJobCode?: string | null;
+  paymentMethod?: "ONLINE" | "CASH";
+  cashExpiresAtMs?: number | null;
+  cashGraceUntilMs?: number | null;
 }
+
+export interface SelectCustomerCashPaymentData {
+  orderId: string;
+  publicJobCode: string | null;
+  payableAmountPaise: number;
+  cashExpiresAtMs: number;
+  cashGraceUntilMs: number;
+}
+
+export type SelectCustomerCashPaymentResponse =
+  ApiResponse<SelectCustomerCashPaymentData>;
+
+export interface AdminCashOrder {
+  orderId: string;
+  publicJobCode: string | null;
+  customerName: string;
+  customerPhone: string;
+  payableAmountPaise: number;
+  status: string;
+  cashExpiresAtMs: number;
+  cashGraceUntilMs: number;
+  createdAtMs: number;
+}
+
+export interface AdminCashOrdersListData {
+  orders: AdminCashOrder[];
+}
+
+export type AdminCashOrdersListResponse = ApiResponse<AdminCashOrdersListData>;
+
+export interface AdminConfirmCashPaymentData {
+  orderId: string;
+  publicJobCode: string;
+  status: string;
+  confirmedAtMs: number;
+}
+
+export type AdminConfirmCashPaymentResponse =
+  ApiResponse<AdminConfirmCashPaymentData>;
 
 export interface CustomerOrderQuoteRequest {
   files: Array<CustomerPrintSettingsRequest & { fileId: string }>;
@@ -598,11 +643,21 @@ export interface AgentTestPrintCommand {
     | undefined;
 }
 
+export interface AgentClearSpoolerCommand {
+  type: "CLEAR_SPOOLER";
+  commandId: string;
+  printerId: string;
+  windowsPrinterName: string;
+  expiresAtMs: number;
+}
+
+export type AgentCommand = AgentTestPrintCommand | AgentClearSpoolerCommand;
+
 export interface AgentHeartbeatData {
   acknowledged: true;
   serverTimeMs: number;
   onlinePrintingEnabled?: boolean;
-  nextCommand?: AgentTestPrintCommand | null;
+  nextCommand?: AgentCommand | null;
   printJob?: AgentPrintJob | null;
   printJobs?: readonly AgentPrintJob[];
 }
@@ -612,6 +667,7 @@ export type AgentHeartbeatResponse = ApiResponse<AgentHeartbeatData>;
 export interface AgentReportCommandRequest {
   status: "SUBMITTED" | "BLOCKED" | "SUCCEEDED" | "FAILED";
   spoolerJobId?: string | null;
+  cancelledJobIds?: string[] | null;
   failureCode?: string | null;
   failureDetail?: string | null;
 }
@@ -744,7 +800,54 @@ export interface AdminLiveOrder {
   lastAttemptAt?: string | null;
   nextRetryAt?: string | null;
 }
-export type AdminLiveOrdersResponse = ApiResponse<{ orders: AdminLiveOrder[] }>;
+
+export interface QueueStallDetails {
+  isStalled: boolean;
+  stalledSinceMs?: number | null;
+  stalledDurationMs?: number | null;
+  stalledOrderId?: string | null;
+  stalledOrderCode?: string | null;
+  reason?: string | null;
+  printerIssue?: string | null;
+  waitingCount: number;
+  activeCount: number;
+  needsReviewCount: number;
+}
+
+export type AdminLiveOrdersResponse = ApiResponse<{
+  orders: AdminLiveOrder[];
+  stallDetails?: QueueStallDetails;
+}>;
+
+export interface AdminQueueRecoverResponseData {
+  recoveredOrdersCount: number;
+  resumedOrdersCount: number;
+  uncertainOrdersCount: number;
+  printerOnline: boolean;
+  printerName: string | null;
+  message: string;
+  details: string[];
+}
+
+export type AdminQueueRecoverResponse =
+  ApiResponse<AdminQueueRecoverResponseData>;
+
+export interface AdminClearSpoolerRequest {
+  printerId?: string;
+}
+
+export interface AdminClearSpoolerResponseData {
+  commandId: string;
+  agentId: string;
+  printerId: string;
+  windowsPrinterName?: string;
+  status: "PENDING" | "CLAIMED" | "SUCCEEDED" | "FAILED";
+  cancelledJobIds?: string[];
+  message: string;
+}
+
+export type AdminClearSpoolerResponse =
+  ApiResponse<AdminClearSpoolerResponseData>;
 
 export interface AdminOrderHistoryEntry {
   orderId: string;

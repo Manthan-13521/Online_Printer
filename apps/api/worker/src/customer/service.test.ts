@@ -96,6 +96,15 @@ function repository(
     snapshotAddonServices: vi.fn(() => Promise.resolve()),
     getOrderAddonAmountPaise: vi.fn(() => Promise.resolve(0)),
     getOrderAddonSnapshots: vi.fn(() => Promise.resolve([])),
+    selectCashPayment: vi.fn(() =>
+      Promise.resolve({
+        orderId: "10000000-0000-4000-8000-000000000001",
+        publicJobCode: null,
+        payableAmountPaise: 1000,
+        cashExpiresAtMs: 10000,
+        cashGraceUntilMs: 12000,
+      }),
+    ),
   };
 }
 

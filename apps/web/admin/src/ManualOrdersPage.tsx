@@ -1,10 +1,12 @@
 import type {
+  AdminCashOrder,
   AdminManualOrder,
   OrderAddonServiceSnapshot,
 } from "@printgo/api-contract";
 import { useEffect, useState } from "react";
 import { Pagination } from "./Pagination";
 import { adminApi, AdminApiError, friendlyAdminError } from "./api";
+import { startVisiblePolling } from "../../polling";
 
 function formatPaise(paise: number): string {
   return `₹${(paise / 100).toFixed(2)}`;
@@ -306,6 +308,39 @@ export function ManualOrdersPage({
   const [currentPage, setCurrentPage] = useState(1);
   const PAGE_SIZE = 10;
 
+  const [cashOrders, setCashOrders] = useState<AdminCashOrder[]>([]);
+  const [cashLoading, setCashLoading] = useState(false);
+  const [cashError, setCashError] = useState<string | null>(null);
+  const [confirmingCashOrder, setConfirmingCashOrder] =
+    useState<AdminCashOrder | null>(null);
+  const [confirmCashBusy, setConfirmCashBusy] = useState(false);
+  const [confirmCashError, setConfirmCashError] = useState<string | null>(null);
+  const [nowMs, setNowMs] = useState(Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  async function loadCash() {
+    setCashLoading(true);
+    setCashError(null);
+    try {
+      const response = await adminApi.getCashOrders();
+      if (response.ok) {
+        setCashOrders(response.data.orders);
+      }
+    } catch (caught: unknown) {
+      if (caught instanceof AdminApiError && caught.status === 401) {
+        onSessionExpired("Your session has expired. Please sign in again.");
+        return;
+      }
+      setCashError(friendlyAdminError(caught));
+    } finally {
+      setCashLoading(false);
+    }
+  }
+
   async function load(next?: string) {
     setLoading(true);
     setError(null);
@@ -329,8 +364,35 @@ export function ManualOrdersPage({
   }
 
   useEffect(() => {
-    void load();
+    return startVisiblePolling(async () => {
+      await loadCash();
+      await load();
+    }, 10_000);
   }, []);
+
+  async function handleConfirmCash() {
+    if (!confirmingCashOrder || confirmCashBusy) return;
+    setConfirmCashBusy(true);
+    setConfirmCashError(null);
+    try {
+      const response = await adminApi.confirmCashPayment(
+        confirmingCashOrder.orderId,
+      );
+      if (response.ok) {
+        setConfirmingCashOrder(null);
+        await loadCash();
+        await load();
+      }
+    } catch (caught: unknown) {
+      if (caught instanceof AdminApiError && caught.status === 401) {
+        onSessionExpired("Your session has expired. Please sign in again.");
+        return;
+      }
+      setConfirmCashError(friendlyAdminError(caught));
+    } finally {
+      setConfirmCashBusy(false);
+    }
+  }
 
   const totalPages = Math.max(1, Math.ceil(orders.length / PAGE_SIZE));
 
@@ -356,16 +418,268 @@ export function ManualOrdersPage({
     );
   }
 
+  const activeCashOrders = cashOrders.filter(
+    (order) => nowMs < order.cashGraceUntilMs,
+  );
+
   return (
     <div className="page-stack">
       <div>
         <p className="eyebrow">Shop staff</p>
-        <h1>Manual Orders</h1>
+        <h1>Cash &amp; Manual Orders</h1>
         <p className="page-intro">
-          Orders requiring manual printing or staff finishing. Download the PDF,
-          print it yourself, then mark it as done.
+          Confirm cash payments received at the counter and process orders
+          requiring manual printing or finishing.
         </p>
       </div>
+
+      {/* ── Pending Cash Orders Table ── */}
+      <section className="panel">
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: "1rem",
+          }}
+        >
+          <div>
+            <h2 style={{ margin: 0, fontSize: "1.2rem" }}>
+              Pending Cash Orders ({activeCashOrders.length})
+            </h2>
+            <p
+              className="muted"
+              style={{ margin: "0.25rem 0 0", fontSize: "0.9rem" }}
+            >
+              Customers waiting at the counter. Confirm payment to release to
+              the print queue.
+            </p>
+          </div>
+          <button
+            className="secondary-button fit"
+            type="button"
+            onClick={() => void loadCash()}
+            disabled={cashLoading}
+          >
+            {cashLoading ? "Refreshing…" : "Refresh Cash"}
+          </button>
+        </div>
+
+        {cashError ? <p className="form-error">{cashError}</p> : null}
+
+        {activeCashOrders.length === 0 ? (
+          <p className="muted" style={{ margin: 0 }}>
+            No pending cash orders at the counter.
+          </p>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table
+              style={{
+                width: "100%",
+                borderCollapse: "collapse",
+                textAlign: "left",
+              }}
+            >
+              <thead>
+                <tr
+                  style={{
+                    borderBottom: "2px solid #E1E5E2",
+                    fontSize: "0.85rem",
+                    color: "#4B5563",
+                  }}
+                >
+                  <th style={{ padding: "0.6rem 0.5rem" }}>Order Ref</th>
+                  <th style={{ padding: "0.6rem 0.5rem" }}>Customer</th>
+                  <th style={{ padding: "0.6rem 0.5rem" }}>Amount</th>
+                  <th style={{ padding: "0.6rem 0.5rem" }}>Time Remaining</th>
+                  <th style={{ padding: "0.6rem 0.5rem", textAlign: "right" }}>
+                    Action
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {activeCashOrders.map((order) => {
+                  const isGrace = nowMs >= order.cashExpiresAtMs;
+                  const targetMs = isGrace
+                    ? order.cashGraceUntilMs
+                    : order.cashExpiresAtMs;
+                  const secRemaining = Math.max(
+                    0,
+                    Math.floor((targetMs - nowMs) / 1000),
+                  );
+                  const mins = Math.floor(secRemaining / 60);
+                  const secs = secRemaining % 60;
+                  const countdownStr = `${mins}m ${secs.toString().padStart(2, "0")}s`;
+
+                  return (
+                    <tr
+                      key={order.orderId}
+                      style={{ borderBottom: "1px solid #F3F4F6" }}
+                    >
+                      <td
+                        style={{
+                          padding: "0.75rem 0.5rem",
+                          fontWeight: "bold",
+                        }}
+                      >
+                        {order.publicJobCode ||
+                          order.orderId.slice(0, 8).toUpperCase()}
+                      </td>
+                      <td style={{ padding: "0.75rem 0.5rem" }}>
+                        <div>{order.customerName}</div>
+                        <div className="muted" style={{ fontSize: "0.8rem" }}>
+                          {order.customerPhone}
+                        </div>
+                      </td>
+                      <td
+                        style={{
+                          padding: "0.75rem 0.5rem",
+                          fontWeight: "bold",
+                        }}
+                      >
+                        {formatPaise(order.payableAmountPaise)}
+                      </td>
+                      <td style={{ padding: "0.75rem 0.5rem" }}>
+                        {isGrace ? (
+                          <span
+                            style={{
+                              backgroundColor: "#FEF3C7",
+                              color: "#92400E",
+                              padding: "0.2rem 0.5rem",
+                              borderRadius: "4px",
+                              fontSize: "0.85rem",
+                              fontWeight: "bold",
+                            }}
+                          >
+                            ⚠️ Grace Period ({countdownStr})
+                          </span>
+                        ) : (
+                          <span
+                            style={{
+                              fontFamily: "monospace",
+                              fontSize: "0.95rem",
+                            }}
+                          >
+                            ⏱️ {countdownStr}
+                          </span>
+                        )}
+                      </td>
+                      <td
+                        style={{
+                          padding: "0.75rem 0.5rem",
+                          textAlign: "right",
+                        }}
+                      >
+                        <button
+                          className="primary-button"
+                          style={{
+                            padding: "0.4rem 0.75rem",
+                            fontSize: "0.85rem",
+                          }}
+                          type="button"
+                          onClick={() => {
+                            setConfirmCashError(null);
+                            setConfirmingCashOrder(order);
+                          }}
+                        >
+                          Confirm Cash Received
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {/* Confirmation Modal */}
+      {confirmingCashOrder ? (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+          }}
+        >
+          <div
+            className="panel"
+            style={{
+              maxWidth: "460px",
+              width: "90%",
+              backgroundColor: "#fff",
+              borderRadius: "8px",
+              padding: "1.5rem",
+              boxShadow: "0 4px 20px rgba(0, 0, 0, 0.15)",
+            }}
+          >
+            <h3 style={{ margin: "0 0 0.75rem", fontSize: "1.2rem" }}>
+              Confirm Cash Received
+            </h3>
+            <p style={{ margin: "0 0 0.5rem" }}>
+              Has the customer paid{" "}
+              <strong>
+                {formatPaise(confirmingCashOrder.payableAmountPaise)}
+              </strong>{" "}
+              in cash for order{" "}
+              <strong>
+                {confirmingCashOrder.publicJobCode ||
+                  confirmingCashOrder.orderId.slice(0, 8).toUpperCase()}
+              </strong>{" "}
+              ({confirmingCashOrder.customerName})?
+            </p>
+            <p
+              className="muted"
+              style={{ fontSize: "0.85rem", margin: "0 0 1rem" }}
+            >
+              Confirming will immediately admit this order into the active print
+              queue.
+            </p>
+            {confirmCashError ? (
+              <p className="form-error" style={{ marginBottom: "1rem" }}>
+                {confirmCashError}
+              </p>
+            ) : null}
+            <div
+              style={{
+                display: "flex",
+                gap: "0.75rem",
+                justifyContent: "flex-end",
+              }}
+            >
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={() => setConfirmingCashOrder(null)}
+                disabled={confirmCashBusy}
+              >
+                Cancel
+              </button>
+              <button
+                className="primary-button"
+                type="button"
+                onClick={() => void handleConfirmCash()}
+                disabled={confirmCashBusy}
+              >
+                {confirmCashBusy ? "Confirming…" : "Yes, Confirm Cash"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      <div style={{ marginTop: "1rem" }}>
+        <h2>Manual &amp; Finishing Orders</h2>
+        <p className="muted" style={{ margin: "0.25rem 0 1rem" }}>
+          Orders requiring manual printing or staff finishing.
+        </p>
+      </div>
+
       {error ? (
         <p className="form-error" role="alert">
           {error}
@@ -379,7 +693,7 @@ export function ManualOrdersPage({
           void load();
         }}
       >
-        Refresh
+        Refresh Manual Orders
       </button>
       {orders.length === 0 ? (
         <div className="panel">

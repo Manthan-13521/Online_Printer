@@ -75,6 +75,27 @@ function actions(): CustomerActions {
         files: [],
       }),
     ),
+    getDraftStatus: vi.fn(() =>
+      Promise.resolve({
+        orderId: "10000000-0000-4000-8000-000000000001",
+        status: "PAYMENT_PENDING",
+        publicJobCode: null,
+        pickupCode: null,
+        paymentMethod: "CASH" as const,
+        cashExpiresAtMs: 10000,
+        cashGraceUntilMs: 12000,
+        amountDuePaise: 1000,
+      }),
+    ),
+    selectCashPayment: vi.fn(() =>
+      Promise.resolve({
+        orderId: "10000000-0000-4000-8000-000000000001",
+        publicJobCode: null,
+        payableAmountPaise: 1000,
+        cashExpiresAtMs: 10000,
+        cashGraceUntilMs: 12000,
+      }),
+    ),
     quote: vi.fn(() =>
       Promise.resolve({
         normalizedSelectedPages: "1-3",

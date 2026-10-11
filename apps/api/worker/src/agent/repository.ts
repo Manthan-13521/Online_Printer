@@ -3,6 +3,7 @@ import type {
   AdminCheckPrinterHealthResponseData,
   AdminPrinterDetails,
   AdminTestPrintDetails,
+  AgentCommand,
   AgentTestPrintCommand,
   PrinterCapabilitySummary,
   TestPrintCommandStatus,
@@ -170,12 +171,13 @@ export interface AgentRepository {
   claimPendingTestPrintCommand(
     agentId: string,
     nowMs: number,
-  ): Promise<AgentTestPrintCommand | null>;
+  ): Promise<AgentCommand | null>;
   reportTestPrintCommand(input: {
     commandId: string;
     agentId: string;
     status: "SUBMITTED" | "BLOCKED" | "SUCCEEDED" | "FAILED";
     spoolerJobId?: string | null;
+    cancelledJobIds?: string[] | null;
     failureCode?: string | null;
     failureDetail?: string | null;
     nowMs: number;
@@ -396,7 +398,8 @@ export class D1AgentRepository implements AgentRepository {
       .prepare(
         `SELECT id, display_name, is_active, last_heartbeat_at_ms,
           (SELECT online_printing_enabled FROM installation WHERE id = 1) online_printing_enabled,
-          EXISTS(SELECT 1 FROM printer_test_commands c WHERE c.agent_id = agents.id AND c.status = 'PENDING') has_pending_command,
+          (EXISTS(SELECT 1 FROM printer_test_commands c WHERE c.agent_id = agents.id AND c.status = 'PENDING')
+           OR EXISTS(SELECT 1 FROM agent_control_commands cc WHERE cc.agent_id = agents.id AND cc.status = 'PENDING')) has_pending_command,
           (EXISTS(
             SELECT 1 FROM orders
             WHERE status IN ('QUEUED','CLAIMED','SPOOLING','PRINTING')
@@ -1313,7 +1316,57 @@ export class D1AgentRepository implements AgentRepository {
   async claimPendingTestPrintCommand(
     agentId: string,
     nowMs: number,
-  ): Promise<AgentTestPrintCommand | null> {
+  ): Promise<AgentCommand | null> {
+    // 0. Check for pending agent_control_commands (e.g. CLEAR_SPOOLER)
+    await this.db
+      .prepare(
+        `UPDATE agent_control_commands
+         SET status = 'EXPIRED', finished_at_ms = ?
+         WHERE agent_id = ? AND status = 'PENDING' AND expires_at_ms <= ?`,
+      )
+      .bind(nowMs, agentId, nowMs)
+      .run();
+
+    const pendingControl = await this.db
+      .prepare(
+        `SELECT id, printer_id, windows_printer_name, command_type, expires_at_ms
+         FROM agent_control_commands
+         WHERE agent_id = ? AND status = 'PENDING' AND expires_at_ms > ?
+         ORDER BY created_at_ms ASC
+         LIMIT 1`,
+      )
+      .bind(agentId, nowMs)
+      .first<{
+        id: string;
+        printer_id: string | null;
+        windows_printer_name: string | null;
+        command_type: string;
+        expires_at_ms: number;
+      }>();
+
+    if (pendingControl) {
+      const claimResult = await this.db
+        .prepare(
+          `UPDATE agent_control_commands
+           SET status = 'CLAIMED', claimed_at_ms = ?
+           WHERE id = ? AND status = 'PENDING'`,
+        )
+        .bind(nowMs, pendingControl.id)
+        .run();
+
+      if (claimResult.meta.changes === 1) {
+        if (pendingControl.command_type === "CLEAR_SPOOLER") {
+          return {
+            type: "CLEAR_SPOOLER",
+            commandId: pendingControl.id,
+            printerId: pendingControl.printer_id ?? "",
+            windowsPrinterName: pendingControl.windows_printer_name ?? "",
+            expiresAtMs: pendingControl.expires_at_ms,
+          };
+        }
+      }
+    }
+
     const hasPending = await this.db
       .prepare(
         "SELECT 1 FROM printer_test_commands WHERE agent_id = ? AND status = 'PENDING' LIMIT 1",
@@ -1405,6 +1458,7 @@ export class D1AgentRepository implements AgentRepository {
     agentId: string;
     status: "SUBMITTED" | "BLOCKED" | "SUCCEEDED" | "FAILED";
     spoolerJobId?: string | null;
+    cancelledJobIds?: string[] | null;
     failureCode?: string | null;
     failureDetail?: string | null;
     nowMs: number;
@@ -1422,9 +1476,50 @@ export class D1AgentRepository implements AgentRepository {
       )
       .bind(input.commandId, input.agentId)
       .first<{ status: string }>();
+
     if (!current) {
-      return false;
+      const currentControl = await this.db
+        .prepare(
+          `SELECT status, command_type FROM agent_control_commands
+           WHERE id = ? AND agent_id = ?`,
+        )
+        .bind(input.commandId, input.agentId)
+        .first<{ status: string; command_type: string }>();
+
+      if (!currentControl) {
+        return false;
+      }
+
+      if (currentControl.status === input.status) {
+        return true;
+      }
+
+      const resultJson = input.cancelledJobIds
+        ? JSON.stringify({ cancelledJobIds: input.cancelledJobIds })
+        : null;
+
+      const updateControl = await this.db
+        .prepare(
+          `UPDATE agent_control_commands
+           SET status = ?,
+               result_json = COALESCE(?, result_json),
+               failure_detail = ?,
+               finished_at_ms = COALESCE(?, finished_at_ms)
+           WHERE id = ? AND agent_id = ? AND status IN ('CLAIMED', 'PENDING')`,
+        )
+        .bind(
+          input.status,
+          resultJson,
+          input.failureDetail ?? null,
+          finishedAtMs,
+          input.commandId,
+          input.agentId,
+        )
+        .run();
+
+      return updateControl.meta.changes === 1;
     }
+
     if (current.status === input.status) {
       return true;
     }

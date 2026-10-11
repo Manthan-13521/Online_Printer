@@ -80,6 +80,16 @@ function paymentRepository(): PaymentRepository {
     claimProviderEvent: vi.fn(() => Promise.resolve(true)),
     finishProviderEvent: vi.fn(() => Promise.resolve()),
     routeOrderAfterPayment: vi.fn(() => Promise.resolve()),
+    listPendingCashOrders: vi.fn(() => Promise.resolve([])),
+    confirmCashPayment: vi.fn(
+      (input: Parameters<PaymentRepository["confirmCashPayment"]>[0]) =>
+        Promise.resolve({
+          orderId: input.orderId,
+          publicJobCode: "PG-CASH01",
+          status: "QUEUED",
+          confirmedAtMs: input.nowMs,
+        }),
+    ),
   };
 }
 

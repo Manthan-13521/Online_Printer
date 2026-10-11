@@ -1,5 +1,5 @@
 import { startVisiblePolling } from "../../polling";
-import type { AdminLiveOrder } from "@printgo/api-contract";
+import type { AdminLiveOrder, QueueStallDetails } from "@printgo/api-contract";
 import { useEffect, useState } from "react";
 
 import { Pagination } from "./Pagination";
@@ -25,6 +25,11 @@ export function LiveOrdersPage({
   pollIntervalMs?: number;
 }) {
   const [orders, setOrders] = useState<AdminLiveOrder[] | null>(null);
+  const [stallDetails, setStallDetails] = useState<QueueStallDetails | null>(
+    null,
+  );
+  const [confirmRecovery, setConfirmRecovery] = useState(false);
+  const [confirmClearSpooler, setConfirmClearSpooler] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
   const [actionBusyId, setActionBusyId] = useState<string | null>(null);
@@ -47,6 +52,7 @@ export function LiveOrdersPage({
         const response = await adminApi.getLiveOrders();
         if (!active || !response.ok) return undefined;
         setOrders(response.data.orders);
+        setStallDetails(response.data.stallDetails ?? null);
         setError(null);
         const snapshot = JSON.stringify(response.data.orders);
         const changed = snapshot !== previous;
@@ -180,15 +186,392 @@ export function LiveOrdersPage({
     }
   }
 
+  async function handleExecuteRecovery() {
+    setActionBusyId("recovery");
+    setError(null);
+    setActionNotice(null);
+    try {
+      const res = await adminApi.recoverQueue();
+      if (res.ok) {
+        setConfirmRecovery(false);
+        setActionNotice(res.data.message);
+        const fresh = await adminApi.getLiveOrders();
+        if (fresh.ok) {
+          setOrders(fresh.data.orders);
+          setStallDetails(fresh.data.stallDetails ?? null);
+        }
+      }
+    } catch (caught: unknown) {
+      if (caught instanceof AdminApiError && caught.status === 401) {
+        onSessionExpired("Your session has expired. Please sign in again.");
+        return;
+      }
+      setError(friendlyAdminError(caught));
+    } finally {
+      setActionBusyId(null);
+    }
+  }
+
+  async function handleExecuteClearSpooler() {
+    setActionBusyId("clear-spooler");
+    setError(null);
+    setActionNotice(null);
+    try {
+      const res = await adminApi.clearSpooler();
+      if (res.ok) {
+        setConfirmClearSpooler(false);
+        setActionNotice(res.data.message);
+        const fresh = await adminApi.getLiveOrders();
+        if (fresh.ok) {
+          setOrders(fresh.data.orders);
+          setStallDetails(fresh.data.stallDetails ?? null);
+        }
+      }
+    } catch (caught: unknown) {
+      if (caught instanceof AdminApiError && caught.status === 401) {
+        onSessionExpired("Your session has expired. Please sign in again.");
+        return;
+      }
+      setError(friendlyAdminError(caught));
+    } finally {
+      setActionBusyId(null);
+    }
+  }
+
+  const waitingCount =
+    stallDetails?.waitingCount ??
+    orders?.filter((o) => o.status === "QUEUED" || o.status === "RETRY_PENDING")
+      .length ??
+    0;
+  const activeCount =
+    stallDetails?.activeCount ??
+    orders?.filter(
+      (o) =>
+        o.status === "PRINTING" ||
+        o.status === "SPOOLING" ||
+        o.status === "CLAIMED",
+    ).length ??
+    0;
+  const needsReviewCount =
+    stallDetails?.needsReviewCount ??
+    orders?.filter(
+      (o) =>
+        o.status === "ADMIN_ACTION_REQUIRED" ||
+        o.status === "COMPLETION_UNKNOWN" ||
+        o.status === "NEEDS_ADMIN" ||
+        o.status === "PRINT_BLOCKED" ||
+        o.status === "PRINT_FAILED",
+    ).length ??
+    0;
+  const stuckCount =
+    (stallDetails?.isStalled ? 1 : 0) +
+    (orders?.filter((o) => {
+      const isStuckStatus =
+        o.status === "ADMIN_ACTION_REQUIRED" ||
+        o.status === "COMPLETION_UNKNOWN" ||
+        o.status === "PRINT_BLOCKED" ||
+        o.status === "PRINT_FAILED";
+      const ageMs = Date.now() - new Date(o.updatedAt).getTime();
+      return isStuckStatus && ageMs >= 5 * 60 * 1000;
+    }).length ?? 0);
+
   return (
     <div className="page-stack">
-      <div>
-        <p className="eyebrow">Shop operations</p>
-        <h1>Live Orders</h1>
-        <p className="page-intro">
-          Observe paid jobs currently waiting, printing, or needing attention.
-        </p>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          flexWrap: "wrap",
+          gap: "1rem",
+        }}
+      >
+        <div>
+          <p className="eyebrow">Shop operations · Print Queue</p>
+          <h1>Live Orders</h1>
+          <p className="page-intro">
+            Observe paid jobs currently waiting, printing, or needing attention.
+          </p>
+        </div>
+
+        {stallDetails?.isStalled ? (
+          <div
+            style={{
+              display: "flex",
+              gap: "0.5rem",
+              alignItems: "center",
+              flexWrap: "wrap",
+            }}
+          >
+            <button
+              type="button"
+              className="primary-button"
+              style={{
+                backgroundColor: "#d97706",
+                borderColor: "#b45309",
+                fontWeight: 700,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "0.35rem",
+              }}
+              disabled={actionBusyId !== null}
+              onClick={() => setConfirmRecovery(true)}
+              title="Check agent/printer, safely recover pre-submission orders, and clear physical locks"
+            >
+              ⚡ Print Recovery
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              style={{
+                color: "#b45309",
+                borderColor: "#fcd34d",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "0.35rem",
+              }}
+              disabled={actionBusyId !== null}
+              onClick={() => setConfirmClearSpooler(true)}
+              title="Selectively clear printgo-* spool jobs from Windows spooler without deleting orders"
+            >
+              🧹 Clear Queue
+            </button>
+          </div>
+        ) : null}
       </div>
+
+      {/* Top Stat Cards Bar */}
+      <dl
+        className="settings-stat-grid"
+        style={{ gridTemplateColumns: "repeat(auto-fit, minmax(8.5rem, 1fr))" }}
+      >
+        <div
+          className="stat-card"
+          style={
+            stuckCount > 0
+              ? { borderColor: "#f87171", backgroundColor: "#fef2f2" }
+              : undefined
+          }
+        >
+          <dt style={stuckCount > 0 ? { color: "#991b1b" } : undefined}>
+            Stuck · 5m+
+          </dt>
+          <dd
+            style={{
+              fontSize: "1.5rem",
+              color: stuckCount > 0 ? "#b91c1c" : undefined,
+            }}
+          >
+            {stuckCount}
+          </dd>
+        </div>
+        <div className="stat-card">
+          <dt>Waiting</dt>
+          <dd style={{ fontSize: "1.5rem" }}>{waitingCount}</dd>
+        </div>
+        <div
+          className="stat-card"
+          style={
+            needsReviewCount > 0
+              ? { borderColor: "#fcd34d", backgroundColor: "#fffbeb" }
+              : undefined
+          }
+        >
+          <dt style={needsReviewCount > 0 ? { color: "#92400e" } : undefined}>
+            Needs review
+          </dt>
+          <dd
+            style={{
+              fontSize: "1.5rem",
+              color: needsReviewCount > 0 ? "#b45309" : undefined,
+            }}
+          >
+            {needsReviewCount}
+          </dd>
+        </div>
+        <div className="stat-card">
+          <dt>Printing</dt>
+          <dd
+            style={{
+              fontSize: "1.5rem",
+              color: activeCount > 0 ? "#166534" : undefined,
+            }}
+          >
+            {activeCount}
+          </dd>
+        </div>
+      </dl>
+
+      {/* Printer Issue Alert Banner */}
+      {stallDetails?.printerIssue ? (
+        <div
+          style={{
+            backgroundColor: "#fef2f2",
+            border: "1px solid #f87171",
+            borderRadius: "0.55rem",
+            padding: "0.85rem 1.15rem",
+            color: "#991b1b",
+            fontSize: "0.92rem",
+            display: "flex",
+            alignItems: "center",
+            gap: "0.65rem",
+          }}
+          role="alert"
+        >
+          <span style={{ fontSize: "1.25rem" }}>⚠️</span>
+          <div>
+            <strong>Printer Issue Detected: </strong>
+            <span>{stallDetails.printerIssue}</span>
+            <div
+              style={{
+                fontSize: "0.82rem",
+                color: "#b91c1c",
+                marginTop: "0.2rem",
+              }}
+            >
+              Check printer power, paper tray, USB connection, and ensure
+              printer is not paused.
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Stall Alert Banner */}
+      {stallDetails?.isStalled && !stallDetails.printerIssue ? (
+        <div
+          style={{
+            backgroundColor: "#fffbeb",
+            border: "1px solid #fcd34d",
+            borderRadius: "0.55rem",
+            padding: "0.85rem 1.15rem",
+            color: "#92400e",
+            fontSize: "0.92rem",
+            display: "flex",
+            alignItems: "center",
+            gap: "0.65rem",
+          }}
+          role="status"
+        >
+          <span style={{ fontSize: "1.25rem" }}>⚡</span>
+          <div>
+            <strong>Queue Stagnation Detected (5m+): </strong>
+            <span>{stallDetails.reason}</span>
+            <div
+              style={{
+                fontSize: "0.82rem",
+                color: "#78350f",
+                marginTop: "0.2rem",
+              }}
+            >
+              Use <strong>Print Recovery</strong> above to safely resume
+              printing without duplicate sheets.
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Recovery Confirmation Panel */}
+      {confirmRecovery ? (
+        <div
+          className="panel"
+          style={{
+            borderColor: "#d97706",
+            backgroundColor: "#fffbeb",
+            borderWidth: "2px",
+          }}
+        >
+          <h3 style={{ margin: "0 0 0.5rem", color: "#92400e" }}>
+            ⚡ Confirm Smart Print Recovery
+          </h3>
+          <p
+            style={{
+              margin: "0 0 0.75rem",
+              fontSize: "0.9rem",
+              color: "#78350f",
+            }}
+          >
+            Print Recovery checks Windows Agent and printer connectivity, safely
+            re-queues pre-submission failures (
+            <strong>0 duplicate reprint risk</strong>), and releases physical
+            printer locks on held orders so waiting paid jobs can continue.
+            <br />
+            Orders that already began spooler submission remain held in{" "}
+            <em>Needs review</em> for physical operator inspection.
+          </p>
+          <div style={{ display: "flex", gap: "0.75rem" }}>
+            <button
+              type="button"
+              className="primary-button"
+              style={{ backgroundColor: "#d97706", borderColor: "#b45309" }}
+              disabled={actionBusyId !== null}
+              onClick={() => void handleExecuteRecovery()}
+            >
+              {actionBusyId === "recovery"
+                ? "Recovering…"
+                : "Execute Print Recovery"}
+            </button>
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => setConfirmRecovery(false)}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Clear Spooler Confirmation Panel */}
+      {confirmClearSpooler ? (
+        <div
+          className="panel"
+          style={{
+            borderColor: "#b45309",
+            backgroundColor: "#fef3c7",
+            borderWidth: "2px",
+          }}
+        >
+          <h3 style={{ margin: "0 0 0.5rem", color: "#92400e" }}>
+            🧹 Confirm Selective Spooler Clear
+          </h3>
+          <p
+            style={{
+              margin: "0 0 0.75rem",
+              fontSize: "0.9rem",
+              color: "#78350f",
+            }}
+          >
+            This dispatches a selective spooler cancellation to the Windows
+            Agent via PowerShell CIM.
+            <br />
+            <strong>Safety guarantees:</strong> Only PrintGo print jobs
+            (matching <code>printgo-*</code>) on the production printer will be
+            cancelled. Unrelated Windows jobs, customer orders in D1, and PDFs
+            in R2 will <strong>NOT</strong> be deleted.
+          </p>
+          <div style={{ display: "flex", gap: "0.75rem" }}>
+            <button
+              type="button"
+              className="primary-button"
+              style={{ backgroundColor: "#b45309", borderColor: "#92400e" }}
+              disabled={actionBusyId !== null}
+              onClick={() => void handleExecuteClearSpooler()}
+            >
+              {actionBusyId === "clear-spooler"
+                ? "Clearing…"
+                : "Confirm Clear Spooler"}
+            </button>
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => setConfirmClearSpooler(false)}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {actionNotice ? (
         <p className="notice" role="status">
           {actionNotice}

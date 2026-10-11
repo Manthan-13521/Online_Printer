@@ -48,6 +48,9 @@ describe("order status transitions", () => {
     expect(
       canTransitionOrderStatus("PRINT_FAILED", "ADMIN_ACTION_REQUIRED"),
     ).toBe(true);
+    expect(
+      canTransitionOrderStatus("RETRY_PENDING", "ADMIN_ACTION_REQUIRED"),
+    ).toBe(true);
   });
 
   it("treats completed and cancelled orders as terminal", () => {

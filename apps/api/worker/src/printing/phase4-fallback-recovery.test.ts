@@ -1,35 +1,14 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { D1PrintingRepository } from "./repository.js";
 
-const migrationFiles = [
-  "0001_initial_schema.sql",
-  "0002_customer_draft_upload.sql",
-  "0003_payment_idempotency.sql",
-  "0004_customer_tracking.sql",
-  "0005_printer_test_commands.sql",
-  "0006_paid_print_execution.sql",
-  "0007_performance_optimization_indexes.sql",
-  "0008_production_printer_reliability.sql",
-  "0009_retention_and_pii_purge.sql",
-  "0010_efficiency_and_branding.sql",
-  "0011_retention_retry_schedule.sql",
-  "0012_multi_file_cleanup_and_app_branding.sql",
-  "0013_d1_usage_optimization.sql",
-  "0014_addon_services.sql",
-  "0015_phase3_priority_tracking_discounts.sql",
-  "0016_phase4_failure_recovery_and_pause.sql",
-  "0017_phase5_fallback_and_reprint_protection.sql",
-  "0018_phase6_history_cleanup.sql",
-  "0020_order_retention_duration.sql",
-  "0023_identification_sheet_conditions.sql",
-  "0024_printer_priority.sql",
-  "0025_verified_printer_capabilities.sql",
-  "0026_phase4_fallback_recovery.sql",
-  "0027_parallel_physical_printer_locks.sql",
-];
+const migrationFiles = readdirSync(
+  new URL("../../../../../database/migrations", import.meta.url),
+)
+  .filter((f) => f.endsWith(".sql"))
+  .sort();
 
 interface PrinterRow {
   is_paused?: number;
@@ -362,7 +341,7 @@ describe("Phase 4: Automatic Safe Fallback & Printer Failure Recovery", () => {
 
     // Incompatible fallback -> BLOCKED_RELEASED
     expect(result.action).toBe("BLOCKED_RELEASED");
-    expect(result.retryAfterMs).toBe(30_000);
+    expect(result.retryAfterMs).toBe(60_000);
 
     // Verify order in D1: claim released, status = RETRY_PENDING
     const orderRow = sqlite
@@ -374,7 +353,7 @@ describe("Phase 4: Automatic Safe Fallback & Printer Failure Recovery", () => {
     expect(orderRow.claimed_by_agent_id).toBeNull();
     expect(orderRow.claim_id).toBeNull();
     expect(orderRow.error_category).toBe("PRINTER_OFFLINE");
-    expect(orderRow.next_retry_at_ms).toBe(now + 500 + 30_000);
+    expect(orderRow.next_retry_at_ms).toBe(now + 500 + 60_000);
   });
 
   it("3. Queue Starvation Prevention: Blocked job on Printer A releases lease, allowing unrelated order for Printer B to progress", async () => {
@@ -716,8 +695,8 @@ describe("Phase 4: Automatic Safe Fallback & Printer Failure Recovery", () => {
     const earlyClaim = await repo.claimOrRenew(AGENT_ID, now + 10_000);
     expect(earlyClaim).toBeNull();
 
-    // Case B: At retry time (now + 30_001ms), printer is online and unpaused -> successfully claimed!
-    const reclaimed = await repo.claimOrRenew(AGENT_ID, now + 30_001);
+    // Case B: At retry time (now + 60_001ms), printer is online and unpaused -> successfully claimed!
+    const reclaimed = await repo.claimOrRenew(AGENT_ID, now + 60_001);
     expect(reclaimed).not.toBeNull();
     expect(reclaimed?.orderId).toBe(orderId);
     expect(reclaimed?.printerId).toBe(PRINTER_A_ID);
