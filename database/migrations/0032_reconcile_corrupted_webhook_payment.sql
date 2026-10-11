@@ -22,7 +22,7 @@ WHERE status = 'DUPLICATE_CAPTURED'
     FROM payments p
     JOIN orders o ON o.id = p.order_id
     WHERE p.status = 'DUPLICATE_CAPTURED'
-      AND p.verified_at_ms = o.paid_at_ms
+      AND ABS(p.verified_at_ms - o.paid_at_ms) < 300000
       AND p.amount_paise = o.total_amount_paise
       AND o.cleanup_state = 'ACTIVE'
       AND o.status IN ('QUEUED', 'RETRY_PENDING', 'PRINT_BLOCKED')
