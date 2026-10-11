@@ -876,4 +876,146 @@ describe("PRINTGO — PHASE 8 ACCEPTANCE TEST SUITE: SMART PRINT RECOVERY & QUEU
     expect(orderRow.status).toBe("ADMIN_ACTION_REQUIRED");
     expect(orderRow.physical_device_id).toBeNull();
   });
+
+  it("Scenario 8.13: Disabled printer or inactive agent printer is 100% ignored in stall detector and live orders", async () => {
+    // Insert disabled printer on active agent (e.g. Xprinter XP-TT426B)
+    const disabledPrinterId = crypto.randomUUID();
+    db.exec(`
+      INSERT INTO printers (
+        id, agent_id, display_name, windows_printer_name, enabled, status,
+        status_reason, capabilities_json, is_production_eligible, is_virtual,
+        priority, physical_device_id, last_status_at_ms, created_at_ms, updated_at_ms
+      ) VALUES (
+        '${disabledPrinterId}', '${AGENT_ID}', 'Xprinter XP-TT426B', 'Xprinter XP-TT426B',
+        0, 'OFFLINE', 'Printer is set to work offline',
+        '{"colour":false,"duplex":false,"paperSizes":["A4"]}',
+        1, 0, 2, 'PHYSICAL_XPRINTER',
+        ${currentSimulatedTime}, ${currentSimulatedTime}, ${currentSimulatedTime}
+      );
+    `);
+
+    // Insert an orphaned printer from an inactive agent with enabled = 1
+    const inactiveAgentId = crypto.randomUUID();
+    const orphanedPrinterId = crypto.randomUUID();
+    db.exec(`
+      INSERT INTO agents (
+        id, display_name, credential_hash, is_active, paired_at_ms,
+        last_heartbeat_at_ms, created_at_ms, updated_at_ms
+      ) VALUES (
+        '${inactiveAgentId}', 'Revoked Agent', 'dummy_hash', 0, ${currentSimulatedTime},
+        ${currentSimulatedTime}, ${currentSimulatedTime}, ${currentSimulatedTime}
+      );
+      INSERT INTO printers (
+        id, agent_id, display_name, windows_printer_name, enabled, status,
+        status_reason, capabilities_json, is_production_eligible, is_virtual,
+        priority, physical_device_id, last_status_at_ms, created_at_ms, updated_at_ms
+      ) VALUES (
+        '${orphanedPrinterId}', '${inactiveAgentId}', 'Old Xprinter', 'Old Xprinter',
+        1, 'OFFLINE', 'Printer is offline',
+        '{"colour":false,"duplex":false,"paperSizes":["A4"]}',
+        1, 0, 2, 'PHYSICAL_OLD_XPRINTER',
+        ${currentSimulatedTime}, ${currentSimulatedTime}, ${currentSimulatedTime}
+      );
+    `);
+
+    const stallDetails =
+      await printingRepo.getQueueStallDetails(currentSimulatedTime);
+    // Disabled printer and orphaned printer MUST NOT pollute printerIssue banner
+    expect(stallDetails.printerIssue).toBeNull();
+  });
+
+  it("Scenario 8.14: Capability Starvation — Duplex order on simplex-only printer is detected by stall detector and recovered to Needs Review", async () => {
+    // Reconfigure active printer to simplex-only (duplex = false)
+    db.exec(`
+      UPDATE printers
+      SET capabilities_json = '{"colour":false,"duplex":false,"paperSizes":["A4"]}',
+          verified_capabilities_json = '{"verified":{"bw":true,"color":false,"duplex":false,"a4":true,"a3":false}}',
+          enabled_services_json = '{"bw":true,"color":false,"duplex":false,"a4":true,"a3":false}'
+      WHERE id = '${PRINTER_1_ID}';
+    `);
+
+    // Insert order with sides = DOUBLE
+    const duplexOrderId = insertOrder(10, {
+      status: "QUEUED",
+      queuedAtMs: currentSimulatedTime - 360_000,
+    });
+    db.exec(`
+      UPDATE order_files SET sides = 'DOUBLE' WHERE order_id = '${duplexOrderId}';
+    `);
+
+    // Insert subsequent single-sided order
+    const nextOrderId = insertOrder(11, {
+      status: "QUEUED",
+      queuedAtMs: currentSimulatedTime - 300_000,
+    });
+
+    // Verify stall detector detects capability starvation
+    const stall = await printingRepo.getQueueStallDetails(currentSimulatedTime);
+    expect(stall.isStalled).toBe(true);
+    expect(stall.reason).toContain("Double-sided (Duplex) printing");
+
+    // Recover queue
+    const rec = await printingRepo.recoverQueue({
+      adminId: ADMIN_ID,
+      nowMs: currentSimulatedTime,
+    });
+    expect(rec.uncertainOrdersCount).toBeGreaterThanOrEqual(1);
+    expect(
+      rec.details.some(
+        (d) => d.includes("Needs Review") && d.includes("Duplex"),
+      ),
+    ).toBe(true);
+
+    // Verify duplex order moved to ADMIN_ACTION_REQUIRED
+    const duplexRow = db
+      .prepare("SELECT status, error_category FROM orders WHERE id = ?")
+      .get(duplexOrderId) as { status: string; error_category: string };
+    expect(duplexRow.status).toBe("ADMIN_ACTION_REQUIRED");
+    expect(duplexRow.error_category).toBe("PRINTER_CAPABILITY_UNSUPPORTED");
+
+    // Verify subsequent single-sided order is claimed and unblocked!
+    const claimed = await printingRepo.claimOrRenewAll(
+      AGENT_ID,
+      currentSimulatedTime,
+    );
+    expect(claimed.length).toBe(1);
+    expect(claimed[0]?.orderId).toBe(nextOrderId);
+  });
+
+  it("Scenario 8.15: Convert Order to Single-Sided — Unblocks capability-starved order and prints on simplex printer", async () => {
+    // Start with order in ADMIN_ACTION_REQUIRED with duplex requirement
+    const orderId = insertOrder(20, { status: "ADMIN_ACTION_REQUIRED" });
+    db.exec(`
+      UPDATE order_files SET sides = 'DOUBLE' WHERE order_id = '${orderId}';
+      UPDATE orders SET error_category = 'PRINTER_CAPABILITY_UNSUPPORTED' WHERE id = '${orderId}';
+    `);
+
+    // Admin converts to single-sided
+    const result = await printingRepo.convertOrderToSingleSided({
+      orderId,
+      adminId: ADMIN_ID,
+      nowMs: currentSimulatedTime,
+    });
+    expect(result.status).toBe("QUEUED");
+
+    // Verify order_files has sides = SINGLE
+    const fileRow = db
+      .prepare("SELECT sides FROM order_files WHERE order_id = ?")
+      .get(orderId) as { sides: string };
+    expect(fileRow.sides).toBe("SINGLE");
+
+    const orderRow = db
+      .prepare("SELECT status, error_category FROM orders WHERE id = ?")
+      .get(orderId) as { status: string; error_category: string | null };
+    expect(orderRow.status).toBe("QUEUED");
+    expect(orderRow.error_category).toBeNull();
+
+    // Verify printer can now claim it
+    const claimed = await printingRepo.claimOrRenewAll(
+      AGENT_ID,
+      currentSimulatedTime,
+    );
+    expect(claimed.length).toBe(1);
+    expect(claimed[0]?.orderId).toBe(orderId);
+  });
 });

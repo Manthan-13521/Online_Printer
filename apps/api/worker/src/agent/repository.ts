@@ -360,6 +360,14 @@ export class D1AgentRepository implements AgentRepository {
         .bind(input.nowMs, input.agentId),
       this.db
         .prepare(
+          `UPDATE printers
+           SET enabled = 0, status = 'OFFLINE', status_reason = 'Agent superseded by new pairing',
+               last_status_at_ms = ?, updated_at_ms = ?
+           WHERE agent_id != ? AND enabled = 1`,
+        )
+        .bind(input.nowMs, input.nowMs, input.agentId),
+      this.db
+        .prepare(
           `INSERT INTO audit_logs (
              id, actor_type, actor_id, action, entity_type, entity_id, created_at_ms
            )
@@ -658,6 +666,7 @@ export class D1AgentRepository implements AgentRepository {
                JOIN agents a ON p.agent_id = a.id
                WHERE p.id = installation.default_production_printer_id
                  AND a.is_active = 1
+                 AND p.enabled = 1
                  AND p.is_production_eligible = 1 AND p.is_virtual = 0
              )
            )
@@ -1061,7 +1070,7 @@ export class D1AgentRepository implements AgentRepository {
             : "PRINTER_DISABLED"
           : "PRINTER_CONFIGURED";
 
-    await this.db.batch([
+    const batchStatements: D1PreparedStatement[] = [
       this.db
         .prepare(`UPDATE printers SET ${updates.join(", ")} WHERE id = ?`)
         .bind(...bindings),
@@ -1078,7 +1087,33 @@ export class D1AgentRepository implements AgentRepository {
           input.printerId,
           input.nowMs,
         ),
-    ]);
+    ];
+
+    if (nextEnabled === 0) {
+      batchStatements.push(
+        this.db
+          .prepare(
+            `UPDATE installation
+             SET default_production_printer_id = (
+               SELECT p.id FROM printers p
+               JOIN agents a ON a.id = p.agent_id
+               WHERE a.is_active = 1 AND p.enabled = 1 AND p.is_production_eligible = 1 AND p.is_virtual = 0
+               ORDER BY p.priority DESC, p.id ASC LIMIT 1
+             ), updated_at_ms = ?
+             WHERE default_production_printer_id = ?`,
+          )
+          .bind(input.nowMs, input.printerId),
+        this.db
+          .prepare(
+            `UPDATE printers
+             SET fallback_printer_id = NULL, auto_fallback_enabled = 0, updated_at_ms = ?
+             WHERE fallback_printer_id = ?`,
+          )
+          .bind(input.nowMs, input.printerId),
+      );
+    }
+
+    await this.db.batch(batchStatements);
 
     return {
       id: input.printerId,

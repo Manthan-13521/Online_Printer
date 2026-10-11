@@ -28,7 +28,7 @@ fi
 if [[ -z "$FOUND_IP" ]]; then
     for candidate in $(arp -a | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' | sort -u); do
         if nc -z -G 1 "$candidate" 22 2>/dev/null; then
-            if ssh -i "$HOME/.ssh/printgo_windows_ed25519" -o BatchMode=yes -o ConnectTimeout=2 -o StrictHostKeyChecking=accept-new "MANTH@$candidate" "hostname" 2>/dev/null | grep -q "$TARGET_HOSTNAME"; then
+            if ssh -i "$HOME/.ssh/printgo_windows_ed25519" -o BatchMode=yes -o ConnectTimeout=2 -o StrictHostKeyChecking=accept-new "Dell@$candidate" "hostname" 2>/dev/null | grep -q "$TARGET_HOSTNAME"; then
                 FOUND_IP="$candidate"
                 break
             fi

@@ -51,6 +51,10 @@ describe("order status transitions", () => {
     expect(
       canTransitionOrderStatus("RETRY_PENDING", "ADMIN_ACTION_REQUIRED"),
     ).toBe(true);
+    expect(canTransitionOrderStatus("QUEUED", "ADMIN_ACTION_REQUIRED")).toBe(
+      true,
+    );
+    expect(canTransitionOrderStatus("QUEUED", "CANCELLED")).toBe(true);
   });
 
   it("treats completed and cancelled orders as terminal", () => {

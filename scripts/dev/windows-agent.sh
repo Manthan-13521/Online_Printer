@@ -16,38 +16,7 @@ action="${1:-help}"
 
 case "$action" in
   status)
-    echo "=== PrintGo Agent Process & Service Status on $HOST ==="
-    ssh "$HOST" "powershell -NoProfile -ExecutionPolicy Bypass -Command -" << 'EOF'
-Write-Host "[Process Status]" -ForegroundColor Cyan
-$procs = Get-Process -Name *PrintGo* -ErrorAction SilentlyContinue
-if ($procs) {
-    $procs | Select-Object Id, ProcessName, WorkingSet64, StartTime | Format-Table -AutoSize | Out-String | Write-Host
-} else {
-    Write-Host "No PrintGo-Agent process is currently running." -ForegroundColor Yellow
-}
-
-Write-Host "`n[Status File Report]" -ForegroundColor Cyan
-$statusPath = Join-Path $env:LOCALAPPDATA 'PrintGo\agent-status.json'
-if (Test-Path $statusPath) {
-    try {
-        $json = Get-Content -Path $statusPath -Raw | ConvertFrom-Json
-        Write-Host "Operational State: $($json.operationalState)"
-        Write-Host "Agent Version:     $($json.agentVersion)"
-        Write-Host "Server URL:        $($json.serverUrl)"
-        Write-Host "Agent ID:          $($json.agentId)"
-        Write-Host "Display Name:      $($json.displayName)"
-        if ($json.lastHeartbeatMs) {
-            $hbTime = (Get-Date '1970-01-01 00:00:00Z').AddMilliseconds($json.lastHeartbeatMs).ToLocalTime()
-            Write-Host "Last Heartbeat:    $hbTime"
-        }
-        Write-Host "Printers Count:    $($json.printers.Count)"
-    } catch {
-        Write-Host "Could not parse status JSON file." -ForegroundColor Red
-    }
-} else {
-    Write-Host "Status file not found at: $statusPath" -ForegroundColor Yellow
-}
-EOF
+    bash "$SCRIPT_DIR/windows-status.sh"
     ;;
 
   start)

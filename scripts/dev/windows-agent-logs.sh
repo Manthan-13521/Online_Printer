@@ -30,8 +30,8 @@ done
 
 if [[ "$FOLLOW" -eq 1 ]]; then
   echo "--- Following live PrintGo Agent logs from $HOST (Ctrl+C to exit) ---"
-  ssh -t "$HOST" "powershell -NoProfile -ExecutionPolicy Bypass -Command \"\$logFile = Join-Path \$env:LOCALAPPDATA 'PrintGo\\daemon.log'; if (Test-Path \$logFile) { Get-Content -Path \$logFile -Tail $LINES -Wait } else { Write-Error 'Log file not found at: '\$logFile; exit 1 }\""
+  ssh -t "$HOST" "powershell -NoProfile -ExecutionPolicy Bypass -Command \"\$localApp = if (\$env:LOCALAPPDATA) { \$env:LOCALAPPDATA } elseif (\$env:USERPROFILE) { \\\"\$env:USERPROFILE\\\\AppData\\\\Local\\\" } else { 'C:\\Users\\Dell\\AppData\\Local' }; \$logFile = Join-Path \$localApp 'PrintGo\\daemon.log'; if (Test-Path \$logFile) { Get-Content -Path \$logFile -Tail $LINES -Wait } else { Write-Error ('Log file not found at: ' + \$logFile); exit 1 }\""
 else
   echo "--- Fetching recent $LINES lines of PrintGo Agent logs from $HOST ---"
-  ssh "$HOST" "powershell -NoProfile -ExecutionPolicy Bypass -Command \"\$logFile = Join-Path \$env:LOCALAPPDATA 'PrintGo\\daemon.log'; if (Test-Path \$logFile) { Get-Content -Path \$logFile -Tail $LINES } else { Write-Host '[INFO] No daemon.log found at: '\$logFile }\""
+  ssh "$HOST" "powershell -NoProfile -ExecutionPolicy Bypass -Command \"\$localApp = if (\$env:LOCALAPPDATA) { \$env:LOCALAPPDATA } elseif (\$env:USERPROFILE) { \\\"\$env:USERPROFILE\\\\AppData\\\\Local\\\" } else { 'C:\\Users\\Dell\\AppData\\Local' }; \$logFile = Join-Path \$localApp 'PrintGo\\daemon.log'; if (Test-Path \$logFile) { Get-Content -Path \$logFile -Tail $LINES } else { Write-Host ('[INFO] No daemon.log found at: ' + \$logFile) }\""
 fi

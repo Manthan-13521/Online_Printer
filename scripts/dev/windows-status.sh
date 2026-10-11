@@ -30,7 +30,12 @@ $hostname = $env:COMPUTERNAME
 Write-Host "Hostname:          $hostname"
 Write-Host "Operating System:  $os"
 
-$exePath = "C:\Users\MANTH\AppData\Local\Programs\PrintGo\PrintGo-Agent.exe"
+$who = whoami
+Write-Host "Windows Account:   $who"
+$exePath = "C:\Program Files\PrintGo\PrintGo-Agent.exe"
+if (-not (Test-Path $exePath)) {
+    $exePath = Join-Path $env:LOCALAPPDATA 'Programs\PrintGo\PrintGo-Agent.exe'
+}
 if (-not (Test-Path $exePath)) {
     $exePath = "C:\PrintGo\agent\PrintGo-Agent.exe"
 }

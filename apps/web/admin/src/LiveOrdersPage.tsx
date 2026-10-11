@@ -186,6 +186,48 @@ export function LiveOrdersPage({
     }
   }
 
+  async function handleConvertSingleSided(order: AdminLiveOrder) {
+    const code = order.pickupCode ?? order.jobCode;
+    setActionBusyId(`single-sided-${order.orderId}`);
+    setError(null);
+    setActionNotice(null);
+    try {
+      const res = await adminApi.convertOrderToSingleSided(order.orderId);
+      if (res.ok) {
+        setOrders(
+          (prev) =>
+            prev?.map((o) =>
+              o.orderId === order.orderId
+                ? {
+                    ...o,
+                    status: "QUEUED",
+                    errorCategory: null,
+                    rawError: null,
+                    printSummary: { ...o.printSummary, sides: "SINGLE" },
+                  }
+                : o,
+            ) ?? [],
+        );
+        setActionNotice(
+          `Order ${code} converted to 1-sided and re-queued. Printing will begin on the enabled printer.`,
+        );
+        const fresh = await adminApi.getLiveOrders();
+        if (fresh.ok) {
+          setOrders(fresh.data.orders);
+          setStallDetails(fresh.data.stallDetails ?? null);
+        }
+      }
+    } catch (caught: unknown) {
+      if (caught instanceof AdminApiError && caught.status === 401) {
+        onSessionExpired("Your session has expired. Please sign in again.");
+        return;
+      }
+      setError(friendlyAdminError(caught));
+    } finally {
+      setActionBusyId(null);
+    }
+  }
+
   async function handleExecuteRecovery() {
     setActionBusyId("recovery");
     setError(null);
@@ -838,6 +880,25 @@ export function LiveOrdersPage({
                             : "Retry Print"}
                         </button>
                       )
+                    ) : null}
+
+                    {order.errorCategory === "PRINTER_CAPABILITY_UNSUPPORTED" &&
+                    order.printSummary?.sides === "DOUBLE" ? (
+                      <button
+                        type="button"
+                        className="primary-button"
+                        style={{
+                          backgroundColor: "#0284c7",
+                          borderColor: "#0284c7",
+                        }}
+                        disabled={actionBusyId !== null}
+                        onClick={() => void handleConvertSingleSided(order)}
+                        title="Convert double-sided order to 1-sided and print immediately on 1-sided printer"
+                      >
+                        {actionBusyId === `single-sided-${order.orderId}`
+                          ? "Converting…"
+                          : "Print 1-Sided"}
+                      </button>
                     ) : null}
 
                     <button

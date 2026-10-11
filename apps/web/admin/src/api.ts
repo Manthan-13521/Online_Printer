@@ -388,6 +388,19 @@ export const adminApi = {
       },
     );
   },
+  convertOrderToSingleSided(
+    orderId: string,
+  ): Promise<
+    ApiResponse<{ orderId: string; status: "QUEUED"; message: string }>
+  > {
+    return request(
+      `/api/admin/orders/${encodeURIComponent(orderId)}/convert-single-sided`,
+      {
+        method: "POST",
+        body: "{}",
+      },
+    );
+  },
   getOrderPdfUrl(orderId: string): Promise<AdminOrderPdfUrlResponse> {
     return request(`/api/admin/orders/${encodeURIComponent(orderId)}/pdf-url`);
   },

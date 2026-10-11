@@ -162,6 +162,18 @@ export async function handleAdminOrdersRequest(
       return withAdminCors(ok(result, 200), env.ADMIN_ALLOWED_ORIGIN);
     }
 
+    const convertSingleSidedMatch =
+      /^\/api\/admin\/orders\/([^/]+)\/convert-single-sided$/u.exec(pathname);
+    if (request.method === "POST" && convertSingleSidedMatch) {
+      const orderId = decodeURIComponent(convertSingleSidedMatch[1] ?? "");
+      const printingService = createPrintingService(env);
+      const result = await printingService.convertOrderToSingleSided(
+        orderId,
+        session.admin.id,
+      );
+      return withAdminCors(ok(result, 200), env.ADMIN_ALLOWED_ORIGIN);
+    }
+
     const pdfUrlMatch = /^\/api\/admin\/orders\/([^/]+)\/pdf-url$/u.exec(
       pathname,
     );

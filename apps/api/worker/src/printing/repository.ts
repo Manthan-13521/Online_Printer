@@ -166,6 +166,89 @@ function parseAddonServices(
   }
 }
 
+function checkPrinterFileCapability(
+  p: {
+    capabilities_json?: string | null;
+    verified_capabilities_json?: string | null;
+    enabled_services_json?: string | null;
+  },
+  file: { paper_size: string; color_mode: string; sides: string },
+): { compatible: boolean; missing?: string } {
+  let bw = false;
+  let color = false;
+  let duplex = false;
+  let a4 = false;
+  let a3 = false;
+
+  if (p.verified_capabilities_json && p.enabled_services_json) {
+    try {
+      const v = JSON.parse(p.verified_capabilities_json) as {
+        verified?: Record<string, unknown>;
+      };
+      const s = JSON.parse(p.enabled_services_json) as Record<string, unknown>;
+      const verified = v.verified ?? {};
+      bw =
+        (verified.bw === 1 || verified.bw === true) &&
+        (s.bw === 1 || s.bw === true);
+      color =
+        (verified.color === 1 || verified.color === true) &&
+        (s.color === 1 || s.color === true);
+      duplex =
+        (verified.duplex === 1 || verified.duplex === true) &&
+        (s.duplex === 1 || s.duplex === true);
+      a4 =
+        (verified.a4 === 1 || verified.a4 === true) &&
+        (s.a4 === 1 || s.a4 === true);
+      a3 =
+        (verified.a3 === 1 || verified.a3 === true) &&
+        (s.a3 === 1 || s.a3 === true);
+    } catch {
+      // ignore
+    }
+  } else if (p.capabilities_json) {
+    try {
+      const caps = JSON.parse(p.capabilities_json) as {
+        colour?: unknown;
+        duplex?: unknown;
+        paperSizes?: unknown[];
+      };
+      color =
+        caps.colour === 1 || caps.colour === true || caps.colour === "true";
+      bw = true;
+      duplex =
+        caps.duplex === 1 || caps.duplex === true || caps.duplex === "true";
+      const paperSizes = (caps.paperSizes ?? []).map((sz) =>
+        String(sz).toUpperCase(),
+      );
+      a4 = paperSizes.includes("A4");
+      a3 = paperSizes.includes("A3");
+    } catch {
+      bw = true;
+      a4 = true;
+    }
+  } else {
+    bw = true;
+    a4 = true;
+  }
+
+  if (file.color_mode === "COLOR" && !color) {
+    return { compatible: false, missing: "Colour printing" };
+  }
+  if (file.color_mode === "BW" && !bw) {
+    return { compatible: false, missing: "Black & White printing" };
+  }
+  if (file.sides === "DOUBLE" && !duplex) {
+    return { compatible: false, missing: "Double-sided (Duplex) printing" };
+  }
+  if (file.paper_size === "A3" && !a3) {
+    return { compatible: false, missing: "A3 paper" };
+  }
+  if (file.paper_size === "A4" && !a4) {
+    return { compatible: false, missing: "A4 paper" };
+  }
+  return { compatible: true };
+}
+
 function mapJob(row: JobRow | null): ClaimedPrintJobRecord | null {
   if (!row) return null;
   return {
@@ -326,6 +409,11 @@ export interface PrintingRepository {
     bucket: R2Bucket;
     nowMs: number;
   }): Promise<{ orderId: string; deleted: boolean; message: string }>;
+  convertOrderToSingleSided(input: {
+    orderId: string;
+    adminId: string;
+    nowMs: number;
+  }): Promise<{ orderId: string; status: "QUEUED"; message: string }>;
 }
 
 export class D1PrintingRepository implements PrintingRepository {
@@ -2930,12 +3018,14 @@ export class D1PrintingRepository implements PrintingRepository {
       }
     }
 
-    // Check printer statuses
+    // Check printer statuses (ONLY enabled printers on active agents)
     const printerRows = await this.db
       .prepare(
-        `SELECT id, display_name, windows_printer_name, status, status_reason, enabled, is_paused
-         FROM printers
-         WHERE enabled = 1`,
+        `SELECT p.id, p.display_name, p.windows_printer_name, p.status, p.status_reason, p.enabled, p.is_paused,
+                p.capabilities_json, p.verified_capabilities_json, p.enabled_services_json
+         FROM printers p
+         JOIN agents a ON a.id = p.agent_id
+         WHERE a.is_active = 1 AND p.enabled = 1`,
       )
       .all<{
         id: string;
@@ -2945,6 +3035,9 @@ export class D1PrintingRepository implements PrintingRepository {
         status_reason: string | null;
         enabled: number;
         is_paused: number | null;
+        capabilities_json: string | null;
+        verified_capabilities_json: string | null;
+        enabled_services_json: string | null;
       }>();
 
     let printerIssue: string | null = null;
@@ -2964,6 +3057,24 @@ export class D1PrintingRepository implements PrintingRepository {
         : "";
       printerIssue = `${troubledPrinter.display_name}: ${troubledPrinter.status}${reasonDetail}`;
     }
+
+    // Query file requirements for waiting orders
+    const waitingFileRequirements =
+      waitingOrders.length > 0
+        ? await this.db
+            .prepare(
+              `SELECT f.order_id, f.paper_size, f.color_mode, f.sides
+               FROM order_files f
+               WHERE f.order_id IN (${waitingOrders.map(() => "?").join(",")})`,
+            )
+            .bind(...waitingOrders.map((o) => o.id))
+            .all<{
+              order_id: string;
+              paper_size: string;
+              color_mode: string;
+              sides: string;
+            }>()
+        : { results: [] };
 
     const STALL_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -3014,7 +3125,50 @@ export class D1PrintingRepository implements PrintingRepository {
         };
       }
 
-      // Condition 2B: Waiting orders stalled because physical lock held by review order or agent stall for 5+ min
+      // Condition 2B: Waiting orders stalled because of capability starvation (e.g. duplex on simplex printer)
+      const oldestFiles = (waitingFileRequirements.results ?? []).filter(
+        (f) => f.order_id === oldestWaiting.id,
+      );
+      let oldestMissingCapability: string | null = null;
+      if (oldestFiles.length > 0 && activePrinters.length > 0) {
+        const hasCapablePrinter = activePrinters.some((p) =>
+          oldestFiles.every((f) => checkPrinterFileCapability(p, f).compatible),
+        );
+        if (!hasCapablePrinter) {
+          for (const f of oldestFiles) {
+            for (const p of activePrinters) {
+              const check = checkPrinterFileCapability(p, f);
+              if (!check.compatible && check.missing) {
+                oldestMissingCapability = check.missing;
+                break;
+              }
+            }
+            if (oldestMissingCapability) break;
+          }
+          if (!oldestMissingCapability) {
+            oldestMissingCapability = "required printer features";
+          }
+        }
+      } else if (activePrinters.length === 0) {
+        oldestMissingCapability = "an enabled production printer";
+      }
+
+      if (oldestMissingCapability && waitingDuration >= STALL_THRESHOLD_MS) {
+        return {
+          isStalled: true,
+          stalledSinceMs: oldestWaiting.queued_at_ms,
+          stalledDurationMs: waitingDuration,
+          stalledOrderId: oldestWaiting.id,
+          stalledOrderCode: oldestWaiting.public_job_code,
+          reason: `Order ${oldestWaiting.public_job_code ?? oldestWaiting.id} requires ${oldestMissingCapability}, but no enabled printer supports this. Run Print Recovery to move to Needs Review.`,
+          printerIssue,
+          waitingCount,
+          activeCount,
+          needsReviewCount,
+        };
+      }
+
+      // Condition 2C: Waiting orders stalled because physical lock held by review order or agent stall for 5+ min
       if (waitingDuration >= STALL_THRESHOLD_MS) {
         const reviewWithLock = reviewOrders.find(
           (r) => r.physical_device_id !== null,
@@ -3066,7 +3220,7 @@ export class D1PrintingRepository implements PrintingRepository {
                 a.last_heartbeat_at_ms, a.is_active
          FROM printers p
          JOIN agents a ON a.id = p.agent_id
-         WHERE p.enabled = 1
+         WHERE a.is_active = 1 AND p.enabled = 1
          ORDER BY (p.status = 'ONLINE') DESC, p.priority ASC
          LIMIT 1`,
       )
@@ -3215,6 +3369,159 @@ export class D1PrintingRepository implements PrintingRepository {
       );
     }
 
+    // 3b. Check Waiting Orders for Capability Starvation
+    // If any order in QUEUED or RETRY_PENDING cannot be printed by ANY enabled active printer
+    // (e.g. order requires Duplex or Color or A3, but no enabled printer supports it):
+    // Move it to ADMIN_ACTION_REQUIRED to unblock the queue and notify the operator!
+    const activePrintersRows = await this.db
+      .prepare(
+        `SELECT p.id, p.agent_id, p.display_name, p.windows_printer_name, p.status, p.status_reason,
+                p.capabilities_json, p.verified_capabilities_json, p.enabled_services_json
+         FROM printers p
+         JOIN agents a ON a.id = p.agent_id
+         WHERE a.is_active = 1 AND p.enabled = 1`,
+      )
+      .all<{
+        id: string;
+        agent_id: string;
+        display_name: string;
+        windows_printer_name: string;
+        status: string;
+        status_reason: string | null;
+        capabilities_json: string | null;
+        verified_capabilities_json: string | null;
+        enabled_services_json: string | null;
+      }>();
+    const activePrintersList = activePrintersRows.results ?? [];
+
+    const waitingForReview = await this.db
+      .prepare(
+        `SELECT o.id, o.public_job_code, f.paper_size, f.color_mode, f.sides
+         FROM orders o
+         JOIN order_files f ON f.order_id = o.id
+         WHERE o.status IN ('QUEUED', 'RETRY_PENDING') AND o.cleanup_state = 'ACTIVE'
+         ORDER BY o.queued_at_ms ASC`,
+      )
+      .all<{
+        id: string;
+        public_job_code: string | null;
+        paper_size: string;
+        color_mode: string;
+        sides: string;
+      }>();
+
+    const waitingOrdersMap = new Map<
+      string,
+      {
+        orderId: string;
+        publicJobCode: string | null;
+        files: Array<{ paper_size: string; color_mode: string; sides: string }>;
+      }
+    >();
+    for (const row of waitingForReview.results ?? []) {
+      const existing = waitingOrdersMap.get(row.id) ?? {
+        orderId: row.id,
+        publicJobCode: row.public_job_code,
+        files: [],
+      };
+      existing.files.push({
+        paper_size: row.paper_size,
+        color_mode: row.color_mode,
+        sides: row.sides,
+      });
+      waitingOrdersMap.set(row.id, existing);
+    }
+
+    let capabilityQuarantinedCount = 0;
+    for (const [orderId, orderData] of waitingOrdersMap.entries()) {
+      const isSupported =
+        activePrintersList.length > 0 &&
+        activePrintersList.some((p) =>
+          orderData.files.every(
+            (f) => checkPrinterFileCapability(p, f).compatible,
+          ),
+        );
+
+      if (!isSupported) {
+        let missingReason = "required printer features";
+        for (const f of orderData.files) {
+          for (const p of activePrintersList) {
+            const check = checkPrinterFileCapability(p, f);
+            if (!check.compatible && check.missing) {
+              missingReason = check.missing;
+              break;
+            }
+          }
+          if (missingReason !== "required printer features") break;
+        }
+
+        const reasonMsg = `Order requires ${missingReason}, but no enabled printer supports this.`;
+
+        const fallbackAgentId =
+          activePrintersList[0]?.agent_id ??
+          (
+            await this.db
+              .prepare("SELECT id FROM agents WHERE is_active = 1 LIMIT 1")
+              .first<{ id: string }>()
+          )?.id ??
+          crypto.randomUUID();
+        const claimIdForQuarantine = crypto.randomUUID();
+        const claimExpiresAtMs = input.nowMs + 60_000;
+
+        await this.db
+          .prepare(
+            `UPDATE orders
+             SET status = 'ADMIN_ACTION_REQUIRED',
+                 claimed_by_agent_id = ?,
+                 claim_id = ?,
+                 claimed_at_ms = ?,
+                 claim_expires_at_ms = ?,
+                 error_category = 'PRINTER_CAPABILITY_UNSUPPORTED',
+                 raw_error = ?,
+                 blocked_reason = ?,
+                 recovered_at_ms = ?,
+                 recovery_reason = 'CAPABILITY_MISMATCH_QUARANTINED',
+                 updated_at_ms = ?
+             WHERE id = ?`,
+          )
+          .bind(
+            fallbackAgentId,
+            claimIdForQuarantine,
+            input.nowMs,
+            claimExpiresAtMs,
+            reasonMsg,
+            reasonMsg,
+            input.nowMs,
+            input.nowMs,
+            orderId,
+          )
+          .run();
+
+        await this.db
+          .prepare(
+            `INSERT INTO audit_logs (id, actor_type, actor_id, action, entity_type, entity_id, metadata_json, created_at_ms)
+             VALUES (?, 'ADMIN', ?, 'ORDER_QUARANTINED_CAPABILITY_MISMATCH', 'ORDER', ?, ?, ?)`,
+          )
+          .bind(
+            crypto.randomUUID(),
+            input.adminId,
+            orderId,
+            JSON.stringify({
+              orderId,
+              publicJobCode: orderData.publicJobCode,
+              missingReason,
+            }),
+            input.nowMs,
+          )
+          .run();
+
+        capabilityQuarantinedCount++;
+        details.push(
+          `Order ${orderData.publicJobCode ?? orderId} requires ${missingReason}, but no enabled printer supports this. Moved to Needs Review (queue unblocked).`,
+        );
+      }
+    }
+
     // 4. Release Physical Printer Locks on Quarantined / Uncertain Orders
     // This allows subsequent waiting orders to print while preserving quarantined orders for physical inspection!
     const reviewWithLocks = await this.db
@@ -3227,7 +3534,9 @@ export class D1PrintingRepository implements PrintingRepository {
 
     const reviewRows = reviewWithLocks.results ?? [];
     const uncertainOrdersCount =
-      reviewRows.length + (stalledInFlight.results?.length ?? 0);
+      reviewRows.length +
+      (stalledInFlight.results?.length ?? 0) +
+      capabilityQuarantinedCount;
     if (reviewRows.length > 0) {
       await this.db
         .prepare(
@@ -3297,10 +3606,16 @@ export class D1PrintingRepository implements PrintingRepository {
           recoveredOrdersCount,
           resumedOrdersCount,
           uncertainOrdersCount,
+          capabilityQuarantinedCount,
         }),
         input.nowMs,
       )
       .run();
+
+    const finalMessage =
+      capabilityQuarantinedCount > 0
+        ? `Print Recovery complete: ${capabilityQuarantinedCount} order(s) moved to Needs Review (printer capability mismatch). ${resumedOrdersCount} order(s) ready in queue.`
+        : `Print Recovery complete: ${recoveredOrdersCount} order(s) reclaimed safely, ${resumedOrdersCount} order(s) ready in queue. Physical printer locks cleared.`;
 
     return {
       recoveredOrdersCount,
@@ -3308,7 +3623,7 @@ export class D1PrintingRepository implements PrintingRepository {
       uncertainOrdersCount,
       printerOnline: isPrinterOnline,
       printerName: printerDisplayName,
-      message: `Print Recovery complete: ${recoveredOrdersCount} order(s) reclaimed safely, ${resumedOrdersCount} order(s) ready in queue. Physical printer locks cleared.`,
+      message: finalMessage,
       details,
     };
   }
@@ -3345,9 +3660,9 @@ export class D1PrintingRepository implements PrintingRepository {
         .prepare(
           `SELECT p.id, p.agent_id, p.display_name, p.windows_printer_name
            FROM printers p
+           JOIN agents a ON a.id = p.agent_id
            JOIN installation i ON i.id = 1
-           WHERE (i.default_production_printer_id IS NOT NULL AND p.id = i.default_production_printer_id)
-              OR p.enabled = 1
+           WHERE a.is_active = 1 AND p.enabled = 1
            ORDER BY (i.default_production_printer_id IS NOT NULL AND p.id = i.default_production_printer_id) DESC,
                     p.status = 'ONLINE' DESC
            LIMIT 1`,
@@ -3422,6 +3737,107 @@ export class D1PrintingRepository implements PrintingRepository {
       windowsPrinterName: printerRow.windows_printer_name,
       status: "PENDING",
       message: `Selective spooler clear command dispatched for printer "${printerRow.display_name}". Only PrintGo documents (printgo-*) will be cancelled.`,
+    };
+  }
+
+  async convertOrderToSingleSided(input: {
+    orderId: string;
+    adminId: string;
+    nowMs: number;
+  }): Promise<{ orderId: string; status: "QUEUED"; message: string }> {
+    const order = await this.db
+      .prepare(
+        `SELECT id, status, cleanup_state, public_job_code,
+           EXISTS (
+             SELECT 1 FROM uploads u WHERE u.order_id = orders.id
+               AND u.storage_status = 'UPLOADED' AND u.deleted_at_ms IS NULL
+           ) AS has_printable_file
+         FROM orders WHERE id = ?`,
+      )
+      .bind(input.orderId)
+      .first<{
+        id: string;
+        status: string;
+        cleanup_state: string;
+        public_job_code: string | null;
+        has_printable_file: number;
+      }>();
+
+    if (!order) {
+      throw new Error("ORDER_NOT_FOUND");
+    }
+    if (order.cleanup_state !== "ACTIVE") {
+      throw new Error("ORDER_CANNOT_BE_MODIFIED");
+    }
+    if (order.status !== "ADMIN_ACTION_REQUIRED" && order.status !== "QUEUED") {
+      throw new Error("ORDER_CANNOT_BE_MODIFIED");
+    }
+    if (order.has_printable_file !== 1) {
+      throw new Error("ORDER_PDF_EXPIRED");
+    }
+
+    const statements: D1PreparedStatement[] = [
+      this.db
+        .prepare(
+          `UPDATE order_files
+           SET sides = 'SINGLE', print_status = 'PENDING', spooler_job_id = NULL, updated_at_ms = ?
+           WHERE order_id = ?`,
+        )
+        .bind(input.nowMs, input.orderId),
+      this.db
+        .prepare(
+          `UPDATE orders
+           SET status = 'QUEUED', claimed_by_agent_id = NULL, claim_id = NULL,
+               claim_expires_at_ms = NULL, printer_id = NULL, physical_device_id = NULL,
+               claimed_at_ms = NULL, error_category = NULL, raw_error = NULL,
+               blocked_reason = NULL, attempt_count = 0, fallback_count = 0,
+               next_retry_at_ms = NULL, queued_at_ms = ?, updated_at_ms = ?
+           WHERE id = ? AND cleanup_state = 'ACTIVE'`,
+        )
+        .bind(input.nowMs, input.nowMs, input.orderId),
+      this.db
+        .prepare(
+          `UPDATE print_attempts
+           SET status = 'CANCELLED', finished_at_ms = COALESCE(finished_at_ms, ?),
+               updated_at_ms = ?
+           WHERE order_id = ? AND status NOT IN ('SUCCEEDED', 'CANCELLED')`,
+        )
+        .bind(input.nowMs, input.nowMs, input.orderId),
+      this.db
+        .prepare(
+          `INSERT INTO order_events (
+             id, order_id, event_type, from_status, to_status, actor_type, actor_id, details_json, created_at_ms
+           ) VALUES (?, ?, 'ORDER_CONVERTED_SINGLE_SIDED', ?, 'QUEUED', 'ADMIN', ?, ?, ?)`,
+        )
+        .bind(
+          crypto.randomUUID(),
+          input.orderId,
+          order.status,
+          input.adminId,
+          JSON.stringify({ convertedSides: "SINGLE", previousSides: "DOUBLE" }),
+          input.nowMs,
+        ),
+      this.db
+        .prepare(
+          `INSERT INTO audit_logs (
+             id, actor_type, actor_id, action, entity_type, entity_id, metadata_json, created_at_ms
+           ) VALUES (?, 'ADMIN', ?, 'ORDER_CONVERTED_SINGLE_SIDED', 'ORDER', ?, ?, ?)`,
+        )
+        .bind(
+          crypto.randomUUID(),
+          input.adminId,
+          input.orderId,
+          JSON.stringify({ orderId: input.orderId, convertedSides: "SINGLE" }),
+          input.nowMs,
+        ),
+    ];
+
+    await this.db.batch(statements);
+
+    return {
+      orderId: input.orderId,
+      status: "QUEUED",
+      message: `Order ${order.public_job_code ?? order.id} converted to single-sided (1-sided) and returned to queue.`,
     };
   }
 }

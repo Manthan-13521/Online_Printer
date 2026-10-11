@@ -381,4 +381,25 @@ export class PrintingService {
       nowMs: this.now(),
     });
   }
+
+  async convertOrderToSingleSided(orderId: string, adminId: string) {
+    try {
+      return await this.repository.convertOrderToSingleSided({
+        orderId,
+        adminId,
+        nowMs: this.now(),
+      });
+    } catch (err) {
+      if (err instanceof Error && err.message === "ORDER_NOT_FOUND") {
+        throw new PrintingError("ORDER_NOT_FOUND");
+      }
+      if (err instanceof Error && err.message === "ORDER_PDF_EXPIRED") {
+        throw new PrintingError("ORDER_PDF_EXPIRED");
+      }
+      if (err instanceof Error && err.message === "ORDER_CANNOT_BE_MODIFIED") {
+        throw new PrintingError("ORDER_CANNOT_BE_RETRIED");
+      }
+      throw err;
+    }
+  }
 }

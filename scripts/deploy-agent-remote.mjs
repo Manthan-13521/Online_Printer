@@ -12,7 +12,7 @@ const distPackageDir = path.resolve(
   "dist-package/PrintGo-Windows-Test",
 );
 const remoteHost = process.env.PRINTGO_REMOTE_HOST || "printgo-windows";
-const remoteDir = "C:/Users/MANTH/Downloads/PrintGo-Windows-Test";
+const remoteDir = process.env.PRINTGO_REMOTE_DIR || "C:/PrintGo/test-agent";
 
 console.log("===================================================");
 console.log("     PrintGo Remote Windows Agent Deployment");
