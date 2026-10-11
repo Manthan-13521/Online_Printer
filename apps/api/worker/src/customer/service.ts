@@ -40,10 +40,12 @@ import {
   verifyPdfObject,
   type PrivateObjectStore,
 } from "../storage/r2-verification";
+import type { PaymentReadiness } from "../payments/readiness";
 
 export type CustomerErrorCode =
   | "ONLINE_PRINTING_DISABLED"
   | "CASH_ORDERS_DISABLED"
+  | "PRINTER_NOT_READY"
   | "PRINT_OPTIONS_UNAVAILABLE"
   | "DRAFT_INVALID"
   | "DRAFT_EXPIRED"
@@ -62,19 +64,34 @@ export type CustomerErrorCode =
   | "TRACKING_NOT_FOUND";
 
 export class CustomerError extends Error {
-  constructor(readonly code: CustomerErrorCode) {
-    super(code);
+  constructor(
+    readonly code: CustomerErrorCode,
+    message?: string,
+  ) {
+    super(message ?? code);
     this.name = "CustomerError";
   }
 }
 
 export class CustomerService {
+  private readonly readiness: PaymentReadiness | undefined;
+  private readonly now: () => number;
+
   constructor(
     private readonly repository: CustomerRepository,
     private readonly signer: UploadSigner,
     private readonly objects: PrivateObjectStore,
-    private readonly now: () => number = Date.now,
-  ) {}
+    readinessOrNow?: PaymentReadiness | (() => number),
+    now: () => number = Date.now,
+  ) {
+    if (typeof readinessOrNow === "function") {
+      this.readiness = undefined;
+      this.now = readinessOrNow;
+    } else {
+      this.readiness = readinessOrNow;
+      this.now = now;
+    }
+  }
 
   private async requireDraft(rawToken: string): Promise<CustomerDraftRecord> {
     const draft = await this.repository.findDraft(
@@ -391,6 +408,31 @@ export class CustomerService {
       throw new CustomerError("CASH_ORDERS_DISABLED");
     }
     const tokenHash = await hashSessionToken(rawToken);
+    await this.requireSummary(rawToken);
+    const files = await this.repository.listFiles(tokenHash);
+
+    // Enforce identical server-side capability checks as online payment
+    if (this.readiness) {
+      const checked = new Set<string>();
+      for (const file of files) {
+        const key = `${file.paperSize}:${file.colorMode}:${file.sides}`;
+        if (checked.has(key)) continue;
+        checked.add(key);
+        const readinessResult = await this.readiness.check({
+          paperSize: file.paperSize,
+          colorMode: file.colorMode,
+          sides: file.sides,
+        });
+        if (!readinessResult.ready) {
+          throw new CustomerError(
+            "PRINTER_NOT_READY",
+            readinessResult.message ??
+              "The shop printer is currently not ready to print.",
+          );
+        }
+      }
+    }
+
     try {
       return await this.repository.selectCashPayment({
         tokenHash,

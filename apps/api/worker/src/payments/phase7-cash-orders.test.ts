@@ -458,7 +458,7 @@ describe("PRINTGO — PHASE 7 ACCEPTANCE TEST SUITE: CASH ORDERS & SMART PAYMENT
 
     expect(confirmed.orderId).toBe(orderId);
     expect(confirmed.status).toBe("QUEUED");
-    expect(confirmed.publicJobCode).toMatch(/^PG-[A-Z0-9]{6}$/);
+    expect(confirmed.publicJobCode).toMatch(/^(PG-[A-Z0-9]{6}|CASH-\d{3,5})$/);
 
     // Verify order in D1
     const order = db
@@ -629,7 +629,7 @@ describe("PRINTGO — PHASE 7 ACCEPTANCE TEST SUITE: CASH ORDERS & SMART PAYMENT
     });
 
     expect(verified.status).toBe("QUEUED");
-    expect(verified.jobCode).toMatch(/^PG-[A-Z0-9]{6}$/);
+    expect(verified.jobCode).toMatch(/^(PG-[A-Z0-9]{6}|CASH-\d{3,5})$/);
 
     const orderRow = db
       .prepare("SELECT status FROM orders WHERE id = ?")
@@ -909,5 +909,31 @@ describe("PRINTGO — PHASE 7 ACCEPTANCE TEST SUITE: CASH ORDERS & SMART PAYMENT
     expect(claim?.copies).toBe(1);
     expect(claim?.paperSize).toBe("A4");
     expect(claim?.colorMode).toBe("BW");
+  });
+
+  it("Scenario 14: CASH-123 reference code format, reuse on repeat selection, and collision avoidance", async () => {
+    const settings = await configRepo.getSettings();
+    await configRepo.updateSettings({
+      settings: { ...settings!, cashOrdersEnabled: true },
+      previousOnlinePrintingEnabled: true,
+      adminId: "admin-1",
+      nowMs: currentSimulatedTime,
+    });
+
+    const { orderId, rawToken } = await createDraftWithFile();
+    const result = await customerService.selectCashPayment(rawToken);
+
+    // 1. Must match CASH- followed by 3-5 digits
+    expect(result.publicJobCode).toMatch(/^CASH-\d{3,5}$/);
+
+    // 2. Calling selectCashPayment again must reuse the same CASH- reference
+    const repeatResult = await customerService.selectCashPayment(rawToken);
+    expect(repeatResult.publicJobCode).toBe(result.publicJobCode);
+
+    // 3. Verify order in D1
+    const order = db
+      .prepare("SELECT public_job_code FROM orders WHERE id = ?")
+      .get(orderId) as { public_job_code: string };
+    expect(order.public_job_code).toBe(result.publicJobCode);
   });
 });

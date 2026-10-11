@@ -5,8 +5,12 @@ import type {
 } from "@printgo/api-contract";
 import { useEffect, useState } from "react";
 import { Pagination } from "./Pagination";
-import { adminApi, AdminApiError, friendlyAdminError } from "./api";
-import { startVisiblePolling } from "../../polling";
+import {
+  adminApi,
+  AdminApiError,
+  friendlyAdminError,
+  getAdminToken,
+} from "./api";
 
 function formatPaise(paise: number): string {
   return `₹${(paise / 100).toFixed(2)}`;
@@ -28,10 +32,12 @@ function AddonBadge({ snapshot }: { snapshot: OrderAddonServiceSnapshot }) {
 function ManualOrderCard({
   order,
   onAction,
+  onFinished,
   onSessionExpired,
 }: {
   order: AdminManualOrder;
   onAction: () => void;
+  onFinished?: (orderId: string) => void;
   onSessionExpired: (message: string) => void;
 }) {
   const [acting, setActing] = useState(false);
@@ -61,6 +67,7 @@ function ManualOrderCard({
     setError(null);
     try {
       await adminApi.markOrderFinished(order.orderId);
+      onFinished?.(order.orderId);
       onAction();
     } catch (caught: unknown) {
       if (caught instanceof AdminApiError && caught.status === 401) {
@@ -296,6 +303,166 @@ function ManualOrderCard({
   );
 }
 
+function CashOrderCard({
+  order,
+  nowMs,
+  onConfirm,
+}: {
+  order: AdminCashOrder;
+  nowMs: number;
+  onConfirm: (order: AdminCashOrder) => void;
+}) {
+  const isGrace =
+    nowMs >= order.cashExpiresAtMs && nowMs < order.cashGraceUntilMs;
+
+  const targetMs = isGrace ? order.cashGraceUntilMs : order.cashExpiresAtMs;
+  const diffSec = Math.max(0, Math.floor((targetMs - nowMs) / 1000));
+  const mins = Math.floor(diffSec / 60);
+  const secs = diffSec % 60;
+  const countdownStr = `${mins}:${secs.toString().padStart(2, "0")}`;
+
+  const jobCodeDisplay =
+    order.publicJobCode || order.orderId.slice(0, 8).toUpperCase();
+
+  return (
+    <div
+      className="manual-order-card"
+      style={{
+        backgroundColor: isGrace ? "#FFFBEB" : "#F0FDF4",
+        border: `1.5px solid ${isGrace ? "#FDE68A" : "#BBF7D0"}`,
+        borderRadius: "0.75rem",
+        padding: "1.1rem",
+        display: "flex",
+        flexDirection: "column",
+        gap: "0.75rem",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: "0.5rem",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <strong
+            className="job-code"
+            style={{
+              fontSize: "1.25rem",
+              color: isGrace ? "#92400E" : "#166534",
+              margin: 0,
+            }}
+          >
+            {jobCodeDisplay}
+          </strong>
+        </div>
+        <div>
+          {isGrace ? (
+            <span
+              style={{
+                backgroundColor: "#FEF3C7",
+                color: "#92400E",
+                padding: "0.2rem 0.6rem",
+                borderRadius: "9999px",
+                fontSize: "0.8rem",
+                fontWeight: 700,
+                border: "1px solid #FCD34D",
+              }}
+            >
+              ⚠️ Grace: {countdownStr}
+            </span>
+          ) : (
+            <span
+              style={{
+                backgroundColor: "#DCFCE7",
+                color: "#166534",
+                padding: "0.2rem 0.6rem",
+                borderRadius: "9999px",
+                fontSize: "0.8rem",
+                fontWeight: 700,
+                border: "1px solid #86EFAC",
+              }}
+            >
+              ⏱️ {countdownStr}
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "baseline",
+          borderTop: `1px solid ${isGrace ? "#FEF3C7" : "#DCFCE7"}`,
+          borderBottom: `1px solid ${isGrace ? "#FEF3C7" : "#DCFCE7"}`,
+          padding: "0.55rem 0",
+        }}
+      >
+        <div>
+          <div
+            style={{ fontSize: "0.95rem", fontWeight: 600, color: "#1F2937" }}
+          >
+            {order.customerName || "Walk-in Customer"}
+          </div>
+          {order.customerPhone ? (
+            <div className="muted" style={{ fontSize: "0.85rem" }}>
+              {order.customerPhone}
+            </div>
+          ) : null}
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <span
+            className="muted"
+            style={{
+              fontSize: "0.75rem",
+              display: "block",
+              textTransform: "uppercase",
+              letterSpacing: "0.04em",
+              fontWeight: 600,
+            }}
+          >
+            Cash to Collect
+          </span>
+          <strong
+            style={{
+              fontSize: "1.35rem",
+              color: isGrace ? "#92400E" : "#166534",
+              fontWeight: 800,
+            }}
+          >
+            {formatPaise(order.payableAmountPaise)}
+          </strong>
+        </div>
+      </div>
+
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "flex-end",
+          marginTop: "0.25rem",
+        }}
+      >
+        <button
+          className="primary-button"
+          type="button"
+          style={{
+            width: "100%",
+            padding: "0.55rem 0.75rem",
+            fontSize: "0.95rem",
+            fontWeight: 700,
+            backgroundColor: isGrace ? "#D97706" : "#166534",
+          }}
+          onClick={() => onConfirm(order)}
+        >
+          Confirm Cash Received
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function ManualOrdersPage({
   onSessionExpired,
 }: {
@@ -317,6 +484,7 @@ export function ManualOrdersPage({
   const [confirmCashError, setConfirmCashError] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState(Date.now());
 
+  // 1-second ticker for smooth countdown with ZERO network calls
   useEffect(() => {
     const timer = setInterval(() => setNowMs(Date.now()), 1000);
     return () => clearInterval(timer);
@@ -363,11 +531,98 @@ export function ManualOrdersPage({
     }
   }
 
+  // Event-driven WebSocket connection + window focus + 90s fallback
   useEffect(() => {
-    return startVisiblePolling(async () => {
-      await loadCash();
-      await load();
-    }, 10_000);
+    // Initial fetch
+    void loadCash();
+    void load();
+
+    let ws: WebSocket | null = null;
+    let reconnectTimeout: ReturnType<typeof setTimeout> | undefined;
+    let isDisposed = false;
+
+    function connectWs() {
+      if (isDisposed) return;
+      try {
+        const token = getAdminToken();
+        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+        const wsUrl = `${protocol}//${window.location.host}/api/admin/ws${token ? `?token=${encodeURIComponent(token)}` : ""}`;
+        ws = new WebSocket(wsUrl);
+
+        ws.onmessage = (event: MessageEvent<string>) => {
+          try {
+            const rawData: unknown = event.data;
+            if (typeof rawData === "string") {
+              const data: unknown = JSON.parse(rawData);
+              if (
+                typeof data === "object" &&
+                data !== null &&
+                "type" in data &&
+                data.type === "WAKE_UP"
+              ) {
+                void loadCash();
+                void load();
+              }
+            }
+          } catch {
+            // Ignored
+          }
+        };
+
+        ws.onerror = () => {
+          // Fallback handlers active
+        };
+
+        ws.onclose = () => {
+          if (!isDisposed) {
+            reconnectTimeout = setTimeout(connectWs, 15_000);
+          }
+        };
+      } catch {
+        // Fallback handlers active
+      }
+    }
+
+    connectWs();
+
+    // Browser tab focus & visibility change handler
+    function handleVisibility() {
+      if (!document.hidden) {
+        void loadCash();
+        void load();
+      }
+    }
+
+    function handleFocus() {
+      void loadCash();
+      void load();
+    }
+
+    document.addEventListener("visibilitychange", handleVisibility);
+    window.addEventListener("focus", handleFocus);
+
+    // Infrequent fallback refresh timer (90s)
+    const fallbackTimer = setInterval(() => {
+      if (!document.hidden) {
+        void loadCash();
+        void load();
+      }
+    }, 90_000);
+
+    return () => {
+      isDisposed = true;
+      if (ws) {
+        try {
+          ws.close();
+        } catch {
+          // Ignored
+        }
+      }
+      clearTimeout(reconnectTimeout);
+      clearInterval(fallbackTimer);
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("focus", handleFocus);
+    };
   }, []);
 
   async function handleConfirmCash() {
@@ -410,10 +665,10 @@ export function ManualOrdersPage({
     currentPage * PAGE_SIZE,
   );
 
-  if (loading && orders.length === 0) {
+  if (loading && orders.length === 0 && cashOrders.length === 0) {
     return (
       <div className="panel page-loading" aria-busy="true">
-        Loading manual orders…
+        Loading orders…
       </div>
     );
   }
@@ -433,167 +688,6 @@ export function ManualOrdersPage({
         </p>
       </div>
 
-      {/* ── Pending Cash Orders Table ── */}
-      <section className="panel">
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: "1rem",
-          }}
-        >
-          <div>
-            <h2 style={{ margin: 0, fontSize: "1.2rem" }}>
-              Pending Cash Orders ({activeCashOrders.length})
-            </h2>
-            <p
-              className="muted"
-              style={{ margin: "0.25rem 0 0", fontSize: "0.9rem" }}
-            >
-              Customers waiting at the counter. Confirm payment to release to
-              the print queue.
-            </p>
-          </div>
-          <button
-            className="secondary-button fit"
-            type="button"
-            onClick={() => void loadCash()}
-            disabled={cashLoading}
-          >
-            {cashLoading ? "Refreshing…" : "Refresh Cash"}
-          </button>
-        </div>
-
-        {cashError ? <p className="form-error">{cashError}</p> : null}
-
-        {activeCashOrders.length === 0 ? (
-          <p className="muted" style={{ margin: 0 }}>
-            No pending cash orders at the counter.
-          </p>
-        ) : (
-          <div style={{ overflowX: "auto" }}>
-            <table
-              style={{
-                width: "100%",
-                borderCollapse: "collapse",
-                textAlign: "left",
-              }}
-            >
-              <thead>
-                <tr
-                  style={{
-                    borderBottom: "2px solid #E1E5E2",
-                    fontSize: "0.85rem",
-                    color: "#4B5563",
-                  }}
-                >
-                  <th style={{ padding: "0.6rem 0.5rem" }}>Order Ref</th>
-                  <th style={{ padding: "0.6rem 0.5rem" }}>Customer</th>
-                  <th style={{ padding: "0.6rem 0.5rem" }}>Amount</th>
-                  <th style={{ padding: "0.6rem 0.5rem" }}>Time Remaining</th>
-                  <th style={{ padding: "0.6rem 0.5rem", textAlign: "right" }}>
-                    Action
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {activeCashOrders.map((order) => {
-                  const isGrace = nowMs >= order.cashExpiresAtMs;
-                  const targetMs = isGrace
-                    ? order.cashGraceUntilMs
-                    : order.cashExpiresAtMs;
-                  const secRemaining = Math.max(
-                    0,
-                    Math.floor((targetMs - nowMs) / 1000),
-                  );
-                  const mins = Math.floor(secRemaining / 60);
-                  const secs = secRemaining % 60;
-                  const countdownStr = `${mins}m ${secs.toString().padStart(2, "0")}s`;
-
-                  return (
-                    <tr
-                      key={order.orderId}
-                      style={{ borderBottom: "1px solid #F3F4F6" }}
-                    >
-                      <td
-                        style={{
-                          padding: "0.75rem 0.5rem",
-                          fontWeight: "bold",
-                        }}
-                      >
-                        {order.publicJobCode ||
-                          order.orderId.slice(0, 8).toUpperCase()}
-                      </td>
-                      <td style={{ padding: "0.75rem 0.5rem" }}>
-                        <div>{order.customerName}</div>
-                        <div className="muted" style={{ fontSize: "0.8rem" }}>
-                          {order.customerPhone}
-                        </div>
-                      </td>
-                      <td
-                        style={{
-                          padding: "0.75rem 0.5rem",
-                          fontWeight: "bold",
-                        }}
-                      >
-                        {formatPaise(order.payableAmountPaise)}
-                      </td>
-                      <td style={{ padding: "0.75rem 0.5rem" }}>
-                        {isGrace ? (
-                          <span
-                            style={{
-                              backgroundColor: "#FEF3C7",
-                              color: "#92400E",
-                              padding: "0.2rem 0.5rem",
-                              borderRadius: "4px",
-                              fontSize: "0.85rem",
-                              fontWeight: "bold",
-                            }}
-                          >
-                            ⚠️ Grace Period ({countdownStr})
-                          </span>
-                        ) : (
-                          <span
-                            style={{
-                              fontFamily: "monospace",
-                              fontSize: "0.95rem",
-                            }}
-                          >
-                            ⏱️ {countdownStr}
-                          </span>
-                        )}
-                      </td>
-                      <td
-                        style={{
-                          padding: "0.75rem 0.5rem",
-                          textAlign: "right",
-                        }}
-                      >
-                        <button
-                          className="primary-button"
-                          style={{
-                            padding: "0.4rem 0.75rem",
-                            fontSize: "0.85rem",
-                          }}
-                          type="button"
-                          onClick={() => {
-                            setConfirmCashError(null);
-                            setConfirmingCashOrder(order);
-                          }}
-                        >
-                          Confirm Cash Received
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
       {/* Confirmation Modal */}
       {confirmingCashOrder ? (
         <div
@@ -610,28 +704,24 @@ export function ManualOrdersPage({
           <div
             className="panel"
             style={{
-              maxWidth: "460px",
+              maxWidth: "420px",
               width: "90%",
-              backgroundColor: "#fff",
-              borderRadius: "8px",
-              padding: "1.5rem",
+              margin: 0,
               boxShadow: "0 4px 20px rgba(0, 0, 0, 0.15)",
             }}
           >
-            <h3 style={{ margin: "0 0 0.75rem", fontSize: "1.2rem" }}>
-              Confirm Cash Received
-            </h3>
-            <p style={{ margin: "0 0 0.5rem" }}>
-              Has the customer paid{" "}
-              <strong>
+            <h3 style={{ marginTop: 0 }}>Confirm Cash Payment</h3>
+            <p>
+              Confirm receipt of{" "}
+              <strong style={{ color: "#166534" }}>
                 {formatPaise(confirmingCashOrder.payableAmountPaise)}
               </strong>{" "}
-              in cash for order{" "}
+              for order{" "}
               <strong>
                 {confirmingCashOrder.publicJobCode ||
                   confirmingCashOrder.orderId.slice(0, 8).toUpperCase()}
               </strong>{" "}
-              ({confirmingCashOrder.customerName})?
+              ({confirmingCashOrder.customerName || "Customer"})?
             </p>
             <p
               className="muted"
@@ -673,53 +763,162 @@ export function ManualOrdersPage({
         </div>
       ) : null}
 
-      <div style={{ marginTop: "1rem" }}>
-        <h2>Manual &amp; Finishing Orders</h2>
-        <p className="muted" style={{ margin: "0.25rem 0 1rem" }}>
-          Orders requiring manual printing or staff finishing.
-        </p>
-      </div>
+      {/* ── Modern Two-Column Layout ── */}
+      <div className="cash-manual-two-col">
+        {/* Left Column: Manual & Finishing Orders */}
+        <section className="manual-orders-column">
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: "1rem",
+            }}
+          >
+            <div>
+              <h2 style={{ margin: 0, fontSize: "1.2rem" }}>
+                Manual &amp; Finishing Orders ({orders.length})
+              </h2>
+              <p
+                className="muted"
+                style={{ margin: "0.2rem 0 0", fontSize: "0.85rem" }}
+              >
+                Orders requiring manual printing or staff finishing.
+              </p>
+            </div>
+            <button
+              className="secondary-button fit"
+              style={{ fontSize: "0.8rem", padding: "0.3rem 0.6rem" }}
+              type="button"
+              onClick={() => {
+                setCurrentPage(1);
+                void load();
+              }}
+              disabled={loading}
+            >
+              {loading ? "Refreshing…" : "Refresh"}
+            </button>
+          </div>
 
-      {error ? (
-        <p className="form-error" role="alert">
-          {error}
-        </p>
-      ) : null}
-      <button
-        className="secondary-button fit"
-        type="button"
-        onClick={() => {
-          setCurrentPage(1);
-          void load();
-        }}
-      >
-        Refresh Manual Orders
-      </button>
-      {orders.length === 0 ? (
-        <div className="panel">
-          <p>No manual orders at this time.</p>
-        </div>
-      ) : (
-        <div className="manual-orders-list">
-          {paginatedOrders.map((order) => (
-            <ManualOrderCard
-              key={order.orderId}
-              order={order}
-              onAction={() => void load()}
-              onSessionExpired={onSessionExpired}
+          {error ? (
+            <p
+              className="form-error"
+              role="alert"
+              style={{ marginBottom: "1rem" }}
+            >
+              {error}
+            </p>
+          ) : null}
+
+          {orders.length === 0 ? (
+            <div
+              className="panel"
+              style={{ padding: "1.5rem", textAlign: "center" }}
+            >
+              <p className="muted" style={{ margin: 0 }}>
+                No manual or finishing orders at this time.
+              </p>
+            </div>
+          ) : (
+            <div className="manual-orders-list">
+              {paginatedOrders.map((order) => (
+                <ManualOrderCard
+                  key={order.orderId}
+                  order={order}
+                  onAction={() => void load()}
+                  onFinished={(id) => {
+                    setOrders((prev) => prev.filter((o) => o.orderId !== id));
+                  }}
+                  onSessionExpired={onSessionExpired}
+                />
+              ))}
+            </div>
+          )}
+
+          {orders.length > PAGE_SIZE && (
+            <Pagination
+              currentPage={currentPage}
+              totalItems={orders.length}
+              pageSize={PAGE_SIZE}
+              onPageChange={(p) => void handlePageChange(p)}
+              loading={loading}
+              hasNextPage={Boolean(cursor)}
+              itemLabel="manual orders"
             />
-          ))}
-        </div>
-      )}
-      <Pagination
-        currentPage={currentPage}
-        totalItems={orders.length}
-        pageSize={PAGE_SIZE}
-        onPageChange={(p) => void handlePageChange(p)}
-        loading={loading}
-        hasNextPage={Boolean(cursor)}
-        itemLabel="manual orders"
-      />
+          )}
+        </section>
+
+        {/* Right Column: Pending Cash Orders */}
+        <section className="cash-orders-column">
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: "1rem",
+            }}
+          >
+            <div>
+              <h2 style={{ margin: 0, fontSize: "1.2rem" }}>
+                Pending Cash Orders ({activeCashOrders.length})
+              </h2>
+              <p
+                className="muted"
+                style={{ margin: "0.2rem 0 0", fontSize: "0.85rem" }}
+              >
+                Orders waiting for cash payment at counter.
+              </p>
+            </div>
+            <button
+              className="secondary-button fit"
+              style={{ fontSize: "0.8rem", padding: "0.3rem 0.6rem" }}
+              type="button"
+              onClick={() => void loadCash()}
+              disabled={cashLoading}
+            >
+              {cashLoading ? "Refreshing…" : "Refresh"}
+            </button>
+          </div>
+
+          {cashError ? (
+            <p
+              className="form-error"
+              role="alert"
+              style={{ marginBottom: "1rem" }}
+            >
+              {cashError}
+            </p>
+          ) : null}
+
+          {activeCashOrders.length === 0 ? (
+            <div
+              className="panel"
+              style={{ padding: "1.5rem", textAlign: "center" }}
+            >
+              <p className="muted" style={{ margin: 0 }}>
+                No pending cash orders. New counter orders will appear here in
+                real time.
+              </p>
+            </div>
+          ) : (
+            <div
+              style={{ display: "flex", flexDirection: "column", gap: "1rem" }}
+            >
+              {activeCashOrders.map((order) => (
+                <CashOrderCard
+                  key={order.orderId}
+                  order={order}
+                  nowMs={nowMs}
+                  onConfirm={(o) => {
+                    setConfirmCashError(null);
+                    setConfirmingCashOrder(o);
+                  }}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
     </div>
   );
 }

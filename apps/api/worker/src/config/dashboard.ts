@@ -34,8 +34,33 @@ export async function handleDashboard(
         agentsRepo.getDefaultProductionPrinterId(),
         env.DB.batch([
           env.DB.prepare(
-            "SELECT created_count, earnings_paise FROM daily_order_stats WHERE date_key = ?",
-          ).bind(dateKey),
+            `SELECT 
+               COALESCE(
+                 (SELECT created_count FROM daily_order_stats WHERE date_key = ?),
+                 (SELECT COUNT(*) FROM orders WHERE strftime('%Y-%m-%d', datetime(created_at_ms / 1000 + 19800, 'unixepoch')) = ?)
+               ) as created_count,
+               COALESCE(
+                 (
+                   SELECT SUM(amount_paise) FROM (
+                     SELECT p.amount_paise
+                     FROM payments p
+                     WHERE p.status = 'PAID'
+                       AND strftime('%Y-%m-%d', datetime(p.verified_at_ms / 1000 + 19800, 'unixepoch')) = ?
+                     UNION ALL
+                     SELECT o.total_amount_paise AS amount_paise
+                     FROM orders o
+                     WHERE o.payment_method = 'CASH'
+                       AND o.status NOT IN ('CANCELLED', 'DRAFT')
+                       AND strftime('%Y-%m-%d', datetime(COALESCE(o.cash_confirmed_at_ms, o.paid_at_ms, o.created_at_ms) / 1000 + 19800, 'unixepoch')) = ?
+                       AND NOT EXISTS (
+                         SELECT 1 FROM payments p WHERE p.order_id = o.id AND p.status = 'PAID'
+                       )
+                   )
+                 ),
+                 (SELECT earnings_paise FROM daily_order_stats WHERE date_key = ?),
+                 0
+               ) as earnings_paise`,
+          ).bind(dateKey, dateKey, dateKey, dateKey, dateKey),
           env.DB.prepare(
             `SELECT status, COUNT(*) as count 
              FROM orders 

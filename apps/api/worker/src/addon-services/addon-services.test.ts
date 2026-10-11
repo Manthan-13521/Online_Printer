@@ -305,6 +305,110 @@ describe("Phase 2 — Add-on Services and Manual Orders", () => {
     };
     expect(row.status).toBe("COMPLETED");
     expect(row.purge_at_ms - row.completed_at_ms).toBe(COMPLETED_RETENTION_MS);
+
+    // Idempotent: calling mark-finished again returns 200 with alreadyCompleted
+    const idempotent = await handleAdminManualOrdersRequest(
+      request("mark-finished"),
+      env,
+    );
+    expect(idempotent.status).toBe(200);
+    const idempBody: {
+      data: { status: string; alreadyCompleted: boolean };
+    } = await idempotent.json();
+    expect(idempBody.data.status).toBe("COMPLETED");
+    expect(idempBody.data.alreadyCompleted).toBe(true);
+  });
+
+  it("mark-finished succeeds on AWAITING_FINISHING order even with SUBMITTED print_attempt_steps and unprinted files", async () => {
+    const rawDb = createTestDatabase();
+    const d1 = asD1(rawDb);
+    const env = {
+      DB: d1,
+      APP_ENV: "development",
+      ADMIN_ALLOWED_ORIGIN: "https://admin.example.test",
+    } as WorkerEnv;
+    const orderId = crypto.randomUUID();
+    const fileId = crypto.randomUUID();
+    const nowMs = 1000;
+    seedInstallation(rawDb, nowMs);
+    const adminId = crypto.randomUUID();
+    const token = "test-session-token-2";
+    rawDb
+      .prepare(
+        `INSERT INTO admins (id, login_identifier, password_hash, created_at_ms, updated_at_ms) VALUES (?, 'owner2', 'hash', 0, 0)`,
+      )
+      .run(adminId);
+    rawDb
+      .prepare(
+        `INSERT INTO admin_sessions (id, admin_id, token_hash, created_at_ms, expires_at_ms) VALUES (?, ?, ?, 0, ?)`,
+      )
+      .run(
+        crypto.randomUUID(),
+        adminId,
+        await hashSessionToken(token),
+        Date.now() + 100_000,
+      );
+
+    seedOrder(rawDb, orderId, "AWAITING_FINISHING", nowMs);
+    rawDb
+      .prepare(
+        `INSERT INTO order_files (id, order_id, position, original_filename,
+         r2_object_key, expected_size_bytes, size_bytes, source_page_count,
+         paper_size, color_mode, sides, upload_status, print_status,
+         uploaded_at_ms, created_at_ms, updated_at_ms)
+         VALUES (?, ?, 1, 'doc.pdf', 'uploads/test/doc.pdf', 100, 100, 1,
+         'A4', 'BW', 'SINGLE', 'UPLOADED', 'PENDING', 1000, 1000, 1000)`,
+      )
+      .run(fileId, orderId);
+    const attemptId = crypto.randomUUID();
+    const agentId = crypto.randomUUID();
+    const printerId = crypto.randomUUID();
+    rawDb
+      .prepare(
+        `INSERT INTO agents (id, display_name, credential_hash, is_active, paired_at_ms, last_heartbeat_at_ms, created_at_ms, updated_at_ms)
+         VALUES (?, 'Agent 1', 'hash', 1, ?, ?, ?, ?)`,
+      )
+      .run(agentId, nowMs, nowMs, nowMs, nowMs);
+    rawDb
+      .prepare(
+        `INSERT INTO printers (id, agent_id, display_name, windows_printer_name, enabled, status, capabilities_json, last_status_at_ms, created_at_ms, updated_at_ms)
+         VALUES (?, ?, 'Printer 1', 'Printer 1', 1, 'ONLINE', '{}', ?, ?, ?)`,
+      )
+      .run(printerId, agentId, nowMs, nowMs, nowMs);
+    rawDb
+      .prepare(
+        `INSERT INTO print_attempts (id, order_id, agent_id, printer_id, attempt_number, status, created_at_ms, updated_at_ms)
+         VALUES (?, ?, ?, ?, 1, 'SUCCEEDED', ?, ?)`,
+      )
+      .run(attemptId, orderId, agentId, printerId, nowMs, nowMs);
+    rawDb
+      .prepare(
+        `INSERT INTO print_attempt_steps (id, print_attempt_id, order_id, sequence_number, step_type, status, created_at_ms, updated_at_ms)
+         VALUES (?, ?, ?, 1, 'CUSTOMER_DOCUMENT', 'SUBMITTED', ?, ?)`,
+      )
+      .run(crypto.randomUUID(), attemptId, orderId, nowMs, nowMs);
+
+    const request = new Request(
+      `https://api.printgo.dev/api/admin/orders/${orderId}/mark-finished`,
+      {
+        method: "POST",
+        headers: {
+          origin: env.ADMIN_ALLOWED_ORIGIN,
+          cookie: `printgo_admin_dev=${token}`,
+        },
+      },
+    );
+
+    const res = await handleAdminManualOrdersRequest(request, env);
+    expect(res.status).toBe(200);
+    const orderRow = rawDb
+      .prepare("SELECT status FROM orders WHERE id = ?")
+      .get(orderId) as { status: string };
+    expect(orderRow.status).toBe("COMPLETED");
+    const fileRow = rawDb
+      .prepare("SELECT print_status FROM order_files WHERE id = ?")
+      .get(fileId) as { print_status: string };
+    expect(fileRow.print_status).toBe("PRINTED");
   });
   it("1. no add-on: existing pricing and order behavior unchanged", () => {
     const total = calculateAddonOnlinePrice([]);

@@ -280,46 +280,37 @@ export function LiveOrdersPage({
     }
   }
 
-  const waitingCount =
-    stallDetails?.waitingCount ??
-    orders?.filter((o) => o.status === "QUEUED" || o.status === "RETRY_PENDING")
-      .length ??
-    0;
-  const activeCount =
-    stallDetails?.activeCount ??
-    orders?.filter(
-      (o) =>
-        o.status === "PRINTING" ||
-        o.status === "SPOOLING" ||
-        o.status === "CLAIMED",
-    ).length ??
-    0;
-  const needsReviewCount =
-    stallDetails?.needsReviewCount ??
-    orders?.filter(
-      (o) =>
+  const attentionOrders =
+    orders?.filter((o) => {
+      const isProblemStatus =
         o.status === "ADMIN_ACTION_REQUIRED" ||
         o.status === "COMPLETION_UNKNOWN" ||
         o.status === "NEEDS_ADMIN" ||
         o.status === "PRINT_BLOCKED" ||
-        o.status === "PRINT_FAILED",
-    ).length ??
-    0;
-  const stuckCount =
-    (stallDetails?.isStalled ? 1 : 0) +
-    (orders?.filter((o) => {
-      const isStuckStatus =
-        o.status === "ADMIN_ACTION_REQUIRED" ||
-        o.status === "COMPLETION_UNKNOWN" ||
-        o.status === "PRINT_BLOCKED" ||
         o.status === "PRINT_FAILED";
-      const ageMs = Date.now() - new Date(o.updatedAt).getTime();
-      return isStuckStatus && ageMs >= 5 * 60 * 1000;
-    }).length ?? 0);
+      const isStuckQueue =
+        (o.status === "QUEUED" ||
+          o.status === "PRINTING" ||
+          o.status === "SPOOLING" ||
+          o.status === "CLAIMED") &&
+        Date.now() - new Date(o.updatedAt).getTime() >= 5 * 60 * 1000 &&
+        Boolean(stallDetails?.isStalled);
+      return isProblemStatus || isStuckQueue;
+    }) ?? [];
+
+  const hasPrinterIssue = Boolean(stallDetails?.printerIssue);
+  const isStalled = Boolean(stallDetails?.isStalled);
+  const hasAttentionIssue =
+    isStalled || hasPrinterIssue || attentionOrders.length > 0;
+  const attentionCount = Math.max(
+    attentionOrders.length + (hasPrinterIssue ? 1 : 0),
+    isStalled ? 1 : 0,
+  );
 
   return (
     <div className="page-stack">
       <div
+        className="live-orders-header"
         style={{
           display: "flex",
           justifyContent: "space-between",
@@ -329,120 +320,142 @@ export function LiveOrdersPage({
         }}
       >
         <div>
-          <p className="eyebrow">Shop operations · Print Queue</p>
-          <h1>Live Orders</h1>
-          <p className="page-intro">
-            Observe paid jobs currently waiting, printing, or needing attention.
+          <p className="eyebrow" style={{ marginBottom: "0.2rem" }}>
+            Shop operations · Print Queue
+          </p>
+          <h1
+            style={{
+              margin: "0 0 0.2rem",
+              fontSize: "1.65rem",
+              fontWeight: 800,
+            }}
+          >
+            Live Orders
+          </h1>
+          <p
+            className="page-intro"
+            style={{ margin: 0, fontSize: "0.92rem", color: "#64748b" }}
+          >
+            Paid orders and live printing activity
           </p>
         </div>
 
-        {stallDetails?.isStalled ? (
-          <div
-            style={{
-              display: "flex",
-              gap: "0.5rem",
-              alignItems: "center",
-              flexWrap: "wrap",
-            }}
-          >
-            <button
-              type="button"
-              className="primary-button"
-              style={{
-                backgroundColor: "#d97706",
-                borderColor: "#b45309",
-                fontWeight: 700,
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "0.35rem",
-              }}
-              disabled={actionBusyId !== null}
-              onClick={() => setConfirmRecovery(true)}
-              title="Check agent/printer, safely recover pre-submission orders, and clear physical locks"
-            >
-              ⚡ Print Recovery
-            </button>
-            <button
-              type="button"
-              className="secondary-button"
-              style={{
-                color: "#b45309",
-                borderColor: "#fcd34d",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "0.35rem",
-              }}
-              disabled={actionBusyId !== null}
-              onClick={() => setConfirmClearSpooler(true)}
-              title="Selectively clear printgo-* spool jobs from Windows spooler without deleting orders"
-            >
-              🧹 Clear Queue
-            </button>
-          </div>
-        ) : null}
-      </div>
+        <div
+          className="live-orders-status-area"
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "flex-end",
+            gap: "0.45rem",
+          }}
+        >
+          {hasAttentionIssue ? (
+            <>
+              <div
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "0.35rem",
+                  padding: "0.3rem 0.75rem",
+                  borderRadius: "9999px",
+                  backgroundColor: "#fffbeb",
+                  border: "1px solid #fde68a",
+                  color: "#b45309",
+                  fontSize: "0.82rem",
+                  fontWeight: 700,
+                }}
+              >
+                <span>⚠️</span>
+                <span>
+                  {attentionCount}{" "}
+                  {attentionCount === 1 ? "needs attention" : "need attention"}
+                </span>
+              </div>
 
-      {/* Top Stat Cards Bar */}
-      <dl
-        className="settings-stat-grid"
-        style={{ gridTemplateColumns: "repeat(auto-fit, minmax(8.5rem, 1fr))" }}
-      >
-        <div
-          className="stat-card"
-          style={
-            stuckCount > 0
-              ? { borderColor: "#f87171", backgroundColor: "#fef2f2" }
-              : undefined
-          }
-        >
-          <dt style={stuckCount > 0 ? { color: "#991b1b" } : undefined}>
-            Stuck · 5m+
-          </dt>
-          <dd
-            style={{
-              fontSize: "1.5rem",
-              color: stuckCount > 0 ? "#b91c1c" : undefined,
-            }}
-          >
-            {stuckCount}
-          </dd>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.5rem",
+                  flexWrap: "wrap",
+                }}
+              >
+                <button
+                  type="button"
+                  className="primary-button"
+                  style={{
+                    backgroundColor: "#d97706",
+                    borderColor: "#b45309",
+                    fontSize: "0.85rem",
+                    padding: "0.35rem 0.75rem",
+                    fontWeight: 600,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "0.35rem",
+                    borderRadius: "0.45rem",
+                  }}
+                  disabled={actionBusyId !== null}
+                  onClick={() => setConfirmRecovery(true)}
+                  title="Check agent/printer, safely recover pre-submission orders, and clear physical locks"
+                >
+                  {actionBusyId === "recovery"
+                    ? "Recovering…"
+                    : "↻ Print Recovery"}
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  style={{
+                    color: "#334155",
+                    borderColor: "#cbd5e1",
+                    fontSize: "0.85rem",
+                    padding: "0.35rem 0.75rem",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "0.35rem",
+                    borderRadius: "0.45rem",
+                  }}
+                  disabled={actionBusyId !== null}
+                  onClick={() => setConfirmClearSpooler(true)}
+                  title="Selectively clear printgo-* spool jobs from Windows spooler without deleting orders"
+                >
+                  {actionBusyId === "clear-spooler"
+                    ? "Clearing…"
+                    : "Clear Queue"}
+                </button>
+              </div>
+            </>
+          ) : (
+            <div style={{ textAlign: "right" }}>
+              <div
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "0.35rem",
+                  padding: "0.3rem 0.75rem",
+                  borderRadius: "9999px",
+                  backgroundColor: "#f0fdf4",
+                  border: "1px solid #bbf7d0",
+                  color: "#166534",
+                  fontSize: "0.82rem",
+                  fontWeight: 700,
+                }}
+              >
+                All clear
+              </div>
+              <div
+                style={{
+                  fontSize: "0.8rem",
+                  color: "#64748b",
+                  marginTop: "0.2rem",
+                }}
+              >
+                No action needed
+              </div>
+            </div>
+          )}
         </div>
-        <div className="stat-card">
-          <dt>Waiting</dt>
-          <dd style={{ fontSize: "1.5rem" }}>{waitingCount}</dd>
-        </div>
-        <div
-          className="stat-card"
-          style={
-            needsReviewCount > 0
-              ? { borderColor: "#fcd34d", backgroundColor: "#fffbeb" }
-              : undefined
-          }
-        >
-          <dt style={needsReviewCount > 0 ? { color: "#92400e" } : undefined}>
-            Needs review
-          </dt>
-          <dd
-            style={{
-              fontSize: "1.5rem",
-              color: needsReviewCount > 0 ? "#b45309" : undefined,
-            }}
-          >
-            {needsReviewCount}
-          </dd>
-        </div>
-        <div className="stat-card">
-          <dt>Printing</dt>
-          <dd
-            style={{
-              fontSize: "1.5rem",
-              color: activeCount > 0 ? "#166534" : undefined,
-            }}
-          >
-            {activeCount}
-          </dd>
-        </div>
-      </dl>
+      </div>
 
       {/* Printer Issue Alert Banner */}
       {stallDetails?.printerIssue ? (
@@ -628,9 +641,60 @@ export function LiveOrdersPage({
         <p className="page-loading">Loading live orders…</p>
       ) : null}
       {orders?.length === 0 ? (
-        <section className="panel">
-          <h2>No active paid jobs</h2>
-          <p className="muted">New verified orders will appear here.</p>
+        <section
+          className="panel"
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "2.5rem 1.5rem",
+            textAlign: "center",
+            borderRadius: "0.75rem",
+            border: "1px solid #e2e8f0",
+            backgroundColor: "#ffffff",
+            marginTop: "0.5rem",
+          }}
+        >
+          <div
+            style={{
+              width: "2.5rem",
+              height: "2.5rem",
+              borderRadius: "50%",
+              backgroundColor: "#f0fdf4",
+              border: "1.5px solid #22c55e",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "#166534",
+              fontSize: "1.25rem",
+              fontWeight: "bold",
+              marginBottom: "0.85rem",
+            }}
+            aria-hidden="true"
+          >
+            ✓
+          </div>
+          <h2
+            style={{
+              margin: "0 0 0.35rem",
+              fontSize: "1.15rem",
+              fontWeight: 700,
+              color: "#0f172a",
+            }}
+          >
+            No active orders
+          </h2>
+          <p
+            className="muted"
+            style={{
+              margin: 0,
+              fontSize: "0.92rem",
+              color: "#64748b",
+            }}
+          >
+            New paid orders will appear here automatically.
+          </p>
         </section>
       ) : null}
       {orders && orders.length > 0 ? (

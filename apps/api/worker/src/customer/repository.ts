@@ -6,6 +6,11 @@ import type {
   PublicOrderTrackingData,
   PublicTrackingStatus,
 } from "@printgo/api-contract";
+import {
+  AGENT_HEARTBEAT_TIMEOUT_MS,
+  checkOrderCapabilitiesSupport,
+  resolveEffectiveFeatures,
+} from "@printgo/domain";
 import type { PricingConfiguration } from "@printgo/pricing";
 
 export interface CustomerDraftRecord {
@@ -259,33 +264,59 @@ const FILE_SELECT = `SELECT f.id, f.order_id, f.position, f.original_filename,
   FROM order_files f JOIN orders o ON o.id = f.order_id`;
 
 export class D1CustomerRepository implements CustomerRepository {
-  constructor(private readonly db: D1Database) {}
+  constructor(
+    private readonly db: D1Database,
+    private readonly now: () => number = Date.now,
+  ) {}
 
   async getPublicConfig(): Promise<CustomerConfigData | null> {
-    const [installationResult, ratesResult, addonsResult, discountsResult] =
-      await this.db.batch([
-        this.db.prepare(
-          `SELECT logo_key, app_name, shop_name, contact_phone, address, customer_notice,
+    const nowMs = this.now();
+    const minHeartbeatMs = nowMs - AGENT_HEARTBEAT_TIMEOUT_MS;
+
+    const [
+      installationResult,
+      ratesResult,
+      addonsResult,
+      discountsResult,
+      printersResult,
+      agentsResult,
+    ] = await this.db.batch([
+      this.db.prepare(
+        `SELECT logo_key, app_name, shop_name, contact_phone, address, customer_notice,
                 online_printing_enabled, max_pdf_size_bytes, max_order_upload_bytes,
                 priority_printing_enabled, priority_fee_paise,
                 id_requirement_mode, id_threshold_paise, cash_orders_enabled
          FROM installation WHERE id = 1`,
-        ),
-        this.db.prepare(
-          `SELECT paper_size, color_mode, sides, price_per_page_paise FROM print_rates
-         WHERE enabled = 1 ORDER BY paper_size, color_mode, sides`,
-        ),
-        this.db.prepare(
-          `SELECT id, name, pricing_type, fixed_price_paise
+      ),
+      this.db.prepare(
+        `SELECT paper_size, color_mode, sides, price_per_page_paise FROM print_rates
+         WHERE enabled = 1
+         ORDER BY paper_size, color_mode, CASE WHEN sides = 'SINGLE' THEN 0 ELSE 1 END`,
+      ),
+      this.db.prepare(
+        `SELECT id, name, pricing_type, fixed_price_paise
          FROM addon_services WHERE enabled = 1
          ORDER BY display_order, name`,
-        ),
-        this.db.prepare(
-          `SELECT id, min_subtotal_paise, discount_percent
+      ),
+      this.db.prepare(
+        `SELECT id, min_subtotal_paise, discount_percent
          FROM discount_rules WHERE enabled = 1
          ORDER BY min_subtotal_paise ASC`,
-        ),
-      ]);
+      ),
+      this.db.prepare(
+        `SELECT id, agent_id, status, is_paused, capabilities_json, verified_capabilities_json, enabled_services_json
+         FROM printers
+         WHERE enabled = 1 AND is_production_eligible = 1 AND is_virtual = 0`,
+      ),
+      this.db
+        .prepare(
+          `SELECT id FROM agents
+         WHERE is_active = 1
+           AND last_heartbeat_at_ms IS NOT NULL
+           AND last_heartbeat_at_ms >= ?`,
+        )
+        .bind(minHeartbeatMs),
+    ]);
 
     const installation = installationResult?.results[0] as
       | {
@@ -307,6 +338,75 @@ export class D1CustomerRepository implements CustomerRepository {
       | undefined;
     if (!installation) return null;
 
+    const allRates = (
+      (ratesResult?.results ?? []) as Array<{
+        paper_size: "A4" | "A3";
+        color_mode: "BW" | "COLOR";
+        sides: "SINGLE" | "DOUBLE";
+        price_per_page_paise: number;
+      }>
+    ).map((rate) => ({
+      paperSize: rate.paper_size,
+      colorMode: rate.color_mode,
+      sides: rate.sides,
+      pricePerPagePaise: rate.price_per_page_paise,
+    }));
+
+    const registeredPrinters = (printersResult?.results ?? []) as Array<{
+      id: string;
+      agent_id: string;
+      status: string;
+      is_paused: number | null;
+      capabilities_json: string | null;
+      verified_capabilities_json: string | null;
+      enabled_services_json: string | null;
+    }>;
+
+    const activeAgentIds = new Set(
+      ((agentsResult?.results ?? []) as Array<{ id: string }>).map((a) => a.id),
+    );
+
+    let availablePrintOptions = allRates;
+
+    // Filter available options against online eligible printers when printers are registered
+    if (registeredPrinters.length > 0) {
+      const onlinePrinters = registeredPrinters.filter(
+        (p) =>
+          p.status === "ONLINE" &&
+          p.is_paused !== 1 &&
+          activeAgentIds.has(p.agent_id),
+      );
+
+      const printerFeatureList = onlinePrinters
+        .map((p) => resolveEffectiveFeatures(p))
+        .filter((f): f is NonNullable<typeof f> => f !== null);
+
+      if (printerFeatureList.length === 0) {
+        availablePrintOptions = [];
+      } else {
+        availablePrintOptions = allRates.filter((rate) =>
+          printerFeatureList.some(
+            (features) =>
+              checkOrderCapabilitiesSupport(features, {
+                paperSize: rate.paperSize,
+                colorMode: rate.colorMode,
+                sides: rate.sides,
+              }).supported,
+          ),
+        );
+      }
+    }
+
+    // Always sort SINGLE ahead of DOUBLE, preserving standard paper size and color ordering
+    availablePrintOptions.sort((a, b) => {
+      if (a.paperSize !== b.paperSize)
+        return a.paperSize.localeCompare(b.paperSize);
+      if (a.colorMode !== b.colorMode)
+        return a.colorMode.localeCompare(b.colorMode);
+      if (a.sides !== b.sides) return a.sides === "SINGLE" ? -1 : 1;
+      return 0;
+    });
+
     return {
       appName: installation.app_name,
       shopName: installation.shop_name,
@@ -321,19 +421,7 @@ export class D1CustomerRepository implements CustomerRepository {
       maxPdfSizeBytes: installation.max_pdf_size_bytes,
       maxOrderUploadBytes: installation.max_order_upload_bytes,
       maxOrderFiles: 10,
-      availablePrintOptions: (
-        (ratesResult?.results ?? []) as Array<{
-          paper_size: "A4" | "A3";
-          color_mode: "BW" | "COLOR";
-          sides: "SINGLE" | "DOUBLE";
-          price_per_page_paise: number;
-        }>
-      ).map((rate) => ({
-        paperSize: rate.paper_size,
-        colorMode: rate.color_mode,
-        sides: rate.sides,
-        pricePerPagePaise: rate.price_per_page_paise,
-      })),
+      availablePrintOptions,
       addonServices: (
         (addonsResult?.results ?? []) as Array<{
           id: string;
@@ -768,11 +856,59 @@ export class D1CustomerRepository implements CustomerRepository {
     const cashExpiresAtMs = input.nowMs + input.cashPaymentWindowMs;
     const cashGraceUntilMs = input.nowMs + input.cashMaxPendingMs;
 
+    let cashJobCode = draft.public_job_code;
+    if (!cashJobCode || !cashJobCode.startsWith("CASH-")) {
+      // 1. Try 3-digit random reference: CASH-100 to CASH-999
+      let candidate = "";
+      let foundUnique = false;
+      for (let attempt = 0; attempt < 8; attempt++) {
+        const num = Math.floor(100 + Math.random() * 900);
+        candidate = `CASH-${num}`;
+        const existing = await this.db
+          .prepare(
+            `SELECT 1 FROM orders WHERE public_job_code = ? AND cleanup_state = 'ACTIVE' LIMIT 1`,
+          )
+          .bind(candidate)
+          .first();
+        if (!existing) {
+          foundUnique = true;
+          break;
+        }
+      }
+
+      // 2. If 3-digit space collides, fall back to 4 digits: CASH-1000 to CASH-9999
+      if (!foundUnique) {
+        for (let attempt = 0; attempt < 5; attempt++) {
+          const num = Math.floor(1000 + Math.random() * 9000);
+          candidate = `CASH-${num}`;
+          const existing = await this.db
+            .prepare(
+              `SELECT 1 FROM orders WHERE public_job_code = ? AND cleanup_state = 'ACTIVE' LIMIT 1`,
+            )
+            .bind(candidate)
+            .first();
+          if (!existing) {
+            foundUnique = true;
+            break;
+          }
+        }
+      }
+
+      // 3. Fallback to 5 digits if needed
+      if (!foundUnique) {
+        const num = Math.floor(10000 + Math.random() * 90000);
+        candidate = `CASH-${num}`;
+      }
+
+      cashJobCode = candidate;
+    }
+
     await this.db.batch([
       this.db
         .prepare(
           `UPDATE orders
            SET payment_method = 'CASH',
+               public_job_code = COALESCE(public_job_code, ?),
                cash_selected_at_ms = ?,
                cash_expires_at_ms = ?,
                cash_grace_until_ms = ?,
@@ -782,6 +918,7 @@ export class D1CustomerRepository implements CustomerRepository {
            WHERE id = ? AND cleanup_state = 'ACTIVE' AND status IN ('UPLOADED', 'PAYMENT_PENDING')`,
         )
         .bind(
+          cashJobCode,
           input.nowMs,
           cashExpiresAtMs,
           cashGraceUntilMs,
@@ -799,7 +936,7 @@ export class D1CustomerRepository implements CustomerRepository {
         .bind(cashGraceUntilMs, input.nowMs, draft.id),
       this.db
         .prepare(
-          `INSERT INTO order_events
+          `INSERT OR IGNORE INTO order_events
            (id, order_id, event_type, from_status, to_status, actor_type,
             details_json, created_at_ms, idempotency_key)
            VALUES (?, ?, 'CASH_PAYMENT_SELECTED', ?, 'PAYMENT_PENDING', 'CUSTOMER', ?, ?, ?)`,
@@ -816,7 +953,7 @@ export class D1CustomerRepository implements CustomerRepository {
 
     return {
       orderId: draft.id,
-      publicJobCode: draft.public_job_code,
+      publicJobCode: cashJobCode,
       payableAmountPaise: draft.total_amount_paise,
       cashExpiresAtMs,
       cashGraceUntilMs,

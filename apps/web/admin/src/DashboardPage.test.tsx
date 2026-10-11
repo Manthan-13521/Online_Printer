@@ -1,10 +1,14 @@
 // @vitest-environment jsdom
 import { act, cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import { DashboardPage } from "./DashboardPage";
-const { getDashboard } = vi.hoisted(() => ({ getDashboard: vi.fn() }));
+const { getDashboard, updateSettings } = vi.hoisted(() => ({
+  getDashboard: vi.fn(),
+  updateSettings: vi.fn(),
+}));
 vi.mock("./api", () => ({
-  adminApi: { getDashboard },
+  adminApi: { getDashboard, updateSettings },
   brandingUrl: (x: string) => x,
   friendlyAdminError: () => "Unavailable",
   AdminApiError: class extends Error {
@@ -56,10 +60,8 @@ it("uses one aggregate request, stops while hidden, and refreshes on focus", asy
   expect(screen.getAllByText("Synthetic Shop").length).toBeGreaterThan(0);
   expect(screen.getByText("17")).toBeTruthy();
   expect(screen.getByText("₹1550.00")).toBeTruthy();
-  expect(screen.getAllByText("4").length).toBe(2);
-  expect(screen.getAllByText("2").length).toBe(2);
-  expect(screen.getByText("8")).toBeTruthy();
-  expect(screen.getByText("1")).toBeTruthy();
+  expect(screen.getByText("4")).toBeTruthy();
+  expect(screen.getByText("2")).toBeTruthy();
   expect(getDashboard).toHaveBeenCalledTimes(1);
   await act(async () => {
     await vi.advanceTimersByTimeAsync(35_000);
@@ -198,8 +200,256 @@ it("renders green readiness banner when agent, printer, and online printing are 
   expect(screen.getByText(/Connect Windows Counter PC/i)).toBeTruthy();
   expect(screen.getByText(/Choose Default Production Printer/i)).toBeTruthy();
   expect(screen.getByText(/Online Customer Orders/i)).toBeTruthy();
-  expect(screen.getByText(/Identification sheet:/i)).toBeTruthy();
+  expect(screen.getByText(/Identification sheet/i)).toBeTruthy();
   expect(
     screen.getByRole("switch", { name: "Toggle Online Printing" }),
   ).toBeTruthy();
+  expect(
+    screen.getByRole("switch", { name: "Toggle Identification Sheet" }),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole("switch", { name: "Toggle Accept Cash Orders" }),
+  ).toBeTruthy();
+});
+
+it("renders compact Shop Controls with all 3 toggles and correct ON/OFF states", async () => {
+  getDashboard.mockResolvedValue({
+    ok: true,
+    data: {
+      settings: {
+        shopName: "Controls Shop",
+        identificationSheetEnabled: true,
+        onlinePrintingEnabled: true,
+        cashOrdersEnabled: false,
+      },
+      agents: [],
+      defaultProductionPrinterId: null,
+      todaysEarningsPaise: 0,
+      todaysOrders: 0,
+      inQueue: 0,
+      printingNow: 0,
+      statusCounts: {
+        waiting: 0,
+        printing: 0,
+        readyForPickup: 0,
+        needsAttention: 0,
+      },
+    },
+  });
+
+  render(
+    <DashboardPage
+      onSessionExpired={() => undefined}
+      onNavigate={() => undefined}
+    />,
+  );
+
+  expect(
+    await screen.findByRole("heading", { name: "Shop Controls" }),
+  ).toBeTruthy();
+
+  const idSheetToggle = screen.getByRole<HTMLInputElement>("switch", {
+    name: "Toggle Identification Sheet",
+  });
+  const onlineToggle = screen.getByRole<HTMLInputElement>("switch", {
+    name: "Toggle Online Printing",
+  });
+  const cashToggle = screen.getByRole<HTMLInputElement>("switch", {
+    name: "Toggle Accept Cash Orders",
+  });
+
+  expect(idSheetToggle.checked).toBe(true);
+  expect(onlineToggle.checked).toBe(true);
+  expect(cashToggle.checked).toBe(false);
+
+  expect(screen.getByText("Identification Sheet")).toBeTruthy();
+  expect(screen.getByText("Accept Online Orders")).toBeTruthy();
+  expect(screen.getByText("Accept Cash Orders")).toBeTruthy();
+});
+
+it("toggles Identification Sheet and persists setting via adminApi.updateSettings", async () => {
+  const initialSettings = {
+    shopName: "Test Shop",
+    identificationSheetEnabled: true,
+    onlinePrintingEnabled: true,
+    cashOrdersEnabled: true,
+  };
+
+  getDashboard.mockResolvedValue({
+    ok: true,
+    data: {
+      settings: initialSettings,
+      agents: [],
+      defaultProductionPrinterId: null,
+      todaysEarningsPaise: 0,
+      todaysOrders: 0,
+      inQueue: 0,
+      printingNow: 0,
+      statusCounts: {
+        waiting: 0,
+        printing: 0,
+        readyForPickup: 0,
+        needsAttention: 0,
+      },
+    },
+  });
+
+  updateSettings.mockResolvedValue({
+    ok: true,
+    data: {
+      settings: {
+        ...initialSettings,
+        identificationSheetEnabled: false,
+      },
+    },
+  });
+
+  const user = userEvent.setup();
+  render(
+    <DashboardPage
+      onSessionExpired={() => undefined}
+      onNavigate={() => undefined}
+    />,
+  );
+
+  const idSheetToggle = await screen.findByRole<HTMLInputElement>("switch", {
+    name: "Toggle Identification Sheet",
+  });
+  expect(idSheetToggle.checked).toBe(true);
+
+  await user.click(idSheetToggle);
+
+  expect(updateSettings).toHaveBeenCalledWith(
+    expect.objectContaining({
+      identificationSheetEnabled: false,
+    }),
+  );
+});
+
+it("toggles Accept Cash Orders and persists setting via adminApi.updateSettings", async () => {
+  const initialSettings = {
+    shopName: "Test Shop",
+    identificationSheetEnabled: true,
+    onlinePrintingEnabled: true,
+    cashOrdersEnabled: false,
+  };
+
+  getDashboard.mockResolvedValue({
+    ok: true,
+    data: {
+      settings: initialSettings,
+      agents: [],
+      defaultProductionPrinterId: null,
+      todaysEarningsPaise: 0,
+      todaysOrders: 0,
+      inQueue: 0,
+      printingNow: 0,
+      statusCounts: {
+        waiting: 0,
+        printing: 0,
+        readyForPickup: 0,
+        needsAttention: 0,
+      },
+    },
+  });
+
+  updateSettings.mockResolvedValue({
+    ok: true,
+    data: {
+      settings: {
+        ...initialSettings,
+        cashOrdersEnabled: true,
+      },
+    },
+  });
+
+  const user = userEvent.setup();
+  render(
+    <DashboardPage
+      onSessionExpired={() => undefined}
+      onNavigate={() => undefined}
+    />,
+  );
+
+  const cashToggle = await screen.findByRole<HTMLInputElement>("switch", {
+    name: "Toggle Accept Cash Orders",
+  });
+  expect(cashToggle.checked).toBe(false);
+
+  await user.click(cashToggle);
+
+  expect(updateSettings).toHaveBeenCalledWith(
+    expect.objectContaining({
+      cashOrdersEnabled: true,
+    }),
+  );
+});
+
+it("confirms before pausing Online Printing and persists setting", async () => {
+  const initialSettings = {
+    shopName: "Test Shop",
+    identificationSheetEnabled: true,
+    onlinePrintingEnabled: true,
+    cashOrdersEnabled: true,
+  };
+
+  getDashboard.mockResolvedValue({
+    ok: true,
+    data: {
+      settings: initialSettings,
+      agents: [],
+      defaultProductionPrinterId: null,
+      todaysEarningsPaise: 0,
+      todaysOrders: 0,
+      inQueue: 0,
+      printingNow: 0,
+      statusCounts: {
+        waiting: 0,
+        printing: 0,
+        readyForPickup: 0,
+        needsAttention: 0,
+      },
+    },
+  });
+
+  updateSettings.mockResolvedValue({
+    ok: true,
+    data: {
+      settings: {
+        ...initialSettings,
+        onlinePrintingEnabled: false,
+      },
+    },
+  });
+
+  const user = userEvent.setup();
+  render(
+    <DashboardPage
+      onSessionExpired={() => undefined}
+      onNavigate={() => undefined}
+    />,
+  );
+
+  const onlineToggle = await screen.findByRole<HTMLInputElement>("switch", {
+    name: "Toggle Online Printing",
+  });
+  expect(onlineToggle.checked).toBe(true);
+
+  // Clicking when online printing is on opens the confirm modal
+  await user.click(onlineToggle);
+  expect(
+    await screen.findByRole("heading", {
+      name: "Pause new online print orders?",
+    }),
+  ).toBeTruthy();
+
+  // Click Pause Printing button in modal
+  const pauseButton = screen.getByRole("button", { name: "Pause Printing" });
+  await user.click(pauseButton);
+
+  expect(updateSettings).toHaveBeenCalledWith(
+    expect.objectContaining({
+      onlinePrintingEnabled: false,
+    }),
+  );
 });

@@ -18,6 +18,8 @@ import {
 } from "./addon-services/routes";
 import { handleAdminDiscountRulesRequest } from "./discount-rules/routes";
 
+import { handleAdminWebSocket } from "./admin/ws";
+
 export async function routeRequest(
   request: Request,
   env: WorkerEnv,
@@ -26,6 +28,10 @@ export async function routeRequest(
 
   if (request.method === "GET" && url.pathname === "/health") {
     return ok({ service: "printgo-api", status: "available" });
+  }
+
+  if (url.pathname === "/api/admin/ws") {
+    return handleAdminWebSocket(request, env);
   }
 
   if (

@@ -101,6 +101,8 @@ function customerErrorMessage(caught: unknown): string {
     return "Online printing was switched off. No upload was authorized.";
   if (code === "CASH_ORDERS_DISABLED")
     return "Cash orders are currently disabled by the shop.";
+  if (code === "PRINTER_NOT_READY")
+    return "The shop printer is currently not ready to print.";
   if (code === "DRAFT_EXPIRED")
     return "This upload session expired. Please upload your PDF again.";
   if (code === "UPLOAD_INVALID")
@@ -112,7 +114,16 @@ function customerErrorMessage(caught: unknown): string {
     return "The upload was interrupted. Keep the app open and don't switch tabs while uploading. Check connection and try again.";
   if (code === "Failed to fetch")
     return "Could not reach the shop server. Please check your internet connection.";
-  return "The upload could not be completed. Your selections are preserved; please try again.";
+  if (
+    code &&
+    !code.startsWith("UPLOAD_") &&
+    code !== "REQUEST_FAILED" &&
+    code !== "QUOTE_STATE_INVALID" &&
+    code !== "DRAFT_INVALID"
+  ) {
+    return code;
+  }
+  return "The request could not be completed. Your selections are preserved; please try again.";
 }
 
 function paymentErrorMessage(caught: unknown): string {
@@ -220,12 +231,12 @@ export function App() {
   }, [config?.appName, config?.shopName]);
 
   useEffect(() => {
-    if (!config) return;
+    if (!config || draftToken) return;
     const savedToken = sessionStorage.getItem(DRAFT_TOKEN_KEY);
     if (!savedToken) return;
     void customerApi
       .getDraft(savedToken)
-      .then((draft) => {
+      ?.then((draft) => {
         setCustomerName(draft.customerName);
         setCustomerPhone(draft.customerPhone);
         setInstructions(draft.instructions ?? "");
@@ -260,7 +271,7 @@ export function App() {
         setStatus("Your secure upload session was restored.");
       })
       .catch(() => sessionStorage.removeItem(DRAFT_TOKEN_KEY));
-  }, [config]);
+  }, [config, draftToken]);
 
   const selectedFile = files[selectedFileIndex] ?? null;
 
@@ -278,9 +289,24 @@ export function App() {
   function patchSelected(update: Partial<LocalOrderFile>) {
     setQuote(null);
     setFiles((current) =>
-      current.map((item, index) =>
-        index === selectedFileIndex ? { ...item, ...update } : item,
-      ),
+      current.map((item, index) => {
+        if (index !== selectedFileIndex) return item;
+        const targetPaper = update.paperSize ?? item.paperSize;
+        const targetColor = update.colorMode ?? item.colorMode;
+        let targetSides = update.sides ?? item.sides;
+        if (targetSides === "DOUBLE") {
+          const isDuplexSupported = (config?.availablePrintOptions ?? []).some(
+            (o) =>
+              o.paperSize === targetPaper &&
+              o.colorMode === targetColor &&
+              o.sides === "DOUBLE",
+          );
+          if (!isDuplexSupported) {
+            targetSides = "SINGLE";
+          }
+        }
+        return { ...item, ...update, sides: targetSides };
+      }),
     );
   }
 
@@ -301,8 +327,14 @@ export function App() {
       setFileError("These PDFs exceed the 100 MB order limit.");
       return;
     }
-    const firstOption = config.availablePrintOptions[0];
-    if (!firstOption) return;
+    const preferredOption =
+      config.availablePrintOptions.find(
+        (o) =>
+          o.paperSize === "A4" && o.colorMode === "BW" && o.sides === "SINGLE",
+      ) ??
+      config.availablePrintOptions.find((o) => o.sides === "SINGLE") ??
+      config.availablePrintOptions[0];
+    if (!preferredOption) return;
     const added: LocalOrderFile[] = [];
     for (const selectedFile of incoming) {
       if (
@@ -336,9 +368,9 @@ export function App() {
           pageMode: "ALL",
           customPages: `1-${pages}`,
           copies: 1,
-          paperSize: firstOption.paperSize,
-          colorMode: firstOption.colorMode,
-          sides: firstOption.sides,
+          paperSize: preferredOption.paperSize,
+          colorMode: preferredOption.colorMode,
+          sides: "SINGLE", // Always Single-sided by default for new orders and newly uploaded files
         });
       } catch (caught) {
         setFileError(
@@ -375,6 +407,36 @@ export function App() {
       }
     }
     setBusy(true);
+    setStatus("Checking printer capabilities…");
+    try {
+      const freshConfig = await customerApi.config();
+      setConfig(freshConfig);
+      if (!freshConfig.onlinePrintingEnabled) {
+        setStatus("Online printing is currently paused.");
+        setBusy(false);
+        return;
+      }
+      const unsupported = filesRef.current.find(
+        (f) =>
+          !(freshConfig.availablePrintOptions ?? []).some(
+            (o) =>
+              o.paperSize === f.paperSize &&
+              o.colorMode === f.colorMode &&
+              o.sides === f.sides,
+          ),
+      );
+      if (unsupported) {
+        const msg =
+          unsupported.sides === "DOUBLE"
+            ? `Double-sided printing for "${unsupported.name}" is no longer supported by available printers. Please switch to Single-sided.`
+            : `Selected print settings for "${unsupported.name}" are no longer supported by available printers. Please review your settings.`;
+        setStatus(msg);
+        setBusy(false);
+        return;
+      }
+    } catch {
+      // Continue if config lookup encountered a transient error
+    }
     setStatus("Creating a secure upload…");
     setQuote(null);
     let errorToReport: Error | null = null;
@@ -698,6 +760,32 @@ export function App() {
     setPaymentBusy(true);
     setStatus("Rechecking the current price and printer readiness…");
     try {
+      const freshConfig = await customerApi.config();
+      setConfig(freshConfig);
+      if (
+        Array.isArray(freshConfig.availablePrintOptions) &&
+        freshConfig.availablePrintOptions.length > 0
+      ) {
+        const unsupported = filesRef.current.find(
+          (f) =>
+            !freshConfig.availablePrintOptions.some(
+              (o) =>
+                o.paperSize === f.paperSize &&
+                o.colorMode === f.colorMode &&
+                o.sides === f.sides,
+            ),
+        );
+        if (unsupported) {
+          const msg =
+            unsupported.sides === "DOUBLE"
+              ? `Double-sided printing for "${unsupported.name}" is no longer supported by available printers. Please switch to Single-sided.`
+              : `Selected printing options for "${unsupported.name}" are no longer supported by available printers. Please review your settings.`;
+          setStatus(msg);
+          setPaymentBusy(false);
+          return;
+        }
+      }
+
       const result = await customerApi.createPayment(draftToken, {
         acknowledgedTotalPaise: quote.totalAmountPaise,
       });
@@ -730,6 +818,32 @@ export function App() {
     setCashSelecting(true);
     setStatus("Selecting cash payment at counter…");
     try {
+      const freshConfig = await customerApi.config();
+      setConfig(freshConfig);
+      if (
+        Array.isArray(freshConfig.availablePrintOptions) &&
+        freshConfig.availablePrintOptions.length > 0
+      ) {
+        const unsupported = filesRef.current.find(
+          (f) =>
+            !freshConfig.availablePrintOptions.some(
+              (o) =>
+                o.paperSize === f.paperSize &&
+                o.colorMode === f.colorMode &&
+                o.sides === f.sides,
+            ),
+        );
+        if (unsupported) {
+          const msg =
+            unsupported.sides === "DOUBLE"
+              ? `Double-sided printing for "${unsupported.name}" is no longer supported by available printers. Please switch to Single-sided.`
+              : `Selected printing options for "${unsupported.name}" are no longer supported by available printers. Please review your settings.`;
+          setStatus(msg);
+          setCashSelecting(false);
+          return;
+        }
+      }
+
       const data = await customerApi.selectCashPayment(draftToken);
       setCashWaitingData(data);
       setStatus(null);
@@ -1356,20 +1470,37 @@ export function App() {
                               })
                             }
                           >
-                            {config.availablePrintOptions
-                              .filter(
-                                (v, i, a) =>
-                                  a.findIndex(
-                                    (t) => t.paperSize === v.paperSize,
-                                  ) === i,
+                            <option value="A4">A4</option>
+                            <option
+                              value="A3"
+                              disabled={
+                                !config.availablePrintOptions.some(
+                                  (o) => o.paperSize === "A3",
+                                )
+                              }
+                            >
+                              {config.availablePrintOptions.some(
+                                (o) => o.paperSize === "A3",
                               )
-                              .map((o) => (
-                                <option key={o.paperSize} value={o.paperSize}>
-                                  {o.paperSize}
-                                </option>
-                              ))}
+                                ? "A3"
+                                : "A3 (A3 paper unavailable)"}
+                            </option>
                           </select>
                         </div>
+                        {!config.availablePrintOptions.some(
+                          (o) => o.paperSize === "A3",
+                        ) && (
+                          <span
+                            style={{
+                              fontSize: "0.75rem",
+                              color: "#64748b",
+                              marginTop: "0.25rem",
+                              display: "block",
+                            }}
+                          >
+                            A3 paper unavailable
+                          </span>
+                        )}
                       </div>
                     </div>
 
@@ -1417,7 +1548,25 @@ export function App() {
                             }
                           />
                           <span className="card-icon color-icon"></span>
-                          <span className="label">Colour</span>
+                          <span className="label">
+                            Colour
+                            {!config.availablePrintOptions.some(
+                              (o) =>
+                                o.paperSize === selectedFile.paperSize &&
+                                o.colorMode === "COLOR",
+                            ) && (
+                              <span
+                                style={{
+                                  display: "block",
+                                  fontSize: "0.7rem",
+                                  color: "#64748b",
+                                  fontWeight: 400,
+                                }}
+                              >
+                                No colour printer available
+                              </span>
+                            )}
+                          </span>
                           <span className="radio-circle"></span>
                         </label>
                       </div>
@@ -1467,7 +1616,27 @@ export function App() {
                             onChange={() => patchSelected({ sides: "DOUBLE" })}
                           />
                           <span className="card-icon double-side-icon">📑</span>
-                          <span className="label">Double-sided</span>
+                          <span className="label">
+                            Double-sided
+                            {!config.availablePrintOptions.some(
+                              (o) =>
+                                o.paperSize === selectedFile.paperSize &&
+                                o.colorMode === selectedFile.colorMode &&
+                                o.sides === "DOUBLE",
+                            ) && (
+                              <span
+                                style={{
+                                  display: "block",
+                                  fontSize: "0.72rem",
+                                  color: "#64748b",
+                                  fontWeight: 400,
+                                  marginTop: "0.15rem",
+                                }}
+                              >
+                                Duplex printing unavailable on current printers
+                              </span>
+                            )}
+                          </span>
                           <span className="radio-circle"></span>
                         </label>
                       </div>
@@ -1475,7 +1644,15 @@ export function App() {
                   </div>
                   {!optionAvailable && (
                     <p className="error">
-                      That print combination is not currently available.
+                      {selectedFile?.sides === "DOUBLE" &&
+                      !config.availablePrintOptions.some(
+                        (o) =>
+                          o.paperSize === selectedFile.paperSize &&
+                          o.colorMode === selectedFile.colorMode &&
+                          o.sides === "DOUBLE",
+                      )
+                        ? "Double-sided printing is not supported for this paper and color option. Please switch to Single-sided."
+                        : "That print combination is not currently available."}
                     </p>
                   )}
                   <button

@@ -420,39 +420,71 @@ export async function handleAdminManualOrdersRequest(
               "Order is not in MANUAL_PRINT status.",
             );
           } else {
+            void import("../agent/wake").then((m) => m.wakeAgent(env));
             response = ok({ orderId, status: nextStatus });
           }
         } else if (action === "mark-finished") {
-          // AWAITING_FINISHING → COMPLETED
-          const [result] = await db.batch([
-            db
-              .prepare(
-                `UPDATE orders SET status = 'COMPLETED', completed_at_ms = ?,
-                 purge_at_ms = ?, updated_at_ms = ?
-               WHERE id = ? AND status = 'AWAITING_FINISHING' AND cleanup_state = 'ACTIVE'
-                 AND EXISTS (SELECT 1 FROM order_files WHERE order_id = orders.id)
-                 AND NOT EXISTS (SELECT 1 FROM order_files
-                   WHERE order_id = orders.id AND print_status <> 'PRINTED')
-                 AND NOT EXISTS (SELECT 1 FROM print_attempt_steps
-                   WHERE order_id = orders.id AND status IN ('SUBMISSION_STARTED','SUBMITTED'))`,
-              )
-              .bind(nowMs, nowMs + retentionMs, nowMs, orderId),
-            db
-              .prepare(
-                `UPDATE uploads SET retention_reason = 'COMPLETED', delete_after_ms = ?,
-                 updated_at_ms = ? WHERE order_id = ? AND storage_status = 'UPLOADED'
-                 AND EXISTS (SELECT 1 FROM orders WHERE id = ? AND status = 'COMPLETED')`,
-              )
-              .bind(nowMs + retentionMs, nowMs, orderId, orderId),
-          ]);
+          // AWAITING_FINISHING → COMPLETED (atomic & idempotent)
+          const existingOrder = await db
+            .prepare("SELECT status, cleanup_state FROM orders WHERE id = ?")
+            .bind(orderId)
+            .first<{ status: string; cleanup_state: string }>();
 
-          if (result?.meta.changes !== 1) {
+          if (!existingOrder || existingOrder.cleanup_state !== "ACTIVE") {
+            response = error(404, "NOT_FOUND", "Order not found.");
+          } else if (existingOrder.status === "COMPLETED") {
+            // Idempotent: already completed
+            response = ok({
+              orderId,
+              status: "COMPLETED",
+              alreadyCompleted: true,
+            });
+          } else if (existingOrder.status !== "AWAITING_FINISHING") {
             response = error(
               409,
               "INVALID_TRANSITION",
-              "Order is not in AWAITING_FINISHING status.",
+              `Order is in status ${existingOrder.status}, expected AWAITING_FINISHING.`,
             );
           } else {
+            await db.batch([
+              db
+                .prepare(
+                  `UPDATE orders SET status = 'COMPLETED', completed_at_ms = ?,
+                   purge_at_ms = ?, updated_at_ms = ?
+                 WHERE id = ? AND status = 'AWAITING_FINISHING' AND cleanup_state = 'ACTIVE'`,
+                )
+                .bind(nowMs, nowMs + retentionMs, nowMs, orderId),
+              db
+                .prepare(
+                  `UPDATE order_files SET print_status = 'PRINTED',
+                   printed_at_ms = COALESCE(printed_at_ms, ?), updated_at_ms = ?
+                 WHERE order_id = ? AND print_status <> 'PRINTED'`,
+                )
+                .bind(nowMs, nowMs, orderId),
+              db
+                .prepare(
+                  `UPDATE uploads SET retention_reason = 'COMPLETED', delete_after_ms = ?,
+                   updated_at_ms = ? WHERE order_id = ? AND storage_status = 'UPLOADED'
+                   AND EXISTS (SELECT 1 FROM orders WHERE id = ? AND status = 'COMPLETED')`,
+                )
+                .bind(nowMs + retentionMs, nowMs, orderId, orderId),
+              db
+                .prepare(
+                  `INSERT OR IGNORE INTO order_events (id, order_id, event_type,
+                   from_status, to_status, actor_type, actor_id, idempotency_key,
+                   created_at_ms)
+                  SELECT ?, o.id, 'ORDER_COMPLETED', 'AWAITING_FINISHING', 'COMPLETED',
+                    'ADMIN', NULL, ?, ? FROM orders o WHERE o.id = ? AND o.status = 'COMPLETED'`,
+                )
+                .bind(
+                  crypto.randomUUID(),
+                  `order-completed:${orderId}`,
+                  nowMs,
+                  orderId,
+                ),
+            ]);
+
+            void import("../agent/wake").then((m) => m.wakeAgent(env));
             response = ok({ orderId, status: "COMPLETED" });
           }
         } else if (action === "set-pickup-charge") {
@@ -471,6 +503,7 @@ export async function handleAdminManualOrdersRequest(
               rec.dueAtPickupPaise,
               nowMs,
             );
+            void import("../agent/wake").then((m) => m.wakeAgent(env));
             response = ok({ orderId, dueAtPickupPaise: rec.dueAtPickupPaise });
           }
         } else if (action === "confirm-cash") {

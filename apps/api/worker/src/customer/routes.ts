@@ -98,10 +98,12 @@ function actionsFromEnv(env: WorkerEnv): CustomerActions {
           accessKeyId: env.R2_ACCESS_KEY_ID,
           secretAccessKey: env.R2_SECRET_ACCESS_KEY,
         });
+  const readiness = new D1PaymentReadiness(env.DB, env);
   const service = new CustomerService(
     repository,
     signer,
     new R2PrivateObjectStore(env.PDF_BUCKET),
+    readiness,
   );
   const keyId = env.RAZORPAY_KEY_ID ?? "";
   const keySecret = env.RAZORPAY_KEY_SECRET ?? "";
@@ -110,7 +112,7 @@ function actionsFromEnv(env: WorkerEnv): CustomerActions {
     new D1PaymentRepository(env.DB),
     repository,
     new R2PrivateObjectStore(env.PDF_BUCKET),
-    new D1PaymentReadiness(env.DB, env),
+    readiness,
     new HttpRazorpayClient(keyId, keySecret),
     { keyId, keySecret },
     trackingService,
@@ -465,6 +467,7 @@ function mapCustomerError(caught: unknown, env: WorkerEnv): Response {
   const statuses: Record<string, number> = {
     ONLINE_PRINTING_DISABLED: 503,
     CASH_ORDERS_DISABLED: 403,
+    PRINTER_NOT_READY: 503,
     DRAFT_INVALID: 401,
     DRAFT_EXPIRED: 410,
     UPLOAD_NOT_FOUND: 409,
@@ -483,13 +486,17 @@ function mapCustomerError(caught: unknown, env: WorkerEnv): Response {
   return error(
     statuses[caught.code] ?? 400,
     caught.code,
-    caught.code === "TRACKING_NOT_FOUND"
-      ? "No active order found for that pickup code."
-      : caught.code === "ONLINE_PRINTING_DISABLED"
-        ? "Online printing is currently unavailable."
-        : caught.code === "CASH_ORDERS_DISABLED"
-          ? "Cash orders are currently disabled."
-          : "The customer draft request could not be completed.",
+    caught.message && caught.message !== caught.code
+      ? caught.message
+      : caught.code === "TRACKING_NOT_FOUND"
+        ? "No active order found for that pickup code."
+        : caught.code === "ONLINE_PRINTING_DISABLED"
+          ? "Online printing is currently unavailable."
+          : caught.code === "CASH_ORDERS_DISABLED"
+            ? "Cash orders are currently disabled."
+            : caught.code === "PRINTER_NOT_READY"
+              ? "The shop printer is currently not ready to print."
+              : "The customer draft request could not be completed.",
     corsHeaders(env),
   );
 }

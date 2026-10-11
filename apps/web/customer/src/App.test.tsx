@@ -614,7 +614,7 @@ describe("customer upload app", () => {
 
   it("renders Smart Payment options when cashOrdersEnabled is true and transitions to CashWaitingPage on selection", async () => {
     const user = userEvent.setup();
-    vi.mocked(customerApi.config).mockResolvedValueOnce({
+    vi.mocked(customerApi.config).mockResolvedValue({
       ...enabledConfig,
       cashOrdersEnabled: true,
     });
@@ -653,5 +653,190 @@ describe("customer upload app", () => {
     expect(customerApi.selectCashPayment).toHaveBeenCalled();
     expect(await screen.findByText("Pay Cash at Counter")).toBeTruthy();
     expect(screen.getByText("PG-CSH001")).toBeTruthy();
+  });
+
+  it("defaults to Single-sided (Simplex) for newly uploaded PDF even when duplex is supported", async () => {
+    const user = userEvent.setup();
+    const configWithDuplex = {
+      ...enabledConfig,
+      availablePrintOptions: [
+        {
+          paperSize: "A4" as const,
+          colorMode: "BW" as const,
+          sides: "DOUBLE" as const,
+        },
+        {
+          paperSize: "A4" as const,
+          colorMode: "BW" as const,
+          sides: "SINGLE" as const,
+        },
+      ],
+    };
+    vi.mocked(customerApi.config).mockResolvedValue(configWithDuplex);
+
+    render(<App />);
+    await screen.findByText("ABC Xerox");
+    await user.upload(
+      screen.getByLabelText("Choose Files"),
+      new File(["%PDF"], "sample.pdf", { type: "application/pdf" }),
+    );
+
+    const singleRadio = screen.getByRole<HTMLInputElement>("radio", {
+      name: /Single-sided/i,
+    });
+    const doubleRadio = screen.getByRole<HTMLInputElement>("radio", {
+      name: /Double-sided/i,
+    });
+    expect(singleRadio.checked).toBe(true);
+    expect(doubleRadio.checked).toBe(false);
+  });
+
+  it("defaults multiple uploaded files to Single-sided and preserves explicitly selected duplex on file 1", async () => {
+    const user = userEvent.setup();
+    const configWithDuplex = {
+      ...enabledConfig,
+      availablePrintOptions: [
+        {
+          paperSize: "A4" as const,
+          colorMode: "BW" as const,
+          sides: "DOUBLE" as const,
+        },
+        {
+          paperSize: "A4" as const,
+          colorMode: "BW" as const,
+          sides: "SINGLE" as const,
+        },
+      ],
+    };
+    vi.mocked(customerApi.config).mockResolvedValue(configWithDuplex);
+
+    render(<App />);
+    await screen.findByText("ABC Xerox");
+    await user.upload(
+      screen.getByLabelText("Choose Files"),
+      new File(["%PDF"], "first.pdf", { type: "application/pdf" }),
+    );
+
+    // File 1 starts single-sided
+    const singleRadio = screen.getByRole<HTMLInputElement>("radio", {
+      name: /Single-sided/i,
+    });
+    const doubleRadio = screen.getByRole<HTMLInputElement>("radio", {
+      name: /Double-sided/i,
+    });
+    expect(singleRadio.checked).toBe(true);
+
+    // User explicitly selects Double-sided on file 1
+    await user.click(doubleRadio);
+    expect(doubleRadio.checked).toBe(true);
+
+    // User uploads a second file
+    await user.upload(
+      screen.getByLabelText("Choose Files"),
+      new File(["%PDF"], "second.pdf", { type: "application/pdf" }),
+    );
+
+    // Newly added file 2 must default to Single-sided
+    const singleRadioAfter2 = screen.getByRole<HTMLInputElement>("radio", {
+      name: /Single-sided/i,
+    });
+    const doubleRadioAfter2 = screen.getByRole<HTMLInputElement>("radio", {
+      name: /Double-sided/i,
+    });
+    expect(singleRadioAfter2.checked).toBe(true);
+    expect(doubleRadioAfter2.checked).toBe(false);
+
+    // Switch back to file 1
+    const fileSelector = screen.getByLabelText("File to configure");
+    await user.selectOptions(fileSelector, "0");
+
+    // File 1 must preserve the user's explicit Double-sided selection
+    const singleRadioFile1 = screen.getByRole<HTMLInputElement>("radio", {
+      name: /Single-sided/i,
+    });
+    const doubleRadioFile1 = screen.getByRole<HTMLInputElement>("radio", {
+      name: /Double-sided/i,
+    });
+    expect(doubleRadioFile1.checked).toBe(true);
+    expect(singleRadioFile1.checked).toBe(false);
+  });
+
+  it("disables Double-sided option with clear explanation when no duplex printer is available", async () => {
+    const user = userEvent.setup();
+    // enabledConfig has only sides: "SINGLE"
+    render(<App />);
+    await screen.findByText("ABC Xerox");
+    await user.upload(
+      screen.getByLabelText("Choose Files"),
+      new File(["%PDF"], "sample.pdf", { type: "application/pdf" }),
+    );
+
+    const doubleRadio = screen.getByRole<HTMLInputElement>("radio", {
+      name: /Double-sided/i,
+    });
+    expect(doubleRadio.disabled).toBe(true);
+    expect(
+      screen.getByText("Duplex printing unavailable on current printers"),
+    ).toBeTruthy();
+  });
+
+  it("revalidates printer capabilities on Review Order and halts if duplex went offline", async () => {
+    const user = userEvent.setup();
+    const configWithDuplex = {
+      ...enabledConfig,
+      availablePrintOptions: [
+        {
+          paperSize: "A4" as const,
+          colorMode: "BW" as const,
+          sides: "DOUBLE" as const,
+        },
+        {
+          paperSize: "A4" as const,
+          colorMode: "BW" as const,
+          sides: "SINGLE" as const,
+        },
+      ],
+    };
+    vi.mocked(customerApi.config).mockResolvedValue(configWithDuplex);
+
+    render(<App />);
+    await screen.findByText("ABC Xerox");
+    await user.type(screen.getByLabelText("Name"), "Rahul");
+    await user.type(screen.getByLabelText("Phone"), "9876543210");
+    await user.upload(
+      screen.getByLabelText("Choose Files"),
+      new File(["%PDF"], "doc.pdf", { type: "application/pdf" }),
+    );
+
+    // User chooses Double-sided
+    const doubleRadio = screen.getByRole<HTMLInputElement>("radio", {
+      name: /Double-sided/i,
+    });
+    await user.click(doubleRadio);
+    expect(doubleRadio.checked).toBe(true);
+
+    // Now duplex printer goes offline before Review Order click
+    const configWithoutDuplex = {
+      ...enabledConfig,
+      availablePrintOptions: [
+        {
+          paperSize: "A4" as const,
+          colorMode: "BW" as const,
+          sides: "SINGLE" as const,
+        },
+      ],
+    };
+    vi.mocked(customerApi.config).mockResolvedValue(configWithoutDuplex);
+
+    fireEvent.submit(
+      screen.getByRole("button", { name: "Review Order" }).closest("form")!,
+    );
+
+    expect(
+      await screen.findByText(
+        'Double-sided printing for "doc.pdf" is no longer supported by available printers. Please switch to Single-sided.',
+      ),
+    ).toBeTruthy();
+    expect(customerApi.createDraft).not.toHaveBeenCalled();
   });
 });

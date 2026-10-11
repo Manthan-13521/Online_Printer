@@ -101,123 +101,163 @@ export function CashWaitingPage({
       <div style={{ fontSize: "2.5rem", marginBottom: "0.5rem" }}>💵</div>
 
       <h2
-        style={{ margin: "0 0 0.25rem", color: "#166534", fontSize: "1.4rem" }}
+        style={{
+          margin: "0 0 0.35rem",
+          color: "#14532D",
+          fontSize: "1.6rem",
+          fontWeight: 800,
+        }}
       >
         Pay Cash at Counter
       </h2>
       <p
-        className="muted"
-        style={{ margin: "0 0 1.25rem", fontSize: "0.9rem" }}
-      >
-        Your documents are ready. Please visit the shop counter to pay.
-      </p>
-
-      {/* Order Summary Box */}
-      <div
         style={{
-          backgroundColor: "#F9FAF9",
-          borderRadius: "8px",
-          padding: "1rem",
-          marginBottom: "1.25rem",
-          border: "1px solid #E5E7EB",
+          margin: "0 0 1.25rem",
+          fontSize: "0.95rem",
+          color: "#374151",
+          fontWeight: 500,
         }}
       >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            marginBottom: "0.5rem",
-            fontSize: "0.9rem",
-          }}
-        >
-          <span className="muted">Order Reference:</span>
-          <span style={{ fontWeight: 700, letterSpacing: "0.05em" }}>
-            {orderReference}
-          </span>
-        </div>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            fontSize: "1.1rem",
-            fontWeight: 700,
-          }}
-        >
-          <span>Amount Due:</span>
-          <span style={{ color: "#166534" }}>
-            {formatInr(payableAmountPaise)}
-          </span>
-        </div>
-      </div>
+        Your document has been prepared for printing.
+      </p>
 
-      {/* Countdown Timer */}
-      {isFullyExpired ? (
-        <div
-          style={{
-            backgroundColor: "#FEE2E2",
-            color: "#991B1B",
-            padding: "0.75rem",
-            borderRadius: "8px",
-            marginBottom: "1.25rem",
-            fontSize: "0.9rem",
-            fontWeight: 600,
-          }}
-        >
-          Order Expired. The waiting window has passed.
-        </div>
-      ) : isGrace ? (
-        <div
-          style={{
-            backgroundColor: "#FEF3C7",
-            color: "#92400E",
-            padding: "0.75rem",
-            borderRadius: "8px",
-            marginBottom: "1.25rem",
-            fontSize: "0.9rem",
-            fontWeight: 600,
-          }}
-        >
-          ⚠️ 10-minute counter window ended.
-          <br />
-          Staff grace period active: <strong>{countdownText}</strong>
-        </div>
-      ) : (
-        <div
-          style={{
-            backgroundColor: "#ECFDF5",
-            color: "#065F46",
-            padding: "0.75rem",
-            borderRadius: "8px",
-            marginBottom: "1.25rem",
-          }}
-        >
-          <div style={{ fontSize: "0.85rem", marginBottom: "0.2rem" }}>
-            Time remaining to pay at counter:
-          </div>
-          <div
+      {/* Soft Light-Green Rectangular Box */}
+      <div
+        style={{
+          backgroundColor: "#F0FDF4",
+          border: "1.5px solid #86EFAC",
+          borderRadius: "10px",
+          padding: "1.25rem",
+          marginBottom: "1.25rem",
+          textAlign: "center",
+        }}
+      >
+        <div style={{ marginBottom: "1rem" }}>
+          <span
             style={{
-              fontSize: "1.75rem",
-              fontWeight: 700,
-              fontFamily: "monospace",
+              fontSize: "0.85rem",
+              color: "#166534",
+              fontWeight: 600,
+              textTransform: "uppercase",
               letterSpacing: "0.05em",
             }}
           >
-            ⏱️ {countdownText}
+            Order Reference
+          </span>
+          <div
+            style={{
+              fontSize: "1.85rem",
+              fontWeight: 800,
+              color: "#14532D",
+              letterSpacing: "0.06em",
+              fontFamily: "monospace",
+              marginTop: "0.2rem",
+            }}
+          >
+            {orderReference}
           </div>
         </div>
-      )}
 
-      <p
-        style={{
-          fontSize: "0.85rem",
-          color: "#4B5563",
-          lineHeight: "1.5",
-          marginBottom: "1.5rem",
-        }}
-      >
-        Printing starts automatically on the shop printer once the shopkeeper
-        confirms your payment.
-      </p>
+        <div style={{ marginBottom: "1.25rem" }}>
+          <span
+            style={{
+              fontSize: "0.85rem",
+              color: "#166534",
+              fontWeight: 600,
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+            }}
+          >
+            Amount Due
+          </span>
+          <div
+            style={{
+              fontSize: "2.1rem",
+              fontWeight: 800,
+              color: "#15803D",
+              marginTop: "0.15rem",
+            }}
+          >
+            {formatInr(payableAmountPaise)}
+          </div>
+        </div>
+
+        {/* Countdown */}
+        {isFullyExpired ? (
+          <div
+            style={{
+              backgroundColor: "#FEE2E2",
+              color: "#991B1B",
+              padding: "0.6rem 0.75rem",
+              borderRadius: "6px",
+              fontSize: "0.95rem",
+              fontWeight: 700,
+            }}
+          >
+            Order Expired. The waiting window has passed.
+          </div>
+        ) : isGrace ? (
+          <div
+            style={{
+              backgroundColor: "#FEF3C7",
+              color: "#92400E",
+              padding: "0.6rem 0.75rem",
+              borderRadius: "6px",
+              fontSize: "0.95rem",
+              fontWeight: 700,
+            }}
+          >
+            ⚠️ Staff grace period: <strong>{countdownText}</strong>
+          </div>
+        ) : (
+          <div
+            style={{
+              backgroundColor: "#DCFCE7",
+              border: "1px solid #BBF7D0",
+              color: "#14532D",
+              padding: "0.6rem 0.75rem",
+              borderRadius: "6px",
+            }}
+          >
+            <div
+              style={{
+                fontSize: "0.8rem",
+                fontWeight: 600,
+                marginBottom: "0.15rem",
+                textTransform: "uppercase",
+                letterSpacing: "0.04em",
+              }}
+            >
+              Time Remaining at Counter
+            </div>
+            <div
+              style={{
+                fontSize: "1.85rem",
+                fontWeight: 800,
+                fontFamily: "monospace",
+                letterSpacing: "0.05em",
+              }}
+            >
+              ⏱️ {countdownText}
+            </div>
+          </div>
+        )}
+
+        <div
+          style={{
+            marginTop: "1rem",
+            paddingTop: "0.75rem",
+            borderTop: "1px dashed #86EFAC",
+            fontSize: "0.9rem",
+            color: "#166534",
+            fontWeight: 700,
+            lineHeight: "1.4",
+          }}
+        >
+          Please show this reference code at the shop counter. Printing starts
+          automatically once the shopkeeper confirms cash payment.
+        </div>
+      </div>
 
       {/* Pay Online Instead Option */}
       {!isFullyExpired && (

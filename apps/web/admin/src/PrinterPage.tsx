@@ -158,6 +158,65 @@ export function PrinterPage({
   const [testPrintMenuPrinter, setTestPrintMenuPrinter] =
     useState<AdminPrinterDetails | null>(null);
 
+  useEffect(() => {
+    if (!testPrintMenuPrinter) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setTestPrintMenuPrinter(null);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [testPrintMenuPrinter]);
+
+  const testPrinterFeatures = testPrintMenuPrinter
+    ? testPrintMenuPrinter.verifiedCapabilities &&
+      !testPrintMenuPrinter.verifiedCapabilities.requiresReview
+      ? {
+          bw: Boolean(
+            testPrintMenuPrinter.verifiedCapabilities.verified.bw &&
+            (testPrintMenuPrinter.enabledServices
+              ? testPrintMenuPrinter.enabledServices.bw
+              : true),
+          ),
+          color: Boolean(
+            testPrintMenuPrinter.verifiedCapabilities.verified.color &&
+            (testPrintMenuPrinter.enabledServices
+              ? testPrintMenuPrinter.enabledServices.color
+              : true),
+          ),
+          duplex: Boolean(
+            testPrintMenuPrinter.verifiedCapabilities.verified.duplex &&
+            (testPrintMenuPrinter.enabledServices
+              ? testPrintMenuPrinter.enabledServices.duplex
+              : true),
+          ),
+          a4: Boolean(
+            testPrintMenuPrinter.verifiedCapabilities.verified.a4 &&
+            (testPrintMenuPrinter.enabledServices
+              ? testPrintMenuPrinter.enabledServices.a4
+              : true),
+          ),
+          a3: Boolean(
+            testPrintMenuPrinter.verifiedCapabilities.verified.a3 &&
+            (testPrintMenuPrinter.enabledServices
+              ? testPrintMenuPrinter.enabledServices.a3
+              : true),
+          ),
+        }
+      : {
+          bw: true,
+          color: testPrintMenuPrinter.capabilities?.colour === true,
+          duplex: testPrintMenuPrinter.capabilities?.duplex === true,
+          a4:
+            !testPrintMenuPrinter.capabilities?.paperSizes ||
+            testPrintMenuPrinter.capabilities.paperSizes.includes("A4"),
+          a3: Boolean(
+            testPrintMenuPrinter.capabilities?.paperSizes?.includes("A3"),
+          ),
+        }
+    : null;
+
   async function handleCheckHealth(printerId: string) {
     setCheckingHealthId(printerId);
     setError(null);
@@ -2477,6 +2536,11 @@ export function PrinterPage({
                 zIndex: 110,
                 padding: "1rem",
               }}
+              onClick={(e) => {
+                if (e.target === e.currentTarget) {
+                  setTestPrintMenuPrinter(null);
+                }
+              }}
             >
               <div
                 style={{
@@ -2504,10 +2568,20 @@ export function PrinterPage({
                   </h3>
                   <button
                     type="button"
-                    className="text-button"
+                    aria-label="Close"
+                    style={{
+                      background: "none",
+                      border: "none",
+                      fontSize: "1.25rem",
+                      cursor: "pointer",
+                      color: "#64748b",
+                      padding: "0.2rem 0.5rem",
+                      lineHeight: 1,
+                      borderRadius: "4px",
+                    }}
                     onClick={() => setTestPrintMenuPrinter(null)}
                   >
-                    ✕
+                    ×
                   </button>
                 </div>
                 <div
@@ -2536,45 +2610,82 @@ export function PrinterPage({
                   <button
                     type="button"
                     className="secondary-button"
-                    style={{ textAlign: "left", padding: "0.75rem 1rem" }}
-                    onClick={() =>
-                      void handleRequestTestPrint(testPrintMenuPrinter, "COLOR")
-                    }
+                    style={{
+                      textAlign: "left",
+                      padding: "0.75rem 1rem",
+                      opacity: testPrinterFeatures?.color ? 1 : 0.6,
+                      cursor: testPrinterFeatures?.color
+                        ? "pointer"
+                        : "not-allowed",
+                    }}
+                    disabled={!testPrinterFeatures?.color}
+                    onClick={() => {
+                      if (testPrinterFeatures?.color) {
+                        void handleRequestTestPrint(
+                          testPrintMenuPrinter,
+                          "COLOR",
+                        );
+                      }
+                    }}
                   >
                     <strong>🎨 Color Calibration Test</strong>
                     <div style={{ fontSize: "0.75rem", color: "#64748b" }}>
-                      Prints CMYK/RGB calibration bars to verify ink/toner
-                      reproduction.
+                      {testPrinterFeatures?.color
+                        ? "Prints CMYK/RGB calibration bars to verify ink/toner reproduction."
+                        : "Unsupported on this printer (Hardware is Black & White only)."}
                     </div>
                   </button>
                   <button
                     type="button"
                     className="secondary-button"
-                    style={{ textAlign: "left", padding: "0.75rem 1rem" }}
-                    onClick={() =>
-                      void handleRequestTestPrint(
-                        testPrintMenuPrinter,
-                        "DUPLEX",
-                      )
-                    }
+                    style={{
+                      textAlign: "left",
+                      padding: "0.75rem 1rem",
+                      opacity: testPrinterFeatures?.duplex ? 1 : 0.6,
+                      cursor: testPrinterFeatures?.duplex
+                        ? "pointer"
+                        : "not-allowed",
+                    }}
+                    disabled={!testPrinterFeatures?.duplex}
+                    onClick={() => {
+                      if (testPrinterFeatures?.duplex) {
+                        void handleRequestTestPrint(
+                          testPrintMenuPrinter,
+                          "DUPLEX",
+                        );
+                      }
+                    }}
                   >
                     <strong>🔄 Duplex 2-Page Flip Test</strong>
                     <div style={{ fontSize: "0.75rem", color: "#64748b" }}>
-                      Prints 2 pages to verify automatic double-sided paper
-                      turnaround.
+                      {testPrinterFeatures?.duplex
+                        ? "Prints 2 pages to verify automatic double-sided paper turnaround."
+                        : "Unsupported on this printer (Automatic duplex not supported)."}
                     </div>
                   </button>
                   <button
                     type="button"
                     className="secondary-button"
-                    style={{ textAlign: "left", padding: "0.75rem 1rem" }}
-                    onClick={() =>
-                      void handleRequestTestPrint(testPrintMenuPrinter, "A3")
-                    }
+                    style={{
+                      textAlign: "left",
+                      padding: "0.75rem 1rem",
+                      opacity: testPrinterFeatures?.a3 ? 1 : 0.6,
+                      cursor: testPrinterFeatures?.a3
+                        ? "pointer"
+                        : "not-allowed",
+                    }}
+                    disabled={!testPrinterFeatures?.a3}
+                    onClick={() => {
+                      if (testPrinterFeatures?.a3) {
+                        void handleRequestTestPrint(testPrintMenuPrinter, "A3");
+                      }
+                    }}
                   >
                     <strong>📐 A3 Large Format Test</strong>
                     <div style={{ fontSize: "0.75rem", color: "#64748b" }}>
-                      Tests oversized paper tray feeding and border margins.
+                      {testPrinterFeatures?.a3
+                        ? "Tests oversized paper tray feeding and border margins."
+                        : "Unsupported on this printer (Maximum paper size is A4)."}
                     </div>
                   </button>
                 </div>

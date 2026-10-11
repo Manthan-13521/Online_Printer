@@ -2216,6 +2216,13 @@ export class D1PrintingRepository implements PrintingRepository {
           .bind(input.nowMs, input.nowMs, input.orderId, input.claimId),
         this.db
           .prepare(
+            `UPDATE order_files SET print_status = 'PRINTED',
+             printed_at_ms = COALESCE(printed_at_ms, ?), updated_at_ms = ?
+             WHERE order_id = ? AND print_status <> 'PRINTED'`,
+          )
+          .bind(input.nowMs, input.nowMs, input.orderId),
+        this.db
+          .prepare(
             `INSERT OR IGNORE INTO order_events (id, order_id, event_type, from_status,
               to_status, actor_type, actor_id, idempotency_key, created_at_ms)
             VALUES (?, ?, 'ORDER_PRINTED', ?, 'AWAITING_FINISHING', 'AGENT', ?, ?, ?)`,
@@ -2968,13 +2975,15 @@ export class D1PrintingRepository implements PrintingRepository {
   ): Promise<QueueStallDetails> {
     const orders = await this.db
       .prepare(
-        `SELECT id, public_job_code, status, updated_at_ms, queued_at_ms, printer_id, physical_device_id
+        `SELECT id, public_job_code, status, updated_at_ms,
+                COALESCE(queued_at_ms, paid_at_ms, created_at_ms, updated_at_ms) AS queued_at_ms,
+                printer_id, physical_device_id
          FROM orders
          WHERE cleanup_state = 'ACTIVE'
            AND status IN ('QUEUED','CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED',
                           'PRINT_FAILED','ADMIN_ACTION_REQUIRED','RETRY_PENDING',
                           'NEEDS_ADMIN','COMPLETION_UNKNOWN')
-         ORDER BY queued_at_ms ASC`,
+         ORDER BY COALESCE(queued_at_ms, paid_at_ms, created_at_ms, updated_at_ms) ASC`,
       )
       .all<{
         id: string;
@@ -3189,6 +3198,26 @@ export class D1PrintingRepository implements PrintingRepository {
           needsReviewCount,
         };
       }
+    }
+
+    // 3. Also check if ANY queued paid order has been unassigned for 5+ minutes (even if another job is printing)
+    const stalledUnassigned = waitingOrders.find(
+      (o) => !o.printer_id && nowMs - o.queued_at_ms >= STALL_THRESHOLD_MS,
+    );
+    if (stalledUnassigned) {
+      const durationMs = nowMs - stalledUnassigned.queued_at_ms;
+      return {
+        isStalled: true,
+        stalledSinceMs: stalledUnassigned.queued_at_ms,
+        stalledDurationMs: durationMs,
+        stalledOrderId: stalledUnassigned.id,
+        stalledOrderCode: stalledUnassigned.public_job_code,
+        reason: `Order ${stalledUnassigned.public_job_code ?? stalledUnassigned.id} has been queued without printer assignment for over 5 minutes.`,
+        printerIssue,
+        waitingCount,
+        activeCount,
+        needsReviewCount,
+      };
     }
 
     // Otherwise not stalled
@@ -3613,9 +3642,14 @@ export class D1PrintingRepository implements PrintingRepository {
       .run();
 
     const finalMessage =
-      capabilityQuarantinedCount > 0
-        ? `Print Recovery complete: ${capabilityQuarantinedCount} order(s) moved to Needs Review (printer capability mismatch). ${resumedOrdersCount} order(s) ready in queue.`
-        : `Print Recovery complete: ${recoveredOrdersCount} order(s) reclaimed safely, ${resumedOrdersCount} order(s) ready in queue. Physical printer locks cleared.`;
+      recoveredOrdersCount > 0 ||
+      capabilityQuarantinedCount > 0 ||
+      reviewRows.length > 0 ||
+      (stalledInFlight.results?.length ?? 0) > 0
+        ? capabilityQuarantinedCount > 0
+          ? `Print Recovery complete: ${capabilityQuarantinedCount} order(s) moved to Needs Review (printer capability mismatch). ${resumedOrdersCount} order(s) ready in queue.`
+          : `Print Recovery complete: ${recoveredOrdersCount} order(s) reclaimed safely, ${reviewRows.length} lock(s) cleared. ${resumedOrdersCount} order(s) ready in queue.`
+        : `Print Recovery checked: No stalled in-flight orders or stale locks found. ${resumedOrdersCount} order(s) ready in queue.`;
 
     return {
       recoveredOrdersCount,

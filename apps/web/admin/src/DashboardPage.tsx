@@ -37,7 +37,31 @@ export function DashboardPage({
   });
   const [togglingPrinting, setTogglingPrinting] = useState(false);
   const [togglingIdSheet, setTogglingIdSheet] = useState(false);
+  const [togglingCash, setTogglingCash] = useState(false);
   const [confirmPause, setConfirmPause] = useState(false);
+
+  async function handleToggleCashOrders(enabled: boolean) {
+    if (!settings || togglingCash) return;
+    setTogglingCash(true);
+    setError(null);
+    try {
+      const response = await adminApi.updateSettings({
+        ...settings,
+        cashOrdersEnabled: enabled,
+      });
+      if (response.ok) {
+        setSettings(response.data.settings);
+      }
+    } catch (err: unknown) {
+      if (err instanceof AdminApiError && err.status === 401) {
+        onSessionExpired("Your session has expired. Please sign in again.");
+        return;
+      }
+      setError(friendlyAdminError(err));
+    } finally {
+      setTogglingCash(false);
+    }
+  }
 
   async function handleToggleIdSheet(enabled: boolean) {
     if (!settings || togglingIdSheet) return;
@@ -171,56 +195,78 @@ export function DashboardPage({
   );
   const onlinePrinting = Boolean(settings?.onlinePrintingEnabled);
   const canAcceptOrders = onlinePrinting && agentOnline && printerReady;
+  const isAnyToggling = togglingIdSheet || togglingPrinting || togglingCash;
+  const isCashEnabled = Boolean(settings?.cashOrdersEnabled);
+  const isIdSheetEnabled = Boolean(settings?.identificationSheetEnabled);
 
   return (
     <div className="dashboard-page">
-      <header className="page-header" style={{ marginBottom: "1.5rem" }}>
-        <h1 style={{ margin: 0, fontSize: "1.75rem" }}>
+      <header
+        className="page-header"
+        style={{ marginBottom: "0.85rem", marginTop: "-0.25rem" }}
+      >
+        <h1
+          style={{
+            margin: 0,
+            fontSize: "1.65rem",
+            fontWeight: 800,
+            color: "#0f172a",
+            letterSpacing: "-0.02em",
+          }}
+        >
           {settings?.shopName ?? settings?.appName ?? "PrintGo"}
         </h1>
       </header>
 
       {error ? (
-        <p className="form-error" role="alert">
+        <p
+          className="form-error"
+          role="alert"
+          style={{ marginBottom: "0.85rem" }}
+        >
           {error}
         </p>
       ) : null}
 
-      {/* Top 4 Cards */}
+      {/* Top 4 Summary Cards */}
       <section
         className="status-grid"
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-          gap: "1rem",
-          marginBottom: "1.5rem",
+          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+          gap: "0.75rem",
+          marginBottom: "1rem",
         }}
       >
         <div
           className="panel"
           style={{
-            padding: "1.5rem",
+            padding: "1rem 1.15rem",
             backgroundColor: "#f0fdf4",
             border: "1px solid #bbf7d0",
+            borderRadius: "0.65rem",
           }}
         >
           <p
             className="muted"
             style={{
               margin: 0,
-              fontSize: "0.85rem",
+              fontSize: "0.75rem",
               fontWeight: "bold",
               color: "#166534",
+              letterSpacing: "0.04em",
+              textTransform: "uppercase",
             }}
           >
             TODAY'S EARNINGS
           </p>
           <div
             style={{
-              fontSize: "2rem",
+              fontSize: "1.75rem",
               fontWeight: "bold",
               color: "#15803d",
-              marginTop: "0.5rem",
+              marginTop: "0.35rem",
+              lineHeight: 1.1,
             }}
           >
             ₹{(counts.todaysEarningsPaise / 100).toFixed(2)}
@@ -230,28 +276,32 @@ export function DashboardPage({
         <div
           className="panel"
           style={{
-            padding: "1.5rem",
+            padding: "1rem 1.15rem",
             backgroundColor: "#eff6ff",
             border: "1px solid #bfdbfe",
+            borderRadius: "0.65rem",
           }}
         >
           <p
             className="muted"
             style={{
               margin: 0,
-              fontSize: "0.85rem",
+              fontSize: "0.75rem",
               fontWeight: "bold",
               color: "#1e40af",
+              letterSpacing: "0.04em",
+              textTransform: "uppercase",
             }}
           >
             TODAY'S ORDERS
           </p>
           <div
             style={{
-              fontSize: "2rem",
+              fontSize: "1.75rem",
               fontWeight: "bold",
               color: "#1d4ed8",
-              marginTop: "0.5rem",
+              marginTop: "0.35rem",
+              lineHeight: 1.1,
             }}
           >
             {counts.todaysOrders}
@@ -261,28 +311,32 @@ export function DashboardPage({
         <div
           className="panel"
           style={{
-            padding: "1.5rem",
+            padding: "1rem 1.15rem",
             backgroundColor: "#fef3c7",
             border: "1px solid #fde68a",
+            borderRadius: "0.65rem",
           }}
         >
           <p
             className="muted"
             style={{
               margin: 0,
-              fontSize: "0.85rem",
+              fontSize: "0.75rem",
               fontWeight: "bold",
               color: "#92400e",
+              letterSpacing: "0.04em",
+              textTransform: "uppercase",
             }}
           >
             IN QUEUE
           </p>
           <div
             style={{
-              fontSize: "2rem",
+              fontSize: "1.75rem",
               fontWeight: "bold",
               color: "#b45309",
-              marginTop: "0.5rem",
+              marginTop: "0.35rem",
+              lineHeight: 1.1,
             }}
           >
             {counts.inQueue}
@@ -292,28 +346,32 @@ export function DashboardPage({
         <div
           className="panel"
           style={{
-            padding: "1.5rem",
+            padding: "1rem 1.15rem",
             backgroundColor: "#fdf4ff",
             border: "1px solid #fbcfe8",
+            borderRadius: "0.65rem",
           }}
         >
           <p
             className="muted"
             style={{
               margin: 0,
-              fontSize: "0.85rem",
+              fontSize: "0.75rem",
               fontWeight: "bold",
               color: "#86198f",
+              letterSpacing: "0.04em",
+              textTransform: "uppercase",
             }}
           >
             PRINTING NOW
           </p>
           <div
             style={{
-              fontSize: "2rem",
+              fontSize: "1.75rem",
               fontWeight: "bold",
               color: "#a21caf",
-              marginTop: "0.5rem",
+              marginTop: "0.35rem",
+              lineHeight: 1.1,
             }}
           >
             {counts.printingNow}
@@ -321,36 +379,38 @@ export function DashboardPage({
         </div>
       </section>
 
-      {/* Order Status Section */}
-      <h2
-        style={{ fontSize: "1.15rem", margin: "0 0 1rem 0", color: "#334155" }}
-      >
-        Order Status
-      </h2>
-      {/* Customer Readiness Banner */}
+      {/* Customer Readiness / Shop Status Banner */}
       {!canAcceptOrders ? (
         <section
           className="panel"
           style={{
-            marginBottom: "1.5rem",
+            marginBottom: "1rem",
             backgroundColor: "#fef2f2",
             border: "1px solid #fecaca",
-            padding: "1.25rem",
+            padding: "0.9rem 1.15rem",
+            borderRadius: "0.65rem",
           }}
         >
           <h2
             style={{
-              margin: "0 0 0.5rem 0",
+              margin: "0 0 0.35rem 0",
               color: "#991b1b",
-              fontSize: "1.15rem",
+              fontSize: "1.05rem",
+              fontWeight: 700,
             }}
           >
             ⚠️ Online Printing Cannot Accept Payments Yet
           </h2>
-          <p style={{ margin: 0, color: "#991b1b" }}>
+          <p style={{ margin: 0, color: "#991b1b", fontSize: "0.9rem" }}>
             Before customers can pay and submit jobs, ensure:
           </p>
-          <ul style={{ margin: "0.5rem 0 0 1.25rem", color: "#991b1b" }}>
+          <ul
+            style={{
+              margin: "0.35rem 0 0 1.25rem",
+              color: "#991b1b",
+              fontSize: "0.88rem",
+            }}
+          >
             {!onlinePrinting ? (
               <li>Online printing is enabled in Shop Settings.</li>
             ) : null}
@@ -366,234 +426,247 @@ export function DashboardPage({
         <section
           className="panel"
           style={{
-            marginBottom: "1.5rem",
+            marginBottom: "1rem",
             backgroundColor: "#f0fdf4",
             border: "1px solid #bbf7d0",
-            padding: "1.25rem",
+            padding: "0.9rem 1.15rem",
+            borderRadius: "0.65rem",
           }}
         >
           <h2
             style={{
-              margin: "0 0 0.5rem 0",
+              margin: "0 0 0.25rem 0",
               color: "#166534",
-              fontSize: "1.15rem",
+              fontSize: "1.05rem",
+              fontWeight: 700,
             }}
           >
             ✅ Your Website is Accepting Online Orders
           </h2>
-          <p style={{ margin: 0, color: "#15803d" }}>
+          <p style={{ margin: 0, color: "#15803d", fontSize: "0.9rem" }}>
             All systems ready! The PrintGo Windows Agent is running on the shop
             PC and your printer is connected and working.
           </p>
         </section>
       )}
 
+      {/* Compact Shop Controls (3 Toggles) */}
       <section
-        className="panel"
+        className="panel shop-controls-panel"
+        aria-label="Shop Controls"
         style={{
-          display: "flex",
-          flexWrap: "wrap",
-          gap: "1.5rem",
-          padding: "1.5rem",
-          marginBottom: "1.5rem",
-          justifyContent: "space-around",
+          padding: "1rem 1.15rem",
+          marginBottom: "1rem",
+          backgroundColor: "#ffffff",
+          border: "1px solid #e2e8f0",
+          borderRadius: "0.65rem",
         }}
-      >
-        <button
-          onClick={() => onNavigate("/admin/live-orders")}
-          type="button"
-          style={{
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            textAlign: "center",
-            padding: "0.5rem",
-          }}
-        >
-          <div
-            style={{ fontSize: "2rem", fontWeight: "bold", color: "#3b82f6" }}
-          >
-            {counts.statusCounts.waiting}
-          </div>
-          <div
-            style={{
-              fontSize: "0.9rem",
-              fontWeight: "bold",
-              color: "#64748b",
-              marginTop: "0.25rem",
-            }}
-          >
-            Waiting
-          </div>
-        </button>
-
-        <button
-          onClick={() => onNavigate("/admin/live-orders")}
-          type="button"
-          style={{
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            textAlign: "center",
-            padding: "0.5rem",
-          }}
-        >
-          <div
-            style={{ fontSize: "2rem", fontWeight: "bold", color: "#8b5cf6" }}
-          >
-            {counts.statusCounts.printing}
-          </div>
-          <div
-            style={{
-              fontSize: "0.9rem",
-              fontWeight: "bold",
-              color: "#64748b",
-              marginTop: "0.25rem",
-            }}
-          >
-            Printing
-          </div>
-        </button>
-
-        <button
-          onClick={() => onNavigate("/admin/live-orders")}
-          type="button"
-          style={{
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            textAlign: "center",
-            padding: "0.5rem",
-          }}
-        >
-          <div
-            style={{ fontSize: "2rem", fontWeight: "bold", color: "#10b981" }}
-          >
-            {counts.statusCounts.readyForPickup}
-          </div>
-          <div
-            style={{
-              fontSize: "0.9rem",
-              fontWeight: "bold",
-              color: "#64748b",
-              marginTop: "0.25rem",
-            }}
-          >
-            Ready for Pickup
-          </div>
-        </button>
-
-        <button
-          onClick={() => onNavigate("/admin/live-orders")}
-          type="button"
-          style={{
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            textAlign: "center",
-            padding: "0.5rem",
-          }}
-        >
-          <div
-            style={{
-              fontSize: "2rem",
-              fontWeight: "bold",
-              color:
-                counts.statusCounts.needsAttention > 0 ? "#ef4444" : "#64748b",
-            }}
-          >
-            {counts.statusCounts.needsAttention}
-          </div>
-          <div
-            style={{
-              fontSize: "0.9rem",
-              fontWeight: "bold",
-              color:
-                counts.statusCounts.needsAttention > 0 ? "#ef4444" : "#64748b",
-              marginTop: "0.25rem",
-            }}
-          >
-            Needs Attention
-          </div>
-        </button>
-      </section>
-
-      {/* Identification Sheet & Online Printing Controls */}
-      <section
-        className="panel"
-        style={{ padding: "1.25rem", marginBottom: "1.5rem" }}
       >
         <div
           style={{
             display: "flex",
             alignItems: "center",
-            justifyContent: "flex-start",
-            gap: "1rem",
-            paddingBottom: "0.75rem",
-            borderBottom: "1px solid #e2e8f0",
+            justifyContent: "space-between",
             marginBottom: "0.75rem",
           }}
         >
-          <span>
-            Identification sheet:{" "}
-            <strong
+          <h2
+            style={{
+              margin: 0,
+              fontSize: "0.95rem",
+              fontWeight: 700,
+              color: "#334155",
+              letterSpacing: "0.01em",
+            }}
+          >
+            Shop Controls
+          </h2>
+          {isAnyToggling ? (
+            <span
               style={{
-                color: settings?.identificationSheetEnabled
-                  ? "#16a34a"
-                  : "#64748b",
+                fontSize: "0.78rem",
+                color: "#64748b",
+                fontWeight: 600,
               }}
             >
-              {settings?.identificationSheetEnabled ? "ON" : "OFF"}
-            </strong>
-          </span>
-          {settings ? (
-            <div
-              style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}
-            >
-              <span style={{ fontSize: "0.85rem", fontWeight: "bold" }}>
-                {settings.identificationSheetEnabled ? "Enabled" : "Disabled"}
-              </span>
-              <label className="toggle-switch">
-                <input
-                  aria-label="Toggle Identification Sheet"
-                  checked={settings.identificationSheetEnabled}
-                  disabled={togglingIdSheet}
-                  onChange={(event) => {
-                    void handleToggleIdSheet(event.target.checked);
-                  }}
-                  role="switch"
-                  type="checkbox"
-                />
-                <span className="toggle-slider" />
-              </label>
-            </div>
+              Saving…
+            </span>
           ) : null}
         </div>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "flex-start",
-            gap: "1rem",
-          }}
-        >
-          <span>
-            Online Printing:{" "}
-            <strong style={{ color: onlinePrinting ? "#16a34a" : "#dc2626" }}>
-              {onlinePrinting ? "ON" : "OFF"}
-            </strong>
-          </span>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            <span style={{ fontSize: "0.85rem", fontWeight: "bold" }}>
-              {onlinePrinting ? "Accepting" : "Paused"}
-            </span>
-            <label className="toggle-switch">
+
+        <div className="shop-controls-grid">
+          {/* Toggle 1: Identification Sheet */}
+          <div
+            className="shop-control-card"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: "0.75rem 0.9rem",
+              backgroundColor: "#f8fafc",
+              border: "1px solid #e2e8f0",
+              borderRadius: "0.55rem",
+              gap: "0.75rem",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "0.15rem",
+                minWidth: 0,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: "0.85rem",
+                  fontWeight: 650,
+                  color: "#1e293b",
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
+                Identification Sheet
+              </span>
+              <span
+                style={{
+                  fontSize: "0.72rem",
+                  fontWeight: 750,
+                  color: isIdSheetEnabled ? "#16a34a" : "#64748b",
+                  letterSpacing: "0.03em",
+                }}
+              >
+                {isIdSheetEnabled ? "ON" : "OFF"}
+              </span>
+            </div>
+            <label className="toggle-switch" style={{ flexShrink: 0 }}>
+              <input
+                aria-label="Toggle Identification Sheet"
+                checked={isIdSheetEnabled}
+                disabled={togglingIdSheet || !settings}
+                onChange={(event) => {
+                  void handleToggleIdSheet(event.target.checked);
+                }}
+                role="switch"
+                type="checkbox"
+              />
+              <span className="toggle-slider" />
+            </label>
+          </div>
+
+          {/* Toggle 2: Accept Online Orders */}
+          <div
+            className="shop-control-card"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: "0.75rem 0.9rem",
+              backgroundColor: "#f8fafc",
+              border: "1px solid #e2e8f0",
+              borderRadius: "0.55rem",
+              gap: "0.75rem",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "0.15rem",
+                minWidth: 0,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: "0.85rem",
+                  fontWeight: 650,
+                  color: "#1e293b",
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
+                Accept Online Orders
+              </span>
+              <span
+                style={{
+                  fontSize: "0.72rem",
+                  fontWeight: 750,
+                  color: onlinePrinting ? "#16a34a" : "#dc2626",
+                  letterSpacing: "0.03em",
+                }}
+              >
+                {onlinePrinting ? "ON" : "OFF"}
+              </span>
+            </div>
+            <label className="toggle-switch" style={{ flexShrink: 0 }}>
               <input
                 aria-label="Toggle Online Printing"
                 checked={onlinePrinting}
-                disabled={togglingPrinting}
+                disabled={togglingPrinting || !settings}
                 onChange={(event) => {
                   void handleToggleOnlinePrinting(event.target.checked);
+                }}
+                role="switch"
+                type="checkbox"
+              />
+              <span className="toggle-slider" />
+            </label>
+          </div>
+
+          {/* Toggle 3: Accept Cash Orders */}
+          <div
+            className="shop-control-card"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: "0.75rem 0.9rem",
+              backgroundColor: "#f8fafc",
+              border: "1px solid #e2e8f0",
+              borderRadius: "0.55rem",
+              gap: "0.75rem",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "0.15rem",
+                minWidth: 0,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: "0.85rem",
+                  fontWeight: 650,
+                  color: "#1e293b",
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
+                Accept Cash Orders
+              </span>
+              <span
+                style={{
+                  fontSize: "0.72rem",
+                  fontWeight: 750,
+                  color: isCashEnabled ? "#16a34a" : "#64748b",
+                  letterSpacing: "0.03em",
+                }}
+              >
+                {isCashEnabled ? "ON" : "OFF"}
+              </span>
+            </div>
+            <label className="toggle-switch" style={{ flexShrink: 0 }}>
+              <input
+                aria-label="Toggle Accept Cash Orders"
+                checked={isCashEnabled}
+                disabled={togglingCash || !settings}
+                onChange={(event) => {
+                  void handleToggleCashOrders(event.target.checked);
                 }}
                 role="switch"
                 type="checkbox"
