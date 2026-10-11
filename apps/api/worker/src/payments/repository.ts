@@ -582,7 +582,12 @@ export class D1PaymentRepository implements PaymentRepository {
   ): Promise<PaymentRecord> {
     const before = await this.findPayment("p.id", input.paymentId);
     if (!before) throw new Error("Payment record missing.");
-    if (before.status === "PAID" && before.publicJobCode) return before;
+    if (
+      (before.status === "PAID" || before.status === "DUPLICATE_CAPTURED") &&
+      before.publicJobCode
+    ) {
+      return before;
+    }
 
     const orderRow = await this.db
       .prepare(`SELECT pickup_code FROM orders WHERE id = ?`)
@@ -615,11 +620,27 @@ export class D1PaymentRepository implements PaymentRepository {
     if (orderUpdate.meta.changes !== 1) {
       const existingPaid = await this.db
         .prepare(
-          `SELECT id, status, provider FROM payments WHERE order_id = ? AND status = 'PAID' LIMIT 1`,
+          `SELECT id, status, provider, provider_payment_id FROM payments WHERE order_id = ? AND status = 'PAID' LIMIT 1`,
         )
         .bind(before.orderId)
-        .first<{ id: string; status: string; provider: string }>();
+        .first<{
+          id: string;
+          status: string;
+          provider: string;
+          provider_payment_id: string | null;
+        }>();
       if (existingPaid) {
+        // If the existing paid payment is the exact same record or shares the provider payment id,
+        // this is an idempotent replay or concurrent race of the same payment. Do NOT mark DUPLICATE_CAPTURED!
+        if (
+          existingPaid.id === input.paymentId ||
+          (existingPaid.provider_payment_id !== null &&
+            existingPaid.provider_payment_id === input.providerPaymentId)
+        ) {
+          const currentRecord = await this.findPayment("p.id", input.paymentId);
+          if (currentRecord) return currentRecord;
+        }
+
         await this.db.batch([
           this.db
             .prepare(

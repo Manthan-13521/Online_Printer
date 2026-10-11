@@ -441,13 +441,40 @@ export class PaymentService {
       this.configuration.keySecret,
     );
     if (!valid) throw new PaymentError("PAYMENT_SIGNATURE_INVALID");
-    if (payment.status === "PAID" && payment.publicJobCode) {
-      return this.successData(payment, input.trackingToken);
+
+    let currentPayment = payment;
+
+    // If order was already finalized by webhook or concurrent request, re-fetch payment state
+    if (currentPayment.status !== "PAID") {
+      const refreshed = await this.payments.findPaymentByProviderOrderId(
+        input.razorpayOrderId,
+      );
+      if (refreshed) {
+        currentPayment = refreshed;
+      }
     }
+
+    if (currentPayment.status === "PAID") {
+      if (currentPayment.providerPaymentId !== input.razorpayPaymentId) {
+        throw new PaymentError("PAYMENT_ORDER_MISMATCH");
+      }
+      const publicJobCode = currentPayment.publicJobCode || draft.publicJobCode;
+      if (publicJobCode) {
+        return this.successData(
+          { ...currentPayment, publicJobCode },
+          input.trackingToken,
+        );
+      }
+    }
+
+    if (currentPayment.status === "DUPLICATE_CAPTURED") {
+      throw new PaymentError("PAYMENT_STATE_INVALID");
+    }
+
     this.validateDraftState(draft);
     if (
-      payment.providerOrderId !== input.razorpayOrderId ||
-      payment.status !== "PENDING"
+      currentPayment.providerOrderId !== input.razorpayOrderId ||
+      currentPayment.status !== "PENDING"
     ) {
       throw new PaymentError("PAYMENT_ORDER_MISMATCH");
     }
