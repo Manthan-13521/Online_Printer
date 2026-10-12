@@ -76,14 +76,15 @@ jobs:
         shell: pwsh
         run: |
           $dir = "dist-package/PrintGo-Windows-Test"
+          $sourcePath = (Resolve-Path "apps/agent/windows/control-center/PrintGoControlCenter.cs").Path
           $csc = "$env:SystemRoot\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
           if (Test-Path $csc) {
-            Write-Host "Compiling PrintGo Command Center via $csc..."
-            & $csc /nologo /target:winexe /out:"$dir/PrintGo-Command-Center.exe" /r:System.Windows.Forms.dll,System.Drawing.dll,System.Management.dll apps/agent/windows/control-center/PrintGoControlCenter.cs
+            Write-Host "Compiling PrintGo Command Center via $csc with source $sourcePath..."
+            & $csc /nologo /target:winexe /out:"$dir/PrintGo-Command-Center.exe" /r:System.Windows.Forms.dll,System.Drawing.dll,System.Management.dll "$sourcePath"
             Write-Host "Successfully compiled PrintGo-Command-Center.exe"
           } else {
             Write-Host "Checking PATH for csc..."
-            & csc /nologo /target:winexe /out:"$dir/PrintGo-Command-Center.exe" /r:System.Windows.Forms.dll,System.Drawing.dll,System.Management.dll apps/agent/windows/control-center/PrintGoControlCenter.cs
+            & csc /nologo /target:winexe /out:"$dir/PrintGo-Command-Center.exe" /r:System.Windows.Forms.dll,System.Drawing.dll,System.Management.dll "$sourcePath"
           }
 
       - name: Calculate SHA-256 and package distribution ZIP
