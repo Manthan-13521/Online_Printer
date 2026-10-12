@@ -261,24 +261,28 @@ jobs:
           Remove-Item -Recurse -Force $appDataPrintGo
 
       - name: Generate Checksums & Update Release
-        shell: bash
+        shell: pwsh
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cd release-artifacts
-          shasum -a 256 PrintGo-* > SHA256SUMS.txt
-          cat SHA256SUMS.txt
+          $relDir = "release-artifacts"
+          $lines = @()
+          Get-ChildItem -Path $relDir -Filter "PrintGo-*" | ForEach-Object {
+            $hash = (Get-FileHash -Algorithm SHA256 $_.FullName).Hash.ToLower()
+            Write-Host "$hash  $($_.Name)"
+            $lines += "$hash  $($_.Name)"
+          }
+          Set-Content -Path "$relDir/SHA256SUMS.txt" -Value ($lines -join "`n")
 
-          TAG="${GITHUB_REF_NAME}"
-          if [ "${GITHUB_REF_TYPE}" != "tag" ]; then
-            TAG="v2.1.0-phase9"
-          fi
-          echo "Updating release $TAG with verified assets..."
-          
+          $tag = if ($env:GITHUB_REF_TYPE -eq "tag") { $env:GITHUB_REF_NAME } else { "v2.1.0-phase9" }
+          Write-Host "Updating release $tag with verified assets..."
+
           # Delete outdated assets if present
-          gh release delete-asset "$TAG" PrintGo-Windows-Test.zip PrintGo-Command-Center.exe SumatraPDF.exe --yes || true
+          try { gh release delete-asset "$tag" PrintGo-Windows-Test.zip PrintGo-Command-Center.exe SumatraPDF.exe --yes } catch { }
 
-          # Upload all 4 packages + SHA256SUMS.txt
-          gh release upload "$TAG" PrintGo-* SHA256SUMS.txt --clobber
+          # Upload all verified packages + SHA256SUMS.txt
+          $filesToUpload = Get-ChildItem -Path "$relDir" | ForEach-Object { $_.FullName }
+          gh release upload "$tag" $filesToUpload --clobber
+
 
 
