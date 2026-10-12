@@ -50,30 +50,51 @@ namespace PrintGo.ControlCenter
         private string agentExePath;
         private string sumatraExePath;
 
+        private static System.Threading.Mutex singleInstanceMutex;
+
         [STAThread]
         public static void Main(string[] args)
         {
-            Application.EnableVisualStyles();
-            Application.SetCompatibleTextRenderingDefault(false);
-
-            bool startMinimized = false;
-            string pairUrl = null;
-
-            foreach (var arg in args)
+            bool createdNew;
+            singleInstanceMutex = new System.Threading.Mutex(true, "PrintGo_ControlCenter_SingleInstance_Mutex", out createdNew);
+            if (!createdNew)
             {
-                if (arg.Equals("--minimized", StringComparison.OrdinalIgnoreCase) ||
-                    arg.Equals("-m", StringComparison.OrdinalIgnoreCase))
-                {
-                    startMinimized = true;
-                }
-                else if (arg.StartsWith("printgo://", StringComparison.OrdinalIgnoreCase))
-                {
-                    pairUrl = arg;
-                }
+                // Another instance of Control Center is already running. Exit cleanly.
+                return;
             }
 
-            var form = new ControlCenterForm(startMinimized, pairUrl);
-            Application.Run(form);
+            try
+            {
+                Application.EnableVisualStyles();
+                Application.SetCompatibleTextRenderingDefault(false);
+
+                bool startMinimized = false;
+                string pairUrl = null;
+
+                foreach (var arg in args)
+                {
+                    if (arg.Equals("--minimized", StringComparison.OrdinalIgnoreCase) ||
+                        arg.Equals("-m", StringComparison.OrdinalIgnoreCase))
+                    {
+                        startMinimized = true;
+                    }
+                    else if (arg.StartsWith("printgo://", StringComparison.OrdinalIgnoreCase))
+                    {
+                        pairUrl = arg;
+                    }
+                }
+
+                var form = new ControlCenterForm(startMinimized, pairUrl);
+                Application.Run(form);
+            }
+            finally
+            {
+                if (singleInstanceMutex != null)
+                {
+                    try { singleInstanceMutex.ReleaseMutex(); } catch { }
+                    singleInstanceMutex.Dispose();
+                }
+            }
         }
 
         public ControlCenterForm(bool startMinimized, string pairUrl)

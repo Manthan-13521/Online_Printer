@@ -215,9 +215,14 @@ jobs:
           }
           Write-Host "Instance 1 running (PID: $($guiProc1.Id))"
 
-          # Launch instance 2: should detect instance 1 and exit immediately
-          $guiProc2 = Start-Process -FilePath "$installDir\PrintGo-ControlCenter.exe" -ArgumentList "--minimized" -PassThru -Wait
-          Write-Host "Instance 2 exited cleanly as expected (Exit code: $($guiProc2.ExitCode))"
+          # Launch instance 2: must detect instance 1 and exit immediately
+          $guiProc2 = Start-Process -FilePath "$installDir\PrintGo-ControlCenter.exe" -ArgumentList "--minimized" -PassThru
+          $exited2 = $guiProc2.WaitForExit(5000)
+          if (-not $exited2) {
+            Stop-Process -Id $guiProc2.Id -Force
+            throw "Instance 2 did not exit within 5 seconds (single-instance check failed)"
+          }
+          Write-Host "Instance 2 exited cleanly within timeout as expected"
 
           # Stop instance 1
           Stop-Process -Id $guiProc1.Id -Force
@@ -236,8 +241,13 @@ jobs:
           # 7. Test Uninstallation & Rollback
           Write-Host "Testing silent uninstaller..."
           $uninstaller = Join-Path $installDir "unins000.exe"
-          $uninstProc = Start-Process -FilePath $uninstaller -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" -PassThru -Wait
-          Start-Sleep -Seconds 2
+          $uninstProc = Start-Process -FilePath $uninstaller -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" -PassThru
+          $uninstExited = $uninstProc.WaitForExit(15000)
+          if (-not $uninstExited) {
+            Stop-Process -Id $uninstProc.Id -Force
+            Write-Host "Warning: uninstaller process timed out; checking if files removed..."
+          }
+          Start-Sleep -Seconds 3
           if (Test-Path "$installDir\PrintGo-ControlCenter.exe") {
             throw "Uninstaller did not remove PrintGo-ControlCenter.exe"
           }
