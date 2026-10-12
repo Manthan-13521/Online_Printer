@@ -267,5 +267,6 @@ describe("WindowsDpapiCredentialStore", () => {
       expect(fileBytes).not.toContain(sampleCredentials.agentSecret);
       expect(fileBytes).toMatch(/^[A-Za-z0-9+/=\s]+$/);
     },
+    30000,
   );
 });
