@@ -224,9 +224,10 @@ jobs:
           }
           Write-Host "Instance 2 exited cleanly within timeout as expected"
 
-          # Stop instance 1
-          Stop-Process -Id $guiProc1.Id -Force
-          Write-Host "GUI instance 1 stopped."
+          # Stop all GUI and agent processes spawned during the test
+          Get-Process -Name "PrintGo-ControlCenter", "PrintGo-Agent", "SumatraPDF" -ErrorAction SilentlyContinue | Stop-Process -Force
+          Write-Host "All PrintGo test processes terminated."
+          Start-Sleep -Seconds 1
 
           # 6. Verify config preservation
           if (-not (Test-Path $mockCreds)) {
@@ -241,16 +242,17 @@ jobs:
           # 7. Test Uninstallation & Rollback
           Write-Host "Testing silent uninstaller..."
           $uninstaller = Join-Path $installDir "unins000.exe"
-          $uninstProc = Start-Process -FilePath $uninstaller -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" -PassThru
-          $uninstExited = $uninstProc.WaitForExit(15000)
-          if (-not $uninstExited) {
-            Stop-Process -Id $uninstProc.Id -Force
-            Write-Host "Warning: uninstaller process timed out; checking if files removed..."
+          $uninstProc = Start-Process -FilePath $uninstaller -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" -PassThru -Wait
+          
+          # Wait up to 15s for the child uninstaller in Temp to finish removing files
+          $timeout = [DateTime]::UtcNow.AddSeconds(15)
+          while ((Test-Path "$installDir\PrintGo-ControlCenter.exe") -and ([DateTime]::UtcNow -lt $timeout)) {
+            Start-Sleep -Milliseconds 500
           }
-          Start-Sleep -Seconds 3
           if (Test-Path "$installDir\PrintGo-ControlCenter.exe") {
             throw "Uninstaller did not remove PrintGo-ControlCenter.exe"
           }
+          Write-Host "Uninstaller successfully removed installed binaries."
           # Inno Setup keeps user credentials intact
           if (-not (Test-Path $mockCreds)) {
             throw "Uninstaller deleted user credentials unexpectedly!"
