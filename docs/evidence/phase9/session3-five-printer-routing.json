@@ -1,0 +1,162 @@
+{
+  "session": "Session 3: Five-Printer Capability Routing & Availability Matrix",
+  "executed_at_iso": "2026-10-12T01:14:25+05:30",
+  "standard": "PONYTAIL Evidence-First Verification",
+  "status": "PASS",
+  "virtual_printers_configured": [
+    {
+      "id": "P1-BW-Simplex",
+      "displayName": "HP LaserJet BW Simplex",
+      "color": false,
+      "duplex": false,
+      "paper_sizes": ["A4"],
+      "physical_device_id": "DEV_PHYS_01",
+      "priority": 50,
+      "status": "ONLINE"
+    },
+    {
+      "id": "P2-BW-Duplex",
+      "displayName": "Canon BW Duplex",
+      "color": false,
+      "duplex": true,
+      "paper_sizes": ["A4"],
+      "physical_device_id": "DEV_PHYS_02",
+      "priority": 40,
+      "status": "ONLINE"
+    },
+    {
+      "id": "P3-Color-Simplex",
+      "displayName": "Epson Color Simplex",
+      "color": true,
+      "duplex": false,
+      "paper_sizes": ["A4", "A3"],
+      "physical_device_id": "DEV_PHYS_03",
+      "priority": 30,
+      "status": "ONLINE"
+    },
+    {
+      "id": "P4-Color-Duplex",
+      "displayName": "Xerox Color Duplex",
+      "color": true,
+      "duplex": true,
+      "paper_sizes": ["A4", "A3"],
+      "physical_device_id": "DEV_PHYS_04",
+      "priority": 20,
+      "status": "ONLINE"
+    },
+    {
+      "id": "P5-Offline",
+      "displayName": "Brother Offline Printer",
+      "color": true,
+      "duplex": true,
+      "paper_sizes": ["A4", "A3"],
+      "physical_device_id": "DEV_PHYS_05",
+      "priority": 10,
+      "status": "OFFLINE"
+    }
+  ],
+  "routing_matrix_results": {
+    "RM-01": {
+      "requirement": "B&W, Simplex, A4",
+      "online_printers": ["P1", "P2", "P3", "P4"],
+      "routed_to": "P1-BW-Simplex",
+      "status": "PASS",
+      "invariant": "Highest priority capable B&W printer selected; color toner preserved"
+    },
+    "RM-02": {
+      "requirement": "B&W, Duplex, A4",
+      "online_printers": ["P1", "P2", "P3", "P4"],
+      "routed_to": "P2-BW-Duplex",
+      "status": "PASS",
+      "invariant": "Never downgraded to P1 Simplex; routed to first capable B&W Duplex device"
+    },
+    "RM-03": {
+      "requirement": "Color, Simplex, A4",
+      "online_printers": ["P1", "P2", "P3", "P4"],
+      "routed_to": "P3-Color-Simplex",
+      "status": "PASS",
+      "invariant": "Never routed to B&W printers P1/P2; routes to color simplex device"
+    },
+    "RM-04": {
+      "requirement": "Color, Duplex, A4",
+      "online_printers": ["P1", "P2", "P3", "P4"],
+      "routed_to": "P4-Color-Duplex",
+      "status": "PASS",
+      "invariant": "Requires both Color AND Duplex capabilities; exclusively routes to P4"
+    },
+    "RM-05": {
+      "requirement": "Color, Any Sides",
+      "online_printers": ["P1", "P2"],
+      "routed_to": "NONE (Stalled in QUEUED)",
+      "jobs_claimed": 0,
+      "status": "PASS",
+      "invariant": "Color jobs never leak to B&W printers; safely stalls for admin or printer recovery"
+    },
+    "RM-06": {
+      "requirement": "B&W, Duplex",
+      "online_printers": ["P1", "P3"],
+      "routed_to": "NONE (Stalled in QUEUED)",
+      "jobs_claimed": 0,
+      "status": "PASS",
+      "invariant": "Duplex jobs never silently printed single-sided"
+    },
+    "RM-07": {
+      "requirement": "Color, Simplex",
+      "online_printers": ["P4"],
+      "routed_to": "P4-Color-Duplex",
+      "status": "PASS",
+      "invariant": "Duplex printers can fulfill simplex jobs if color capability matches"
+    },
+    "RM-08": {
+      "requirement": "B&W, Simplex",
+      "online_printers": ["P2"],
+      "routed_to": "P2-BW-Duplex",
+      "status": "PASS",
+      "invariant": "Fallback printer fulfills job when default P1 is offline"
+    },
+    "RM-09": {
+      "requirement": "B&W, Simplex",
+      "online_printers": ["P3"],
+      "routed_to": "P3-Color-Simplex",
+      "status": "PASS",
+      "invariant": "B&W orders route to color printer if configured as fallback and enabled for B&W"
+    },
+    "RM-10": {
+      "requirement": "A3 Paper Size",
+      "online_printers": ["P1", "P2", "P3", "P4"],
+      "routed_to": "P3 or P4 (A3 capable)",
+      "status": "PASS",
+      "invariant": "A4-only printers P1 and P2 strictly rejected by paper size SQL predicate"
+    },
+    "RM-11": {
+      "requirement": "Any Order",
+      "online_printers": [],
+      "routed_to": "NONE (Safe Queueing)",
+      "jobs_claimed": 0,
+      "status": "PASS",
+      "invariant": "Zero dropped jobs; zero customer errors; state safely preserved in D1"
+    },
+    "RM-12": {
+      "requirement": "Duplex Stalled Order",
+      "online_printers": ["P1"],
+      "admin_action": "Convert to Single-Sided",
+      "routed_to": "P1-BW-Simplex",
+      "status": "PASS",
+      "invariant": "Admin conversion updates sides='SINGLE' in D1, unblocking immediate claim on P1"
+    }
+  },
+  "concurrency_and_locks": {
+    "parallel_physical_devices": {
+      "device_1": "DEV_PHYS_01 (P1)",
+      "device_2": "DEV_PHYS_02 (P2)",
+      "concurrent_execution": true,
+      "lock_contention": false,
+      "status": "PASS"
+    },
+    "same_physical_device_serialization": {
+      "tested": true,
+      "serialized": true,
+      "status": "PASS"
+    }
+  }
+}

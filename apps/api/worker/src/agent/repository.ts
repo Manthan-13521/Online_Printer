@@ -411,7 +411,10 @@ export class D1AgentRepository implements AgentRepository {
           (EXISTS(
             SELECT 1 FROM orders
             WHERE status IN ('QUEUED','CLAIMED','SPOOLING','PRINTING')
-               OR (status IN ('PRINT_BLOCKED','RETRY_PENDING') AND (next_retry_at_ms IS NULL OR next_retry_at_ms <= ?))
+          ) OR EXISTS(
+            SELECT 1 FROM orders
+            WHERE status IN ('PRINT_BLOCKED','RETRY_PENDING')
+              AND (next_retry_at_ms IS NULL OR next_retry_at_ms <= ?)
           ) OR EXISTS(
             SELECT 1 FROM orders
             WHERE status = 'PRINT_FAILED' AND cleanup_state = 'ACTIVE' AND updated_at_ms <= (? - 60000)

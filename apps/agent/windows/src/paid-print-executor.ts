@@ -27,6 +27,8 @@ export class PaidPrintExecutor {
     private readonly log: (message: string) => void = () => undefined,
     private readonly onStepFinished: () => void = () => undefined,
     private readonly logger?: AgentLogger | undefined,
+    private readonly onPrinterFault?:
+      ((printerName: string, reason?: string) => void) | undefined,
   ) {}
 
   async handle(
@@ -123,6 +125,10 @@ export class PaidPrintExecutor {
         (printerStatus.availability === "OFFLINE" ||
           printerStatus.availability === "BLOCKED")
       ) {
+        this.onPrinterFault?.(
+          job.windowsPrinterName,
+          printerStatus.availability,
+        );
         this.log(
           `Printer ${job.windowsPrinterName} is not online (${printerStatus.availability}: ${printerStatus.message ?? "Not ready"}). Requesting server-authorized safe fallback or queue unstarvation.`,
         );

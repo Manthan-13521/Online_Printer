@@ -1,9 +1,10 @@
 import { startVisiblePolling } from "../../polling";
 import type { AdminLiveOrder, QueueStallDetails } from "@printgo/api-contract";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Pagination } from "./Pagination";
 import { adminApi, AdminApiError, friendlyAdminError } from "./api";
+import { useAdminWebSocket } from "./useAdminWebSocket";
 
 function money(paise: number): string {
   return new Intl.NumberFormat("en-IN", {
@@ -36,6 +37,7 @@ export function LiveOrdersPage({
   const [confirmRetryId, setConfirmRetryId] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const PAGE_SIZE = 10;
+  const previousRef = useRef("");
 
   const totalPages = Math.max(1, Math.ceil((orders?.length ?? 0) / PAGE_SIZE));
   useEffect(() => {
@@ -44,27 +46,34 @@ export function LiveOrdersPage({
     }
   }, [orders, totalPages, currentPage]);
 
+  const fetchOrders = async () => {
+    try {
+      const response = await adminApi.getLiveOrders();
+      if (!response.ok) return undefined;
+      setOrders(response.data.orders);
+      setStallDetails(response.data.stallDetails ?? null);
+      setError(null);
+      const snapshot = JSON.stringify(response.data.orders);
+      const changed = snapshot !== previousRef.current;
+      previousRef.current = snapshot;
+      return changed;
+    } catch (caught) {
+      if (caught instanceof AdminApiError && caught.status === 401) {
+        onSessionExpired("Your session has expired. Please sign in again.");
+      } else setError(friendlyAdminError(caught));
+      return undefined;
+    }
+  };
+
+  useAdminWebSocket(() => {
+    void fetchOrders();
+  });
+
   useEffect(() => {
     let active = true;
-    let previous = "";
     const stop = startVisiblePolling(async () => {
-      try {
-        const response = await adminApi.getLiveOrders();
-        if (!active || !response.ok) return undefined;
-        setOrders(response.data.orders);
-        setStallDetails(response.data.stallDetails ?? null);
-        setError(null);
-        const snapshot = JSON.stringify(response.data.orders);
-        const changed = snapshot !== previous;
-        previous = snapshot;
-        return changed;
-      } catch (caught) {
-        if (!active) return undefined;
-        if (caught instanceof AdminApiError && caught.status === 401) {
-          onSessionExpired("Your session has expired. Please sign in again.");
-        } else setError(friendlyAdminError(caught));
-      }
-      return undefined;
+      if (!active) return undefined;
+      return await fetchOrders();
     }, pollIntervalMs);
     return () => {
       active = false;

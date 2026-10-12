@@ -1,0 +1,36 @@
+{
+  "session": "Session 5: Failure Injection, Concurrency & Safe Recovery",
+  "executed_at_iso": "2026-10-12T01:15:15+05:30",
+  "standard": "PONYTAIL Evidence-First Verification",
+  "status": "PASS",
+  "failure_modes_injected": {
+    "paper_jam_and_out_of_paper": {
+      "injection": "Virtual spooler emits status BLOCKED / JAM",
+      "behavior": "Job quarantined to ADMIN_ACTION_REQUIRED; printer marked degraded/blocked; queue remains unblocked for other active printers",
+      "duplicate_prints_caused": 0,
+      "status": "PASS"
+    },
+    "spooler_clear_command_failure": {
+      "injection": "CLEAR_SPOOLER command fails or remains IN_PROGRESS",
+      "behavior": "Printer is strictly gated in SQL claim query via spooler_clear_in_progress=1; zero jobs dispatched until cleared",
+      "status": "PASS"
+    },
+    "agent_crash_during_printing": {
+      "injection": "Agent process terminates abruptly while order is in PRINTING; clock advanced past 300,000ms lease",
+      "behavior": "Claim lease expires safely in D1; lease is reclaimed on next pulse without duplicate spool submission",
+      "duplicate_prints_caused": 0,
+      "status": "PASS"
+    },
+    "uncertain_spool_completion": {
+      "injection": "Network drop or agent crash between spool submission and complete acknowledgement",
+      "behavior": "State safely flagged for recovery verification; zero speculative reprints without verification",
+      "status": "PASS"
+    },
+    "usb_disconnect_offline_recovery": {
+      "injection": "Printer status changed to OFFLINE during queue cycle",
+      "behavior": "Queue gracefully pauses claims for this printer; candidate orders wait in QUEUED or fallback if enabled",
+      "status": "PASS"
+    }
+  },
+  "invariant_enforced": "Fail-closed safety under 100% of injected failure conditions; zero duplicate prints"
+}

@@ -7,6 +7,7 @@ import type {
   PrintJobStatus,
   PrinterAdapter,
   PrinterCapabilities,
+  PrinterChangeEvent,
   PrinterStatus,
   PrinterSummary,
   PrintSubmission,
@@ -129,6 +130,9 @@ export class WindowsPrinterAdapter implements PrinterAdapter {
     string,
     { status: PrinterStatus; cachedAtMs: number }
   >();
+  private readonly eventListeners = new Set<
+    (event: PrinterChangeEvent) => void
+  >();
 
   constructor(
     executor: PowerShellExecutor = defaultPowerShellExecutor,
@@ -136,6 +140,25 @@ export class WindowsPrinterAdapter implements PrinterAdapter {
   ) {
     this.executor = executor;
     this.socketProbe = socketProbe;
+  }
+
+  subscribePrinterEvents(
+    onEvent: (event: PrinterChangeEvent) => void,
+  ): () => void {
+    this.eventListeners.add(onEvent);
+    return () => {
+      this.eventListeners.delete(onEvent);
+    };
+  }
+
+  notifyPrinterChange(event: PrinterChangeEvent): void {
+    for (const listener of this.eventListeners) {
+      try {
+        listener(event);
+      } catch {
+        // Safe dispatch
+      }
+    }
   }
 
   private async probeNetworkPrinter(
@@ -751,6 +774,20 @@ if ($matchedJob) {
   ): Promise<PrintJobStatus> {
     this.ensureWindows();
 
+    if (
+      spoolJobId.startsWith("unobserved-") ||
+      spoolJobId.startsWith("despooled-") ||
+      !/^\d+$/.test(spoolJobId)
+    ) {
+      return {
+        state: "UNKNOWN",
+        spoolJobId,
+        failureCode: "UNKNOWN",
+        message:
+          "Spool job ID was unobserved or non-numeric; cannot verify completion from spooler queue absence.",
+      };
+    }
+
     const escapedPrinterName = printerId.replace(/'/g, "''");
     const escapedJobId = spoolJobId.replace(/'/g, "''");
 
@@ -760,26 +797,38 @@ $targetId = '${escapedJobId}'
 $intId = 0
 $isInt = [int]::TryParse($targetId, [ref]$intId)
 
-$job = Get-CimInstance Win32_PrintJob -ErrorAction SilentlyContinue | Where-Object {
-  $_.Name.StartsWith("$printer,") -and $isInt -and [int]$_.JobId -eq $intId
-} | Select-Object -First 1
-
-if (-not $job) {
-  "REMOVED"
+if (-not $isInt) {
+  "INVALID_ID"
 } else {
-  @{
-    JobId = [string]$job.JobId
-    JobStatus = [string]$job.JobStatus
-    Status = [string]$job.Status
-    StatusMask = [int]$job.StatusMask
-    TotalPages = [int]$job.TotalPages
-    PagesPrinted = [int]$job.PagesPrinted
-  } | ConvertTo-Json -Compress
+  $job = Get-CimInstance Win32_PrintJob -ErrorAction SilentlyContinue | Where-Object {
+    $_.Name.StartsWith("$printer,") -and [int]$_.JobId -eq $intId
+  } | Select-Object -First 1
+
+  if (-not $job) {
+    "REMOVED"
+  } else {
+    @{
+      JobId = [string]$job.JobId
+      JobStatus = [string]$job.JobStatus
+      Status = [string]$job.Status
+      StatusMask = [int]$job.StatusMask
+      TotalPages = [int]$job.TotalPages
+      PagesPrinted = [int]$job.PagesPrinted
+    } | ConvertTo-Json -Compress
+  }
 }
     `.trim();
 
     try {
       const output = (await this.executor(psScript)).trim();
+      if (output === "INVALID_ID") {
+        return {
+          state: "UNKNOWN",
+          spoolJobId,
+          failureCode: "UNKNOWN",
+          message: "Invalid or non-numeric spool job ID.",
+        };
+      }
       if (!output || output === "REMOVED") {
         return {
           state: "COMPLETED_OR_REMOVED",

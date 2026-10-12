@@ -7,6 +7,7 @@ import type {
 } from "@printgo/api-contract";
 import { useEffect, useState } from "react";
 import { adminApi, AdminApiError, friendlyAdminError } from "./api";
+import { useAdminWebSocket } from "./useAdminWebSocket";
 
 interface DashboardPageProps {
   onSessionExpired: (message: string) => void;
@@ -118,39 +119,45 @@ export function DashboardPage({
     }
   }
 
+  const loadDashboard = async () => {
+    try {
+      setError(null);
+      const response = await adminApi.getDashboard();
+      if (!response.ok) return;
+      const data = response.data;
+      setSettings(data.settings);
+      setAgents(data.agents);
+      setPrinters(data.agents.flatMap((a) => a.printers));
+      setDefaultPrinterId(data.defaultProductionPrinterId);
+      setCounts({
+        todaysEarningsPaise: data.todaysEarningsPaise,
+        todaysOrders: data.todaysOrders,
+        inQueue: data.inQueue,
+        printingNow: data.printingNow,
+        statusCounts: data.statusCounts,
+      });
+    } catch (err: unknown) {
+      const msg = friendlyAdminError(err);
+      if (err instanceof AdminApiError && err.status === 401) {
+        onSessionExpired(msg);
+      } else {
+        setError(msg);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useAdminWebSocket(() => {
+    void loadDashboard();
+  });
+
   useEffect(() => {
     let cancelled = false;
-    async function loadDashboard() {
-      try {
-        setError(null);
-        const response = await adminApi.getDashboard();
-        if (cancelled || !response.ok) return;
-        const data = response.data;
-        setSettings(data.settings);
-        setAgents(data.agents);
-        setPrinters(data.agents.flatMap((a) => a.printers));
-        setDefaultPrinterId(data.defaultProductionPrinterId);
-        setCounts({
-          todaysEarningsPaise: data.todaysEarningsPaise,
-          todaysOrders: data.todaysOrders,
-          inQueue: data.inQueue,
-          printingNow: data.printingNow,
-          statusCounts: data.statusCounts,
-        });
-      } catch (err: unknown) {
-        if (cancelled) return;
-        const msg = friendlyAdminError(err);
-        if (err instanceof AdminApiError && err.status === 401) {
-          onSessionExpired(msg);
-        } else {
-          setError(msg);
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-
-    const stop = startVisiblePolling(loadDashboard, 35_000);
+    const stop = startVisiblePolling(async () => {
+      if (cancelled) return;
+      await loadDashboard();
+    }, 35_000);
     return () => {
       cancelled = true;
       stop();

@@ -629,7 +629,9 @@ export async function handleCustomerRequest(
       request.method === "POST" &&
       pathname === "/api/customer/payments/cash-select"
     ) {
-      return ok(await actions.selectCashPayment(token), 200, corsHeaders(env));
+      const res = await actions.selectCashPayment(token);
+      void import("../agent/wake").then((m) => m.wakeAgent(env));
+      return ok(res, 200, corsHeaders(env));
     }
     if (request.method === "POST" && pathname === "/api/customer/draft/files") {
       const input = validateFile(await readJson(request));

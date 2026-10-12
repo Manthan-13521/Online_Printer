@@ -4,12 +4,8 @@ on:
   push:
     branches:
       - main
-    paths:
-      - "apps/agent/windows/**"
-      - "packages/**"
-      - "scripts/build-agent-windows.mjs"
-      - "scripts/windows-agent-test/**"
-      - ".github/workflows/build-agent-windows.yml"
+    tags:
+      - "v*"
   workflow_dispatch:
 
 concurrency:
@@ -76,14 +72,31 @@ jobs:
           Write-Host "Successfully bundled SumatraPDF.exe into $dir"
           Remove-Item -Recurse -Force "sumatra-temp", $sumatraZip
 
+      - name: Build PrintGo Command Center GUI
+        shell: pwsh
+        run: |
+          $dir = "dist-package/PrintGo-Windows-Test"
+          $csc = "$env:SystemRoot\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+          if (Test-Path $csc) {
+            Write-Host "Compiling PrintGo Command Center via $csc..."
+            & $csc /nologo /target:winexe /out:"$dir/PrintGo-Command-Center.exe" /r:System.Windows.Forms.dll,System.Drawing.dll,System.Management.dll apps/agent/windows/control-center/PrintGoControlCenter.cs
+            Write-Host "Successfully compiled PrintGo-Command-Center.exe"
+          } else {
+            Write-Host "Checking PATH for csc..."
+            & csc /nologo /target:winexe /out:"$dir/PrintGo-Command-Center.exe" /r:System.Windows.Forms.dll,System.Drawing.dll,System.Management.dll apps/agent/windows/control-center/PrintGoControlCenter.cs
+          }
+
       - name: Calculate SHA-256 and package distribution ZIP
         shell: pwsh
         run: |
           $dir = "dist-package/PrintGo-Windows-Test"
-          $exe = "$dir/PrintGo-Agent.exe"
-          $hash = (Get-FileHash -Algorithm SHA256 $exe).Hash.ToLower()
-          Write-Host "PrintGo-Agent.exe SHA-256: $hash"
-          Set-Content -Path "$dir/SHA256SUMS.txt" -Value "$hash  PrintGo-Agent.exe"
+          $sums = @()
+          Get-ChildItem -Path $dir -Filter "*.exe" | ForEach-Object {
+            $h = (Get-FileHash -Algorithm SHA256 $_.FullName).Hash.ToLower()
+            Write-Host "$($_.Name) SHA-256: $h"
+            $sums += "$h  $($_.Name)"
+          }
+          Set-Content -Path "$dir/SHA256SUMS.txt" -Value ($sums -join "`n")
           Compress-Archive -Path "$dir/*" -DestinationPath "dist-package/PrintGo-Windows-Test.zip" -Force
           Write-Host "Created dist-package/PrintGo-Windows-Test.zip"
 
@@ -101,11 +114,17 @@ jobs:
           path: dist-package/PrintGo-Windows-Test.zip
           retention-days: 14
 
-      - name: Publish or Update GitHub Release v2.0.0
-        if: github.ref == 'refs/heads/main'
+      - name: Publish or Update GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release view v2.0.0 || gh release create v2.0.0 --title "PrintGo Windows Agent v2.0.0" --notes "Official release package for PrintGo Windows Print Agent."
-          gh release upload v2.0.0 dist-package/PrintGo-Windows-Test/PrintGo-Agent.exe dist-package/PrintGo-Windows-Test.zip --clobber
+          TAG="${GITHUB_REF_NAME}"
+          if [ "${GITHUB_REF_TYPE}" != "tag" ]; then
+            TAG="v2.1.0-phase9"
+          fi
+          echo "Target Release Tag: $TAG"
+          gh release view "$TAG" || gh release create "$TAG" --title "PrintGo Release $TAG" --notes "Release package for PrintGo Windows Print Agent and Command Center."
+          gh release upload "$TAG" dist-package/PrintGo-Windows-Test/*.exe dist-package/PrintGo-Windows-Test.zip dist-package/PrintGo-Windows-Test/SHA256SUMS.txt --clobber
+

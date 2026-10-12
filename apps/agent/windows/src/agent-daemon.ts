@@ -57,6 +57,11 @@ export class AgentDaemon {
   private failures = 0;
   private lastStatusWriteMs = -Infinity;
 
+  // OPT-8: Event-driven printer health and stability tracking
+  private consecutiveHealthyChecks = 0;
+  private isPrinterMonitoringStable = false;
+  private unsubscribePrinterEvents: (() => void) | null = null;
+
   private credentials: AgentCredentials | null = null;
   private timer: NodeJS.Timeout | null = null;
   private running = false;
@@ -102,6 +107,7 @@ export class AgentDaemon {
         this.reschedulePulse();
       },
       this.logger,
+      (printerName, reason) => this.markPrinterFault(printerName, reason),
     );
   }
 
@@ -199,12 +205,8 @@ export class AgentDaemon {
           const data = JSON.parse(String(event.data)) as { type?: string };
           if (data.type === "WAKE_UP") {
             this.log("Received instant wake-up notification");
-            if (this.timer) {
-              clearTimeout(this.timer);
-              this.timer = null;
-            }
             this.nextDelayMs = 0;
-            this.schedulePulse();
+            this.reschedulePulse();
           }
         } catch {
           // Ignore invalid messages
@@ -217,6 +219,10 @@ export class AgentDaemon {
 
       this.ws.onclose = () => {
         this.ws = null;
+        if (this.nextDelayMs > 60_000) {
+          this.nextDelayMs = 60_000;
+          this.reschedulePulse();
+        }
         if (this.running) {
           setTimeout(() => this.connectWebSocket(), 15_000); // Reconnect backoff
         }
@@ -271,6 +277,9 @@ export class AgentDaemon {
       this.ws.close();
       this.ws = null;
     }
+    this.unsubscribeFromPrinterEvents();
+    this.consecutiveHealthyChecks = 0;
+    this.isPrinterMonitoringStable = false;
     this.running = false;
     this.hasReportedConnected = false;
     this.hasReportedPrinterReady = false;
@@ -298,12 +307,17 @@ export class AgentDaemon {
       const unhealthy =
         this.printerReports.length === 0 ||
         this.printerReports.some((p) => p.status !== "ONLINE");
-      // A blocked printer needs a local health probe every two minutes;
-      // the /pulse cadence remains shorter than the server liveness timeout.
-      const refreshEveryMs = unhealthy ? 120_000 : this.printerRefreshMs;
+      // A blocked/unhealthy printer needs a local health probe every two minutes;
+      // when healthy and stable, safety fallback probe is every 15 minutes;
+      // otherwise, during startup/recovery, probes run every 60 seconds.
+      const refreshEveryMs = unhealthy
+        ? 120_000
+        : this.isPrinterMonitoringStable
+          ? 15 * 60 * 1_000
+          : this.printerRefreshMs;
       const refreshPrinters =
-        Date.now() - this.lastPrinterRefreshMs >=
-        (this.nextDelayMs === 0 ? 60_000 : refreshEveryMs);
+        this.lastPrinterRefreshMs === -Infinity ||
+        Date.now() - this.lastPrinterRefreshMs >= refreshEveryMs;
       if (refreshPrinters) {
         const summaries = await this.printerAdapter.listPrinters();
         const printerReports: AgentPrinterReport[] = [];
@@ -338,6 +352,43 @@ export class AgentDaemon {
 
         this.printerReports = printerReports;
         this.lastPrinterRefreshMs = Date.now();
+
+        // Check health of production-eligible printers (or all if none explicitly flagged)
+        const productionPrinters = printerReports.filter(
+          (p) => p.isEligibleForProductionPrint !== false && !p.isVirtual,
+        );
+        const printersToCheck =
+          productionPrinters.length > 0 ? productionPrinters : printerReports;
+
+        const allHealthy =
+          printersToCheck.length > 0 &&
+          printersToCheck.every((p) => p.status === "ONLINE");
+
+        if (allHealthy) {
+          this.consecutiveHealthyChecks++;
+          if (
+            this.consecutiveHealthyChecks >= 5 &&
+            !this.isPrinterMonitoringStable
+          ) {
+            this.isPrinterMonitoringStable = true;
+            this.subscribeToPrinterEvents();
+            this.log(
+              "PRINTER_MONITORING_STABLE: 5 consecutive healthy checks achieved. Switched to event-driven monitoring with 15-minute safety fallback.",
+            );
+          }
+        } else {
+          if (
+            this.isPrinterMonitoringStable ||
+            this.consecutiveHealthyChecks > 0
+          ) {
+            this.log(
+              "Printer health check found offline or unhealthy printer(s). Resetting stability to startup mode (60s checks).",
+            );
+          }
+          this.consecutiveHealthyChecks = 0;
+          this.isPrinterMonitoringStable = false;
+          this.unsubscribeFromPrinterEvents();
+        }
       }
       const printerReports = this.printerReports;
       const printerSnapshot = JSON.stringify(printerReports);
@@ -404,7 +455,8 @@ export class AgentDaemon {
       } else if (rawJobs.length > 0 || this.activeLanes.size > 0) {
         this.nextDelayMs = 6_000;
       } else {
-        this.nextDelayMs = 60_000;
+        // OPT-7: 120s idle heartbeat when WebSocket is connected; 60s fallback when disconnected
+        this.nextDelayMs = this.isWebSocketConnected() ? 120_000 : 60_000;
       }
       if (Date.now() - this.lastStatusWriteMs >= 60_000 || refreshPrinters) {
         this.lastStatusWriteMs = Date.now();
@@ -602,6 +654,30 @@ export class AgentDaemon {
         isDiagnosticTestPrint: true,
       });
 
+      if (
+        submission.fastDespooled ||
+        submission.spoolJobId.startsWith("despooled-") ||
+        submission.spoolJobId.startsWith("unobserved-")
+      ) {
+        this.log(
+          `Test page for ${command.windowsPrinterName} could not be positively correlated in spooler (${submission.spoolJobId}). Reporting FAILED.`,
+        );
+        await this.client.reportCommand(
+          this.credentials.serverUrl,
+          this.credentials.agentId,
+          this.credentials.agentSecret,
+          command.commandId,
+          {
+            status: "FAILED",
+            spoolerJobId: submission.spoolJobId,
+            failureCode: "PRINTER_ERROR",
+            failureDetail:
+              "Windows accepted the print command but the spooler job could not be correlated safely.",
+          },
+        );
+        return;
+      }
+
       this.log(
         `Test page submitted to spooler (Spool ID: ${submission.spoolJobId}). Reporting SUBMITTED...`,
       );
@@ -633,7 +709,11 @@ export class AgentDaemon {
       let finalStatus: "SUCCEEDED" | "BLOCKED" | "FAILED" = "SUCCEEDED";
       if (observed.state === "BLOCKED") {
         finalStatus = "BLOCKED";
-      } else if (observed.state === "FAILED") {
+      } else if (
+        observed.state === "FAILED" ||
+        observed.state === "UNKNOWN" ||
+        observed.state !== "COMPLETED_OR_REMOVED"
+      ) {
         finalStatus = "FAILED";
       }
 
@@ -645,7 +725,9 @@ export class AgentDaemon {
         {
           status: finalStatus,
           spoolerJobId: submission.spoolJobId,
-          failureCode: observed.failureCode ?? null,
+          failureCode:
+            observed.failureCode ??
+            (finalStatus === "FAILED" ? "PRINTER_ERROR" : null),
           failureDetail: observed.message ?? null,
         },
       );
@@ -778,6 +860,82 @@ export class AgentDaemon {
         `Error callback failed: ${callbackError instanceof Error ? callbackError.message : String(callbackError)}`,
       );
     }
+  }
+
+  markPrinterFault(printerName: string, reason?: string | null): void {
+    const wasStable = this.isPrinterMonitoringStable;
+    const prevChecks = this.consecutiveHealthyChecks;
+    this.consecutiveHealthyChecks = 0;
+    this.isPrinterMonitoringStable = false;
+    this.unsubscribeFromPrinterEvents();
+    this.lastPrinterRefreshMs = -Infinity;
+    if (wasStable || prevChecks > 0) {
+      this.log(
+        `Printer fault detected on "${printerName}" (${reason ?? "fault"}). Resetting printer monitoring stability to startup mode (60s checks).`,
+      );
+    }
+    this.nextDelayMs = 0;
+    this.reschedulePulse();
+  }
+
+  private subscribeToPrinterEvents(): void {
+    if (this.unsubscribePrinterEvents) return;
+    if (typeof this.printerAdapter.subscribePrinterEvents === "function") {
+      try {
+        const unsubscribe = this.printerAdapter.subscribePrinterEvents(
+          (event) => {
+            const pName = event.printerName ?? "unknown";
+            const eType = event.eventType ?? "STATUS_CHANGE";
+            this.log(`Printer event received for "${pName}": ${eType}`);
+            if (
+              eType === "OFFLINE" ||
+              eType === "ERROR" ||
+              eType === "JAM" ||
+              eType === "PAPER_OUT" ||
+              eType === "PAUSED"
+            ) {
+              this.markPrinterFault(pName, eType);
+            } else {
+              this.lastPrinterRefreshMs = -Infinity;
+              this.nextDelayMs = 0;
+              this.reschedulePulse();
+            }
+          },
+        );
+        this.unsubscribePrinterEvents = unsubscribe;
+      } catch (err: unknown) {
+        this.log(
+          `Failed to subscribe to printer events: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+  }
+
+  private unsubscribeFromPrinterEvents(): void {
+    if (this.unsubscribePrinterEvents) {
+      try {
+        this.unsubscribePrinterEvents();
+      } catch {
+        // Ignore unsubscribe error
+      }
+      this.unsubscribePrinterEvents = null;
+    }
+  }
+
+  isWebSocketConnected(): boolean {
+    return (
+      this.ws !== null &&
+      ((this.ws as unknown as { readyState?: number }).readyState === 1 ||
+        (this.ws as unknown as { readyState?: string }).readyState === "open")
+    );
+  }
+
+  getConsecutiveHealthyChecks(): number {
+    return this.consecutiveHealthyChecks;
+  }
+
+  isPrinterStable(): boolean {
+    return this.isPrinterMonitoringStable;
   }
 
   isRunning(): boolean {

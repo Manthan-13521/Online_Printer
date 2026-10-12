@@ -1,0 +1,130 @@
+{
+  "session": "Session 2: Payment Sandbox, Cash Orders & Financial Integrity",
+  "executed_at_iso": "2026-10-12T01:13:45+05:30",
+  "standard": "PONYTAIL Evidence-First Verification",
+  "status": "PASS",
+  "test_suites_executed": [
+    "apps/api/worker/src/payments/concurrent-webhook-verify.test.ts",
+    "apps/api/worker/src/payments/job-code.test.ts",
+    "apps/api/worker/src/payments/payment-to-print-parity.test.ts",
+    "apps/api/worker/src/payments/phase7-cash-orders.test.ts",
+    "apps/api/worker/src/payments/phase8-capability-cash-stall.test.ts",
+    "apps/api/worker/src/payments/razorpay.test.ts",
+    "apps/api/worker/src/payments/readiness.test.ts",
+    "apps/api/worker/src/payments/repository.test.ts",
+    "apps/api/worker/src/payments/service.test.ts",
+    "apps/api/worker/src/payments/test-2f-capability-enforcement.test.ts",
+    "apps/api/worker/src/payments/webhook.test.ts"
+  ],
+  "total_suites": 11,
+  "total_tests": 110,
+  "tests_passed": 110,
+  "tests_failed": 0,
+  "test_cases": {
+    "TC-PAY-01": {
+      "title": "Razorpay Test-Mode Checkout Creation",
+      "status": "PASS",
+      "evidence": {
+        "provider": "RAZORPAY",
+        "currency": "INR",
+        "initial_status": "PAYMENT_PENDING",
+        "amount_calculated_server_side": true
+      }
+    },
+    "TC-PAY-02": {
+      "title": "Payment Verify Callback (HMAC-SHA256)",
+      "status": "PASS",
+      "evidence": {
+        "hmac_algorithm": "SHA256",
+        "verified": true,
+        "transition": "PAYMENT_PENDING -> QUEUED",
+        "pickup_code_format": "^[A-Z][0-9]{2}$"
+      }
+    },
+    "TC-PAY-03": {
+      "title": "Invalid HMAC Signature Tampering",
+      "status": "PASS",
+      "evidence": {
+        "tampered_signature_rejected": true,
+        "error_code": "PAYMENT_VERIFICATION_FAILED",
+        "order_queued": false,
+        "print_admitted": false
+      }
+    },
+    "TC-PAY-04": {
+      "title": "Webhook Payment Capture Parity",
+      "status": "PASS",
+      "evidence": {
+        "event": "payment.captured",
+        "http_status": 200,
+        "transition": "PAYMENT_PENDING -> QUEUED",
+        "wake_up_ping_sent": true
+      }
+    },
+    "TC-PAY-05": {
+      "title": "Duplicate Webhook Replay Protection",
+      "status": "PASS",
+      "evidence": {
+        "replay_http_status": 200,
+        "duplicate_rows_in_payments": 0,
+        "duplicate_claims_created": 0,
+        "idempotent": true
+      }
+    },
+    "TC-PAY-06": {
+      "title": "Cash Payment Selection & Expiry Window",
+      "status": "PASS",
+      "evidence": {
+        "payment_method": "CASH",
+        "status": "PAYMENT_PENDING",
+        "cash_window_ms": 600000,
+        "cash_grace_ms": 720000,
+        "cash_grace_until_ms": "now + 720000",
+        "eligible_for_claim": false
+      }
+    },
+    "TC-PAY-07": {
+      "title": "Admin Confirm Cash at Counter",
+      "status": "PASS",
+      "evidence": {
+        "endpoint": "POST /api/admin/orders/:id/confirm-cash",
+        "provider": "CASH",
+        "verified_at_ms_populated": true,
+        "transition": "PAYMENT_PENDING -> QUEUED",
+        "eligible_for_claim": true
+      }
+    },
+    "TC-PAY-08": {
+      "title": "Cash Expiry Rejection after 12m Grace",
+      "status": "PASS",
+      "evidence": {
+        "attempted_after_ms": 720001,
+        "error_code": "CASH_PAYMENT_EXPIRED",
+        "http_status": 409,
+        "status_transition": "EXPIRED"
+      }
+    },
+    "TC-PAY-09": {
+      "title": "Concurrency: Cash Confirmed vs Online Captured",
+      "status": "PASS",
+      "evidence": {
+        "concurrent_attempts": 2,
+        "winner_status": "PAID",
+        "loser_status": "DUPLICATE_CAPTURED",
+        "double_print_prevented": true,
+        "total_print_jobs_admitted": 1
+      }
+    },
+    "TC-PAY-10": {
+      "title": "Active Payment Repricing Guard (OPT-2)",
+      "status": "PASS",
+      "evidence": {
+        "guard_enforced": true,
+        "error_code": "PAYMENT_RESERVED",
+        "http_status": 409,
+        "snapshot_tamper_prevented": true
+      }
+    }
+  },
+  "invariant_enforced": "No unpaid order admitted to queue or claimed by any printer"
+}

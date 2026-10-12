@@ -856,16 +856,37 @@ export class D1PrintingRepository implements PrintingRepository {
     // Empty queues must not run the recovery/claim write chain on every pulse.
     const work = await this.db
       .prepare(
-        `SELECT 1 FROM orders
-         WHERE status IN ('QUEUED','CLAIMED','SPOOLING','PRINTING')
-            OR (status IN ('PRINT_BLOCKED','RETRY_PENDING') AND (next_retry_at_ms IS NULL OR next_retry_at_ms <= ?))
-            OR (status = 'PRINT_FAILED' AND cleanup_state = 'ACTIVE' AND updated_at_ms <= ?)
-         LIMIT 1`,
+        `SELECT 1 FROM (
+           SELECT 1 FROM orders
+           WHERE status IN ('QUEUED','CLAIMED','SPOOLING','PRINTING')
+           UNION ALL
+           SELECT 1 FROM orders
+           WHERE status IN ('PRINT_BLOCKED','RETRY_PENDING')
+             AND (next_retry_at_ms IS NULL OR next_retry_at_ms <= ?)
+           UNION ALL
+           SELECT 1 FROM orders
+           WHERE status = 'PRINT_FAILED' AND cleanup_state = 'ACTIVE' AND updated_at_ms <= ?
+         ) LIMIT 1`,
       )
       .bind(nowMs, nowMs - 60_000)
       .first();
     if (!work) return [];
-    await this.recoverExpiredClaims(nowMs);
+
+    // OPT-6: Fast indexed gate probe before running the 6-statement recovery batch.
+    // In normal operation, claims are renewed every 6s and only expire upon agent crash/disconnect (5-min lease).
+    // If no active orders have expired claims, the 6 UPDATE batch would match zero rows across all 6 statements.
+    const hasExpiredClaims = await this.db
+      .prepare(
+        `SELECT 1 FROM orders
+         WHERE claim_expires_at_ms <= ?
+           AND status IN ('CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED')
+         LIMIT 1`,
+      )
+      .bind(nowMs)
+      .first();
+    if (hasExpiredClaims) {
+      await this.recoverExpiredClaims(nowMs);
+    }
     await this.autoRetryEligibleOrders(nowMs);
     await this.finishOrphanedSuccess(agentId, nowMs);
 

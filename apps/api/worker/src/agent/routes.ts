@@ -152,6 +152,13 @@ export async function handleAgentRequest(
         validation.value,
         reportPrinters,
       );
+      if (
+        reportPrinters &&
+        validation.value.printers &&
+        validation.value.printers.length > 0
+      ) {
+        void import("./wake").then((m) => m.wakeAgent(env));
+      }
       return ok(result, 200, NO_STORE);
     } catch (caught) {
       return mapAgentError(caught);
@@ -188,6 +195,7 @@ export async function handleAgentRequest(
         commandId,
         validation.value,
       );
+      void import("./wake").then((m) => m.wakeAgent(env));
       return ok(result, 200, NO_STORE);
     } catch (caught) {
       return mapAgentError(caught);

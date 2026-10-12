@@ -17,22 +17,38 @@ namespace PrintGo.ControlCenter
 
         // UI Controls
         private Label lblShopTitle;
+        private Label lblAgentVersion;
         private Label lblStatusBadge;
         private Label lblServer;
+
+        // Diagnostics & Dependencies Card
+        private Label lblSumatraStatus;
+        private Label lblDpapiStatus;
+
+        // Production Printer Card
         private Label lblPrinterName;
         private Label lblPrinterStatus;
+        private Button btnCheckPrinter;
+
+        // Activity Card
         private Label lblLastHeartbeat;
         private Label lblLastPrint;
-        private Button btnOpenAdmin;
-        private Button btnCheckPrinter;
+
+        // Action Buttons
+        private Button btnStartAgent;
+        private Button btnStopAgent;
         private Button btnRestartAgent;
-        private Button btnSupportPackage;
+        private Button btnOpenAdmin;
         private Button btnPair;
+        private Button btnCopyDiag;
+        private Button btnOpenLogs;
+        private Button btnSupportPackage;
 
         private string currentServerUrl = null;
         private string appDataDir;
         private string statusFilePath;
         private string agentExePath;
+        private string sumatraExePath;
 
         [STAThread]
         public static void Main(string[] args)
@@ -68,6 +84,7 @@ namespace PrintGo.ControlCenter
             );
             statusFilePath = Path.Combine(appDataDir, "agent-status.json");
             agentExePath = FindAgentExecutable();
+            sumatraExePath = FindSumatraExecutable();
 
             InitializeComponent();
             SetupTray();
@@ -77,7 +94,7 @@ namespace PrintGo.ControlCenter
                 HandlePairUrl(pairUrl);
             }
 
-            EnsureAgentRunning();
+            EnsureSingleAgentRunning();
             RefreshStatus();
 
             refreshTimer = new Timer();
@@ -103,6 +120,27 @@ namespace PrintGo.ControlCenter
             return direct;
         }
 
+        private string FindSumatraExecutable()
+        {
+            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            string direct = Path.Combine(baseDir, "SumatraPDF.exe");
+            if (File.Exists(direct)) return direct;
+            string vendor = Path.Combine(baseDir, "vendor", "SumatraPDF.exe");
+            if (File.Exists(vendor)) return vendor;
+            string appData = Path.Combine(appDataDir, "SumatraPDF.exe");
+            if (File.Exists(appData)) return appData;
+
+            string pf = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+            string pfSumatra = Path.Combine(pf, "SumatraPDF", "SumatraPDF.exe");
+            if (File.Exists(pfSumatra)) return pfSumatra;
+
+            string pfx86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
+            string pfx86Sumatra = Path.Combine(pfx86, "SumatraPDF", "SumatraPDF.exe");
+            if (File.Exists(pfx86Sumatra)) return pfx86Sumatra;
+
+            return null;
+        }
+
         private void OpenAdmin()
         {
             string url = "https://printgo-admin.pages.dev";
@@ -122,8 +160,8 @@ namespace PrintGo.ControlCenter
 
         private void InitializeComponent()
         {
-            Text = "PrintGo Control Center";
-            Size = new Size(540, 520);
+            Text = "PrintGo Command Center";
+            Size = new Size(580, 680);
             StartPosition = FormStartPosition.CenterScreen;
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
@@ -133,7 +171,8 @@ namespace PrintGo.ControlCenter
             var mainPanel = new Panel
             {
                 Dock = DockStyle.Fill,
-                Padding = new Padding(24)
+                Padding = new Padding(24),
+                AutoScroll = true
             };
             Controls.Add(mainPanel);
 
@@ -142,11 +181,11 @@ namespace PrintGo.ControlCenter
             // Header Banner
             lblShopTitle = new Label
             {
-                Text = "PrintGo Shop Operations",
+                Text = "PrintGo Command Center",
                 Font = new Font("Segoe UI", 16f, FontStyle.Bold),
                 ForeColor = Color.FromArgb(15, 23, 42),
                 Location = new Point(24, y),
-                Size = new Size(340, 36)
+                Size = new Size(340, 32)
             };
             mainPanel.Controls.Add(lblShopTitle);
 
@@ -156,35 +195,83 @@ namespace PrintGo.ControlCenter
                 Font = new Font("Segoe UI", 10.5f, FontStyle.Bold),
                 ForeColor = Color.FromArgb(100, 116, 139),
                 TextAlign = ContentAlignment.MiddleRight,
-                Location = new Point(370, y + 4),
-                Size = new Size(130, 28)
+                Location = new Point(370, y + 2),
+                Size = new Size(160, 28)
             };
             mainPanel.Controls.Add(lblStatusBadge);
 
-            y += 45;
+            y += 34;
+
+            lblAgentVersion = new Label
+            {
+                Text = "Agent Version: Detecting...",
+                Font = new Font("Segoe UI", 8.5f, FontStyle.Regular),
+                ForeColor = Color.FromArgb(148, 163, 184),
+                Location = new Point(24, y),
+                Size = new Size(340, 18)
+            };
+            mainPanel.Controls.Add(lblAgentVersion);
+
+            y += 24;
 
             lblServer = new Label
             {
-                Text = "Server: Connecting...",
+                Text = "Server: Connecting to Cloudflare Worker API...",
                 ForeColor = Color.FromArgb(100, 116, 139),
                 Location = new Point(24, y),
-                Size = new Size(470, 24)
+                Size = new Size(510, 22)
             };
             mainPanel.Controls.Add(lblServer);
 
-            y += 35;
+            y += 30;
 
-            // Section 1: Printer Status Card
-            var cardPrinter = CreateCardPanel(24, y, 476, 120);
+            // Section 1: System Readiness & Diagnostics Card
+            var cardDiag = CreateCardPanel(24, y, 510, 80);
+            mainPanel.Controls.Add(cardDiag);
+
+            var lblDiagHeader = new Label
+            {
+                Text = "SYSTEM DEPENDENCIES & SECURITY",
+                Font = new Font("Segoe UI", 8f, FontStyle.Bold),
+                ForeColor = Color.FromArgb(100, 116, 139),
+                Location = new Point(14, 10),
+                Size = new Size(240, 16)
+            };
+            cardDiag.Controls.Add(lblDiagHeader);
+
+            lblSumatraStatus = new Label
+            {
+                Text = "Checking SumatraPDF engine...",
+                Font = new Font("Segoe UI", 9f, FontStyle.Regular),
+                ForeColor = Color.FromArgb(71, 85, 105),
+                Location = new Point(14, 30),
+                Size = new Size(480, 20)
+            };
+            cardDiag.Controls.Add(lblSumatraStatus);
+
+            lblDpapiStatus = new Label
+            {
+                Text = "Checking Windows DPAPI credentials...",
+                Font = new Font("Segoe UI", 9f, FontStyle.Regular),
+                ForeColor = Color.FromArgb(71, 85, 105),
+                Location = new Point(14, 52),
+                Size = new Size(480, 20)
+            };
+            cardDiag.Controls.Add(lblDpapiStatus);
+
+            y += 92;
+
+            // Section 2: Printer Status Card
+            var cardPrinter = CreateCardPanel(24, y, 510, 115);
             mainPanel.Controls.Add(cardPrinter);
 
             var lblPrinterHeader = new Label
             {
-                Text = "PRODUCTION PRINTER",
+                Text = "PHYSICAL PRODUCTION PRINTER",
                 Font = new Font("Segoe UI", 8f, FontStyle.Bold),
                 ForeColor = Color.FromArgb(100, 116, 139),
-                Location = new Point(16, 12),
-                Size = new Size(200, 18)
+                Location = new Point(14, 10),
+                Size = new Size(240, 16)
             };
             cardPrinter.Controls.Add(lblPrinterHeader);
 
@@ -193,8 +280,8 @@ namespace PrintGo.ControlCenter
                 Text = "Scanning physical printers...",
                 Font = new Font("Segoe UI", 12f, FontStyle.Bold),
                 ForeColor = Color.FromArgb(30, 41, 59),
-                Location = new Point(16, 32),
-                Size = new Size(440, 30)
+                Location = new Point(14, 30),
+                Size = new Size(480, 28)
             };
             cardPrinter.Controls.Add(lblPrinterName);
 
@@ -202,45 +289,45 @@ namespace PrintGo.ControlCenter
             {
                 Text = "Printer Status: Detecting...",
                 ForeColor = Color.FromArgb(71, 85, 105),
-                Location = new Point(16, 68),
-                Size = new Size(300, 24)
+                Location = new Point(14, 62),
+                Size = new Size(330, 24)
             };
             cardPrinter.Controls.Add(lblPrinterStatus);
 
             btnCheckPrinter = new Button
             {
-                Text = "Printer Settings",
-                Location = new Point(330, 64),
-                Size = new Size(130, 32),
+                Text = "Windows Printers",
+                Location = new Point(360, 58),
+                Size = new Size(135, 30),
                 BackColor = Color.White,
                 FlatStyle = FlatStyle.System
             };
             btnCheckPrinter.Click += (s, e) => Process.Start("ms-settings:printers");
             cardPrinter.Controls.Add(btnCheckPrinter);
 
-            y += 135;
+            y += 127;
 
-            // Section 2: Order Activity Card
-            var cardActivity = CreateCardPanel(24, y, 476, 95);
+            // Section 3: Order Activity Card
+            var cardActivity = CreateCardPanel(24, y, 510, 85);
             mainPanel.Controls.Add(cardActivity);
 
             var lblActivityHeader = new Label
             {
-                Text = "LATEST PRINT ACTIVITY",
+                Text = "LIVE PRINT ACTIVITY",
                 Font = new Font("Segoe UI", 8f, FontStyle.Bold),
                 ForeColor = Color.FromArgb(100, 116, 139),
-                Location = new Point(16, 12),
-                Size = new Size(200, 18)
+                Location = new Point(14, 10),
+                Size = new Size(240, 16)
             };
             cardActivity.Controls.Add(lblActivityHeader);
 
             lblLastPrint = new Label
             {
                 Text = "Ready for customer orders.",
-                Font = new Font("Segoe UI", 10.5f, FontStyle.Regular),
+                Font = new Font("Segoe UI", 10f, FontStyle.Regular),
                 ForeColor = Color.FromArgb(30, 41, 59),
-                Location = new Point(16, 34),
-                Size = new Size(440, 24)
+                Location = new Point(14, 30),
+                Size = new Size(480, 24)
             };
             cardActivity.Controls.Add(lblLastPrint);
 
@@ -248,19 +335,62 @@ namespace PrintGo.ControlCenter
             {
                 Text = "Last synchronized: None",
                 ForeColor = Color.FromArgb(148, 163, 184),
-                Location = new Point(16, 60),
-                Size = new Size(440, 22)
+                Location = new Point(14, 56),
+                Size = new Size(480, 20)
             };
             cardActivity.Controls.Add(lblLastHeartbeat);
 
-            y += 110;
+            y += 98;
 
-            // Section 3: Action Buttons
+            // Section 4: Agent Process Controls
+            btnStartAgent = new Button
+            {
+                Text = "▶ Start Agent",
+                Location = new Point(24, y),
+                Size = new Size(160, 40),
+                Font = new Font("Segoe UI", 10f, FontStyle.Bold),
+                BackColor = Color.FromArgb(34, 197, 94),
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat
+            };
+            btnStartAgent.FlatAppearance.BorderSize = 0;
+            btnStartAgent.Click += (s, e) => StartAgentManual();
+            mainPanel.Controls.Add(btnStartAgent);
+
+            btnStopAgent = new Button
+            {
+                Text = "⏹ Stop Agent",
+                Location = new Point(198, y),
+                Size = new Size(160, 40),
+                Font = new Font("Segoe UI", 10f, FontStyle.Bold),
+                BackColor = Color.FromArgb(239, 68, 68),
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat
+            };
+            btnStopAgent.FlatAppearance.BorderSize = 0;
+            btnStopAgent.Click += (s, e) => StopAgentManual();
+            mainPanel.Controls.Add(btnStopAgent);
+
+            btnRestartAgent = new Button
+            {
+                Text = "🔄 Restart Agent",
+                Location = new Point(374, y),
+                Size = new Size(160, 40),
+                Font = new Font("Segoe UI", 10f, FontStyle.Regular),
+                BackColor = Color.White,
+                FlatStyle = FlatStyle.System
+            };
+            btnRestartAgent.Click += (s, e) => RestartAgentManual();
+            mainPanel.Controls.Add(btnRestartAgent);
+
+            y += 50;
+
+            // Section 5: Portal & Pairing
             btnOpenAdmin = new Button
             {
                 Text = "🌐 Open Admin Portal",
                 Location = new Point(24, y),
-                Size = new Size(230, 44),
+                Size = new Size(250, 40),
                 Font = new Font("Segoe UI", 10f, FontStyle.Bold),
                 BackColor = Color.FromArgb(37, 99, 235),
                 ForeColor = Color.White,
@@ -270,41 +400,52 @@ namespace PrintGo.ControlCenter
             btnOpenAdmin.Click += (s, e) => OpenAdmin();
             mainPanel.Controls.Add(btnOpenAdmin);
 
-            btnRestartAgent = new Button
-            {
-                Text = "Start PrintGo",
-                Location = new Point(270, y),
-                Size = new Size(230, 44),
-                Font = new Font("Segoe UI", 10f, FontStyle.Regular),
-                BackColor = Color.White,
-                FlatStyle = FlatStyle.System
-            };
-            btnRestartAgent.Click += (s, e) => RestartAgent();
-            mainPanel.Controls.Add(btnRestartAgent);
-
-            y += 55;
-
-            btnSupportPackage = new Button
-            {
-                Text = "📦 Create Support Package",
-                Location = new Point(24, y),
-                Size = new Size(230, 38),
-                BackColor = Color.White,
-                FlatStyle = FlatStyle.System
-            };
-            btnSupportPackage.Click += (s, e) => GenerateSupportPackage();
-            mainPanel.Controls.Add(btnSupportPackage);
-
             btnPair = new Button
             {
                 Text = "🔗 Pair / Re-pair PC",
-                Location = new Point(270, y),
-                Size = new Size(230, 38),
+                Location = new Point(284, y),
+                Size = new Size(250, 40),
                 BackColor = Color.White,
                 FlatStyle = FlatStyle.System
             };
             btnPair.Click += (s, e) => PromptPairing();
             mainPanel.Controls.Add(btnPair);
+
+            y += 48;
+
+            // Section 6: Diagnostics & Troubleshooting Row
+            btnCopyDiag = new Button
+            {
+                Text = "📋 Copy Diagnostics",
+                Location = new Point(24, y),
+                Size = new Size(160, 36),
+                BackColor = Color.White,
+                FlatStyle = FlatStyle.System
+            };
+            btnCopyDiag.Click += (s, e) => CopyDiagnosticSummary();
+            mainPanel.Controls.Add(btnCopyDiag);
+
+            btnOpenLogs = new Button
+            {
+                Text = "📂 View Logs",
+                Location = new Point(198, y),
+                Size = new Size(160, 36),
+                BackColor = Color.White,
+                FlatStyle = FlatStyle.System
+            };
+            btnOpenLogs.Click += (s, e) => OpenLogsFolder();
+            mainPanel.Controls.Add(btnOpenLogs);
+
+            btnSupportPackage = new Button
+            {
+                Text = "📦 Support Package",
+                Location = new Point(374, y),
+                Size = new Size(160, 36),
+                BackColor = Color.White,
+                FlatStyle = FlatStyle.System
+            };
+            btnSupportPackage.Click += (s, e) => GenerateSupportPackage();
+            mainPanel.Controls.Add(btnSupportPackage);
         }
 
         private Panel CreateCardPanel(int x, int y, int width, int height)
@@ -321,15 +462,18 @@ namespace PrintGo.ControlCenter
         private void SetupTray()
         {
             trayMenu = new ContextMenuStrip();
-            trayMenu.Items.Add("Open Control Center", null, (s, e) => RestoreWindow());
+            trayMenu.Items.Add("Open Command Center", null, (s, e) => RestoreWindow());
             trayMenu.Items.Add("Open Admin Portal", null, (s, e) => OpenAdmin());
-            trayMenu.Items.Add("Start PrintGo", null, (s, e) => RestartAgent());
             trayMenu.Items.Add("-");
-            trayMenu.Items.Add("Exit", null, (s, e) => ExitApplication());
+            trayMenu.Items.Add("Start Agent", null, (s, e) => StartAgentManual());
+            trayMenu.Items.Add("Stop Agent", null, (s, e) => StopAgentManual());
+            trayMenu.Items.Add("Restart Agent", null, (s, e) => RestartAgentManual());
+            trayMenu.Items.Add("-");
+            trayMenu.Items.Add("Exit Command Center", null, (s, e) => ExitApplication());
 
             trayIcon = new NotifyIcon
             {
-                Text = "PrintGo Control Center",
+                Text = "PrintGo Command Center",
                 Icon = SystemIcons.Application,
                 ContextMenuStrip = trayMenu,
                 Visible = true
@@ -365,28 +509,105 @@ namespace PrintGo.ControlCenter
             Application.Exit();
         }
 
-        private void EnsureAgentRunning()
+        private void EnsureSingleAgentRunning()
         {
             var processes = Process.GetProcessesByName("PrintGo-Agent");
-            if (processes.Length == 0 && File.Exists(agentExePath))
+            if (processes.Length > 1)
             {
-                try
+                // Strict invariant: exactly ONE agent process permitted
+                for (int i = 1; i < processes.Length; i++)
                 {
-                    var startInfo = new ProcessStartInfo
-                    {
-                        FileName = agentExePath,
-                        CreateNoWindow = true,
-                        UseShellExecute = false,
-                        WindowStyle = ProcessWindowStyle.Hidden,
-                        WorkingDirectory = Path.GetDirectoryName(agentExePath)
-                    };
-                    Process.Start(startInfo);
+                    try { processes[i].Kill(); } catch { }
                 }
-                catch { }
+            }
+            else if (processes.Length == 0 && File.Exists(agentExePath))
+            {
+                StartAgentProcess();
             }
         }
 
-        private void RestartAgent()
+        private void StartAgentProcess()
+        {
+            try
+            {
+                var startInfo = new ProcessStartInfo
+                {
+                    FileName = agentExePath,
+                    CreateNoWindow = true,
+                    UseShellExecute = false,
+                    WindowStyle = ProcessWindowStyle.Hidden,
+                    WorkingDirectory = Path.GetDirectoryName(agentExePath)
+                };
+                Process.Start(startInfo);
+            }
+            catch { }
+        }
+
+        private void StartAgentManual()
+        {
+            var existing = Process.GetProcessesByName("PrintGo-Agent");
+            if (existing.Length > 0)
+            {
+                MessageBox.Show("PrintGo Agent is already running.", "Agent Running", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            if (!File.Exists(agentExePath))
+            {
+                MessageBox.Show("PrintGo-Agent.exe was not found at:\n" + agentExePath, "Missing Executable", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            StartAgentProcess();
+            System.Threading.Thread.Sleep(500);
+            RefreshStatus();
+
+            if (trayIcon != null)
+            {
+                trayIcon.ShowBalloonTip(2000, "PrintGo Agent", "PrintGo Agent has been started.", ToolTipIcon.Info);
+            }
+        }
+
+        private void StopAgentManual()
+        {
+            var existing = Process.GetProcessesByName("PrintGo-Agent");
+            if (existing.Length == 0)
+            {
+                MessageBox.Show("PrintGo Agent is not currently running.", "Agent Inactive", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            if (Process.GetProcessesByName("SumatraPDF").Length > 0)
+            {
+                var confirm = MessageBox.Show(
+                    "A document is actively printing right now. Stopping the Agent now may disrupt the active print.\n\nAre you sure you want to stop?",
+                    "Warning: Printing in Progress",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Warning
+                );
+                if (confirm != DialogResult.Yes) return;
+            }
+
+            foreach (var proc in existing)
+            {
+                try
+                {
+                    proc.Kill();
+                    proc.WaitForExit(3000);
+                }
+                catch { }
+            }
+
+            System.Threading.Thread.Sleep(300);
+            RefreshStatus();
+
+            if (trayIcon != null)
+            {
+                trayIcon.ShowBalloonTip(2000, "PrintGo Agent", "PrintGo Agent has been stopped.", ToolTipIcon.Info);
+            }
+        }
+
+        private void RestartAgentManual()
         {
             if (Process.GetProcessesByName("SumatraPDF").Length > 0)
             {
@@ -398,6 +619,14 @@ namespace PrintGo.ControlCenter
                 );
                 return;
             }
+
+            var confirm = MessageBox.Show(
+                "Are you sure you want to safely restart the PrintGo Agent?",
+                "Confirm Restart",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question
+            );
+            if (confirm != DialogResult.Yes) return;
 
             try
             {
@@ -414,7 +643,6 @@ namespace PrintGo.ControlCenter
             catch { }
 
             var existing = Process.GetProcessesByName("PrintGo-Agent");
-            bool hadRunning = existing.Length > 0;
             foreach (var proc in existing)
             {
                 try
@@ -425,18 +653,68 @@ namespace PrintGo.ControlCenter
                 catch { }
             }
 
-            EnsureAgentRunning();
+            StartAgentProcess();
             System.Threading.Thread.Sleep(500);
             RefreshStatus();
 
             if (trayIcon != null)
             {
-                trayIcon.ShowBalloonTip(
-                    2000,
-                    "PrintGo Agent",
-                    hadRunning ? "PrintGo Agent has been restarted." : "PrintGo Agent has started.",
-                    ToolTipIcon.Info
+                trayIcon.ShowBalloonTip(2000, "PrintGo Agent", "PrintGo Agent has been safely restarted.", ToolTipIcon.Info);
+            }
+        }
+
+        private void OpenLogsFolder()
+        {
+            string logsDir = Path.Combine(appDataDir, "logs");
+            string target = Directory.Exists(logsDir) ? logsDir : appDataDir;
+            try
+            {
+                if (!Directory.Exists(target)) Directory.CreateDirectory(target);
+                Process.Start("explorer.exe", target);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Could not open logs folder: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void CopyDiagnosticSummary()
+        {
+            try
+            {
+                string statusJson = File.Exists(statusFilePath) ? File.ReadAllText(statusFilePath) : "(No status file found)";
+                string summary = string.Format(
+                    "================ PRINTGO DIAGNOSTIC REPORT ================\r\n" +
+                    "Generated: {0}\r\n" +
+                    "Machine: {1} (OS: {2})\r\n" +
+                    "Agent Binary: {3} (Exists: {4})\r\n" +
+                    "SumatraPDF: {5} (Exists: {6})\r\n" +
+                    "DPAPI Credentials: {7}\r\n" +
+                    "Server URL: {8}\r\n" +
+                    "Active Agent Processes: {9}\r\n" +
+                    "Active Sumatra Processes: {10}\r\n\r\n" +
+                    "--- AGENT STATUS SNAPSHOT ---\r\n{11}\r\n" +
+                    "===========================================================",
+                    DateTime.Now.ToString("u"),
+                    Environment.MachineName,
+                    Environment.OSVersion.VersionString,
+                    agentExePath ?? "None",
+                    File.Exists(agentExePath),
+                    sumatraExePath ?? "Not Detected",
+                    !string.IsNullOrEmpty(sumatraExePath) && File.Exists(sumatraExePath),
+                    File.Exists(Path.Combine(appDataDir, "credentials.enc")) ? "Present (DPAPI Encrypted)" : "Missing (Unpaired)",
+                    GetActiveServerUrl(),
+                    Process.GetProcessesByName("PrintGo-Agent").Length,
+                    Process.GetProcessesByName("SumatraPDF").Length,
+                    statusJson
                 );
+
+                Clipboard.SetText(summary);
+                MessageBox.Show("Diagnostic details copied to Windows Clipboard.", "Diagnostics Copied", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Failed to copy diagnostics: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -651,7 +929,7 @@ namespace PrintGo.ControlCenter
                 {
                     try { process.Kill(); } catch { }
                     MessageBox.Show("Pairing timed out. Please check your internet connection and try again.", "Pairing Timeout", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    EnsureAgentRunning();
+                    EnsureSingleAgentRunning();
                     return;
                 }
 
@@ -663,14 +941,14 @@ namespace PrintGo.ControlCenter
                         MessageBoxButtons.OK,
                         MessageBoxIcon.Warning
                     );
-                    EnsureAgentRunning();
+                    EnsureSingleAgentRunning();
                     RefreshStatus();
                     return;
                 }
             }
 
             currentServerUrl = cleanServer;
-            EnsureAgentRunning();
+            EnsureSingleAgentRunning();
             System.Threading.Thread.Sleep(1000);
             RefreshStatus();
 
@@ -684,6 +962,31 @@ namespace PrintGo.ControlCenter
 
         private void RefreshStatus()
         {
+            sumatraExePath = FindSumatraExecutable();
+            bool sumatraReady = !string.IsNullOrEmpty(sumatraExePath) && File.Exists(sumatraExePath);
+            if (sumatraReady)
+            {
+                lblSumatraStatus.Text = "✓ SumatraPDF Engine Ready (" + Path.GetFileName(sumatraExePath) + ")";
+                lblSumatraStatus.ForeColor = Color.FromArgb(22, 101, 52);
+            }
+            else
+            {
+                lblSumatraStatus.Text = "⚠️ SumatraPDF missing: Place SumatraPDF.exe in the same folder as Agent.";
+                lblSumatraStatus.ForeColor = Color.FromArgb(194, 65, 12);
+            }
+
+            bool credsExist = File.Exists(Path.Combine(appDataDir, "credentials.enc"));
+            if (credsExist)
+            {
+                lblDpapiStatus.Text = "✓ Shop Pairing Active (Encrypted via Windows DPAPI)";
+                lblDpapiStatus.ForeColor = Color.FromArgb(22, 101, 52);
+            }
+            else
+            {
+                lblDpapiStatus.Text = "⚠️ Not paired with shop Admin. Click 'Pair / Re-pair PC'.";
+                lblDpapiStatus.ForeColor = Color.FromArgb(194, 65, 12);
+            }
+
             lblPrinterName.Text = "Printer readiness not verified";
             lblPrinterStatus.Text = "Check production printer in Admin";
             lblLastHeartbeat.Text = "No recent heartbeat";
@@ -692,7 +995,10 @@ namespace PrintGo.ControlCenter
             trayIcon.Text = "PrintGo - status unavailable";
 
             var agentProcs = Process.GetProcessesByName("PrintGo-Agent");
-            btnRestartAgent.Text = agentProcs.Length > 0 ? "Restart PrintGo" : "Start PrintGo";
+            bool isAgentRunning = agentProcs.Length > 0;
+            btnStartAgent.Enabled = !isAgentRunning;
+            btnStopAgent.Enabled = isAgentRunning;
+            btnRestartAgent.Enabled = isAgentRunning;
 
             try
             {
@@ -702,9 +1008,8 @@ namespace PrintGo.ControlCenter
                     string state = Convert.ToString(data["operationalState"]);
                     double heartbeat = data["lastHeartbeatMs"] == null ? 0 : Convert.ToDouble(data["lastHeartbeatMs"]);
                     double now = (DateTime.UtcNow - new DateTime(1970, 1, 1)).TotalMilliseconds;
-                    bool fresh = heartbeat > 0 && now >= heartbeat && now - heartbeat < 90000 &&
-                        agentProcs.Length > 0;
-                    lblStatusBadge.Text = fresh ? state : (agentProcs.Length > 0 ? "Reconnecting..." : "Offline / stopped");
+                    bool fresh = heartbeat > 0 && now >= heartbeat && now - heartbeat < 90000 && isAgentRunning;
+                    lblStatusBadge.Text = fresh ? state : (isAgentRunning ? "Reconnecting..." : "Offline / stopped");
                     if (fresh && state == "ONLINE")
                     {
                         lblStatusBadge.ForeColor = Color.FromArgb(34, 197, 94);
@@ -716,6 +1021,11 @@ namespace PrintGo.ControlCenter
                     else
                     {
                         lblStatusBadge.ForeColor = Color.FromArgb(239, 68, 68);
+                    }
+
+                    if (data.ContainsKey("agentVersion") && data["agentVersion"] != null)
+                    {
+                        lblAgentVersion.Text = "Agent Version: v" + Convert.ToString(data["agentVersion"]);
                     }
 
                     if (data.ContainsKey("displayName") && data["displayName"] != null)
@@ -743,6 +1053,7 @@ namespace PrintGo.ControlCenter
                     {
                         var list = (System.Collections.ArrayList)data["printers"];
                         string foundPrinter = null;
+                        int eligibleCount = 0;
                         foreach (var item in list)
                         {
                             if (item is Dictionary<string, object>)
@@ -751,21 +1062,32 @@ namespace PrintGo.ControlCenter
                                 bool isEligible = p.ContainsKey("isEligible") && Convert.ToBoolean(p["isEligible"]);
                                 bool isDef = p.ContainsKey("isDefault") && Convert.ToBoolean(p["isDefault"]);
                                 string dName = p.ContainsKey("displayName") ? Convert.ToString(p["displayName"]) : "";
-                                if (isEligible && isDef)
+                                string pStatus = p.ContainsKey("status") ? Convert.ToString(p["status"]) : "UNKNOWN";
+
+                                if (isEligible)
                                 {
-                                    foundPrinter = dName + " (Default)";
-                                    break;
-                                }
-                                if (isEligible && foundPrinter == null)
-                                {
-                                    foundPrinter = dName;
+                                    eligibleCount++;
+                                    if (isDef)
+                                    {
+                                        foundPrinter = dName + " [★ Default, " + pStatus + "]";
+                                    }
+                                    else if (foundPrinter == null)
+                                    {
+                                        foundPrinter = dName + " [" + pStatus + "]";
+                                    }
                                 }
                             }
                         }
+
                         if (foundPrinter != null)
                         {
                             lblPrinterName.Text = foundPrinter;
-                            lblPrinterStatus.Text = "Production printer ready";
+                            lblPrinterStatus.Text = string.Format("Ready ({0} physical printer{1} online)", eligibleCount, eligibleCount == 1 ? "" : "s");
+                        }
+                        else
+                        {
+                            lblPrinterName.Text = "No eligible production printer";
+                            lblPrinterStatus.Text = "Configure default printer in Admin Portal";
                         }
                     }
 
@@ -814,7 +1136,7 @@ namespace PrintGo.ControlCenter
 
             var lblSubtitle = new Label
             {
-                Text = "Enter the 8-character code from Admin (e.g. 7777-8888):\nLowercase letters are automatically converted to uppercase.",
+                Text = "Enter the 8-character code from Admin (e.g. 7777-8888):\r\nLowercase letters are automatically converted to uppercase.",
                 ForeColor = Color.FromArgb(100, 116, 139),
                 Location = new Point(24, 52),
                 Size = new Size(400, 38)

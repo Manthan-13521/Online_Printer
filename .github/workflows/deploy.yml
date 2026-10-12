@@ -59,9 +59,17 @@ jobs:
             --branch=main \
             --commit-dirty=true
 
+      - name: Apply D1 Migrations (Production)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          pnpm --filter @printgo/worker exec wrangler d1 migrations apply printgo-production --remote
+
       - name: Deploy API Worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           pnpm --filter @printgo/worker exec wrangler deploy
+

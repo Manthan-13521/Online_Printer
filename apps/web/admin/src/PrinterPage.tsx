@@ -8,6 +8,7 @@ import type { PrinterCapabilityFeatures } from "@printgo/domain";
 import { useEffect, useState } from "react";
 
 import { adminApi, AdminApiError, friendlyAdminError } from "./api";
+import { useAdminWebSocket } from "./useAdminWebSocket";
 import {
   getWindowsAgentReleaseConfig,
   buildAgentConnectionUrl,
@@ -319,8 +320,12 @@ export function PrinterPage({
     );
   }, [activeTestPrinterKey]);
 
+  useAdminWebSocket(() => {
+    void loadPrinters();
+  });
+
   useEffect(() => {
-    return startVisiblePolling(loadPrinters, 30_000);
+    return startVisiblePolling(loadPrinters, 90_000);
   }, []);
 
   async function handleGeneratePairCode() {

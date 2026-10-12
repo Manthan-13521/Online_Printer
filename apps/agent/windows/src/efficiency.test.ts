@@ -75,7 +75,8 @@ describe("Agent efficiency", () => {
     const used = process.cpuUsage(cpu);
     expect(calls).toBe(10800);
     expect(reports).toBe(1);
-    expect(launches).toBe(900);
+    // OPT-8: 5 startup probes + 15-min fallback checks = 64 launches over 15 hours (down from 900)
+    expect(launches).toBe(64);
     expect(peakHeap - heapStart).toBeLessThan(64 * 1024 * 1024);
     mkdirSync("docs/evidence/efficiency-v2", { recursive: true });
     writeFileSync(

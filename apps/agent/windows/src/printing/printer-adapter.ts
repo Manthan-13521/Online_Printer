@@ -101,6 +101,21 @@ export interface PrintJobStatus {
   message?: string;
 }
 
+export interface PrinterChangeEvent {
+  printerName?: string;
+  eventType?:
+    | "STATUS_CHANGE"
+    | "SPOOLER_EVENT"
+    | "ERROR"
+    | "OFFLINE"
+    | "PAPER_OUT"
+    | "JAM"
+    | "PAUSED"
+    | "RECOVERY"
+    | "UNKNOWN";
+  timestampMs?: number;
+}
+
 /**
  * Boundary for Windows printer integrations.
  *
@@ -117,4 +132,7 @@ export interface PrinterAdapter {
   clearPrintGoSpoolJobs?(
     printerId: string,
   ): Promise<{ cancelledJobIds: string[] }>;
+  subscribePrinterEvents?(
+    onEvent: (event: PrinterChangeEvent) => void,
+  ): () => void;
 }

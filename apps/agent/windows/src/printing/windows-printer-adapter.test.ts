@@ -567,6 +567,28 @@ describe("WindowsPrinterAdapter with mock executor", () => {
     expect(status.spoolJobId).toBe("42");
   });
 
+  it("regression: rejects unobserved synthetic spool IDs without returning COMPLETED_OR_REMOVED", async () => {
+    const mockExecutor = vi.fn(() => Promise.resolve("REMOVED"));
+    const adapter = new WindowsPrinterAdapter(mockExecutor);
+
+    const status = await adapter.getJobStatus(
+      "HP LaserJet",
+      "unobserved-1760288000000",
+    );
+    expect(status.state).toBe("UNKNOWN");
+    expect(status.failureCode).toBe("UNKNOWN");
+    expect(mockExecutor).not.toHaveBeenCalled();
+  });
+
+  it("regression: rejects non-numeric spool IDs with UNKNOWN instead of treating queue absence as completed", async () => {
+    const mockExecutor = vi.fn(() => Promise.resolve("REMOVED"));
+    const adapter = new WindowsPrinterAdapter(mockExecutor);
+
+    const status = await adapter.getJobStatus("HP LaserJet", "invalid-id-xyz");
+    expect(status.state).toBe("UNKNOWN");
+    expect(mockExecutor).not.toHaveBeenCalled();
+  });
+
   it("does not treat a retained but unfinished spool job as completed", async () => {
     const mockExecutor = vi.fn(() =>
       Promise.resolve(

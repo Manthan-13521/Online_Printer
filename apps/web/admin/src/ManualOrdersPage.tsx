@@ -5,12 +5,8 @@ import type {
 } from "@printgo/api-contract";
 import { useEffect, useState } from "react";
 import { Pagination } from "./Pagination";
-import {
-  adminApi,
-  AdminApiError,
-  friendlyAdminError,
-  getAdminToken,
-} from "./api";
+import { adminApi, AdminApiError, friendlyAdminError } from "./api";
+import { useAdminWebSocket } from "./useAdminWebSocket";
 
 function formatPaise(paise: number): string {
   return `₹${(paise / 100).toFixed(2)}`;
@@ -531,75 +527,15 @@ export function ManualOrdersPage({
     }
   }
 
-  // Event-driven WebSocket connection + window focus + 90s fallback
-  useEffect(() => {
-    // Initial fetch
+  useAdminWebSocket(() => {
     void loadCash();
     void load();
+  });
 
-    let ws: WebSocket | null = null;
-    let reconnectTimeout: ReturnType<typeof setTimeout> | undefined;
-    let isDisposed = false;
-
-    function connectWs() {
-      if (isDisposed) return;
-      try {
-        const token = getAdminToken();
-        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-        const wsUrl = `${protocol}//${window.location.host}/api/admin/ws${token ? `?token=${encodeURIComponent(token)}` : ""}`;
-        ws = new WebSocket(wsUrl);
-
-        ws.onmessage = (event: MessageEvent<string>) => {
-          try {
-            const rawData: unknown = event.data;
-            if (typeof rawData === "string") {
-              const data: unknown = JSON.parse(rawData);
-              if (
-                typeof data === "object" &&
-                data !== null &&
-                "type" in data &&
-                data.type === "WAKE_UP"
-              ) {
-                void loadCash();
-                void load();
-              }
-            }
-          } catch {
-            // Ignored
-          }
-        };
-
-        ws.onerror = () => {
-          // Fallback handlers active
-        };
-
-        ws.onclose = () => {
-          if (!isDisposed) {
-            reconnectTimeout = setTimeout(connectWs, 15_000);
-          }
-        };
-      } catch {
-        // Fallback handlers active
-      }
-    }
-
-    connectWs();
-
-    // Browser tab focus & visibility change handler
-    function handleVisibility() {
-      if (!document.hidden) {
-        void loadCash();
-        void load();
-      }
-    }
-
-    function handleFocus() {
-      void loadCash();
-      void load();
-    }
-
-    document.addEventListener("visibilitychange", handleVisibility);
-    window.addEventListener("focus", handleFocus);
+  // Event-driven initial fetch + 90s fallback
+  useEffect(() => {
+    void loadCash();
+    void load();
 
     // Infrequent fallback refresh timer (90s)
     const fallbackTimer = setInterval(() => {
@@ -610,18 +546,7 @@ export function ManualOrdersPage({
     }, 90_000);
 
     return () => {
-      isDisposed = true;
-      if (ws) {
-        try {
-          ws.close();
-        } catch {
-          // Ignored
-        }
-      }
-      clearTimeout(reconnectTimeout);
       clearInterval(fallbackTimer);
-      document.removeEventListener("visibilitychange", handleVisibility);
-      window.removeEventListener("focus", handleFocus);
     };
   }, []);
 

@@ -1,0 +1,67 @@
+{
+  "session": "Session 1: Foundational Regression, Invariants & Type Health",
+  "executed_at_iso": "2026-10-12T01:13:00+05:30",
+  "standard": "PONYTAIL Evidence-First Verification",
+  "status": "PASS",
+  "quality_gates": {
+    "lint": {
+      "command": "pnpm lint",
+      "exit_code": 0,
+      "max_warnings": 0,
+      "errors": 0,
+      "status": "PASS"
+    },
+    "typecheck": {
+      "command": "pnpm typecheck",
+      "exit_code": 0,
+      "packages_checked": [
+        "packages/shared",
+        "packages/auth",
+        "packages/domain",
+        "packages/api-contract",
+        "packages/pricing",
+        "packages/validation",
+        "apps/web/customer",
+        "apps/agent/windows",
+        "apps/web/admin",
+        "apps/api/worker"
+      ],
+      "errors": 0,
+      "status": "PASS"
+    },
+    "format": {
+      "command": "pnpm format:check",
+      "exit_code": 0,
+      "result": "All matched files use Prettier code style!",
+      "status": "PASS"
+    },
+    "db_validate": {
+      "command": "pnpm db:validate",
+      "exit_code": 0,
+      "migrations_applied": 34,
+      "table_count": 29,
+      "status": "PASS"
+    },
+    "test_suite": {
+      "command": "pnpm test",
+      "exit_code": 0,
+      "test_files_total": 104,
+      "test_files_passed": 104,
+      "test_files_failed": 0,
+      "tests_total": 985,
+      "tests_passed": 984,
+      "tests_skipped": 1,
+      "tests_failed": 0,
+      "duration_seconds": 21.59,
+      "status": "PASS"
+    }
+  },
+  "invariants_confirmed": [
+    "Single-shop model preserved",
+    "Zero paid cloud infrastructure (Cloudflare Free Tier compliant)",
+    "Server-side financial authority (@printgo/pricing + D1)",
+    "DPAPI Windows agent authentication",
+    "Private R2 direct uploads with pre-signed PUT URLs",
+    "Strict retention & privacy lifecycles"
+  ]
+}

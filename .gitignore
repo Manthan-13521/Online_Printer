@@ -31,9 +31,13 @@ artifacts/
 # Local databases and temporary files
 *.sqlite
 *.sqlite3
+*.db
 .tmp/
 tmp/
 installer/stage/
 installer/dist/
 *.zip
+*.exe
+*.msi
+apps/agent/windows/vendor/
 production_backup.sql

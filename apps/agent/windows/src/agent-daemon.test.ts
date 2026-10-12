@@ -4,7 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AgentAuthError, type AgentClient } from "./agent-client";
 import { AgentDaemon } from "./agent-daemon";
-import type { PrinterAdapter } from "./printing/printer-adapter";
+import type {
+  PrinterAdapter,
+  PrinterChangeEvent,
+} from "./printing/printer-adapter";
 import type {
   AgentCredentials,
   CredentialStore,
@@ -360,6 +363,53 @@ describe("AgentDaemon", () => {
     daemon.stop();
   });
 
+  it("regression: reports FAILED when test print cannot be correlated safely in spooler", async () => {
+    const store = createMockStore({
+      agentId: "agent_1",
+      agentSecret: "secret_1",
+      serverUrl: "https://api.printgo.shop",
+      displayName: "Front Desk PC",
+    });
+    const adapter = createMockAdapter();
+    vi.mocked(adapter.submitPdfJob).mockResolvedValue({
+      spoolJobId: "unobserved-1760288000000",
+    });
+    const client = {
+      sendHeartbeat: vi.fn().mockResolvedValueOnce({
+        acknowledged: true,
+        serverTimeMs: 1,
+        nextCommand: {
+          type: "TEST_PRINT",
+          commandId: "cmd-unobserved",
+          printerId: "printer-1",
+          windowsPrinterName: "p1",
+          printerDisplayName: "HP Laser MFP 131",
+          shopName: "Central Xerox Shop",
+          expiresAtMs: Date.now() + 60_000,
+        },
+      }),
+      reportCommand: vi.fn(() => Promise.resolve()),
+    } as unknown as AgentClient;
+    const daemon = new AgentDaemon({
+      client,
+      credentialStore: store,
+      printerAdapter: adapter,
+    });
+
+    await daemon.start();
+    expect(client.reportCommand).toHaveBeenCalledTimes(1);
+    const reportCall = vi.mocked(client.reportCommand).mock.calls[0];
+    expect(reportCall?.[3]).toBe("cmd-unobserved");
+    expect(reportCall?.[4]).toMatchObject({
+      status: "FAILED",
+      failureCode: "PRINTER_ERROR",
+    });
+    expect(reportCall?.[4]?.failureDetail).toContain(
+      "could not be correlated safely",
+    );
+    daemon.stop();
+  });
+
   it.each([
     ["child process failure", "submit", new Error("Sumatra exited 1")],
     ["printer discovery error", "discover", new Error("CIM unavailable")],
@@ -530,5 +580,161 @@ describe("AgentDaemon", () => {
         m.includes("revoke the unpaired agent in PrintGo Admin"),
       ),
     ).toBe(true);
+  });
+
+  describe("Phase 8C: OPT-7 and OPT-8 Smart Optimizations", () => {
+    it("OPT-7: uses 120s idle heartbeat when WebSocket is connected, and 60s fallback when disconnected", async () => {
+      const client = {
+        sendHeartbeat: vi.fn(() =>
+          Promise.resolve({
+            acknowledged: true,
+            serverTimeMs: Date.now(),
+            onlinePrintingEnabled: true,
+          }),
+        ),
+      } as unknown as AgentClient;
+      const daemon = new AgentDaemon({
+        client,
+        credentialStore: createMockStore({
+          agentId: "agent_opt7",
+          agentSecret: "secret_opt7",
+          serverUrl: "https://api.printgo.shop",
+          displayName: "Front Desk PC",
+        }),
+        printerAdapter: createMockAdapter(),
+      });
+
+      await daemon.start();
+      expect(client.sendHeartbeat).toHaveBeenCalledTimes(1);
+
+      // Advance 60s -> pulse 2 runs (WebSocket disconnected)
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(client.sendHeartbeat).toHaveBeenCalledTimes(2);
+
+      // Simulate WebSocket connected
+      (
+        daemon as unknown as { ws: { readyState: number; close: () => void } }
+      ).ws = {
+        readyState: 1,
+        close: vi.fn(),
+      };
+      expect(daemon.isWebSocketConnected()).toBe(true);
+
+      // Advance 60s -> pulse 3 runs while WS is connected, setting nextDelayMs to 120_000
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(client.sendHeartbeat).toHaveBeenCalledTimes(3);
+
+      // At +60s (halfway through 120s), heartbeat should NOT fire
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(client.sendHeartbeat).toHaveBeenCalledTimes(3);
+
+      // At +120s, next heartbeat fires (call 4)
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(client.sendHeartbeat).toHaveBeenCalledTimes(4);
+
+      daemon.stop();
+    });
+
+    it("OPT-8: transitions to stable mode after 5 consecutive healthy checks and backs off to 15-minute fallback", async () => {
+      let eventCallback: ((event: PrinterChangeEvent) => void) | null = null;
+      const adapter = createMockAdapter();
+      adapter.subscribePrinterEvents = vi.fn(
+        (cb: (event: PrinterChangeEvent) => void) => {
+          eventCallback = cb;
+          return vi.fn();
+        },
+      );
+
+      const client = {
+        sendHeartbeat: vi.fn(() =>
+          Promise.resolve({
+            acknowledged: true,
+            serverTimeMs: Date.now(),
+            onlinePrintingEnabled: true,
+          }),
+        ),
+      } as unknown as AgentClient;
+      const daemon = new AgentDaemon({
+        client,
+        credentialStore: createMockStore({
+          agentId: "agent_opt8",
+          agentSecret: "secret_opt8",
+          serverUrl: "https://api.printgo.shop",
+          displayName: "Front Desk PC",
+        }),
+        printerAdapter: adapter,
+      });
+
+      await daemon.start(); // Check 1
+      expect(adapter.listPrinters).toHaveBeenCalledTimes(1);
+      expect(daemon.getConsecutiveHealthyChecks()).toBe(1);
+      expect(daemon.isPrinterStable()).toBe(false);
+
+      // Advance 60s -> Check 2
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(adapter.listPrinters).toHaveBeenCalledTimes(2);
+      expect(daemon.getConsecutiveHealthyChecks()).toBe(2);
+
+      // Advance 60s -> Check 3
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(adapter.listPrinters).toHaveBeenCalledTimes(3);
+      expect(daemon.getConsecutiveHealthyChecks()).toBe(3);
+
+      // Advance 60s -> Check 4
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(adapter.listPrinters).toHaveBeenCalledTimes(4);
+      expect(daemon.getConsecutiveHealthyChecks()).toBe(4);
+      expect(daemon.isPrinterStable()).toBe(false);
+
+      // Advance 60s -> Check 5: Stable!
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(adapter.listPrinters).toHaveBeenCalledTimes(5);
+      expect(daemon.getConsecutiveHealthyChecks()).toBe(5);
+      expect(daemon.isPrinterStable()).toBe(true);
+      expect(adapter.subscribePrinterEvents).toHaveBeenCalledTimes(1);
+
+      // In stable mode, printer checks do NOT run at 60s or 120s
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(adapter.listPrinters).toHaveBeenCalledTimes(5); // Still 5!
+
+      // After 15 minutes (13 min additional), 15-minute safety fallback probe fires!
+      await vi.advanceTimersByTimeAsync(13 * 60 * 1_000);
+      expect(adapter.listPrinters).toHaveBeenCalledTimes(6); // Triggered at 15m
+      expect(daemon.isPrinterStable()).toBe(true);
+
+      // Triggering a printer fault resets stability and forces immediate re-check
+      daemon.markPrinterFault("p1", "OFFLINE");
+      expect(daemon.isPrinterStable()).toBe(false);
+      expect(daemon.getConsecutiveHealthyChecks()).toBe(0);
+
+      // Next pulse refreshes printers immediately
+      await vi.advanceTimersByTimeAsync(0);
+      expect(adapter.listPrinters).toHaveBeenCalledTimes(7);
+
+      // Also verify event callback triggers fault reset
+      expect(eventCallback).toBeDefined();
+      if (eventCallback) {
+        // Fast-forward back to stability
+        for (let i = 0; i < 4; i++) {
+          await vi.advanceTimersByTimeAsync(60_000);
+        }
+        expect(daemon.isPrinterStable()).toBe(true);
+
+        // Event fires JAM
+        (
+          eventCallback as (e: {
+            printerName: string;
+            eventType: "JAM";
+          }) => void
+        )({
+          printerName: "p1",
+          eventType: "JAM",
+        });
+        expect(daemon.isPrinterStable()).toBe(false);
+        expect(daemon.getConsecutiveHealthyChecks()).toBe(0);
+      }
+
+      daemon.stop();
+    });
   });
 });

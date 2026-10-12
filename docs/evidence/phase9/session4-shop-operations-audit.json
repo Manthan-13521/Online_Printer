@@ -1,0 +1,56 @@
+{
+  "session": "Session 4: End-to-End Shop Operations Acceptance",
+  "executed_at_iso": "2026-10-12T01:14:55+05:30",
+  "standard": "PONYTAIL Evidence-First Verification",
+  "status": "PASS",
+  "features_verified": {
+    "multi_file_uploads": {
+      "multiple_files_per_draft": true,
+      "independent_print_settings": true,
+      "sequential_spooling_order": "1 -> 2 -> 3 strictly preserved",
+      "status": "PASS"
+    },
+    "universal_sumatra_flags": {
+      "fit_to_page_enforcement": "Universal (hardcoded ',fit' suffix in print arguments)",
+      "color_flag_mapping": "monochrome vs color",
+      "duplex_flag_mapping": "simplex vs duplexlong vs duplexshort",
+      "status": "PASS"
+    },
+    "identification_sheet": {
+      "page_count": 1,
+      "paper_size": "A4",
+      "color_mode": "BW",
+      "phone_masking": "Defensive masking (e.g. '******4321'), zero plain 10-digit leaks",
+      "placement_supported": ["FIRST", "LAST"],
+      "temp_disk_cleanup": "Immediate unlink from OS temp directory upon submission",
+      "status": "PASS"
+    },
+    "addon_services": {
+      "post_print_binding": {
+        "example": "Spiral Binding (₹40.00)",
+        "lifecycle": "PAID -> QUEUED -> PRINTED -> AWAITING_FINISHING -> COMPLETED",
+        "status": "PASS"
+      },
+      "manual_print_certificate": {
+        "example": "Certificate Bond Paper",
+        "lifecycle": "PAID -> MANUAL_PRINT (bypasses auto-spooler) -> COMPLETED",
+        "status": "PASS"
+      },
+      "staff_priced_pickup_charge": {
+        "due_at_pickup_paise": "Recorded in D1 orders, displayed in customer tracking",
+        "status": "PASS"
+      }
+    },
+    "customer_tracking": {
+      "private_tracking": "GET /api/customer/orders/:token with detailed live progress and full file breakdown",
+      "public_tracking": "GET /api/customer/orders/pickup/:code with zero customer PII",
+      "status": "PASS"
+    },
+    "admin_controls": {
+      "daily_pickup_code_reset": "Sequence resets cleanly to A01 for next business day without corrupting history",
+      "printer_pause_resume": "Online/Offline toggling halts or resumes queue dispatch",
+      "secure_pdf_download": "5-minute pre-signed R2 GET URL for manual order inspection",
+      "status": "PASS"
+    }
+  }
+}
