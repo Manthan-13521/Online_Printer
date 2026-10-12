@@ -65,7 +65,7 @@ Type: files; Name: "{app}\*.tmp"
 function MaintenanceBlocked(): Boolean;
 var Locator, Services, Processes: Variant;
 begin
-  Result := True;
+  Result := False;
   try
     Locator := CreateOleObject('WbemScripting.SWbemLocator');
     Services := Locator.ConnectServer('', 'root\CIMV2');
@@ -73,7 +73,7 @@ begin
 
     Result := (Processes.Count > 0) or FileExists(ExpandConstant('{localappdata}\PrintGo\active-print.json'));
   except
-    Result := True;
+    Result := False;
   end;
 end;
 

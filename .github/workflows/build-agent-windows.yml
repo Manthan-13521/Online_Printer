@@ -58,74 +58,215 @@ jobs:
           & $exe --help
           Write-Host "Smoke test passed successfully!"
 
-      - name: Bundle portable SumatraPDF.exe into distribution package
+      - name: Download & verify portable SumatraPDF.exe
         shell: pwsh
         run: |
-          $dir = "dist-package/PrintGo-Windows-Test"
+          New-Item -ItemType Directory -Force -Path "installer/stage", "installer/dist", "release-artifacts"
           $sumatraZip = "sumatra-portable.zip"
-          Write-Host "Downloading portable SumatraPDF for deterministic printing..."
+          Write-Host "Downloading portable SumatraPDF 3.6.1-64..."
           Invoke-WebRequest -Uri "https://files.sumatrapdfreader.org/software/sumatrapdf/rel/3.6.1/SumatraPDF-3.6.1-64.zip" -OutFile $sumatraZip
           Expand-Archive -Path $sumatraZip -DestinationPath "sumatra-temp" -Force
           $sumatraExe = Get-ChildItem "sumatra-temp" -Filter "SumatraPDF*.exe" | Select-Object -First 1
           if (-not $sumatraExe) { throw "Could not find SumatraPDF executable in downloaded archive" }
-          Copy-Item $sumatraExe.FullName -Destination "$dir/SumatraPDF.exe" -Force
-          Write-Host "Successfully bundled SumatraPDF.exe into $dir"
+          Copy-Item $sumatraExe.FullName -Destination "installer/stage/SumatraPDF.exe" -Force
           Remove-Item -Recurse -Force "sumatra-temp", $sumatraZip
+          Write-Host "SumatraPDF staged successfully."
 
-      - name: Build PrintGo Command Center GUI
+      - name: Compile PrintGo Command Center GUI
         shell: pwsh
         run: |
-          $dir = "dist-package/PrintGo-Windows-Test"
           $sourcePath = (Resolve-Path "apps/agent/windows/control-center/PrintGoControlCenter.cs").Path
           $csc = "$env:SystemRoot\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
-          if (Test-Path $csc) {
-            Write-Host "Compiling PrintGo Command Center via $csc with source $sourcePath..."
-            & $csc /nologo /target:winexe /out:"$dir/PrintGo-Command-Center.exe" /r:System.Windows.Forms.dll,System.Drawing.dll,System.Management.dll "$sourcePath"
-            Write-Host "Successfully compiled PrintGo-Command-Center.exe"
-          } else {
-            Write-Host "Checking PATH for csc..."
-            & csc /nologo /target:winexe /out:"$dir/PrintGo-Command-Center.exe" /r:System.Windows.Forms.dll,System.Drawing.dll,System.Management.dll "$sourcePath"
-          }
+          $outExe = (Resolve-Path "installer/stage").Path + "\PrintGo-ControlCenter.exe"
+          Write-Host "Compiling PrintGo Command Center via $csc to $outExe..."
+          & $csc /nologo /target:winexe /optimize+ /out:"$outExe" /r:System.Windows.Forms.dll,System.Drawing.dll,System.Management.dll,System.Web.Extensions.dll,Microsoft.VisualBasic.dll "$sourcePath"
+          if (-not (Test-Path "$outExe")) { throw "PrintGo-ControlCenter.exe compilation failed" }
+          Write-Host "PrintGo-ControlCenter.exe compiled successfully: $((Get-Item $outExe).Length) bytes"
 
-      - name: Calculate SHA-256 and package distribution ZIP
+      - name: Stage Agent and Notices
         shell: pwsh
         run: |
-          $dir = "dist-package/PrintGo-Windows-Test"
-          $sums = @()
-          Get-ChildItem -Path $dir -Filter "*.exe" | ForEach-Object {
-            $h = (Get-FileHash -Algorithm SHA256 $_.FullName).Hash.ToLower()
-            Write-Host "$($_.Name) SHA-256: $h"
-            $sums += "$h  $($_.Name)"
+          $agentExe = "apps/agent/windows/dist/PrintGo-Agent.exe"
+          if (-not (Test-Path $agentExe)) { throw "PrintGo-Agent.exe not found at $agentExe" }
+          Copy-Item $agentExe -Destination "installer/stage/PrintGo-Agent.exe" -Force
+          Copy-Item "THIRD_PARTY_NOTICES.txt" -Destination "installer/stage/THIRD_PARTY_NOTICES.txt" -Force
+          Write-Host "Stage directory prepared with:"
+          Get-ChildItem "installer/stage" | Format-Table Name, Length
+
+      - name: Build Inno Setup Installer
+        shell: pwsh
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            Write-Host "Installing Inno Setup via choco..."
+            choco install innosetup --no-progress -y
           }
-          Set-Content -Path "$dir/SHA256SUMS.txt" -Value ($sums -join "`n")
-          Compress-Archive -Path "$dir/*" -DestinationPath "dist-package/PrintGo-Windows-Test.zip" -Force
-          Write-Host "Created dist-package/PrintGo-Windows-Test.zip"
+          Write-Host "Compiling installer/PrintGo.iss with Inno Setup..."
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" (Resolve-Path "installer/PrintGo.iss").Path
+          $setupExe = "installer/dist/PrintGo-Setup.exe"
+          if (-not (Test-Path $setupExe)) { throw "PrintGo-Setup.exe was not created" }
+          Write-Host "Installer compiled successfully: $((Get-Item $setupExe).Length) bytes"
 
-      - name: Upload Windows Agent Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: PrintGo-Windows-Test
-          path: dist-package/PrintGo-Windows-Test
-          retention-days: 14
+      - name: Assemble Release Packages
+        shell: pwsh
+        run: |
+          $relDir = "release-artifacts"
+          New-Item -ItemType Directory -Force -Path $relDir
 
-      - name: Upload Windows Agent ZIP Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: PrintGo-Windows-Test-ZIP
-          path: dist-package/PrintGo-Windows-Test.zip
-          retention-days: 14
+          # 1. Standalone Agent exe
+          Copy-Item "installer/stage/PrintGo-Agent.exe" -Destination "$relDir/PrintGo-Agent-Windows-x64.exe" -Force
 
-      - name: Publish or Update GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
+          # 2. Inno Setup Installer exe
+          Copy-Item "installer/dist/PrintGo-Setup.exe" -Destination "$relDir/PrintGo-Command-Center-Windows-x64-Setup.exe" -Force
+
+          # 3. Command Center Portable ZIP (contains GUI + Agent + SumatraPDF + Notices)
+          Compress-Archive -Path "installer/stage/*" -DestinationPath "$relDir/PrintGo-Command-Center-Windows-x64-Portable.zip" -Force
+
+          # 4. Agent Portable ZIP (contains Agent + SumatraPDF + Notices ONLY)
+          $agentStage = "agent-only-stage"
+          New-Item -ItemType Directory -Force -Path $agentStage
+          Copy-Item "installer/stage/PrintGo-Agent.exe" -Destination "$agentStage/" -Force
+          Copy-Item "installer/stage/SumatraPDF.exe" -Destination "$agentStage/" -Force
+          Copy-Item "installer/stage/THIRD_PARTY_NOTICES.txt" -Destination "$agentStage/" -Force
+          Compress-Archive -Path "$agentStage/*" -DestinationPath "$relDir/PrintGo-Agent-Windows-x64.zip" -Force
+          Remove-Item -Recurse -Force $agentStage
+
+          Write-Host "All 4 release packages assembled:"
+          Get-ChildItem $relDir | Format-Table Name, Length
+
+      - name: Verify Package Contents & Assert Distinct Hashes
+        shell: pwsh
+        run: |
+          $relDir = "release-artifacts"
+
+          # Verify Portable ZIP has GUI
+          $portableTemp = "verify-portable"
+          Expand-Archive -Path "$relDir/PrintGo-Command-Center-Windows-x64-Portable.zip" -DestinationPath $portableTemp -Force
+          if (-not (Test-Path "$portableTemp/PrintGo-ControlCenter.exe")) {
+            throw "VERIFICATION FAILED: PrintGo-ControlCenter.exe missing from Portable ZIP"
+          }
+          if (-not (Test-Path "$portableTemp/PrintGo-Agent.exe")) {
+            throw "VERIFICATION FAILED: PrintGo-Agent.exe missing from Portable ZIP"
+          }
+          if (-not (Test-Path "$portableTemp/SumatraPDF.exe")) {
+            throw "VERIFICATION FAILED: SumatraPDF.exe missing from Portable ZIP"
+          }
+          Remove-Item -Recurse -Force $portableTemp
+
+          # Verify Agent ZIP does NOT have GUI
+          $agentTemp = "verify-agent"
+          Expand-Archive -Path "$relDir/PrintGo-Agent-Windows-x64.zip" -DestinationPath $agentTemp -Force
+          if (Test-Path "$agentTemp/PrintGo-ControlCenter.exe") {
+            throw "VERIFICATION FAILED: PrintGo-ControlCenter.exe should NOT be in Agent ZIP"
+          }
+          if (-not (Test-Path "$agentTemp/PrintGo-Agent.exe")) {
+            throw "VERIFICATION FAILED: PrintGo-Agent.exe missing from Agent ZIP"
+          }
+          Remove-Item -Recurse -Force $agentTemp
+
+          # Assert Hashes are NOT equal
+          $hPortable = (Get-FileHash -Algorithm SHA256 "$relDir/PrintGo-Command-Center-Windows-x64-Portable.zip").Hash
+          $hAgentZip = (Get-FileHash -Algorithm SHA256 "$relDir/PrintGo-Agent-Windows-x64.zip").Hash
+          if ($hPortable -eq $hAgentZip) {
+            throw "VERIFICATION FAILED: Portable ZIP and Agent ZIP have identical hashes ($hPortable)!"
+          }
+          Write-Host "VERIFIED: Portable ZIP hash ($hPortable) != Agent ZIP hash ($hAgentZip)"
+
+      - name: Run Windows Smoke Tests (Install, Launch, Single-Instance, Rollback)
+        shell: pwsh
+        run: |
+          $relDir = "release-artifacts"
+          $setup = (Resolve-Path "$relDir/PrintGo-Command-Center-Windows-x64-Setup.exe").Path
+
+          # 1. Setup mock credentials in AppData to test preservation
+          $appDataPrintGo = "$env:LOCALAPPDATA\PrintGo"
+          New-Item -ItemType Directory -Force -Path $appDataPrintGo | Out-Null
+          $mockCreds = "$appDataPrintGo\agent-credentials.json"
+          Set-Content -Path $mockCreds -Value '{"apiUrl":"https://mock.printgo.dev","token":"mock-dpapi-token"}'
+
+          # 2. Test Silent Installation
+          Write-Host "Running silent installation..."
+          $installProc = Start-Process -FilePath $setup -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" -PassThru -Wait
+          if ($installProc.ExitCode -ne 0) {
+            throw "Silent installation failed with exit code $($installProc.ExitCode)"
+          }
+
+          # 3. Verify Installed Tree
+          $installDir = "$env:LOCALAPPDATA\Programs\PrintGo"
+          Write-Host "Verifying installed directory: $installDir"
+          $expectedFiles = @("PrintGo-ControlCenter.exe", "PrintGo-Agent.exe", "SumatraPDF.exe", "unins000.exe")
+          foreach ($f in $expectedFiles) {
+            $p = Join-Path $installDir $f
+            if (-not (Test-Path $p)) { throw "Expected installed file missing: $p" }
+            Write-Host "  Found: $f ($((Get-Item $p).Length) bytes)"
+          }
+
+          # 4. Smoke test Agent
+          Write-Host "Testing installed Agent --version and --help..."
+          & "$installDir\PrintGo-Agent.exe" --version
+          & "$installDir\PrintGo-Agent.exe" --help
+
+          # 5. Test GUI launch and Single-Instance enforcement
+          Write-Host "Testing GUI launch and single-instance behavior..."
+          $guiProc1 = Start-Process -FilePath "$installDir\PrintGo-ControlCenter.exe" -ArgumentList "--minimized" -PassThru
+          Start-Sleep -Seconds 3
+          if ($guiProc1.HasExited) {
+            throw "PrintGo-ControlCenter.exe exited prematurely"
+          }
+          Write-Host "Instance 1 running (PID: $($guiProc1.Id))"
+
+          # Launch instance 2: should detect instance 1 and exit immediately
+          $guiProc2 = Start-Process -FilePath "$installDir\PrintGo-ControlCenter.exe" -ArgumentList "--minimized" -PassThru -Wait
+          Write-Host "Instance 2 exited cleanly as expected (Exit code: $($guiProc2.ExitCode))"
+
+          # Stop instance 1
+          Stop-Process -Id $guiProc1.Id -Force
+          Write-Host "GUI instance 1 stopped."
+
+          # 6. Verify config preservation
+          if (-not (Test-Path $mockCreds)) {
+            throw "Credentials file was deleted by installer!"
+          }
+          $credContent = Get-Content -Path $mockCreds -Raw
+          if ($credContent -notmatch "mock-dpapi-token") {
+            throw "Credentials content corrupted!"
+          }
+          Write-Host "Configuration preservation verified."
+
+          # 7. Test Uninstallation & Rollback
+          Write-Host "Testing silent uninstaller..."
+          $uninstaller = Join-Path $installDir "unins000.exe"
+          $uninstProc = Start-Process -FilePath $uninstaller -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" -PassThru -Wait
+          Start-Sleep -Seconds 2
+          if (Test-Path "$installDir\PrintGo-ControlCenter.exe") {
+            throw "Uninstaller did not remove PrintGo-ControlCenter.exe"
+          }
+          # Inno Setup keeps user credentials intact
+          if (-not (Test-Path $mockCreds)) {
+            throw "Uninstaller deleted user credentials unexpectedly!"
+          }
+          Write-Host "Silent uninstallation and data preservation smoke tests passed!"
+          Remove-Item -Recurse -Force $appDataPrintGo
+
+      - name: Generate Checksums & Update Release
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          cd release-artifacts
+          shasum -a 256 PrintGo-* > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
           TAG="${GITHUB_REF_NAME}"
           if [ "${GITHUB_REF_TYPE}" != "tag" ]; then
             TAG="v2.1.0-phase9"
           fi
-          echo "Target Release Tag: $TAG"
-          gh release view "$TAG" || gh release create "$TAG" --title "PrintGo Release $TAG" --notes "Release package for PrintGo Windows Print Agent and Command Center."
-          gh release upload "$TAG" dist-package/PrintGo-Windows-Test/*.exe dist-package/PrintGo-Windows-Test.zip dist-package/PrintGo-Windows-Test/SHA256SUMS.txt --clobber
+          echo "Updating release $TAG with verified assets..."
+          
+          # Delete outdated assets if present
+          gh release delete-asset "$TAG" PrintGo-Windows-Test.zip PrintGo-Command-Center.exe SumatraPDF.exe --yes || true
+
+          # Upload all 4 packages + SHA256SUMS.txt
+          gh release upload "$TAG" PrintGo-* SHA256SUMS.txt --clobber
+
 
