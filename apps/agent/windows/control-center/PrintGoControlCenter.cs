@@ -50,19 +50,9 @@ namespace PrintGo.ControlCenter
         private string agentExePath;
         private string sumatraExePath;
 
-        private static System.Threading.Mutex singleInstanceMutex;
-
         [STAThread]
         public static void Main(string[] args)
         {
-            bool createdNew;
-            singleInstanceMutex = new System.Threading.Mutex(true, "PrintGo_ControlCenter_SingleInstance_Mutex", out createdNew);
-            if (!createdNew)
-            {
-                // Another instance of Control Center is already running. Exit cleanly.
-                return;
-            }
-
             try
             {
                 Application.EnableVisualStyles();
@@ -87,14 +77,7 @@ namespace PrintGo.ControlCenter
                 var form = new ControlCenterForm(startMinimized, pairUrl);
                 Application.Run(form);
             }
-            finally
-            {
-                if (singleInstanceMutex != null)
-                {
-                    try { singleInstanceMutex.ReleaseMutex(); } catch { }
-                    singleInstanceMutex.Dispose();
-                }
-            }
+            catch { }
         }
 
         public ControlCenterForm(bool startMinimized, string pairUrl)
@@ -983,37 +966,40 @@ namespace PrintGo.ControlCenter
 
         private void RefreshStatus()
         {
-            sumatraExePath = FindSumatraExecutable();
-            bool sumatraReady = !string.IsNullOrEmpty(sumatraExePath) && File.Exists(sumatraExePath);
-            if (sumatraReady)
+            try
             {
-                lblSumatraStatus.Text = "✓ SumatraPDF Engine Ready (" + Path.GetFileName(sumatraExePath) + ")";
-                lblSumatraStatus.ForeColor = Color.FromArgb(22, 101, 52);
-            }
-            else
-            {
-                lblSumatraStatus.Text = "⚠️ SumatraPDF missing: Place SumatraPDF.exe in the same folder as Agent.";
-                lblSumatraStatus.ForeColor = Color.FromArgb(194, 65, 12);
-            }
+                sumatraExePath = FindSumatraExecutable();
+                bool sumatraReady = !string.IsNullOrEmpty(sumatraExePath) && File.Exists(sumatraExePath);
+                if (sumatraReady)
+                {
+                    lblSumatraStatus.Text = "✓ SumatraPDF Engine Ready (" + Path.GetFileName(sumatraExePath) + ")";
+                    lblSumatraStatus.ForeColor = Color.FromArgb(22, 101, 52);
+                }
+                else
+                {
+                    lblSumatraStatus.Text = "⚠️ SumatraPDF missing: Place SumatraPDF.exe in the same folder as Agent.";
+                    lblSumatraStatus.ForeColor = Color.FromArgb(194, 65, 12);
+                }
 
-            bool credsExist = File.Exists(Path.Combine(appDataDir, "credentials.enc"));
-            if (credsExist)
-            {
-                lblDpapiStatus.Text = "✓ Shop Pairing Active (Encrypted via Windows DPAPI)";
-                lblDpapiStatus.ForeColor = Color.FromArgb(22, 101, 52);
-            }
-            else
-            {
-                lblDpapiStatus.Text = "⚠️ Not paired with shop Admin. Click 'Pair / Re-pair PC'.";
-                lblDpapiStatus.ForeColor = Color.FromArgb(194, 65, 12);
-            }
+                bool credsExist = File.Exists(Path.Combine(appDataDir, "credentials.enc")) ||
+                                  File.Exists(Path.Combine(appDataDir, "agent-credentials.dat"));
+                if (credsExist)
+                {
+                    lblDpapiStatus.Text = "✓ Shop Pairing Active (Encrypted via Windows DPAPI)";
+                    lblDpapiStatus.ForeColor = Color.FromArgb(22, 101, 52);
+                }
+                else
+                {
+                    lblDpapiStatus.Text = "⚠️ Not paired with shop Admin. Click 'Pair / Re-pair PC'.";
+                    lblDpapiStatus.ForeColor = Color.FromArgb(194, 65, 12);
+                }
 
-            lblPrinterName.Text = "Printer readiness not verified";
-            lblPrinterStatus.Text = "Check production printer in Admin";
-            lblLastHeartbeat.Text = "No recent heartbeat";
-            lblStatusBadge.Text = "Offline / starting";
-            lblStatusBadge.ForeColor = Color.FromArgb(239, 68, 68);
-            trayIcon.Text = "PrintGo - status unavailable";
+                lblPrinterName.Text = "Printer readiness not verified";
+                lblPrinterStatus.Text = "Check production printer in Admin";
+                lblLastHeartbeat.Text = "No recent heartbeat";
+                lblStatusBadge.Text = "Offline / starting";
+                lblStatusBadge.ForeColor = Color.FromArgb(239, 68, 68);
+                if (trayIcon != null) trayIcon.Text = "PrintGo - status unavailable";
 
             var agentProcs = Process.GetProcessesByName("PrintGo-Agent");
             bool isAgentRunning = agentProcs.Length > 0;
@@ -1125,7 +1111,9 @@ namespace PrintGo.ControlCenter
             }
             catch { /* Keep the unavailable state; never crash on parse */ }
         }
+        catch { }
     }
+}
 
     public class PairingDialog : Form
     {

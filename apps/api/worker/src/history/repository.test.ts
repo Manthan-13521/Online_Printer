@@ -74,6 +74,21 @@ const migrations = [
   "0017_phase5_fallback_and_reprint_protection.sql",
   "0018_phase6_history_cleanup.sql",
   "0019_phase7_restore_hot_indexes.sql",
+  "0020_order_retention_duration.sql",
+  "0021_daily_order_stats.sql",
+  "0022_dashboard_earnings.sql",
+  "0023_identification_sheet_conditions.sql",
+  "0024_printer_priority.sql",
+  "0025_verified_printer_capabilities.sql",
+  "0026_phase4_fallback_recovery.sql",
+  "0027_parallel_physical_printer_locks.sql",
+  "0028_fix_physical_device_locks.sql",
+  "0029_cash_orders_and_smart_payment.sql",
+  "0030_smart_print_recovery.sql",
+  "0031_isolate_disabled_printers.sql",
+  "0032_reconcile_corrupted_webhook_payment.sql",
+  "0033_reconcile_daily_earnings_online_and_cash.sql",
+  "0034_d1_live_orders_index.sql",
 ].map((name) =>
   readFileSync(
     new URL(`../../../../../database/migrations/${name}`, import.meta.url),
@@ -209,5 +224,62 @@ describe("D1OrderHistoryRepository", () => {
     const result = await repository.list(null);
     expect(result.orders).toHaveLength(1);
     expect(result.orders[0]?.purged).toBe(true);
+  });
+
+  it("distinguishes cash confirmed orders from online paid orders in history", async () => {
+    const now = Date.now();
+    const cashOrderId = padUuid(301);
+    const onlineOrderId = padUuid(302);
+
+    // 1. Insert Cash Confirmed Completed Order
+    db.prepare(
+      `INSERT INTO orders (id, customer_name, customer_phone, original_filename,
+         source_page_count, color_mode, paper_size, sides, status, public_job_code, pickup_code,
+         printing_amount_paise, total_amount_paise, payment_method, cash_confirmed_at_ms,
+         created_at_ms, updated_at_ms, paid_at_ms)
+       VALUES (?, 'Cash Customer', '+919876543211', 'cash.pdf', 3, 'BW', 'A4', 'SINGLE',
+               'COMPLETED', 'PG-CASH01', 'PA-C01', 300, 300, 'CASH', ?, ?, ?, ?)`,
+    ).run(cashOrderId, now - 1000, now - 2000, now, now);
+
+    db.prepare(
+      `INSERT INTO payments (id, order_id, provider, provider_order_id, provider_payment_id,
+         amount_paise, currency, status, verified_at_ms, created_at_ms, updated_at_ms)
+       VALUES (?, ?, 'CASH', 'cash_order_301', 'cash_pay_301', 300, 'INR', 'PAID', ?, ?, ?)`,
+    ).run(padUuid(303), cashOrderId, now - 1000, now - 1000, now - 1000);
+
+    // 2. Insert Razorpay Online Paid Completed Order
+    db.prepare(
+      `INSERT INTO orders (id, customer_name, customer_phone, original_filename,
+         source_page_count, color_mode, paper_size, sides, status, public_job_code, pickup_code,
+         printing_amount_paise, total_amount_paise, payment_method,
+         created_at_ms, updated_at_ms, paid_at_ms)
+       VALUES (?, 'Online Customer', '+919876543212', 'online.pdf', 4, 'BW', 'A4', 'SINGLE',
+               'COMPLETED', 'PG-ONL01', 'PA-O01', 400, 400, 'ONLINE', ?, ?, ?)`,
+    ).run(onlineOrderId, now - 4000, now, now);
+
+    db.prepare(
+      `INSERT INTO payments (id, order_id, provider, provider_order_id, provider_payment_id,
+         amount_paise, currency, status, verified_at_ms, created_at_ms, updated_at_ms)
+       VALUES (?, ?, 'RAZORPAY', 'pay_ord_302', 'pay_id_302', 400, 'INR', 'PAID', ?, ?, ?)`,
+    ).run(padUuid(304), onlineOrderId, now - 4000, now - 4000, now - 4000);
+
+    const result = await repository.list(null);
+    expect(result.orders.length).toBeGreaterThanOrEqual(2);
+
+    const cashOrder = result.orders.find((o) => o.orderId === cashOrderId);
+    expect(cashOrder).toBeDefined();
+    expect(cashOrder?.paymentMethod).toBe("CASH");
+    expect(cashOrder?.paymentStatus).toBe("PAID");
+    expect(cashOrder?.amountPaidPaise).toBe(300);
+    expect(cashOrder?.onlinePaidPaise).toBe(0); // MUST NOT show online paid!
+    expect(cashOrder?.cashConfirmedAt).toBeTruthy();
+
+    const onlineOrder = result.orders.find((o) => o.orderId === onlineOrderId);
+    expect(onlineOrder).toBeDefined();
+    expect(onlineOrder?.paymentMethod).toBe("ONLINE");
+    expect(onlineOrder?.paymentStatus).toBe("PAID");
+    expect(onlineOrder?.amountPaidPaise).toBe(400);
+    expect(onlineOrder?.onlinePaidPaise).toBe(400);
+    expect(onlineOrder?.cashConfirmedAt).toBeNull();
   });
 });
