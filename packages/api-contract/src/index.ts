@@ -786,9 +786,6 @@ export interface AdminLiveOrder {
   amountPaidPaise: number;
   currency: "INR";
   status: string;
-  paymentMethod?: "ONLINE" | "CASH" | "UNKNOWN";
-  paymentStatus?: "PENDING" | "PAID" | "FAILED" | "CANCELLED" | "REFUNDED";
-  cashConfirmedAt?: string | null;
   agentName: string | null;
   printerName: string | null;
   issue: string | null;
@@ -866,12 +863,8 @@ export interface AdminOrderHistoryEntry {
     onlinePricePaise: number;
     handlingMode: string;
   }[];
-  paymentMethod?: "ONLINE" | "CASH" | "UNKNOWN";
-  paymentStatus?: "PENDING" | "PAID" | "FAILED" | "CANCELLED" | "REFUNDED";
-  amountPaidPaise?: number;
   onlinePaidPaise: number;
   dueAtPickupPaise: number;
-  cashConfirmedAt?: string | null;
   status: string;
   printerUsed: string | null;
   fallbackPrinter: string | null;

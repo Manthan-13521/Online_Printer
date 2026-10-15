@@ -353,56 +353,6 @@ export class CustomerService {
   async getDraft(rawToken: string): Promise<CustomerDraftData> {
     const { tokenHash, draft } = await this.requireSummary(rawToken);
     const files = await this.repository.listFiles(tokenHash);
-
-    // Idempotent R2 upload recovery for eligible PENDING files when customers return
-    const nowMs = this.now();
-    if (draft.expiresAtMs > nowMs) {
-      const config = await this.repository.getPublicConfig();
-      const maxBytes = config?.maxPdfSizeBytes ?? MAX_ORDER_UPLOAD_BYTES;
-
-      for (const file of files) {
-        if (file.uploadStatus === "PENDING") {
-          try {
-            const meta = await this.objects.head(file.objectKey);
-            if (meta && meta.size > 0) {
-              const verification = await verifyPdfObject(this.objects, {
-                key: file.objectKey,
-                expectedSizeBytes: file.expectedSizeBytes,
-                maximumSizeBytes: maxBytes,
-              });
-              if (verification.ok) {
-                const expiresAtMs = nowMs + UNPAID_RETENTION_MS;
-                await this.repository.markUploadValidated({
-                  orderId: file.orderId,
-                  uploadId: file.id,
-                  actualSizeBytes: verification.sizeBytes,
-                  nowMs,
-                  expiresAtMs,
-                });
-                file.uploadStatus = "UPLOADED";
-                file.actualSizeBytes = verification.sizeBytes;
-              } else if (verification.code !== "OBJECT_MISSING") {
-                // If corrupt or size mismatch, safely delete corrupt object and record failure
-                try {
-                  await this.objects.delete(file.objectKey);
-                } catch {
-                  // Non-blocking cleanup
-                }
-                await this.repository.markValidationFailure(
-                  file.id,
-                  verification.code,
-                  nowMs,
-                );
-                file.uploadStatus = "FAILED";
-              }
-            }
-          } catch {
-            // Transient object store error; leave in current state
-          }
-        }
-      }
-    }
-
     return {
       customerName: draft.customerName,
       customerPhone: draft.customerPhone,

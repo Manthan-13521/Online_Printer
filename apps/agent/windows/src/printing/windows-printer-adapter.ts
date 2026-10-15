@@ -1,5 +1,4 @@
-import { execFile, spawn } from "node:child_process";
-import * as fs from "node:fs";
+import { execFile } from "node:child_process";
 import * as net from "node:net";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -100,61 +99,6 @@ const defaultPowerShellExecutor: PowerShellExecutor = async (
   );
   return stdout;
 };
-
-export function resolveSpoolerHelperPath(): string | null {
-  const currentDir =
-    typeof __dirname !== "undefined"
-      ? __dirname
-      : path.dirname(fileURLToPath(import.meta.url));
-  const candidates = [
-    process.env.PRINTGO_SPOOLER_HELPER_PATH,
-    path.resolve(currentDir, "../../bin/printgo-spooler.exe"),
-    path.resolve(currentDir, "../bin/printgo-spooler.exe"),
-    path.resolve(process.cwd(), "apps/agent/windows/bin/printgo-spooler.exe"),
-    path.resolve(process.cwd(), "bin/printgo-spooler.exe"),
-    path.resolve(path.dirname(process.execPath), "printgo-spooler.exe"),
-  ].filter((p): p is string => Boolean(p));
-
-  for (const cand of candidates) {
-    if (fs.existsSync(cand)) {
-      return cand;
-    }
-  }
-  return null;
-}
-
-export function resolveSumatraPath(): string | null {
-  const currentDir =
-    typeof __dirname !== "undefined"
-      ? __dirname
-      : path.dirname(fileURLToPath(import.meta.url));
-  const candidates = [
-    process.env.PRINTGO_SUMATRA_PATH,
-    path.resolve(path.dirname(process.execPath), "SumatraPDF.exe"),
-    path.resolve(process.cwd(), "SumatraPDF.exe"),
-    path.resolve(currentDir, "../../vendor/SumatraPDF.exe"),
-    process.env.ProgramFiles
-      ? path.join(process.env.ProgramFiles, "SumatraPDF", "SumatraPDF.exe")
-      : null,
-    process.env["ProgramFiles(x86)"]
-      ? path.join(
-          process.env["ProgramFiles(x86)"],
-          "SumatraPDF",
-          "SumatraPDF.exe",
-        )
-      : null,
-    process.env.LOCALAPPDATA
-      ? path.join(process.env.LOCALAPPDATA, "SumatraPDF", "SumatraPDF.exe")
-      : null,
-  ].filter((p): p is string => Boolean(p));
-
-  for (const cand of candidates) {
-    if (fs.existsSync(cand)) {
-      return cand;
-    }
-  }
-  return null;
-}
 
 interface CimPrinterOutput {
   Name: string;
@@ -517,33 +461,6 @@ Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $printer } | Select-O
       return cached.status;
     }
 
-    // Fast path: query native Win32 spooler helper when running in live Windows environment (< 50ms)
-    if (this.executor === defaultPowerShellExecutor) {
-      const helper = resolveSpoolerHelperPath();
-      if (helper) {
-        try {
-          const { stdout } = await execFileAsync(helper, ["status", printerId]);
-          const parsed = JSON.parse(stdout.trim()) as {
-            availability?: "ONLINE" | "OFFLINE" | "BLOCKED" | "UNKNOWN";
-            message?: string;
-          };
-          if (parsed && parsed.availability) {
-            const status: PrinterStatus = {
-              availability: parsed.availability,
-              ...(parsed.message ? { message: parsed.message } : {}),
-            };
-            this.statusCache.set(printerId, {
-              status,
-              cachedAtMs: Date.now(),
-            });
-            return status;
-          }
-        } catch {
-          // Native helper failed; safely fall back to PowerShell
-        }
-      }
-    }
-
     const escapedName = printerId.replace(/'/g, "''");
     const psCommand = `
 $printer = '${escapedName}'
@@ -570,196 +487,6 @@ Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $printer } | Select-O
         message: err instanceof Error ? err.message : String(err),
       };
     }
-  }
-
-  private async submitPdfJobDirect(
-    submission: PrintSubmission,
-    printerName: string,
-    settingsString: string,
-    docIdentifier: string,
-    sumatraPath: string,
-    spoolerHelperPath: string,
-  ): Promise<SubmittedPrintJob> {
-    // 1. Fresh pre-submission hardware readiness check via native Win32 Spooler (< 50ms)
-    try {
-      const { stdout: statusOut } = await execFileAsync(spoolerHelperPath, [
-        "status",
-        printerName,
-      ]);
-      const statusParsed = JSON.parse(statusOut.trim()) as {
-        availability?: string;
-        message?: string;
-      };
-      if (
-        !statusParsed ||
-        statusParsed.availability === "OFFLINE" ||
-        statusParsed.availability === "BLOCKED"
-      ) {
-        throw new Error(
-          `Printer readiness could not be confirmed before submission: ${statusParsed?.message ?? statusParsed?.availability ?? "Not ready"}`,
-        );
-      }
-    } catch (err: unknown) {
-      if (err instanceof Error && err.message.includes("readiness")) throw err;
-      throw new Error(
-        `Printer readiness could not be confirmed before submission.`,
-        { cause: err },
-      );
-    }
-
-    // 2. Query pre-submission spooler jobs
-    let beforeIds: number[] = [];
-    try {
-      const { stdout: jobsOut } = await execFileAsync(spoolerHelperPath, [
-        "jobs",
-        printerName,
-      ]);
-      const parsedJobs = JSON.parse(jobsOut.trim()) as Array<{ JobId: number }>;
-      beforeIds = parsedJobs.map((j) => j.JobId);
-    } catch {
-      beforeIds = [];
-    }
-
-    // 3. Launch SumatraPDF directly (< 15ms)
-    const args = [
-      "-print-to",
-      printerName,
-      "-print-settings",
-      settingsString,
-      "-silent",
-      "-exit-on-print",
-      submission.localPdfPath,
-    ];
-    const processStartedAtMs = Date.now();
-    const proc = spawn(sumatraPath, args, {
-      windowsHide: true,
-      stdio: "ignore",
-    });
-
-    let spoolCapturedAtMs: number | null = null;
-    let matchedJobId: string | null = null;
-    const fileName = path.basename(submission.localPdfPath);
-    const fileNameWithoutExt = path.basename(
-      submission.localPdfPath,
-      path.extname(submission.localPdfPath),
-    );
-
-    const findJob = async (): Promise<string | null> => {
-      try {
-        const { stdout } = await execFileAsync(spoolerHelperPath, [
-          "jobs",
-          printerName,
-        ]);
-        const jobs = JSON.parse(stdout.trim()) as Array<{
-          JobId: number;
-          Document?: string;
-        }>;
-        const newJobs = jobs.filter((j) => !beforeIds.includes(j.JobId));
-        if (newJobs.length > 0) {
-          const titleMatch = newJobs.find(
-            (j) =>
-              j.Document &&
-              (j.Document.includes(docIdentifier) ||
-                j.Document.includes(fileNameWithoutExt) ||
-                j.Document.includes(fileName)),
-          );
-          const chosen = titleMatch ?? newJobs[0];
-          return chosen ? String(chosen.JobId) : null;
-        }
-      } catch {
-        // Safe check
-      }
-      return null;
-    };
-
-    // Poll while process is running to catch jobs before fast despool
-    const startTime = Date.now();
-    while (
-      proc.exitCode === null &&
-      !proc.killed &&
-      Date.now() - startTime < 25000
-    ) {
-      await new Promise((r) => setTimeout(r, 60));
-      const found = await findJob();
-      if (found) {
-        matchedJobId = found;
-        spoolCapturedAtMs = Date.now();
-        break;
-      }
-    }
-
-    // Await process exit
-    await new Promise<void>((resolve, reject) => {
-      if (proc.exitCode !== null) return resolve();
-      const timer = setTimeout(
-        () => {
-          try {
-            proc.kill();
-          } catch {
-            // ignore
-          }
-          if (!matchedJobId) {
-            reject(
-              new Error("SumatraPDF print process timed out after 30 seconds."),
-            );
-          } else {
-            resolve();
-          }
-        },
-        matchedJobId ? 45000 : 15000,
-      );
-
-      proc.on("exit", (code) => {
-        clearTimeout(timer);
-        if (code !== 0 && !matchedJobId) {
-          reject(new Error(`SumatraPDF exited with error code ${code}`));
-        } else {
-          resolve();
-        }
-      });
-      proc.on("error", (err) => {
-        clearTimeout(timer);
-        reject(err);
-      });
-    });
-
-    // Brief post-exit poll if not caught while running
-    if (!matchedJobId) {
-      for (let i = 0; i < 15; i++) {
-        await new Promise((r) => setTimeout(r, 60));
-        const found = await findJob();
-        if (found) {
-          matchedJobId = found;
-          spoolCapturedAtMs = Date.now();
-          break;
-        }
-      }
-    }
-
-    const acceptedAtMs = Date.now();
-    if (matchedJobId) {
-      return {
-        spoolJobId: matchedJobId,
-        engineUsed: "sumatrapdf",
-        fastDespooled: false,
-        timings: {
-          processStartedAtMs,
-          spoolCapturedAtMs,
-          acceptedAtMs,
-        },
-      };
-    }
-
-    return {
-      spoolJobId: `unobserved-${Date.now()}`,
-      engineUsed: "sumatrapdf",
-      fastDespooled: false,
-      timings: {
-        processStartedAtMs,
-        spoolCapturedAtMs: null,
-        acceptedAtMs,
-      },
-    };
   }
 
   async submitPdfJob(submission: PrintSubmission): Promise<SubmittedPrintJob> {
@@ -810,26 +537,6 @@ Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $printer } | Select-O
         submission.localPdfPath,
         path.extname(submission.localPdfPath),
       );
-
-    // Fast path: direct SumatraPDF process launch + native spool correlation (< 1.5s total)
-    if (
-      this.executor === defaultPowerShellExecutor &&
-      process.platform === "win32"
-    ) {
-      const sumatraPath = resolveSumatraPath();
-      const helper = resolveSpoolerHelperPath();
-
-      if (sumatraPath && helper) {
-        return this.submitPdfJobDirect(
-          submission,
-          settings.printerName,
-          settingsString,
-          docIdentifier,
-          sumatraPath,
-          helper,
-        );
-      }
-    }
 
     const escapedPrinterName = settings.printerName.replace(/'/g, "''");
     const escapedPdfPath = submission.localPdfPath.replace(/'/g, "''");
@@ -1079,37 +786,6 @@ if ($matchedJob) {
         message:
           "Spool job ID was unobserved or non-numeric; cannot verify completion from spooler queue absence.",
       };
-    }
-
-    // Fast path: query native Win32 spooler helper when running in live Windows environment (< 50ms)
-    if (this.executor === defaultPowerShellExecutor) {
-      const helper = resolveSpoolerHelperPath();
-      if (helper) {
-        try {
-          const { stdout } = await execFileAsync(helper, [
-            "job-status",
-            printerId,
-            spoolJobId,
-          ]);
-          const parsed = JSON.parse(stdout.trim()) as {
-            state?: PrintJobStatus["state"];
-            failureCode?: PrintJobStatus["failureCode"];
-            message?: string;
-          };
-          if (parsed && parsed.state) {
-            return {
-              state: parsed.state,
-              spoolJobId,
-              ...(parsed.failureCode
-                ? { failureCode: parsed.failureCode }
-                : {}),
-              ...(parsed.message ? { message: parsed.message } : {}),
-            };
-          }
-        } catch {
-          // Fall back to PowerShell
-        }
-      }
     }
 
     const escapedPrinterName = printerId.replace(/'/g, "''");

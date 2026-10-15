@@ -94,24 +94,6 @@ if (process.platform === "win32") {
     { stdio: "inherit" },
   );
   console.log(`[Build Agent] Successfully created ${exePath}`);
-
-  const cscPath =
-    "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe";
-  const helperSrc = path.resolve(agentDir, "native/spooler-helper.cs");
-  const helperDist = path.resolve(distDir, "printgo-spooler.exe");
-  const helperBin = path.resolve(agentDir, "bin/printgo-spooler.exe");
-  if (fs.existsSync(cscPath) && fs.existsSync(helperSrc)) {
-    console.log("[Build Agent] Compiling native Win32 printgo-spooler.exe...");
-    fs.mkdirSync(path.resolve(agentDir, "bin"), { recursive: true });
-    execSync(
-      `"${cscPath}" /nologo /optimize /target:exe /out:"${helperBin}" "${helperSrc}"`,
-      { stdio: "inherit" },
-    );
-    fs.copyFileSync(helperBin, helperDist);
-    console.log(
-      `[Build Agent] Successfully created ${helperBin} and ${helperDist}`,
-    );
-  }
 } else {
   console.log(`[Build Agent] Host OS is ${process.platform} (non-Windows).`);
   console.log(

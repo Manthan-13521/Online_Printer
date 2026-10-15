@@ -85,15 +85,13 @@ function createD1(db: DatabaseSync): D1Database {
 }
 
 function loadAllMigrations(db: DatabaseSync) {
-  const dir = new URL("../../../../../database/migrations", import.meta.url);
+  const dir = new URL("../../../../../database/migrations", import.meta.url)
+    .pathname;
   const files = readdirSync(dir)
     .filter((f) => f.endsWith(".sql"))
     .sort();
   for (const f of files) {
-    const sql = readFileSync(
-      new URL(`../../../../../database/migrations/${f}`, import.meta.url),
-      "utf8",
-    );
+    const sql = readFileSync(`${dir}/${f}`, "utf8");
     db.exec(sql);
   }
 }

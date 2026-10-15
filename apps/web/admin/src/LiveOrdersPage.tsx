@@ -748,46 +748,6 @@ export function LiveOrdersPage({
                             ⚡ Priority
                           </span>
                         ) : null}
-                        {order.paymentMethod === "CASH" ? (
-                          <span
-                            style={{
-                              fontWeight: 700,
-                              padding: "0.1rem 0.5rem",
-                              borderRadius: "4px",
-                              backgroundColor: "#dcfce7",
-                              color: "#166534",
-                              fontSize: "0.85rem",
-                            }}
-                          >
-                            💵 Cash
-                          </span>
-                        ) : order.paymentMethod === "ONLINE" ? (
-                          <span
-                            style={{
-                              fontWeight: 700,
-                              padding: "0.1rem 0.5rem",
-                              borderRadius: "4px",
-                              backgroundColor: "#e0f2fe",
-                              color: "#0369a1",
-                              fontSize: "0.85rem",
-                            }}
-                          >
-                            💳 Online
-                          </span>
-                        ) : (
-                          <span
-                            style={{
-                              fontWeight: 700,
-                              padding: "0.1rem 0.5rem",
-                              borderRadius: "4px",
-                              backgroundColor: "#fef3c7",
-                              color: "#92400e",
-                              fontSize: "0.85rem",
-                            }}
-                          >
-                            ⚠️ Unknown Method
-                          </span>
-                        )}
                       </div>
                       <h2>{order.customerName}</h2>
                     </div>
@@ -856,27 +816,9 @@ export function LiveOrdersPage({
                       <dd>{order.customerPhone}</dd>
                     </div>
                     <div>
-                      <dt>Payment</dt>
-                      <dd>
-                        {order.paymentMethod === "CASH"
-                          ? "Cash (Counter)"
-                          : order.paymentMethod === "ONLINE"
-                            ? "Online (Razorpay)"
-                            : "Unknown / Unset"}
-                      </dd>
-                    </div>
-                    <div>
                       <dt>Paid</dt>
                       <dd>{money(order.amountPaidPaise)}</dd>
                     </div>
-                    {order.cashConfirmedAt ? (
-                      <div>
-                        <dt>Cash Confirmed</dt>
-                        <dd>
-                          {new Date(order.cashConfirmedAt).toLocaleTimeString()}
-                        </dd>
-                      </div>
-                    ) : null}
                     <div>
                       <dt>Agent</dt>
                       <dd>{order.agentName ?? "Not assigned"}</dd>

@@ -203,46 +203,6 @@ export function OrderHistoryPage({
                       Manual
                     </span>
                   ) : null}
-                  {order.paymentMethod === "CASH" ? (
-                    <span
-                      style={{
-                        fontWeight: 600,
-                        padding: "0.1rem 0.5rem",
-                        borderRadius: "4px",
-                        backgroundColor: "#dcfce7",
-                        color: "#166534",
-                        fontSize: "0.85rem",
-                      }}
-                    >
-                      💵 Cash
-                    </span>
-                  ) : order.paymentMethod === "ONLINE" ? (
-                    <span
-                      style={{
-                        fontWeight: 600,
-                        padding: "0.1rem 0.5rem",
-                        borderRadius: "4px",
-                        backgroundColor: "#e0f2fe",
-                        color: "#0369a1",
-                        fontSize: "0.85rem",
-                      }}
-                    >
-                      💳 Online
-                    </span>
-                  ) : (
-                    <span
-                      style={{
-                        fontWeight: 600,
-                        padding: "0.1rem 0.5rem",
-                        borderRadius: "4px",
-                        backgroundColor: "#fef3c7",
-                        color: "#92400e",
-                        fontSize: "0.85rem",
-                      }}
-                    >
-                      ⚠️ Unknown
-                    </span>
-                  )}
                 </div>
                 <h2 style={{ margin: "0.25rem 0 0", fontSize: "1.2rem" }}>
                   {order.customerName ||
@@ -298,25 +258,11 @@ export function OrderHistoryPage({
                 </div>
               ) : null}
               <div>
-                <dt style={{ fontSize: "0.86rem" }}>
-                  {order.paymentMethod === "CASH"
-                    ? "Cash Paid"
-                    : order.paymentMethod === "ONLINE"
-                      ? "Online Paid"
-                      : "Paid Amount"}
-                </dt>
+                <dt style={{ fontSize: "0.86rem" }}>Online Paid</dt>
                 <dd style={{ fontSize: "1.0rem", fontWeight: 600 }}>
-                  {amount(order.amountPaidPaise ?? order.onlinePaidPaise)}
+                  {amount(order.onlinePaidPaise)}
                 </dd>
               </div>
-              {order.cashConfirmedAt ? (
-                <div>
-                  <dt style={{ fontSize: "0.86rem" }}>Cash Confirmed</dt>
-                  <dd style={{ fontSize: "1.0rem" }}>
-                    {time(order.cashConfirmedAt)}
-                  </dd>
-                </div>
-              ) : null}
               {order.dueAtPickupPaise > 0 ? (
                 <div>
                   <dt style={{ fontSize: "0.86rem" }}>Due at Pickup</dt>
