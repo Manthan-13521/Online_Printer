@@ -50,9 +50,19 @@ namespace PrintGo.ControlCenter
         private string agentExePath;
         private string sumatraExePath;
 
+        private static System.Threading.Mutex singleInstanceMutex;
+
         [STAThread]
         public static void Main(string[] args)
         {
+            bool createdNew;
+            singleInstanceMutex = new System.Threading.Mutex(true, "PrintGo_ControlCenter_SingleInstance_Mutex", out createdNew);
+            if (!createdNew)
+            {
+                // Another instance of Control Center is already running. Exit cleanly.
+                return;
+            }
+
             try
             {
                 Application.EnableVisualStyles();
@@ -77,7 +87,14 @@ namespace PrintGo.ControlCenter
                 var form = new ControlCenterForm(startMinimized, pairUrl);
                 Application.Run(form);
             }
-            catch { }
+            finally
+            {
+                if (singleInstanceMutex != null)
+                {
+                    try { singleInstanceMutex.ReleaseMutex(); } catch { }
+                    singleInstanceMutex.Dispose();
+                }
+            }
         }
 
         public ControlCenterForm(bool startMinimized, string pairUrl)

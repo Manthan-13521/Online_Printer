@@ -100,3 +100,11 @@ This production push delivers:
 - **`pnpm lint`:** **Exit code 0** (`eslint . --max-warnings 0` passed across monorepo).
 - **`vitest run`:** 100% tests passing (19 cash tests, 22 customer tests, 71 Windows agent tests, zero overlaps).
 - **`build:agent:windows`:** Successful SEA binary build (`PrintGo-Agent.exe` and `printgo-spooler.exe`).
+
+---
+
+## 6. CI Pipeline Hardening
+
+- **Test Fixture Alignment (`apps/api/worker/src/cleanup/repository.test.ts`):** Included migrations `0020_order_retention_duration.sql` through `0034_d1_live_orders_index.sql` in test fixtures so in-memory D1 emulation includes `o.payment_method` and all indexes.
+- **Agent Single-Instance Enforcement (`apps/agent/windows/control-center/PrintGoControlCenter.cs`):** Restored `singleInstanceMutex` ("PrintGo_ControlCenter_SingleInstance_Mutex") to ensure secondary process instances cleanly exit as required by Windows CI smoke tests.
+- **Cross-Platform Test URL Resolution (`apps/api/worker/src/printing/phase8-final-audit-e2e.test.ts`):** Passed `URL` instances directly to `readdirSync` and `readFileSync` for reliable execution on both Windows and Linux CI runners.
