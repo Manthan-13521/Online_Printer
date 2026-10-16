@@ -1059,58 +1059,7 @@ export function ManualOrdersPage({
 
       {/* ── Modern Two-Column Layout ── */}
       <div className="cash-manual-two-col">
-        {/* Left Column: Pending Cash Orders (Green Theme) */}
-        <section className="cash-orders-column column-container green-column">
-          <div className="column-header">
-            <div className="column-icon-circle green-icon-circle">
-              <span className="rupee-icon" aria-hidden="true">
-                ₹
-              </span>
-            </div>
-            <div className="column-title-box">
-              <div className="column-title-row">
-                <h2 className="column-main-heading">Pending Cash Orders</h2>
-                <span className="count-badge green-count-badge">
-                  {activeCashOrders.length}
-                </span>
-              </div>
-              <p className="column-subtext">
-                Orders waiting for cash payment at counter.
-              </p>
-            </div>
-          </div>
-
-          {cashError ? (
-            <p
-              className="form-error"
-              role="alert"
-              style={{ marginBottom: "1rem" }}
-            >
-              {cashError}
-            </p>
-          ) : null}
-
-          {/* Strict Empty State Condition: Never rendered beneath active orders */}
-          {activeCashOrders.length === 0 ? (
-            <CashEmptyState />
-          ) : (
-            <div className="orders-cards-list">
-              {activeCashOrders.map((order) => (
-                <CashOrderCard
-                  key={order.orderId}
-                  order={order}
-                  nowMs={nowMs}
-                  onConfirm={(o) => {
-                    setConfirmCashError(null);
-                    setConfirmingCashOrder(o);
-                  }}
-                />
-              ))}
-            </div>
-          )}
-        </section>
-
-        {/* Right Column: Manual & Finishing Orders (Blue Theme) */}
+        {/* Left Column: Manual & Finishing Orders (Blue Theme) */}
         <section className="manual-orders-column column-container blue-column">
           <div className="column-header">
             <div className="column-icon-circle blue-icon-circle">
@@ -1186,6 +1135,57 @@ export function ManualOrdersPage({
                 />
               )}
             </>
+          )}
+        </section>
+
+        {/* Right Column: Pending Cash Orders (Green Theme) */}
+        <section className="cash-orders-column column-container green-column">
+          <div className="column-header">
+            <div className="column-icon-circle green-icon-circle">
+              <span className="rupee-icon" aria-hidden="true">
+                ₹
+              </span>
+            </div>
+            <div className="column-title-box">
+              <div className="column-title-row">
+                <h2 className="column-main-heading">Pending Cash Orders</h2>
+                <span className="count-badge green-count-badge">
+                  {activeCashOrders.length}
+                </span>
+              </div>
+              <p className="column-subtext">
+                Orders waiting for cash payment at counter.
+              </p>
+            </div>
+          </div>
+
+          {cashError ? (
+            <p
+              className="form-error"
+              role="alert"
+              style={{ marginBottom: "1rem" }}
+            >
+              {cashError}
+            </p>
+          ) : null}
+
+          {/* Strict Empty State Condition: Never rendered beneath active orders */}
+          {activeCashOrders.length === 0 ? (
+            <CashEmptyState />
+          ) : (
+            <div className="orders-cards-list">
+              {activeCashOrders.map((order) => (
+                <CashOrderCard
+                  key={order.orderId}
+                  order={order}
+                  nowMs={nowMs}
+                  onConfirm={(o) => {
+                    setConfirmCashError(null);
+                    setConfirmingCashOrder(o);
+                  }}
+                />
+              ))}
+            </div>
           )}
         </section>
       </div>

@@ -267,17 +267,28 @@ button:disabled {
   grid-area: side;
   border-right: 1px solid #dce3ee;
   background: white;
+  display: flex;
+  flex-direction: column;
 }
 .sidebar nav {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
   padding: 1.25rem 0.75rem;
 }
 .sidebar-nav-list {
   display: flex;
   flex-direction: column;
+  flex: 1;
   gap: 0.35rem;
   margin: 0;
   padding: 0;
   list-style: none;
+}
+.sidebar-nav-group {
+  margin-top: auto;
+  padding-top: 0.85rem;
+  border-top: 1px solid #e2e8f0;
 }
 .sidebar-nav-link {
   display: flex;
@@ -1120,12 +1131,6 @@ legend {
 @media (max-width: 960px) {
   .cash-manual-two-col {
     grid-template-columns: 1fr;
-  }
-  .cash-orders-column {
-    order: 1; /* On mobile: Cash orders stack first for quick counter approval */
-  }
-  .manual-orders-column {
-    order: 2; /* Manual orders stack below */
   }
 }
 .column-container {

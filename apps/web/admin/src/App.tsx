@@ -52,7 +52,7 @@ export const settingsNavigation: NavItem[] = [
     path: "/admin/shop-settings",
     icon: "shop-settings",
   },
-  { label: "Security", path: "/admin/security", icon: "security" },
+  { label: "Data & Security", path: "/admin/security", icon: "security" },
 ];
 
 const allKnownRoutes: NavItem[] = [
@@ -434,9 +434,11 @@ function SecurityPage({
   return (
     <div className="page-stack">
       <div>
-        <p className="eyebrow">Account protection</p>
-        <h1>Security</h1>
-        <p className="page-intro">Keep your PrintGo admin account secure.</p>
+        <p className="eyebrow">Data governance &amp; account protection</p>
+        <h1>Data &amp; Security</h1>
+        <p className="page-intro">
+          Keep your PrintGo admin account and customer print data secure.
+        </p>
       </div>
       {message ? (
         <p className="notice" role="status">

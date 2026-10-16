@@ -57,7 +57,7 @@ describe("ManualOrdersPage Redesign", () => {
     expect(screen.getByText("No manual or finishing orders")).toBeTruthy();
   });
 
-  it("renders cash order on the left column without a Contact button and allows confirmation", async () => {
+  it("renders cash order on the right column without a Contact button and allows confirmation", async () => {
     const cashOrder = {
       orderId: "order-cash-1",
       publicJobCode: "CASH-842",
@@ -128,7 +128,7 @@ describe("ManualOrdersPage Redesign", () => {
     });
   });
 
-  it("renders manual order on the right column without the MJ avatar and allows marking finished", async () => {
+  it("renders manual order on the left column without the MJ avatar and allows marking finished", async () => {
     const manualOrder = {
       orderId: "order-manual-1",
       pickupCode: "PA-004",

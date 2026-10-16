@@ -20,9 +20,9 @@ export interface WindowsAgentReleaseConfig {
   /** Human-readable status note */
   statusNote: string;
   /** SHA-256 Checksum */
-  sha256?: string;
+  sha256?: string | undefined;
   /** Optional zip bundle download URL */
-  zipDownloadUrl?: string;
+  zipDownloadUrl?: string | undefined;
 }
 
 export function getWindowsAgentReleaseConfig(): WindowsAgentReleaseConfig {
@@ -57,7 +57,7 @@ export function getWindowsAgentReleaseConfig(): WindowsAgentReleaseConfig {
       isLive: true,
       statusNote: "Installer provided by your shop technician",
       sha256: hash,
-      zipDownloadUrl: zipEnv || undefined,
+      ...(zipEnv ? { zipDownloadUrl: zipEnv } : {}),
     };
   }
   return {
