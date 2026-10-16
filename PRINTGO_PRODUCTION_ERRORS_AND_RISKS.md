@@ -1,6 +1,7 @@
 # PRINTGO — PRODUCTION ERRORS, ANOMALIES & RISK REGISTER
+
 **Phase 9 Real Production Forensic Reliability Assessment**
-*Production Window: October 14, 2026 · 19:10:00 to 20:10:00 IST (13:40:00Z to 14:40:00Z UTC)*
+_Production Window: October 14, 2026 · 19:10:00 to 20:10:00 IST (13:40:00Z to 14:40:00Z UTC)_
 
 ---
 
@@ -24,22 +25,23 @@ graph TD
     end
 ```
 
-| Risk ID | Category | Severity | Summary | Status in Test Window |
-| :--- | :--- | :---: | :--- | :--- |
-| **RISK-01** | Database | **HIGH** | `strftime()` function prevents B-tree index use on `orders` and `payments` | **Observed Active** (Scanned 114 rows/exec) |
-| **RISK-02** | Database | **HIGH** | Correlated scalar subqueries in Order History pagination scan entire dataset | **Observed Active** (Scanned 741 rows/exec; 23.7K reads) |
-| **RISK-03** | DO / Network | **MEDIUM** | WebSocket client closures logged as HTTP errors (`responseStreamDisconnected`) | **Observed Active** (73 disconnect events logged) |
-| **RISK-04** | Database | **MEDIUM** | Scheduled cleanup preview runs every 5 min even when no orders are pending | **Observed Active** (9,528 reads/hour background overhead) |
-| **RISK-05** | Agent / UI | **LOW** | 65s D1 write-throttle creates apparent 48–90s "Last seen" jitter in Admin UI | **Expected Design Behavior** (Throttling working as intended) |
-| **SEC-01** | Security | **PASSED** | Customer PDF retention & pre-signed URL expiry lifecycle | **100% Verified** (First order auto-purged at 21:21 IST) |
-| **PAY-01** | Payments | **PASSED** | Razorpay signature verification & Cash order state transitions | **100% Verified** (Zero unauthorized prints, zero leaks) |
-| **PRN-01** | Printing | **PASSED** | Windows spooler job correlation & claim lease renewal | **100% Verified** (All 23 jobs reached physical printer) |
+| Risk ID     | Category     |  Severity  | Summary                                                                        | Status in Test Window                                         |
+| :---------- | :----------- | :--------: | :----------------------------------------------------------------------------- | :------------------------------------------------------------ |
+| **RISK-01** | Database     |  **HIGH**  | `strftime()` function prevents B-tree index use on `orders` and `payments`     | **Observed Active** (Scanned 114 rows/exec)                   |
+| **RISK-02** | Database     |  **HIGH**  | Correlated scalar subqueries in Order History pagination scan entire dataset   | **Observed Active** (Scanned 741 rows/exec; 23.7K reads)      |
+| **RISK-03** | DO / Network | **MEDIUM** | WebSocket client closures logged as HTTP errors (`responseStreamDisconnected`) | **Observed Active** (73 disconnect events logged)             |
+| **RISK-04** | Database     | **MEDIUM** | Scheduled cleanup preview runs every 5 min even when no orders are pending     | **Observed Active** (9,528 reads/hour background overhead)    |
+| **RISK-05** | Agent / UI   |  **LOW**   | 65s D1 write-throttle creates apparent 48–90s "Last seen" jitter in Admin UI   | **Expected Design Behavior** (Throttling working as intended) |
+| **SEC-01**  | Security     | **PASSED** | Customer PDF retention & pre-signed URL expiry lifecycle                       | **100% Verified** (First order auto-purged at 21:21 IST)      |
+| **PAY-01**  | Payments     | **PASSED** | Razorpay signature verification & Cash order state transitions                 | **100% Verified** (Zero unauthorized prints, zero leaks)      |
+| **PRN-01**  | Printing     | **PASSED** | Windows spooler job correlation & claim lease renewal                          | **100% Verified** (All 23 jobs reached physical printer)      |
 
 ---
 
 ## 2. DETAILED EVIDENCE-BACKED ANOMALY FINDINGS
 
 ### RISK-01: Unindexed `strftime()` Full-Table Scan in Admin Dashboard [HIGH]
+
 - **Severity**: **HIGH**
 - **Evidence**: Cloudflare D1 Query Insights recorded query fingerprint:
   `SELECT COALESCE((SELECT created_count FROM daily_order_stats WHERE date_key = ?), (SELECT COUNT(*) FROM orders WHERE strftime('%Y-%m-%d', datetime(created_at_ms / 1000 + 19800, 'unixepoch')) = ?))` executed 38 times, consuming **4,332 rows read** (avg 114 rows/exec) in 1 hour.
@@ -53,6 +55,7 @@ graph TD
 ---
 
 ### RISK-02: Order History Pagination Correlated Subqueries Scalability Bottleneck [HIGH]
+
 - **Severity**: **HIGH**
 - **Evidence**: Query fingerprint `WITH page AS (SELECT id, created_at_ms FROM orders WHERE (created_at_ms, id) < (?, ?) AND status NOT IN (...) ...)` was executed 32 times and consumed **23,730 rows read** (avg **741.6 rows read per execution**). This single query accounted for **50.7% of all D1 rows read** during the production test!
 - **Timestamp**: Observed primarily between 19:40 and 20:05 IST during Admin post-test review.
@@ -69,6 +72,7 @@ graph TD
 ---
 
 ### RISK-03: Durable Object WebSocket Disconnections Logged as Errors [MEDIUM]
+
 - **Severity**: **MEDIUM**
 - **Evidence**: Cloudflare `durableObjectsInvocationsAdaptiveGroups` recorded:
   - 46 requests with status `responseStreamDisconnected` (wall time 2,060 seconds).
@@ -84,6 +88,7 @@ graph TD
 ---
 
 ### RISK-04: Background Scheduled Cleanup Preview Scan Overhead [MEDIUM]
+
 - **Severity**: **MEDIUM**
 - **Evidence**: Scheduled cron `*/5 * * * *` fired 12 times in the hour, consuming **~9,528 rows read** (avg 794 rows/run) even during periods when zero orders were due for deletion.
 - **Timestamp**: Every 5 minutes at `13:40:59`, `13:45:59`, `13:50:59`, etc.
@@ -96,6 +101,7 @@ graph TD
 ---
 
 ### RISK-05: Admin "Last Seen" Display Jitter (48–90s) [LOW / EXPLANATORY]
+
 - **Severity**: **LOW (Design Feature, Not a Defect)**
 - **Evidence**: Admin UI intermittently reported agent "Last seen 48s ago", "Last seen 72s ago", or "Last seen 90s ago".
 - **Timestamp**: Observed consistently throughout the production test.
@@ -110,12 +116,14 @@ graph TD
 ## 3. SUBSYSTEM VERIFICATION AUDIT MATRIX
 
 ### A. Payment Subsystem Verification
+
 - [x] **Razorpay Signature Verification**: Verified via Web Crypto API HMAC-SHA256 in [payments/service.ts](file:///Users/manthanjaiswal/Printe_Go_/apps/api/worker/src/payments/service.ts). Zero signature failures.
 - [x] **Webhook Duplicate Processing**: Idempotency verified via `payment_provider_events` unique constraint. Zero duplicate captures.
 - [x] **Cash Confirmation Enforcement**: All 12 cash orders remained in `CASH_PENDING` until explicit admin action at `/api/admin/orders/:id/confirm-cash`. Zero cash orders entered the print queue prematurely.
 - [x] **Payment State Synchronization**: All 22 orders completed with matching order and payment statuses (`PAID` / `COMPLETED`). Zero orphaned payments.
 
 ### B. Printing Subsystem Verification
+
 - [x] **Delay Between Payment and Spooling**: Average delay was **28 to 45 seconds** (including download of PDF from R2, WMI printer readiness preflight, and SumatraPDF execution).
 - [x] **Job Pickup Reliability**: Agent picked up newly queued orders within 2–6 seconds via Durable Object WebSocket wakeups.
 - [x] **Claim Fencing & Locks**: All orders claimed using atomic lease updates with physical device mutex locks (`AGENT_LOCK_...`). Zero duplicate print jobs submitted.
@@ -123,6 +131,7 @@ graph TD
 - [x] **Printer Capability Preflight**: All documents were validated as Black & White A4 simplex before claiming. Verification signed by Admin `bf45cf69...` at 19:57 IST.
 
 ### C. R2 Storage & Privacy Lifecycle Verification
+
 - [x] **Pre-signed PUT URLs**: Customer PDFs uploaded directly to R2 via short-lived pre-signed URLs. Zero customer PDF data passed through Worker memory.
 - [x] **Private Bucket Protection**: Bucket `printgo-pdfs` has public access disabled. All downloads require signed URLs.
 - [x] **Strict 1-Hour Completed Order Retention**: The earliest completed order (`c9d3885c...`, finished at 19:18:45 IST) was automatically purged from D1 and deleted from R2 at 21:21:00 IST by scheduled run `8799480d...`. Zero expired files lingered.

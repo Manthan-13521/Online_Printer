@@ -67,4 +67,26 @@ describe("public tracking page", () => {
     ).toBeTruthy();
     expect(screen.queryByText("Ready for pickup")).toBeNull();
   });
+
+  it("renders recovery actions when order is in a non-standard or failed status", async () => {
+    vi.mocked(customerApi.trackPublic).mockResolvedValueOnce({
+      ...tracking,
+      status: "PRINTER_ISSUE",
+      statusLabel: "Printer Attention",
+      statusMessage: "The shop is attending to the printer.",
+    });
+    const handleBack = vi.fn();
+    render(<PublicTrackingPage pickupCode="PA-001" onBack={handleBack} />);
+    expect(await screen.findByText("Printer Attention")).toBeTruthy();
+    expect(
+      screen.getByText("The shop is attending to the printer."),
+    ).toBeTruthy();
+    const trackAnotherBtn = screen.getByRole("button", {
+      name: "Track Another Order",
+    });
+    expect(trackAnotherBtn).toBeTruthy();
+    trackAnotherBtn.click();
+    expect(handleBack).toHaveBeenCalled();
+    expect(screen.getByRole("link", { name: "Print a Document" })).toBeTruthy();
+  });
 });

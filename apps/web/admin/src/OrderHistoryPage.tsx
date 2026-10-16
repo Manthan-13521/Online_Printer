@@ -3,14 +3,10 @@ import { useEffect, useState } from "react";
 
 import { Pagination } from "./Pagination";
 import { adminApi, AdminApiError, friendlyAdminError } from "./api";
-
-function amount(paise: number): string {
-  return `₹${(paise / 100).toFixed(2)}`;
-}
-
-function time(iso: string | null): string {
-  return iso ? new Date(iso).toLocaleString() : "—";
-}
+import {
+  formatDateTime as time,
+  formatPaise as amount,
+} from "./utils/formatters";
 
 export function OrderHistoryPage({
   onSessionExpired,
@@ -25,6 +21,8 @@ export function OrderHistoryPage({
   const [currentPage, setCurrentPage] = useState(1);
   const [printingOrderId, setPrintingOrderId] = useState<string | null>(null);
   const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null);
+  const [orderToDelete, setOrderToDelete] =
+    useState<AdminOrderHistoryEntry | null>(null);
   const [orderNotice, setOrderNotice] = useState<Record<string, string>>({});
   const PAGE_SIZE = 10;
 
@@ -63,12 +61,8 @@ export function OrderHistoryPage({
     }
   }
 
-  async function handleDeleteOrder(order: AdminOrderHistoryEntry) {
+  async function executeDeleteOrder(order: AdminOrderHistoryEntry) {
     const code = order.pickupCode ?? order.orderId.slice(0, 8);
-    const confirmed = window.confirm(
-      `Permanently delete order ${code} and its customer files? This cannot be undone.`,
-    );
-    if (!confirmed) return;
     setDeletingOrderId(order.orderId);
     setError(null);
     try {
@@ -79,6 +73,7 @@ export function OrderHistoryPage({
           ...prev,
           [order.orderId]: `Order ${code} deleted.`,
         }));
+        setOrderToDelete(null);
       }
     } catch (caught: unknown) {
       if (caught instanceof AdminApiError && caught.status === 401) {
@@ -439,7 +434,7 @@ export function OrderHistoryPage({
                 className="secondary-button compact"
                 style={{ color: "#dc2626", borderColor: "#fca5a5" }}
                 disabled={deletingOrderId === order.orderId}
-                onClick={() => void handleDeleteOrder(order)}
+                onClick={() => setOrderToDelete(order)}
                 title="Permanently delete order and associated customer data"
               >
                 {deletingOrderId === order.orderId ? "Deleting…" : "Delete"}
@@ -458,6 +453,76 @@ export function OrderHistoryPage({
         hasNextPage={Boolean(cursor)}
         itemLabel="orders"
       />
+
+      {orderToDelete ? (
+        <div
+          className="dialog-backdrop"
+          onClick={() => setOrderToDelete(null)}
+          role="presentation"
+        >
+          <div
+            className="dialog-card"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-order-dialog-title"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: "480px" }}
+          >
+            <h2
+              id="delete-order-dialog-title"
+              style={{ color: "#991B1B", margin: "0 0 0.5rem" }}
+            >
+              Delete Order Permanently
+            </h2>
+            <p
+              style={{
+                margin: "0 0 1.25rem",
+                color: "#374151",
+                lineHeight: "1.5",
+              }}
+            >
+              Are you sure you want to permanently delete order{" "}
+              <strong>
+                {orderToDelete.pickupCode ?? orderToDelete.orderId.slice(0, 8)}
+              </strong>{" "}
+              and its uploaded customer files? This action cannot be undone.
+            </p>
+            <div
+              className="dialog-actions"
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: "0.75rem",
+              }}
+            >
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => setOrderToDelete(null)}
+                disabled={deletingOrderId === orderToDelete.orderId}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="primary-button fit"
+                style={{
+                  backgroundColor: "#dc2626",
+                  borderColor: "#dc2626",
+                  color: "#ffffff",
+                  marginTop: 0,
+                }}
+                onClick={() => void executeDeleteOrder(orderToDelete)}
+                disabled={deletingOrderId === orderToDelete.orderId}
+              >
+                {deletingOrderId === orderToDelete.orderId
+                  ? "Deleting…"
+                  : "Delete Permanently"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }

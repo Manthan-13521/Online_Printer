@@ -72,4 +72,3 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           pnpm --filter @printgo/worker exec wrangler deploy
-

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -838,5 +839,410 @@ describe("customer upload app", () => {
       ),
     ).toBeTruthy();
     expect(customerApi.createDraft).not.toHaveBeenCalled();
+  });
+
+  it("handles initial config failure with clear retry button without crashing", async () => {
+    vi.mocked(customerApi.config).mockRejectedValueOnce(
+      new Error("Failed to fetch"),
+    );
+    render(<App />);
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Shop Temporarily Unavailable",
+      }),
+    ).toBeTruthy();
+    const retryBtn = screen.getByRole("button", { name: "Retry Connection" });
+    expect(retryBtn).toBeTruthy();
+
+    // Recovering after config retry
+    vi.mocked(customerApi.config).mockResolvedValueOnce(enabledConfig);
+    await userEvent.click(retryBtn);
+    expect(await screen.findByText("ABC Xerox")).toBeTruthy();
+  });
+
+  it("validates phone number with friendly message and prevents doomed draft request", async () => {
+    const user = userEvent.setup();
+    vi.mocked(customerApi.config).mockResolvedValue(enabledConfig);
+    render(<App />);
+    await screen.findByText("ABC Xerox");
+
+    await user.type(screen.getByLabelText("Name"), "Rahul");
+    await user.type(screen.getByLabelText("Phone"), "1234");
+    fireEvent.blur(screen.getByLabelText("Phone"));
+
+    expect(
+      await screen.findByText(
+        "Enter a valid phone number (at least 6 digits, e.g. 9876543210 or +91 98765 43210).",
+      ),
+    ).toBeTruthy();
+
+    await user.upload(
+      screen.getByLabelText("Choose Files"),
+      new File(["%PDF"], "doc.pdf", { type: "application/pdf" }),
+    );
+
+    fireEvent.submit(
+      screen.getByRole("button", { name: "Review Order" }).closest("form")!,
+    );
+
+    expect(
+      await screen.findByText(
+        "Please enter a valid phone number before continuing.",
+      ),
+    ).toBeTruthy();
+    expect(customerApi.createDraft).not.toHaveBeenCalled();
+  });
+
+  it("handles payment verification network failure with server-authoritative recovery and avoids double charge", async () => {
+    const user = userEvent.setup();
+    vi.mocked(customerApi.config).mockResolvedValue({
+      ...enabledConfig,
+      cashOrdersEnabled: true,
+    });
+    vi.mocked(customerApi.createDraft).mockResolvedValue({
+      draftToken: "token-1",
+      draftExpiresAt: "2026-09-26T00:10:00.000Z",
+      fileId: "file-1",
+      position: 1,
+      upload: {
+        uploadUrl: "https://r2.example/upload",
+        expiresAt: "2026-09-26T00:05:00.000Z",
+        requiredHeaders: {},
+      },
+    });
+    vi.mocked(customerApi.quoteOrder).mockResolvedValue({
+      normalizedSelectedPages: "1-10",
+      selectedPageCount: 10,
+      copies: 1,
+      paperSize: "A4",
+      colorMode: "BW",
+      sides: "SINGLE",
+      printingAmountPaise: 500,
+      serviceChargePaise: 0,
+      totalAmountPaise: 500,
+      currency: "INR",
+      expiresAt: "later",
+      files: [],
+    });
+    vi.mocked(customerApi.createPayment).mockResolvedValue({
+      status: "CHECKOUT_READY",
+      razorpayKeyId: "rzp_test",
+      razorpayOrderId: "order_rzp_1",
+      amountPaise: 500,
+      currency: "INR",
+      shopName: "ABC Xerox",
+      customerName: "Rahul",
+      customerPhone: "9876543210",
+      description: "Print order",
+    });
+
+    // Razorpay mock
+    let capturedHandler:
+      | ((response: {
+          razorpay_order_id: string;
+          razorpay_payment_id: string;
+          razorpay_signature: string;
+        }) => void)
+      | undefined;
+    class MockRazorpay {
+      constructor(options: Record<string, unknown>) {
+        capturedHandler = options.handler as typeof capturedHandler;
+      }
+      open() {}
+      on() {}
+    }
+    const openSpy = vi.spyOn(MockRazorpay.prototype, "open");
+    window.Razorpay = MockRazorpay;
+
+    render(<App />);
+    await screen.findByText("ABC Xerox");
+    await user.type(screen.getByLabelText("Name"), "Rahul");
+    await user.type(screen.getByLabelText("Phone"), "9876543210");
+    await user.upload(
+      screen.getByLabelText("Choose Files"),
+      new File(["%PDF"], "doc.pdf", { type: "application/pdf" }),
+    );
+
+    fireEvent.submit(
+      screen.getByRole("button", { name: "Review Order" }).closest("form")!,
+    );
+    await screen.findByText("Total Amount");
+
+    // Network drops during verifyPayment
+    vi.mocked(customerApi.verifyPayment).mockRejectedValueOnce(
+      new Error("Failed to fetch"),
+    );
+
+    await user.click(screen.getByText(/Pay Online/i));
+    expect(openSpy).toHaveBeenCalled();
+
+    // Trigger Razorpay payment success handler
+    act(() => {
+      capturedHandler?.({
+        razorpay_order_id: "order_rzp_1",
+        razorpay_payment_id: "pay_1",
+        razorpay_signature: "sig_1",
+      });
+    });
+
+    // Verification failed due to network: shows recovery card with "Check Payment Status"
+    expect(
+      await screen.findByText("Payment Verification Pending"),
+    ).toBeTruthy();
+    const checkBtn = screen.getByRole("button", {
+      name: "Check Payment Status",
+    });
+    expect(checkBtn).toBeTruthy();
+    expect(screen.queryByText("Pay Cash at Counter")).toBeNull();
+
+    // Server-authoritative check confirms payment capture via webhook
+    vi.mocked(customerApi.getDraftStatus).mockResolvedValueOnce({
+      orderId: "ord-1",
+      status: "PAID",
+      paymentMethod: "ONLINE",
+      publicJobCode: "JOB-101",
+      pickupCode: "P-101",
+      cashExpiresAtMs: null,
+      cashGraceUntilMs: null,
+    });
+    vi.mocked(customerApi.tracking).mockResolvedValueOnce({
+      jobCode: "JOB-101",
+      pickupCode: "P-101",
+      customerName: "Rahul",
+      paymentStatus: "PAYMENT_RECEIVED",
+      orderStatus: "QUEUED",
+      statusLabel: "In queue",
+      statusMessage: "Queue",
+      submittedAt: "2026-09-26T00:00:00.000Z",
+      paidAt: "2026-09-26T00:01:00.000Z",
+      printSummary: {
+        selectedPages: "1-10",
+        copies: 1,
+        paperSize: "A4",
+        colorMode: "BW",
+        sides: "SINGLE",
+      },
+      amountPaidPaise: 500,
+      currency: "INR",
+      instructions: null,
+      fileRetentionStatus: "TEMPORARILY_RETAINED",
+      timeline: [],
+      trackingExpiresAt: "2026-10-10T00:01:00.000Z",
+    });
+
+    await user.click(checkBtn);
+    expect(customerApi.getDraftStatus).toHaveBeenCalledWith("token-1");
+    // Does NOT call createPayment again (prevents double charge)
+    expect(customerApi.createPayment).toHaveBeenCalledTimes(1);
+  });
+
+  describe("Payment Recovery on Page Refresh", () => {
+    const user = userEvent.setup();
+
+    it("navigates to tracking on refresh when draft status is explicitly confirmed paid/queued", async () => {
+      sessionStorage.setItem("printgo.customerDraftToken", "draft-paid-123");
+      vi.mocked(customerApi.getDraft).mockResolvedValueOnce({
+        customerName: "Suresh Patel",
+        customerPhone: "9876543210",
+        instructions: "Staple together",
+        status: "QUEUED",
+        publicJobCode: "PG-CONF123",
+        files: [],
+      });
+
+      render(<App />);
+      await waitFor(() => {
+        expect(customerApi.getDraft).toHaveBeenCalledWith("draft-paid-123");
+      });
+
+      // Should automatically clean up draft token from sessionStorage
+      expect(sessionStorage.getItem("printgo.customerDraftToken")).toBeNull();
+      // Should auto-navigate to /track/PG-CONF123
+      expect(window.location.pathname).toBe("/track/PG-CONF123");
+    });
+
+    it("restores pending verification recovery card on refresh when checkout was in-flight", async () => {
+      sessionStorage.setItem("printgo.customerDraftToken", "draft-pending-456");
+      sessionStorage.setItem(
+        "printgo.pendingTracking.order_rzp_999",
+        "a".repeat(43),
+      );
+      vi.mocked(customerApi.getDraft).mockResolvedValueOnce({
+        customerName: "Anita Rao",
+        customerPhone: "9876543210",
+        instructions: null,
+        status: "PAYMENT_PENDING",
+        publicJobCode: null,
+        files: [],
+      });
+
+      render(<App />);
+
+      // Shows the pending verification card with Check Payment Status button
+      expect(
+        await screen.findByText("Payment Verification Pending"),
+      ).toBeTruthy();
+      const checkBtn = screen.getByRole("button", {
+        name: "Check Payment Status",
+      });
+      expect(checkBtn).toBeTruthy();
+
+      // Clicking Check Payment Status queries server
+      vi.mocked(customerApi.getDraftStatus).mockResolvedValueOnce({
+        orderId: "ord-999",
+        status: "PRINTING",
+        paymentMethod: "ONLINE",
+        publicJobCode: "PG-PRINT999",
+        pickupCode: "P-999",
+        cashExpiresAtMs: null,
+        cashGraceUntilMs: null,
+      });
+
+      await user.click(checkBtn);
+      expect(customerApi.getDraftStatus).toHaveBeenCalledWith(
+        "draft-pending-456",
+      );
+
+      // Successfully transitioned to tracking page
+      await waitFor(() => {
+        expect(window.location.pathname).toBe("/track/P-999");
+      });
+      expect(sessionStorage.getItem("printgo.customerDraftToken")).toBeNull();
+    });
+
+    it("does not navigate to tracking for unpaid or payment_pending without in-flight checkout", async () => {
+      sessionStorage.setItem("printgo.customerDraftToken", "draft-unpaid-789");
+      vi.mocked(customerApi.getDraft).mockResolvedValueOnce({
+        customerName: "Deepak Kumar",
+        customerPhone: "9876543210",
+        instructions: "Do not fold",
+        status: "UPLOADED",
+        publicJobCode: null,
+        files: [
+          {
+            fileId: "file-789",
+            originalFilename: "report.pdf",
+            sizeBytes: 2048,
+            sourcePageCount: 5,
+            selectedPages: "ALL",
+            copies: 1,
+            paperSize: "A4",
+            colorMode: "BW",
+            sides: "SINGLE",
+            printingAmountPaise: 250,
+            serviceChargePaise: 0,
+            uploadStatus: "UPLOADED",
+          },
+        ],
+      });
+
+      render(<App />);
+      // Restores normal draft session
+      expect(await screen.findByDisplayValue("Deepak Kumar")).toBeTruthy();
+      expect(screen.getByDisplayValue("9876543210")).toBeTruthy();
+      expect(screen.getByText("report.pdf")).toBeTruthy();
+      // Does NOT navigate to tracking
+      expect(window.location.pathname).toBe("/");
+    });
+
+    it("purges draftToken on refresh when draft has expired", async () => {
+      sessionStorage.setItem("printgo.customerDraftToken", "draft-expired-000");
+      vi.mocked(customerApi.getDraft).mockRejectedValueOnce(
+        new Error("DRAFT_EXPIRED"),
+      );
+
+      render(<App />);
+      await waitFor(() => {
+        expect(sessionStorage.getItem("printgo.customerDraftToken")).toBeNull();
+      });
+      // Renders clean upload form
+      expect(screen.getByText("Upload PDFs")).toBeTruthy();
+      expect(window.location.pathname).toBe("/");
+    });
+
+    it("securely renders PublicTrackingPage when private tracking token is missing on refresh", async () => {
+      sessionStorage.setItem(
+        "printgo.customerDraftToken",
+        "draft-webhook-paid",
+      );
+      vi.mocked(customerApi.getDraft).mockResolvedValueOnce({
+        customerName: "Anonymous Customer",
+        customerPhone: "9876543210",
+        instructions: null,
+        status: "QUEUED",
+        publicJobCode: "PG-PUB123",
+        files: [],
+      });
+      vi.mocked(customerApi.trackPublic).mockResolvedValueOnce({
+        pickupCode: "PG-PUB123",
+        status: "QUEUED",
+        statusLabel: "In queue",
+        statusMessage: "Your order is queued for printing.",
+        isPriority: false,
+        totalFiles: 1,
+        completedFiles: 0,
+        identificationRequired: false,
+        createdAt: new Date().toISOString(),
+        completedAt: null,
+      });
+
+      render(<App />);
+      await waitFor(() => {
+        expect(window.location.pathname).toBe("/track/PG-PUB123");
+      });
+
+      // Renders public tracking without exposing PII
+      expect(
+        await screen.findByText("Your order is queued for printing."),
+      ).toBeTruthy();
+      expect(screen.queryByText("Anonymous Customer")).toBeNull();
+      expect(screen.queryByText("9876543210")).toBeNull();
+    });
+
+    it("promotes pending tracking token and handles repeated refreshes seamlessly", async () => {
+      const privateTrackingToken = "t".repeat(43);
+      sessionStorage.setItem(
+        "printgo.customerDraftToken",
+        "draft-double-refresh",
+      );
+      sessionStorage.setItem(
+        "printgo.pendingTracking.order_double",
+        privateTrackingToken,
+      );
+      vi.mocked(customerApi.getDraft).mockResolvedValueOnce({
+        customerName: "Meera Nair",
+        customerPhone: "9876543210",
+        instructions: null,
+        status: "PRINTING",
+        publicJobCode: "PG-MEERA1",
+        files: [],
+      });
+
+      const { unmount } = render(<App />);
+      await waitFor(() => {
+        expect(window.location.pathname).toBe("/track/PG-MEERA1");
+      });
+
+      // Pending token promoted to permanent tracking storage key
+      expect(sessionStorage.getItem("printgo.tracking.PG-MEERA1")).toBe(
+        privateTrackingToken,
+      );
+      expect(
+        sessionStorage.getItem("printgo.pendingTracking.order_double"),
+      ).toBeNull();
+      expect(sessionStorage.getItem("printgo.customerDraftToken")).toBeNull();
+
+      unmount();
+
+      // Second refresh: window.location.pathname is already /track/PG-MEERA1
+      render(<App />);
+      await waitFor(() => {
+        expect(customerApi.tracking).toHaveBeenCalledWith(
+          "PG-MEERA1",
+          privateTrackingToken,
+        );
+      });
+    });
   });
 });

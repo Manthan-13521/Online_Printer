@@ -1,11 +1,11 @@
-import { applyShopBranding } from "../../branding";
-import { startVisiblePolling } from "../../polling";
+import { applyShopBranding } from "./utils/branding";
+import { startVisiblePolling } from "./utils/polling";
 import type {
   AdminAgentDetails,
   AdminPrinterDetails,
   ShopSettings,
 } from "@printgo/api-contract";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { adminApi, AdminApiError, friendlyAdminError } from "./api";
 import { useAdminWebSocket } from "./useAdminWebSocket";
 
@@ -119,12 +119,17 @@ export function DashboardPage({
     }
   }
 
-  const loadDashboard = async () => {
+  const prevSnapshotRef = useRef("");
+
+  const loadDashboard = async (): Promise<boolean> => {
     try {
       setError(null);
       const response = await adminApi.getDashboard();
-      if (!response.ok) return;
+      if (!response.ok) return false;
       const data = response.data;
+      const snapshot = JSON.stringify(data);
+      const changed = snapshot !== prevSnapshotRef.current;
+      prevSnapshotRef.current = snapshot;
       setSettings(data.settings);
       setAgents(data.agents);
       setPrinters(data.agents.flatMap((a) => a.printers));
@@ -136,6 +141,7 @@ export function DashboardPage({
         printingNow: data.printingNow,
         statusCounts: data.statusCounts,
       });
+      return changed;
     } catch (err: unknown) {
       const msg = friendlyAdminError(err);
       if (err instanceof AdminApiError && err.status === 401) {
@@ -143,6 +149,7 @@ export function DashboardPage({
       } else {
         setError(msg);
       }
+      return false;
     } finally {
       setLoading(false);
     }
@@ -154,10 +161,14 @@ export function DashboardPage({
 
   useEffect(() => {
     let cancelled = false;
-    const stop = startVisiblePolling(async () => {
-      if (cancelled) return;
-      await loadDashboard();
-    }, 35_000);
+    const stop = startVisiblePolling(
+      async () => {
+        if (cancelled) return false;
+        return await loadDashboard();
+      },
+      35_000,
+      70_000,
+    );
     return () => {
       cancelled = true;
       stop();

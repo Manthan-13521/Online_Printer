@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { formatInr } from "@printgo/pricing";
-import { startVisiblePolling } from "../../polling";
+import { startVisiblePolling } from "./utils/polling";
 import { customerApi } from "./api";
 
 export interface CashWaitingPageProps {
@@ -59,7 +59,6 @@ export function CashWaitingPage({
         }
         if (Date.now() >= cashGraceUntilMs) {
           setExpired(true);
-          onExpired();
           return true;
         }
         return false;
@@ -187,14 +186,45 @@ export function CashWaitingPage({
           <div
             style={{
               backgroundColor: "#FEE2E2",
+              border: "1px solid #FCA5A5",
               color: "#991B1B",
-              padding: "0.6rem 0.75rem",
-              borderRadius: "6px",
+              padding: "0.85rem 1rem",
+              borderRadius: "8px",
               fontSize: "0.95rem",
-              fontWeight: 700,
+              textAlign: "left",
             }}
+            role="alert"
           >
-            Order Expired. The waiting window has passed.
+            <div
+              style={{
+                fontWeight: 800,
+                fontSize: "1rem",
+                marginBottom: "0.3rem",
+              }}
+            >
+              ⏳ Cash Payment Window Expired
+            </div>
+            <div
+              style={{
+                fontSize: "0.88rem",
+                lineHeight: "1.4",
+                color: "#7F1D1D",
+              }}
+            >
+              The 10-minute waiting window and 2-minute staff grace period have
+              passed. Unconfirmed cash slots are automatically released to
+              prevent queue buildup.
+            </div>
+            <div
+              style={{
+                fontSize: "0.85rem",
+                marginTop: "0.4rem",
+                color: "#991B1B",
+              }}
+            >
+              Your uploaded document and print settings are saved so you can
+              review and try again or pay online.
+            </div>
           </div>
         ) : isGrace ? (
           <div
@@ -259,8 +289,45 @@ export function CashWaitingPage({
         </div>
       </div>
 
-      {/* Pay Online Instead Option */}
-      {!isFullyExpired && (
+      {/* Pay Online Instead or Review & Retry Option */}
+      {isFullyExpired ? (
+        <div
+          style={{
+            borderTop: "1px solid #E5E7EB",
+            paddingTop: "1.25rem",
+            display: "flex",
+            flexDirection: "column",
+            gap: "0.65rem",
+          }}
+        >
+          <button
+            type="button"
+            className="primary-button"
+            onClick={onExpired}
+            style={{
+              width: "100%",
+              padding: "0.75rem",
+              fontSize: "0.95rem",
+              fontWeight: 700,
+            }}
+          >
+            Review &amp; Re-submit Order
+          </button>
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={onPayOnlineInstead}
+            style={{
+              width: "100%",
+              padding: "0.65rem",
+              fontSize: "0.9rem",
+              fontWeight: 600,
+            }}
+          >
+            🔒 Pay Online Instead ({formatInr(payableAmountPaise)})
+          </button>
+        </div>
+      ) : (
         <div
           style={{
             borderTop: "1px solid #E5E7EB",

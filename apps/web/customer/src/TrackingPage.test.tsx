@@ -157,7 +157,7 @@ describe("customer tracking page", () => {
     expect(screen.queryByText("Ready for pickup")).toBeNull();
   });
 
-  it("distinguishes a retryable network failure from an invalid link", async () => {
+  it("distinguishes a retryable network failure from an invalid link and provides action buttons", async () => {
     sessionStorage.setItem("printgo.tracking.PG-ABC234", token);
     vi.mocked(customerApi.tracking).mockRejectedValueOnce(
       new Error("Failed to fetch"),
@@ -165,9 +165,18 @@ describe("customer tracking page", () => {
     render(<TrackingPage jobCode="PG-ABC234" />);
     expect(await screen.findByText("Could not refresh status")).toBeTruthy();
     expect(screen.getByText(/Check your connection/iu)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retry Status" })).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: "Print Another Document" }),
+    ).toBeTruthy();
+
+    // Clicking Retry Status triggers another fetch
+    vi.mocked(customerApi.tracking).mockResolvedValueOnce(tracking);
+    screen.getByRole("button", { name: "Retry Status" }).click();
+    expect(await screen.findByText(/Order PG-ABC234/i)).toBeTruthy();
   });
 
-  it("shows invalid or expired for a rejected private credential", async () => {
+  it("shows invalid or expired for a rejected private credential with return action", async () => {
     sessionStorage.setItem("printgo.tracking.PG-ABC234", token);
     vi.mocked(customerApi.tracking).mockRejectedValueOnce(
       new Error("TRACKING_NOT_FOUND"),
@@ -176,5 +185,10 @@ describe("customer tracking page", () => {
     await waitFor(() =>
       expect(screen.getByText("Tracking link unavailable")).toBeTruthy(),
     );
+    expect(
+      screen.getByRole("link", { name: "Print Another Document" }),
+    ).toBeTruthy();
+    // Network retry button should NOT appear for permanently invalid links
+    expect(screen.queryByRole("button", { name: "Retry Status" })).toBeNull();
   });
 });

@@ -243,7 +243,7 @@ jobs:
           Write-Host "Testing silent uninstaller..."
           $uninstaller = Join-Path $installDir "unins000.exe"
           $uninstProc = Start-Process -FilePath $uninstaller -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" -PassThru -Wait
-          
+
           # Wait up to 15s for the child uninstaller in Temp to finish removing files
           $timeout = [DateTime]::UtcNow.AddSeconds(15)
           while ((Test-Path "$installDir\PrintGo-ControlCenter.exe") -and ([DateTime]::UtcNow -lt $timeout)) {
@@ -283,6 +283,3 @@ jobs:
           # Upload all verified packages + SHA256SUMS.txt
           $filesToUpload = Get-ChildItem -Path "$relDir" | ForEach-Object { $_.FullName }
           gh release upload "$tag" $filesToUpload --clobber
-
-
-

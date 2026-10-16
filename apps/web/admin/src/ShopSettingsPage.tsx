@@ -1,4 +1,4 @@
-import { applyShopBranding } from "../../branding";
+import { applyShopBranding } from "./utils/branding";
 import type { ShopSettings } from "@printgo/api-contract";
 import {
   FILE_SIZE_5_MIB,

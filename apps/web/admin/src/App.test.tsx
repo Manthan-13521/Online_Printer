@@ -123,6 +123,36 @@ describe("Admin application", () => {
     expect(screen.getByLabelText("Password")).toBeTruthy();
   });
 
+  it("preserves valid admin session during network failure and offers retry", async () => {
+    sessionStorage.setItem("printgo_admin_token", "valid-admin-token");
+    localStorage.setItem("printgo_admin_token", "valid-admin-token");
+    mockedApi.me.mockRejectedValueOnce(
+      new AdminApiError(
+        "NETWORK_ERROR",
+        0,
+        "We couldn't connect to PrintGo. Check your internet connection and try again.",
+      ),
+    );
+    render(<App />);
+
+    expect(
+      await screen.findByRole("heading", { name: "Connection Error" }),
+    ).toBeTruthy();
+    const retryBtn = screen.getByRole("button", { name: "Retry Connection" });
+    expect(retryBtn).toBeTruthy();
+    // Token is NOT wiped from storage
+    expect(sessionStorage.getItem("printgo_admin_token")).toBe(
+      "valid-admin-token",
+    );
+
+    // Clicking retry reconnects when network recovers
+    mockedApi.me.mockResolvedValueOnce({ ok: true, data: { admin } });
+    await userEvent.click(retryBtn);
+    expect(
+      await screen.findByRole("navigation", { name: "Admin navigation" }),
+    ).toBeTruthy();
+  });
+
   it("signs in and exposes the complete accessible navigation without fake data", async () => {
     mockedApi.me.mockRejectedValue(
       new AdminApiError("AUTH_SESSION_REQUIRED", 401, "expired"),

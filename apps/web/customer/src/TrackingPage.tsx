@@ -31,6 +31,7 @@ export function TrackingPage({
   const [state, setState] = useState<"loading" | "invalid" | "network">(
     "loading",
   );
+  const [retryTick, setRetryTick] = useState(0);
   const terminalReachedRef = useRef(false);
 
   useEffect(() => {
@@ -129,7 +130,7 @@ export function TrackingPage({
         );
       }
     };
-  }, [jobCode]);
+  }, [jobCode, retryTick]);
 
   if (!data && state === "loading") {
     return (
@@ -147,17 +148,64 @@ export function TrackingPage({
     return (
       <main className="page-shell tracking-shell">
         <p className="eyebrow">PrintGo</p>
-        <section className="tracking-card" role="alert">
+        <section
+          className="tracking-card"
+          role="alert"
+          style={{ textAlign: "center", padding: "2.5rem 1.5rem" }}
+        >
           <h1>
             {state === "network"
               ? "Could not refresh status"
               : "Tracking link unavailable"}
           </h1>
-          <p>
+          <p style={{ margin: "0.75rem 0 1.5rem" }}>
             {state === "network"
-              ? "Check your connection and refresh this page."
+              ? "Check your connection and retry loading status."
               : "This private tracking link is invalid or has expired."}
           </p>
+          <div
+            style={{
+              display: "flex",
+              gap: "0.75rem",
+              justifyContent: "center",
+              flexWrap: "wrap",
+            }}
+          >
+            {state === "network" ? (
+              <button
+                type="button"
+                className="primary-button fit"
+                onClick={() => setRetryTick((t) => t + 1)}
+              >
+                Retry Status
+              </button>
+            ) : null}
+            {onBack ? (
+              <button
+                type="button"
+                className={
+                  state === "network"
+                    ? "secondary-button fit"
+                    : "primary-button fit"
+                }
+                onClick={onBack}
+              >
+                Print Another Document
+              </button>
+            ) : (
+              <a
+                href="/"
+                className={
+                  state === "network"
+                    ? "secondary-button fit"
+                    : "primary-button fit"
+                }
+                style={{ textDecoration: "none" }}
+              >
+                Print Another Document
+              </a>
+            )}
+          </div>
         </section>
       </main>
     );
@@ -168,10 +216,33 @@ export function TrackingPage({
   if (stageIndex < 0) {
     return (
       <main className="page-shell tracking-shell">
-        <section className="tracking-card" role="status">
+        <section
+          className="tracking-card"
+          role="status"
+          style={{ textAlign: "center", padding: "2.5rem 1.5rem" }}
+        >
           <h1>{data.statusLabel}</h1>
           <p>{data.statusMessage}</p>
           <p>Order {data.pickupCode ?? data.jobCode}</p>
+          <div style={{ marginTop: "1.5rem" }}>
+            {onBack ? (
+              <button
+                type="button"
+                className="primary-button fit"
+                onClick={onBack}
+              >
+                Print Another Document
+              </button>
+            ) : (
+              <a
+                href="/"
+                className="primary-button fit"
+                style={{ textDecoration: "none" }}
+              >
+                Print Another Document
+              </a>
+            )}
+          </div>
         </section>
       </main>
     );

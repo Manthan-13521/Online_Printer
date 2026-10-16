@@ -1,6 +1,7 @@
 # PRINTGO PHASE 10 — TESTING, VERIFICATION & ROLLBACK PLAN
+
 **High-Precision Benchmark Harness, Failure-Mode Verification & Zero-Downtime Rollback Strategy**
-*Ensuring Zero Duplicate Prints, 100% Payment Integrity & Controlled Staged Rollout*
+_Ensuring Zero Duplicate Prints, 100% Payment Integrity & Controlled Staged Rollout_
 
 ---
 
@@ -22,6 +23,7 @@ graph TD
 ```
 
 ### Safety Acceptance Criteria (Must Pass 100%):
+
 1. **Latency Threshold**: P95 Payment-to-Spool Submission latency $\le 3.5\text{ seconds}$ on an idle printer queue.
 2. **Duplicate-Print Tolerance**: **0.000% (Strictly Zero)** under all conditions, including agent process termination (`SIGKILL`) during active spooling.
 3. **Payment State Integrity**: 100% of jobs submitted to spoolers must have an authoritative `status = 'PAID'` commit in D1.
@@ -49,7 +51,9 @@ flowchart LR
 ```
 
 ### Component A: Mock Razorpay Webhook Injector
+
 Generates synthetically signed Razorpay `payment.captured` webhooks using the real Web Crypto HMAC-SHA256 algorithm:
+
 ```typescript
 // scripts/benchmarks/mock-webhook-injector.ts
 import crypto from "node:crypto";
@@ -90,7 +94,9 @@ export function generateMockRazorpayWebhook(options: {
 ```
 
 ### Component B: High-Precision Latency Benchmark Script
+
 Measures sub-millisecond execution checkpoints ($T_0$ through $T_{14}$) using Node.js `performance.now()`:
+
 ```typescript
 // scripts/benchmarks/benchmark-fast-path.ts
 import { performance } from "node:perf_hooks";
@@ -111,20 +117,34 @@ export class PrecisionLatencyRecorder {
 
   report(): Record<string, number> {
     return {
-      "T0_to_T1_PaymentCommit": this.getIntervalMs("T0_Payment", "T1_D1Commit"),
-      "T1_to_T4_DO_and_WS": this.getIntervalMs("T1_D1Commit", "T4_AgentReceived"),
-      "T4_to_T8_Claim_and_Sign": this.getIntervalMs("T4_AgentReceived", "T8_ClaimDone"),
-      "T8_to_T9_R2Download": this.getIntervalMs("T8_ClaimDone", "T9_DownloadDone"),
-      "T9_to_T11_DirectSpawn": this.getIntervalMs("T9_DownloadDone", "T11_SpawnDone"),
-      "T11_to_T14_SpoolCapture": this.getIntervalMs("T11_SpawnDone", "T14_SpoolDone"),
-      "TOTAL_Payment_to_Spool": this.getIntervalMs("T0_Payment", "T14_SpoolDone"),
+      T0_to_T1_PaymentCommit: this.getIntervalMs("T0_Payment", "T1_D1Commit"),
+      T1_to_T4_DO_and_WS: this.getIntervalMs("T1_D1Commit", "T4_AgentReceived"),
+      T4_to_T8_Claim_and_Sign: this.getIntervalMs(
+        "T4_AgentReceived",
+        "T8_ClaimDone",
+      ),
+      T8_to_T9_R2Download: this.getIntervalMs(
+        "T8_ClaimDone",
+        "T9_DownloadDone",
+      ),
+      T9_to_T11_DirectSpawn: this.getIntervalMs(
+        "T9_DownloadDone",
+        "T11_SpawnDone",
+      ),
+      T11_to_T14_SpoolCapture: this.getIntervalMs(
+        "T11_SpawnDone",
+        "T14_SpoolDone",
+      ),
+      TOTAL_Payment_to_Spool: this.getIntervalMs("T0_Payment", "T14_SpoolDone"),
     };
   }
 }
 ```
 
 ### Component C: Virtual Windows Spooler Queue (`NUL` Port)
+
 To test physical Windows print spooling without wasting paper or toner:
+
 1. Open Windows PowerShell as Administrator.
 2. Create a virtual, non-draining printer port pointing to the null device:
    ```powershell
@@ -141,13 +161,13 @@ To test physical Windows print spooling without wasting paper or toner:
 
 ## 3. FAULT INJECTION & RECOVERY VERIFICATION MATRIX
 
-| Failure Mode / Chaos Scenario | Simulated Action | Expected Safe Behavior | Pass / Fail Criteria |
-| :--- | :--- | :--- | :---: |
-| **Agent Crash During Spooling** | Send `process.kill(pid, "SIGKILL")` exactly while SumatraPDF is spooling ($T_{12}$). | On restart, Agent reads `lane-${orderId}.json`, queries Win32 spooler, recovers existing `spoolerJobId`, and notifies server. | **PASS**: 0 duplicate prints; order transitions to `PRINTING`. |
-| **Network Loss After Spooling** | Drop internet connection immediately after SumatraPDF hands job to Windows spooler ($T_{13}$). | Spooler prints physically. Local journal preserves `spoolerJobId`. Upon reconnect, Agent syncs `/submitted`. | **PASS**: Order not re-queued; server marked `PRINTING`. |
-| **Printer Paper-Out / Jam** | Set Virtual Printer state to `DoorOpen` or `OutOfPaper` via WMI. | Agent preflight detects state in $<10\text{ ms}$; requests server safe fallback or pauses lane without crashing daemon. | **PASS**: No print attempted; Admin alerted. |
-| **Simultaneous Webhook Replay** | Send identical Razorpay payment webhook 5 times concurrently. | Webhook deduplication gate in D1 rejects 4 requests with `duplicate: true`. Exactly 1 print job dispatched. | **PASS**: Exactly 1 spool job created; 0 duplicates. |
-| **Agent Offline During Payment** | Disconnect Agent WebSocket. Customer pays online. | D1 marks order `QUEUED`. When Agent reconnects, heartbeat recovery claims pending queued orders. | **PASS**: No orders lost; printed immediately on reconnect. |
+| Failure Mode / Chaos Scenario    | Simulated Action                                                                               | Expected Safe Behavior                                                                                                        |                      Pass / Fail Criteria                      |
+| :------------------------------- | :--------------------------------------------------------------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------: |
+| **Agent Crash During Spooling**  | Send `process.kill(pid, "SIGKILL")` exactly while SumatraPDF is spooling ($T_{12}$).           | On restart, Agent reads `lane-${orderId}.json`, queries Win32 spooler, recovers existing `spoolerJobId`, and notifies server. | **PASS**: 0 duplicate prints; order transitions to `PRINTING`. |
+| **Network Loss After Spooling**  | Drop internet connection immediately after SumatraPDF hands job to Windows spooler ($T_{13}$). | Spooler prints physically. Local journal preserves `spoolerJobId`. Upon reconnect, Agent syncs `/submitted`.                  |    **PASS**: Order not re-queued; server marked `PRINTING`.    |
+| **Printer Paper-Out / Jam**      | Set Virtual Printer state to `DoorOpen` or `OutOfPaper` via WMI.                               | Agent preflight detects state in $<10\text{ ms}$; requests server safe fallback or pauses lane without crashing daemon.       |          **PASS**: No print attempted; Admin alerted.          |
+| **Simultaneous Webhook Replay**  | Send identical Razorpay payment webhook 5 times concurrently.                                  | Webhook deduplication gate in D1 rejects 4 requests with `duplicate: true`. Exactly 1 print job dispatched.                   |      **PASS**: Exactly 1 spool job created; 0 duplicates.      |
+| **Agent Offline During Payment** | Disconnect Agent WebSocket. Customer pays online.                                              | D1 marks order `QUEUED`. When Agent reconnects, heartbeat recovery claims pending queued orders.                              |  **PASS**: No orders lost; printed immediately on reconnect.   |
 
 ---
 
@@ -166,12 +186,15 @@ flowchart TD
 ```
 
 ### Stage 10.A: Edge Infrastructure Deployment
+
 - Deploy updated Cloudflare Worker and `AgentRoom` DO.
 - The new Worker routes (`/dispatch` and `/claim-fast`) are deployed alongside existing `/wake` and `/pulse` endpoints.
 - **Backward Compatibility**: Fully compatible with Phase 9 Agent v2.1.0.
 
 ### Stage 10.B: Agent v2.2.0 Installation with Feature Flag
+
 - The new Windows Agent package includes the dual-engine architecture controlled by `config.json`:
+
 ```json
 {
   "fastPathEnabled": false,
@@ -180,19 +203,24 @@ flowchart TD
   "enableEnrichedDispatch": false
 }
 ```
+
 - In default state, Agent v2.2.0 executes standard Phase 9 legacy PowerShell paths.
 
 ### Stage 10.C: Canary Verification on Single Printer
+
 - Enable fast-path flags exclusively for Printer 4 (Thermal Receipt / Virtual Bench):
+
 ```json
 {
   "fastPathEnabled": true,
   "fastPathPrinters": ["PrintGo-Thermal-80mm"]
 }
 ```
+
 - Execute 10 test prints. Verify end-to-end latency is $\le 2.65\text{ seconds}$ and local journal operates correctly.
 
 ### Stage 10.D: Full Production Activation
+
 - Enable `fastPathEnabled: true` globally for all 4 printers.
 - Monitor Admin Dashboard and Windows Print Spooler during morning peak operations.
 
@@ -203,16 +231,21 @@ flowchart TD
 If any unhandled exception, spooler mismatch, or unexpected behavior occurs in production, the system can be rolled back instantly without service interruption.
 
 ### Rollback Step 1: Agent Instant Flag Reversion (<10 Seconds)
+
 In the Agent's installation directory (`C:\Program Files\PrintGo\Agent\config.json`):
+
 ```bash
 # Via Admin Command Prompt or PowerShell:
 Set-Content -Path "C:\ProgramData\PrintGo\config.json" -Value '{"fastPathEnabled": false}'
 Restart-Service -Name "PrintGoAgent"
 ```
-*Effect*: The Agent immediately reverts to the proven Phase 9 PowerShell executor. Zero database migrations or Cloudflare rollbacks are required.
+
+_Effect_: The Agent immediately reverts to the proven Phase 9 PowerShell executor. Zero database migrations or Cloudflare rollbacks are required.
 
 ### Rollback Step 2: Cloudflare Edge Rollback (Optional / Independent)
+
 If edge routing anomalies occur, revert Worker via Wrangler:
+
 ```bash
 # Instant rollback to previous deployment version in Cloudflare
 npx wrangler rollback --message "Reverting to Phase 9 Worker baseline"

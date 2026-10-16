@@ -161,4 +161,62 @@ describe("Admin OrderHistoryPage — Payment Method Display", () => {
     expect(screen.getByText("Paid Amount")).toBeDefined();
     expect(screen.getByText("₹4.00")).toBeDefined();
   });
+
+  it("opens accessible deletion modal, allows canceling, and confirms permanent deletion", async () => {
+    getOrderHistory.mockResolvedValue({
+      ok: true,
+      data: {
+        orders: [baseEntry],
+        nextCursor: null,
+      },
+    });
+    deleteOrder.mockResolvedValue({
+      ok: true,
+      data: { orderId: baseEntry.orderId, deleted: true },
+    });
+
+    render(<OrderHistoryPage onSessionExpired={vi.fn()} />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    const deleteBtn = screen.getByRole("button", { name: "Delete" });
+    expect(deleteBtn).toBeDefined();
+
+    // Click delete -> opens modal dialog
+    act(() => {
+      deleteBtn.click();
+    });
+
+    expect(
+      screen.getByRole("heading", { name: "Delete Order Permanently" }),
+    ).toBeDefined();
+    expect(
+      screen.getByText(/Are you sure you want to permanently delete order/i),
+    ).toBeDefined();
+
+    // Clicking Cancel closes modal without deleting
+    const cancelBtn = screen.getByRole("button", { name: "Cancel" });
+    act(() => {
+      cancelBtn.click();
+    });
+    expect(
+      screen.queryByRole("heading", { name: "Delete Order Permanently" }),
+    ).toBeNull();
+    expect(deleteOrder).not.toHaveBeenCalled();
+
+    // Open again and confirm
+    act(() => {
+      deleteBtn.click();
+    });
+    const confirmDeleteBtn = screen.getByRole("button", {
+      name: "Delete Permanently",
+    });
+    act(() => {
+      confirmDeleteBtn.click();
+    });
+
+    expect(deleteOrder).toHaveBeenCalledWith(baseEntry.orderId);
+  });
 });

@@ -1,12 +1,13 @@
 # PRINTGO PHASE 10 — FAST-PATH ARCHITECTURE & IMPLEMENTATION SPECIFICATION
+
 **Production-Ready System Design for Ultra-Low-Latency Print Dispatch ($\le 3$ Seconds)**
-*Targeting Zero Additional D1 Writes, Zero Paid Infrastructure, Zero Duplicate Prints*
+_Targeting Zero Additional D1 Writes, Zero Paid Infrastructure, Zero Duplicate Prints_
 
 ---
 
 ## 1. ARCHITECTURAL OVERVIEW
 
-The Phase 10 Fast-Path Architecture transitions PrintGo from a **synchronous polling and PowerShell-wrapped execution model** to an **asynchronous event-driven, direct-execution streaming model**. 
+The Phase 10 Fast-Path Architecture transitions PrintGo from a **synchronous polling and PowerShell-wrapped execution model** to an **asynchronous event-driven, direct-execution streaming model**.
 
 ```mermaid
 graph TD
@@ -57,10 +58,12 @@ graph TD
 ## 2. THE SIX CORE ARCHITECTURAL PILLARS
 
 ### Pillar 1: Direct SumatraPDF Execution Model (Eliminating Cold PowerShell)
+
 Currently, SumatraPDF is executed by generating a 145-line PowerShell script and executing `powershell.exe -NoProfile -NonInteractive -Command ...`. Cold process startup of `powershell.exe` consumes 1,400 to 2,200 ms.
 
 **The Fast-Path Implementation**:
 Node.js invokes `SumatraPDF.exe` **directly** using `child_process.execFileAsync`:
+
 ```typescript
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -74,8 +77,10 @@ export async function directSpawnSumatraPdf(options: {
   localPdfPath: string;
 }): Promise<void> {
   const args = [
-    "-print-to", options.printerName,
-    "-print-settings", options.settingsString,
+    "-print-to",
+    options.printerName,
+    "-print-settings",
+    options.settingsString,
     "-silent",
     "-exit-on-print",
     options.localPdfPath,
@@ -88,7 +93,9 @@ export async function directSpawnSumatraPdf(options: {
   });
 }
 ```
+
 **Engineering Impact**:
+
 - Process spawn latency drops from **~1,800 ms to ~35 ms** ($\approx 98\%$ reduction).
 - Eliminates Windows Defender script-inspection locks on temporary `.ps1` command strings.
 - Reduces CPU spikes on the shop computer by 85%.
@@ -96,10 +103,12 @@ export async function directSpawnSumatraPdf(options: {
 ---
 
 ### Pillar 2: High-Speed Native Win32 Spooler Correlation
+
 In Phase 9, spooler job identification relies on a PowerShell loop executing `Get-PrintJob` or `Win32_PrintJob` every 80 ms. WMI queries take 400–800 ms per execution.
 
 **The Fast-Path Implementation**:
 Replace WMI polling with lightweight Win32 API calls (`winspool.drv!EnumJobs` / `FindFirstPrinterChangeNotification`):
+
 1. Prior to launching SumatraPDF, query existing active job IDs on the specific printer queue via Win32 `EnumJobs` (<15 ms).
 2. Launch SumatraPDF directly.
 3. Hook into Windows Spooler change notifications (`PRINTER_CHANGE_ADD_JOB` / `JOB_CONTROL_SENT_TO_PRINTER`) or poll `EnumJobs` at 50 ms intervals.
@@ -135,17 +144,22 @@ export async function waitForSpoolJobDirect(
   throw new Error("Spooler job correlation timed out.");
 }
 ```
+
 **Engineering Impact**:
+
 - Spool correlation latency drops from **~2,800 ms to ~180 ms**.
 - Completely decouples job acceptance from Sumatra's process shutdown delay.
 
 ---
 
 ### Pillar 3: Durable Object Wakeup Payload Enrichment (`PRINT_DISPATCH`)
+
 In Phase 9, `AgentRoom` sends a blind `{ type: "WAKE_UP" }`. The Agent doesn't know what order is ready, so it schedules a full `pulse()`, which runs printer health checks if expired.
 
 **The Fast-Path Implementation**:
+
 1. When online payment is verified or cash is confirmed, the Worker passes the target `orderId` and `printerId` to `wakeAgent`:
+
 ```typescript
 // apps/api/worker/src/agent/wake.ts
 export function wakeAgentWithDispatch(
@@ -168,6 +182,7 @@ export function wakeAgentWithDispatch(
 ```
 
 2. Durable Object `AgentRoom` broadcasts an enriched message:
+
 ```typescript
 // apps/api/worker/src/agent/agent-room.ts
 if (url.pathname === "/dispatch" && request.method === "POST") {
@@ -175,7 +190,9 @@ if (url.pathname === "/dispatch" && request.method === "POST") {
   const websockets = this.state.getWebSockets();
   for (const ws of websockets) {
     try {
-      ws.send(JSON.stringify({ type: "PRINT_DISPATCH", ...JSON.parse(payload) }));
+      ws.send(
+        JSON.stringify({ type: "PRINT_DISPATCH", ...JSON.parse(payload) }),
+      );
     } catch {
       // Safe dispatch
     }
@@ -185,6 +202,7 @@ if (url.pathname === "/dispatch" && request.method === "POST") {
 ```
 
 3. Windows Agent registers a high-priority event handler:
+
 ```typescript
 // apps/agent/windows/src/agent-daemon.ts
 this.ws.onmessage = (event) => {
@@ -197,19 +215,24 @@ this.ws.onmessage = (event) => {
   }
 };
 ```
+
 **Engineering Impact**:
+
 - Zero waiting for pulse timers or printer discovery loops.
 - Claim begins within **15–25 ms** of server-side payment authorization.
 
 ---
 
 ### Pillar 4: Atomic Server Step Status Consolidation (Saving 1 D1 Write & 1 HTTP RTT)
+
 In Phase 9, the agent executes two separate HTTP requests:
+
 1. `POST /api/agent/.../steps/:stepId/start` $\to$ D1 batch write (`status = 'SUBMISSION_STARTED'`).
 2. `POST /api/agent/.../steps/:stepId/submitted` $\to$ D1 batch write (`status = 'SUBMITTED'`).
 
 **The Fast-Path Implementation**:
 Collapse the intermediate status transition into the local durable journal:
+
 1. **Local Pre-Spooling Protection**: Before invoking SumatraPDF, the agent atomically saves the in-flight state to local disk (`lane-${orderId}.json`):
    ```json
    {
@@ -229,6 +252,7 @@ Collapse the intermediate status transition into the local durable journal:
    - `orders`: `status = 'PRINTING'`.
 
 **Engineering Impact**:
+
 - **Saves 1 full HTTPS round-trip (250–550 ms) from the critical path.**
 - **Reduces D1 database writes by 1 write per print step (a ~14% net reduction in daily D1 writes per order).**
 - Reversible crash safety: if the agent crashes during SumatraPDF spooling, local journal recovery inspects `lane-${orderId}.json`, queries the spooler, and submits the completed step upon restart.
@@ -236,9 +260,11 @@ Collapse the intermediate status transition into the local durable journal:
 ---
 
 ### Pillar 5: Non-Blocking Background Printer Monitoring & Port 9100 Probes
+
 In Phase 9, `getStatus()` performs synchronous WMI queries inside the critical path.
 
 **The Fast-Path Implementation**:
+
 1. **Static Capabilities**: Hardware capabilities (duplex, paper sizes, color support) are immutable physical properties. They are cached in memory for the lifetime of the agent daemon (refreshed only on explicit admin command or daemon startup).
 2. **Dynamic Volatile Status**:
    - For network printers (Raw Port 9100 / LPR): Readiness is verified via `SocketProbe(ip, 9100, 100)` taking **$<10\text{ ms}$**.
@@ -248,7 +274,9 @@ In Phase 9, `getStatus()` performs synchronous WMI queries inside the critical p
 ---
 
 ### Pillar 6: Pipelined Streaming R2 PDF Download
+
 Instead of sequential `Download $\to$ Save to Buffer $\to$ Write to Temp $\to$ Parse with pdf-lib`:
+
 1. The Agent streams the response body from the pre-signed R2 URL directly into `fs.createWriteStream(localTempPath)`.
 2. A pass-through transform stream computes the SHA-256 hash and byte count on the fly.
 3. Preflight page validation is performed against the source metadata signed in the claim payload.
@@ -260,25 +288,26 @@ Instead of sequential `Download $\to$ Save to Buffer $\to$ Write to Temp $\to$ P
 
 The Phase 10 Fast Path adheres unconditionally to all PrintGo hard invariants:
 
-| Hard Invariant | Safety Mechanism in Fast Path | Enforcement Level |
-| :--- | :--- | :---: |
-| **Zero Duplicate Prints** | • D1 atomic lease fencing (`claim_id` unique constraint)<br/>• Local physical device mutex lock (`AGENT_LOCK_<printerName>`)<br/>• Local durable journal written to disk before process spawn<br/>• Spooler correlation verifies unique integer Job ID | **CRITICAL / ZERO TOLERANCE** |
-| **Server Financial Authority** | • Fast-path wakeup only dispatched AFTER D1 `PAID` commit<br/>• Worker rejects claim if payment record is unverified<br/>• Admin cash confirmation requires valid PBKDF2 session | **CRITICAL / MANDATORY** |
-| **Zero Paid Cloud Services** | • No Redis, Celery, Kafka, AWS SQS, or Supabase<br/>• Runs 100% within Cloudflare Free Tier (Worker + D1 + R2 + DO)<br/>• Reduces total Cloudflare resource consumption | **CRITICAL / MANDATORY** |
-| **Customer Privacy Lifecycle** | • Pre-signed R2 download URLs expire in 10 minutes<br/>• Downloaded temp PDFs unlinked from disk immediately after spooling<br/>• D1 completed orders purged after 1 hour | **CRITICAL / MANDATORY** |
-| **Single Shop Architecture** | • Retains single-shop schema; no multi-tenant routing or IDs | **CRITICAL / PRESERVED** |
+| Hard Invariant                 | Safety Mechanism in Fast Path                                                                                                                                                                                                                          |       Enforcement Level       |
+| :----------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :---------------------------: |
+| **Zero Duplicate Prints**      | • D1 atomic lease fencing (`claim_id` unique constraint)<br/>• Local physical device mutex lock (`AGENT_LOCK_<printerName>`)<br/>• Local durable journal written to disk before process spawn<br/>• Spooler correlation verifies unique integer Job ID | **CRITICAL / ZERO TOLERANCE** |
+| **Server Financial Authority** | • Fast-path wakeup only dispatched AFTER D1 `PAID` commit<br/>• Worker rejects claim if payment record is unverified<br/>• Admin cash confirmation requires valid PBKDF2 session                                                                       |   **CRITICAL / MANDATORY**    |
+| **Zero Paid Cloud Services**   | • No Redis, Celery, Kafka, AWS SQS, or Supabase<br/>• Runs 100% within Cloudflare Free Tier (Worker + D1 + R2 + DO)<br/>• Reduces total Cloudflare resource consumption                                                                                |   **CRITICAL / MANDATORY**    |
+| **Customer Privacy Lifecycle** | • Pre-signed R2 download URLs expire in 10 minutes<br/>• Downloaded temp PDFs unlinked from disk immediately after spooling<br/>• D1 completed orders purged after 1 hour                                                                              |   **CRITICAL / MANDATORY**    |
+| **Single Shop Architecture**   | • Retains single-shop schema; no multi-tenant routing or IDs                                                                                                                                                                                           |   **CRITICAL / PRESERVED**    |
 
 ---
 
 ## 4. MULTI-PRINTER CONCURRENCY & LANE ISOLATION
 
 With four physical printers connected to a single Windows Agent:
+
 ```mermaid
 graph TD
     subgraph AgentWorkerPool["Windows Agent Daemon (v2.2.0)"]
         WS["WebSocket Listener"]
         DISPATCH["Fast Dispatcher"]
-        
+
         subgraph Lanes["Concurrent Hardware Execution Lanes"]
             L1["Lane 1: HP LaserJet P1108 (B&W)"]
             L2["Lane 2: HP LaserJet 1020 (B&W)"]
@@ -293,7 +322,7 @@ graph TD
     DISPATCH -->|"Mutex: DEV_THERMAL"| L4
 ```
 
-1. **Independent Mutex Locks**: Each physical printer has an isolated hardware mutex lock (`DEV_<name>`). 
+1. **Independent Mutex Locks**: Each physical printer has an isolated hardware mutex lock (`DEV_<name>`).
 2. **Parallel Dispatch**: If Order A targets HP 1 and Order B targets HP 2, both orders are claimed, downloaded, and submitted to the Windows Spooler **simultaneously in parallel**, without head-of-line blocking.
 3. **Queue Serialization on Same Hardware**: If two orders target the same printer, Order B waits safely in the local in-memory lane queue until Order A's spooler hand-off is verified ($T_{14} \le 2.65\text{ s}$), achieving maximum hardware utilization.
 
@@ -302,6 +331,7 @@ graph TD
 ## 5. SUMMARY OF ARCHITECTURAL DELIVERABLES
 
 This architectural plan delivers:
+
 1. **$\le 2.65\text{ s}$ P95 Spool Submission Latency** under idle printer conditions.
 2. **Net Reduction of 1 D1 Write per Print Step** (exceeding the $\le 5\%$ budget restriction).
 3. **Zero Overhead on Cloudflare Free Tier limits**.

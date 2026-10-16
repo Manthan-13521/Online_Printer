@@ -1,6 +1,9 @@
 import type { AdminProfile } from "@printgo/api-contract";
 import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from "@printgo/validation";
 import {
+  lazy,
+  Suspense,
+  useCallback,
   useEffect,
   useId,
   useState,
@@ -12,16 +15,34 @@ import {
   adminApi,
   AdminApiError,
   friendlyAdminError,
+  getAdminToken,
   setAdminToken,
 } from "./api";
-import { PricingPage } from "./PricingPage";
-import { PrinterPage } from "./PrinterPage";
-import { ShopSettingsPage } from "./ShopSettingsPage";
-import { LiveOrdersPage } from "./LiveOrdersPage";
 import { DashboardPage } from "./DashboardPage";
-import { ManualOrdersPage } from "./ManualOrdersPage";
-import { OrderHistoryPage } from "./OrderHistoryPage";
-import { StoragePrivacySection } from "./StoragePrivacySection";
+
+const PricingPage = lazy(() =>
+  import("./PricingPage").then((m) => ({ default: m.PricingPage })),
+);
+const PrinterPage = lazy(() =>
+  import("./PrinterPage").then((m) => ({ default: m.PrinterPage })),
+);
+const ShopSettingsPage = lazy(() =>
+  import("./ShopSettingsPage").then((m) => ({ default: m.ShopSettingsPage })),
+);
+const LiveOrdersPage = lazy(() =>
+  import("./LiveOrdersPage").then((m) => ({ default: m.LiveOrdersPage })),
+);
+const ManualOrdersPage = lazy(() =>
+  import("./ManualOrdersPage").then((m) => ({ default: m.ManualOrdersPage })),
+);
+const OrderHistoryPage = lazy(() =>
+  import("./OrderHistoryPage").then((m) => ({ default: m.OrderHistoryPage })),
+);
+const StoragePrivacySection = lazy(() =>
+  import("./StoragePrivacySection").then((m) => ({
+    default: m.StoragePrivacySection,
+  })),
+);
 
 export interface NavItem {
   label: string;
@@ -834,12 +855,20 @@ function AdminShell({
             {shellError}
           </p>
         ) : null}
-        <PageContent
-          path={activePath}
-          admin={admin}
-          onSignedOut={onSignedOut}
-          onNavigate={navigate}
-        />
+        <Suspense
+          fallback={
+            <div className="panel page-loading" aria-busy="true">
+              Loading…
+            </div>
+          }
+        >
+          <PageContent
+            path={activePath}
+            admin={admin}
+            onSignedOut={onSignedOut}
+            onNavigate={navigate}
+          />
+        </Suspense>
       </main>
     </div>
   );
@@ -847,29 +876,102 @@ function AdminShell({
 
 export function App() {
   const [state, setState] = useState<{
-    status: "loading" | "signed-out" | "signed-in";
+    status: "loading" | "signed-out" | "signed-in" | "network-error";
     admin?: AdminProfile;
     notice?: string;
   }>({ status: "loading" });
-  useEffect(() => {
+
+  const verifySession = useCallback(() => {
+    setState({ status: "loading" });
     let active = true;
-    void adminApi
+    adminApi
       .me()
       .then((response) => {
-        if (active && response.ok)
+        if (active && response.ok) {
           setState({ status: "signed-in", admin: response.data.admin });
+        }
       })
-      .catch(() => {
-        if (active) {
+      .catch((caught: unknown) => {
+        if (!active) return;
+        if (caught instanceof AdminApiError && caught.status === 401) {
           setAdminToken(null);
+          setState({
+            status: "signed-out",
+            notice: "Your session has expired. Please sign in again.",
+          });
+        } else if (!getAdminToken()) {
           setState({ status: "signed-out" });
+        } else {
+          // Token is present, but network or server error occurred: PRESERVE the token!
+          setState({
+            status: "network-error",
+            notice:
+              caught instanceof AdminApiError && caught.message
+                ? caught.message
+                : "Could not connect to the shop server. Please check your internet connection.",
+          });
         }
       });
     return () => {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    return verifySession();
+  }, [verifySession]);
+
   if (state.status === "loading") return <LoadingScreen />;
+
+  if (state.status === "network-error") {
+    return (
+      <main className="login-page">
+        <section
+          className="login-card"
+          role="alert"
+          style={{ textAlign: "center" }}
+        >
+          <div className="login-brand" aria-hidden="true">
+            P
+          </div>
+          <p className="product-name">{cachedAppName()}</p>
+          <p className="portal-name">Admin Portal</p>
+          <h1 id="login-title">Connection Error</h1>
+          <p className="muted" style={{ margin: "1rem 0" }}>
+            {state.notice || "Could not connect to the shop server."}
+          </p>
+          <div
+            style={{
+              display: "flex",
+              gap: "0.75rem",
+              justifyContent: "center",
+              marginTop: "1.25rem",
+              flexWrap: "wrap",
+            }}
+          >
+            <button
+              type="button"
+              className="primary-button fit"
+              onClick={verifySession}
+            >
+              Retry Connection
+            </button>
+            <button
+              type="button"
+              className="secondary-button fit"
+              onClick={() => {
+                setAdminToken(null);
+                setState({ status: "signed-out" });
+              }}
+            >
+              Sign Out
+            </button>
+          </div>
+        </section>
+      </main>
+    );
+  }
+
   if (state.status === "signed-out" || !state.admin)
     return (
       <LoginScreen

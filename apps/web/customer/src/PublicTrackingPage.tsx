@@ -145,10 +145,38 @@ export function PublicTrackingPage({
   if (stageIndex < 0) {
     return (
       <main className="page-shell tracking-shell">
-        <section className="tracking-card" role="status">
+        <section
+          className="tracking-card"
+          role="status"
+          style={{ textAlign: "center", padding: "2.5rem 1.5rem" }}
+        >
           <h1>{data.statusLabel}</h1>
           <p>{data.statusMessage}</p>
           <p>Pickup code {data.pickupCode}</p>
+          <div
+            style={{
+              marginTop: "1.5rem",
+              display: "flex",
+              gap: "0.75rem",
+              justifyContent: "center",
+              flexWrap: "wrap",
+            }}
+          >
+            <button
+              type="button"
+              className="secondary-button fit"
+              onClick={handleBack}
+            >
+              Track Another Order
+            </button>
+            <a
+              href="/"
+              className="primary-button fit"
+              style={{ textDecoration: "none" }}
+            >
+              Print a Document
+            </a>
+          </div>
         </section>
       </main>
     );

@@ -1,57 +1,76 @@
-import { applyShopBranding } from "../../branding";
-import { useEffect, useMemo, useState, useRef } from "react";
+import { applyShopBranding } from "./utils/branding";
+import {
+  CustomerDetailsStep,
+  CustomerPrivacyFooter,
+  OrderReviewSummary,
+  PricingModal,
+  PrintSettingsStep,
+  ShopHeader,
+  ShopInfoModal,
+  ShopUnavailableState,
+  UploadPdfsStep,
+  customerErrorMessage,
+  humanFileSize,
+  isValidPhone,
+  paymentErrorMessage,
+  type LocalOrderFile,
+} from "./components";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useRef,
+  lazy,
+  Suspense,
+} from "react";
 
-import type { ColorMode, PaperSize, SidesMode } from "@printgo/domain";
 import type {
   CustomerConfigData,
   CustomerPaymentCheckoutData,
   CustomerPaymentSuccessData,
   CustomerQuoteData,
 } from "@printgo/api-contract";
-import {
-  MAX_PRINT_COPIES,
-  MIN_PRINT_COPIES,
-  parsePageRange,
-} from "@printgo/domain";
+import { parsePageRange } from "@printgo/domain";
 import { formatInr } from "@printgo/pricing";
 
-import { customerApi, uploadDirectly, resolveCustomerApiUrl } from "./api";
+import { customerApi, uploadDirectly } from "./api";
 import { inspectPdf } from "./pdf";
 import { PwaInstallBanner } from "./PwaInstallBanner";
-import { TrackingPage } from "./TrackingPage";
-import { PublicTrackingPage } from "./PublicTrackingPage";
-import { CashWaitingPage } from "./CashWaitingPage";
 import { createTrackingToken, trackingStorageKey } from "./tracking-token";
+
+const TrackingPage = lazy(() =>
+  import("./TrackingPage").then((m) => ({ default: m.TrackingPage })),
+);
+const PublicTrackingPage = lazy(() =>
+  import("./PublicTrackingPage").then((m) => ({
+    default: m.PublicTrackingPage,
+  })),
+);
+const CashWaitingPage = lazy(() =>
+  import("./CashWaitingPage").then((m) => ({ default: m.CashWaitingPage })),
+);
 
 const DRAFT_TOKEN_KEY = "printgo.customerDraftToken";
 const PENDING_TRACKING_TOKEN_PREFIX = "printgo.pendingTracking.";
-const humanFileSize = (bytes: number) =>
-  `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 
-interface LocalOrderFile {
-  clientId: string;
-  fileId?: string;
-  file: File | null;
-  name: string;
-  size: number;
-  pageCount: number;
-  uploaded: boolean;
-  uploadStatus:
-    | "SELECTED"
-    | "VALIDATING"
-    | "UPLOADING"
-    | "FINALIZING"
-    | "UPLOADED"
-    | "FAILED";
-  uploadProgress: number;
-  uploadError: string | null;
-  pageMode: "ALL" | "CUSTOM";
-  customPages: string;
-  copies: number;
-  paperSize: PaperSize;
-  colorMode: ColorMode;
-  sides: SidesMode;
-}
+const SERVER_CONFIRMED_PAID_STATUSES = new Set([
+  "PAID",
+  "QUEUED",
+  "CLAIMED",
+  "SPOOLING",
+  "PRINTING",
+  "PRINT_BLOCKED",
+  "PRINT_FAILED",
+  "RETRY_PENDING",
+  "NEEDS_ADMIN",
+  "COMPLETION_UNKNOWN",
+  "ADMIN_ACTION_REQUIRED",
+  "PRINTED",
+  "MANUAL_PRINT",
+  "AWAITING_FINISHING",
+  "COMPLETED",
+]);
 
 function trackingCodeFromPath(): string | null {
   const match = /^\/track\/([^/]+)\/?$/u.exec(window.location.pathname);
@@ -93,71 +112,6 @@ function loadRazorpayCheckout(): Promise<void> {
   });
   checkoutScriptPromise = loading;
   return loading;
-}
-
-function customerErrorMessage(caught: unknown): string {
-  const code = caught instanceof Error ? caught.message : "";
-  if (code === "ONLINE_PRINTING_DISABLED")
-    return "Online printing was switched off. No upload was authorized.";
-  if (code === "CASH_ORDERS_DISABLED")
-    return "Cash orders are currently disabled by the shop.";
-  if (code === "PRINTER_NOT_READY")
-    return "The shop printer is currently not ready to print.";
-  if (code === "DRAFT_EXPIRED")
-    return "This upload session expired. Please upload your PDF again.";
-  if (code === "UPLOAD_INVALID")
-    return "We couldn't read this PDF. Please check the file and try again.";
-  if (code === "UPLOAD_ABORTED") return "Upload was cancelled.";
-  if (code === "UPLOAD_HTTP_403" || code === "UPLOAD_HTTP_400")
-    return "The secure upload link expired or was rejected. Click 'Try upload again' to get a fresh one.";
-  if (code === "UPLOAD_NETWORK_ERROR")
-    return "The upload was interrupted. Keep the app open and don't switch tabs while uploading. Check connection and try again.";
-  if (code === "Failed to fetch")
-    return "Could not reach the shop server. Please check your internet connection.";
-  if (
-    code &&
-    !code.startsWith("UPLOAD_") &&
-    code !== "REQUEST_FAILED" &&
-    code !== "QUOTE_STATE_INVALID" &&
-    code !== "DRAFT_INVALID"
-  ) {
-    return code;
-  }
-  return "The request could not be completed. Your selections are preserved; please try again.";
-}
-
-function paymentErrorMessage(caught: unknown): string {
-  const code = caught instanceof Error ? caught.message : "";
-  if (
-    code &&
-    code !== "PRINTER_NOT_READY" &&
-    code !== "REQUEST_FAILED" &&
-    code !== "Failed to fetch" &&
-    code !== "CHECKOUT_LOAD_FAILED" &&
-    code !== "PAYMENT_NOT_CAPTURED" &&
-    code !== "PAYMENT_SIGNATURE_INVALID" &&
-    code !== "PAYMENT_PROVIDER_UNAVAILABLE" &&
-    code !== "TRACKING_ACCESS_UNAVAILABLE" &&
-    code !== "TRACKING_ACCESS_CONFLICT"
-  ) {
-    return code;
-  }
-  if (code === "PRINTER_NOT_READY")
-    return "Online payment is temporarily unavailable because the shop printer is not ready.";
-  if (code === "PAYMENT_NOT_CAPTURED")
-    return "Payment is still being confirmed. No print job has been created yet.";
-  if (code === "PAYMENT_SIGNATURE_INVALID")
-    return "Payment verification failed. Please contact the shop before trying again.";
-  if (code === "PAYMENT_PROVIDER_UNAVAILABLE" || code === "Failed to fetch")
-    return "The payment service could not be reached. Please check your connection and try again.";
-  if (code === "CHECKOUT_LOAD_FAILED")
-    return "The secure payment window could not be loaded. Please try again.";
-  if (
-    code === "TRACKING_ACCESS_UNAVAILABLE" ||
-    code === "TRACKING_ACCESS_CONFLICT"
-  )
-    return "Payment was received, but tracking confirmation encountered an issue. Please contact shop staff with your payment ID.";
-  return "Payment could not be completed. You have not been shown a successful print job.";
 }
 
 export function App() {
@@ -205,23 +159,41 @@ export function App() {
   const [trackBoxCode, setTrackBoxCode] = useState("");
   const [showPricing, setShowPricing] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
+  const [configError, setConfigError] = useState<string | null>(null);
+  const [phoneError, setPhoneError] = useState<string | null>(null);
+  const [pendingPaymentRecovery, setPendingPaymentRecovery] = useState<{
+    token: string;
+    response?: RazorpaySuccessResponse;
+  } | null>(null);
+
+  const loadShopConfig = useCallback(() => {
+    setLoading(true);
+    setConfigError(null);
+    customerApi
+      .config()
+      .then((loaded) => {
+        setConfig(loaded);
+        setConfigError(null);
+      })
+      .catch((caught: unknown) => {
+        const msg =
+          caught instanceof Error && caught.message === "Failed to fetch"
+            ? "Could not connect to the shop. Please check your internet connection."
+            : "Shop configuration could not be loaded. Please retry.";
+        setConfigError(msg);
+        setStatus(msg);
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    loadShopConfig();
+  }, [loadShopConfig]);
 
   useEffect(() => {
     const handlePopState = () => setTrackingJobCode(trackingCodeFromPath());
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
-  }, []);
-
-  useEffect(() => {
-    customerApi
-      .config()
-      .then((loaded) => {
-        setConfig(loaded);
-      })
-      .catch(() => {
-        setStatus("Shop configuration could not be loaded. Please retry.");
-      })
-      .finally(() => setLoading(false));
   }, []);
 
   useEffect(() => {
@@ -237,6 +209,61 @@ export function App() {
     void customerApi
       .getDraft(savedToken)
       ?.then((draft) => {
+        // 1. If server confirms order is paid/queued/completed, navigate to tracking
+        if (
+          SERVER_CONFIRMED_PAID_STATUSES.has(draft.status) &&
+          draft.publicJobCode
+        ) {
+          const code = draft.publicJobCode;
+          sessionStorage.removeItem(DRAFT_TOKEN_KEY);
+          // Preserve tracking authorization by linking any pending tracking token from this checkout session
+          if (typeof sessionStorage !== "undefined") {
+            for (let i = 0; i < sessionStorage.length; i++) {
+              const key = sessionStorage.key(i);
+              if (key && key.startsWith(PENDING_TRACKING_TOKEN_PREFIX)) {
+                const pendingToken = sessionStorage.getItem(key);
+                if (pendingToken && /^[A-Za-z0-9_-]{43}$/u.test(pendingToken)) {
+                  sessionStorage.setItem(
+                    trackingStorageKey(code),
+                    pendingToken,
+                  );
+                }
+                sessionStorage.removeItem(key);
+                break;
+              }
+            }
+          }
+          window.history.pushState(
+            null,
+            "",
+            `/track/${encodeURIComponent(code)}`,
+          );
+          setTrackingJobCode(code);
+          return;
+        }
+
+        // 2. If payment was initiated (PAYMENT_PENDING) and this session has an in-flight checkout pending tracking token,
+        // restore pending recovery so the customer sees "Payment Verification Pending" with "Check Payment Status" button.
+        let hasInFlightPayment = false;
+        if (typeof sessionStorage !== "undefined") {
+          for (let i = 0; i < sessionStorage.length; i++) {
+            const key = sessionStorage.key(i);
+            if (key && key.startsWith(PENDING_TRACKING_TOKEN_PREFIX)) {
+              hasInFlightPayment = true;
+              break;
+            }
+          }
+        }
+        if (draft.status === "PAYMENT_PENDING" && hasInFlightPayment) {
+          setDraftToken(savedToken);
+          setPendingPaymentRecovery({ token: savedToken });
+          setStatus(
+            "Payment verification is pending. Tap Check Payment Status to confirm.",
+          );
+          return;
+        }
+
+        // 3. Otherwise restore normal unpaid or review draft session
         setCustomerName(draft.customerName);
         setCustomerPhone(draft.customerPhone);
         setInstructions(draft.instructions ?? "");
@@ -275,15 +302,20 @@ export function App() {
 
   const selectedFile = files[selectedFileIndex] ?? null;
 
+  const printOptions = useMemo(
+    () => config?.availablePrintOptions ?? [],
+    [config?.availablePrintOptions],
+  );
+
   const optionAvailable = useMemo(
     () =>
-      (config?.availablePrintOptions ?? []).some(
+      printOptions.some(
         (option) =>
           option.paperSize === selectedFile?.paperSize &&
           option.colorMode === selectedFile?.colorMode &&
           option.sides === selectedFile?.sides,
       ),
-    [config, selectedFile],
+    [printOptions, selectedFile],
   );
 
   function patchSelected(update: Partial<LocalOrderFile>) {
@@ -327,13 +359,14 @@ export function App() {
       setFileError("These PDFs exceed the 100 MB order limit.");
       return;
     }
+    const availableOpts = config?.availablePrintOptions ?? [];
     const preferredOption =
-      config.availablePrintOptions.find(
+      availableOpts.find(
         (o) =>
           o.paperSize === "A4" && o.colorMode === "BW" && o.sides === "SINGLE",
       ) ??
-      config.availablePrintOptions.find((o) => o.sides === "SINGLE") ??
-      config.availablePrintOptions[0];
+      availableOpts.find((o) => o.sides === "SINGLE") ??
+      availableOpts[0];
     if (!preferredOption) return;
     const added: LocalOrderFile[] = [];
     for (const selectedFile of incoming) {
@@ -394,6 +427,18 @@ export function App() {
       !optionAvailable
     )
       return;
+    if (!customerName.trim()) {
+      setStatus("Please enter your name.");
+      return;
+    }
+    if (!isValidPhone(customerPhone)) {
+      setPhoneError(
+        "Enter a valid phone number (at least 6 digits, e.g. 9876543210 or +91 98765 43210).",
+      );
+      setStatus("Please enter a valid phone number before continuing.");
+      return;
+    }
+    setPhoneError(null);
     for (const item of files) {
       const selectedPages =
         item.pageMode === "ALL" ? `1-${item.pageCount}` : item.customPages;
@@ -700,6 +745,62 @@ export function App() {
     } catch (caught) {
       setStatus(paymentErrorMessage(caught));
       setPaymentBusy(false);
+      setPendingPaymentRecovery({ token, response });
+    }
+  }
+
+  async function recoverPayment(
+    token: string,
+    response?: RazorpaySuccessResponse,
+  ) {
+    setPaymentBusy(true);
+    setStatus("Checking with the shop for your confirmed payment…");
+    try {
+      const draftStatus = await customerApi.getDraftStatus(token);
+      if (SERVER_CONFIRMED_PAID_STATUSES.has(draftStatus.status)) {
+        const code =
+          draftStatus.pickupCode ||
+          draftStatus.publicJobCode ||
+          draftStatus.orderId;
+        sessionStorage.removeItem(DRAFT_TOKEN_KEY);
+        setPendingPaymentRecovery(null);
+        setPaymentBusy(false);
+        // Link any pending tracking token generated in this checkout session
+        if (typeof sessionStorage !== "undefined" && code) {
+          for (let i = 0; i < sessionStorage.length; i++) {
+            const key = sessionStorage.key(i);
+            if (key && key.startsWith(PENDING_TRACKING_TOKEN_PREFIX)) {
+              const pendingToken = sessionStorage.getItem(key);
+              if (pendingToken && /^[A-Za-z0-9_-]{43}$/u.test(pendingToken)) {
+                sessionStorage.setItem(trackingStorageKey(code), pendingToken);
+              }
+              sessionStorage.removeItem(key);
+              break;
+            }
+          }
+        }
+        window.history.pushState(
+          null,
+          "",
+          `/track/${encodeURIComponent(code)}`,
+        );
+        setTrackingJobCode(code);
+        return;
+      }
+      if (response) {
+        setStatus("Re-verifying captured payment with the shop server…");
+        await verifyCheckoutPayment(token, response);
+        return;
+      }
+      setStatus(
+        "Payment is still being processed by the shop. Please wait a moment and tap Check Payment Status. Do not pay twice.",
+      );
+    } catch {
+      setStatus(
+        "Could not connect to check payment status. Please check your connection and tap Check Payment Status.",
+      );
+    } finally {
+      setPaymentBusy(false);
     }
   }
 
@@ -855,78 +956,24 @@ export function App() {
   }
 
   const shopHeader = (
-    <header className="hero">
-      <div className="hero-top-row">
-        <div className="hero-branding">
-          {config?.logoUrl ? (
-            <img
-              src={resolveCustomerApiUrl(config.logoUrl)}
-              alt="Shop logo"
-              style={{ maxWidth: 144, maxHeight: 80, objectFit: "contain" }}
-            />
-          ) : (
-            <h1 className="logo-text">
-              {config?.shopName ?? "Online printing"}
-            </h1>
-          )}
-        </div>
-
-        <form
-          className="track-printing-form"
-          onSubmit={(e) => {
-            e.preventDefault();
-            const trimmed = trackBoxCode.trim().toUpperCase();
-            if (trimmed) {
-              window.history.pushState(
-                null,
-                "",
-                `/track/${encodeURIComponent(trimmed)}`,
-              );
-              setTrackingJobCode(trimmed);
-            }
-          }}
-        >
-          <div className="track-input-wrapper">
-            <span className="track-icon">📦</span>
-            <input
-              placeholder="Track your order (e.g. PA-001)"
-              value={trackBoxCode}
-              onChange={(e) => setTrackBoxCode(e.target.value)}
-            />
-            <button type="submit" className="track-button">
-              Track
-            </button>
-          </div>
-        </form>
-
-        <div className="hero-actions">
-          <button
-            type="button"
-            className="pricing-info-button"
-            onClick={() => setShowPricing(true)}
-          >
-            ⓘ Pricing & Info
-          </button>
-        </div>
-      </div>
-
-      <div className="hero-content">
-        <div className="hero-text">
-          <h1 className="hero-title">Upload & Print Instantly</h1>
-          <p className="hero-subtitle">
-            Upload your PDF files and get high-quality prints without any manual
-            interference.
-          </p>
-        </div>
-        <div className="hero-decoration">
-          <div className="decoration-text">
-            Your files,
-            <br />
-            our print magic!
-          </div>
-        </div>
-      </div>
-    </header>
+    <ShopHeader
+      config={config}
+      trackBoxCode={trackBoxCode}
+      onTrackBoxCodeChange={setTrackBoxCode}
+      onTrackSubmit={(e) => {
+        e.preventDefault();
+        const trimmed = trackBoxCode.trim().toUpperCase();
+        if (trimmed) {
+          window.history.pushState(
+            null,
+            "",
+            `/track/${encodeURIComponent(trimmed)}`,
+          );
+          setTrackingJobCode(trimmed);
+        }
+      }}
+      onOpenPricing={() => setShowPricing(true)}
+    />
   );
   if (trackingJobCode) {
     const isPickupPattern = /^[A-Za-z]{2}-\d{3}$/i.test(trackingJobCode);
@@ -939,13 +986,21 @@ export function App() {
       return (
         <>
           {shopHeader}
-          <PublicTrackingPage
-            pickupCode={trackingJobCode}
-            onBack={() => {
-              setTrackingJobCode(null);
-              window.history.pushState(null, "", "/");
-            }}
-          />
+          <Suspense
+            fallback={
+              <div className="page-shell">
+                <p>Loading tracking…</p>
+              </div>
+            }
+          >
+            <PublicTrackingPage
+              pickupCode={trackingJobCode}
+              onBack={() => {
+                setTrackingJobCode(null);
+                window.history.pushState(null, "", "/");
+              }}
+            />
+          </Suspense>
         </>
       );
     }
@@ -964,7 +1019,15 @@ export function App() {
     return (
       <>
         {shopHeader}
-        <TrackingPage jobCode={trackingJobCode} onBack={handleResetToHome} />
+        <Suspense
+          fallback={
+            <div className="page-shell">
+              <p>Loading tracking…</p>
+            </div>
+          }
+        >
+          <TrackingPage jobCode={trackingJobCode} onBack={handleResetToHome} />
+        </Suspense>
       </>
     );
   }
@@ -973,43 +1036,72 @@ export function App() {
     return (
       <main className="page-shell">
         {shopHeader}
-        <CashWaitingPage
-          draftToken={draftToken}
-          orderId={cashWaitingData.orderId}
-          publicJobCode={cashWaitingData.publicJobCode}
-          payableAmountPaise={cashWaitingData.payableAmountPaise}
-          cashExpiresAtMs={cashWaitingData.cashExpiresAtMs}
-          cashGraceUntilMs={cashWaitingData.cashGraceUntilMs}
-          onPayOnlineInstead={() => {
-            setCashWaitingData(null);
-            void pay();
-          }}
-          onOrderConfirmed={(trackingCode) => {
-            setCashWaitingData(null);
-            setDraftToken(null);
-            sessionStorage.removeItem(DRAFT_TOKEN_KEY);
-            window.history.pushState(
-              null,
-              "",
-              `/track/${encodeURIComponent(trackingCode)}`,
-            );
-            setTrackingJobCode(trackingCode);
-          }}
-          onExpired={() => {
-            setCashWaitingData(null);
-            setStatus("Cash payment window expired. Please review and retry.");
-          }}
-        />
+        <Suspense
+          fallback={
+            <div className="page-shell">
+              <p>Loading…</p>
+            </div>
+          }
+        >
+          <CashWaitingPage
+            draftToken={draftToken}
+            orderId={cashWaitingData.orderId}
+            publicJobCode={cashWaitingData.publicJobCode}
+            payableAmountPaise={cashWaitingData.payableAmountPaise}
+            cashExpiresAtMs={cashWaitingData.cashExpiresAtMs}
+            cashGraceUntilMs={cashWaitingData.cashGraceUntilMs}
+            onPayOnlineInstead={() => {
+              setCashWaitingData(null);
+              void pay();
+            }}
+            onOrderConfirmed={(trackingCode) => {
+              setCashWaitingData(null);
+              setDraftToken(null);
+              sessionStorage.removeItem(DRAFT_TOKEN_KEY);
+              window.history.pushState(
+                null,
+                "",
+                `/track/${encodeURIComponent(trackingCode)}`,
+              );
+              setTrackingJobCode(trackingCode);
+            }}
+            onExpired={() => {
+              setCashWaitingData(null);
+              setStatus(
+                "Cash payment window expired. Your document and settings are preserved below so you can review and try again.",
+              );
+            }}
+          />
+        </Suspense>
       </main>
     );
   }
 
-  if (loading)
+  if (loading) {
     return (
-      <main className="page-shell">
-        <p>Loading PrintGo…</p>
+      <main className="page-shell" aria-busy="true">
+        <div style={{ textAlign: "center", padding: "4rem 1rem" }}>
+          <div
+            className="spinner"
+            style={{ margin: "0 auto 1.25rem" }}
+            aria-hidden="true"
+          />
+          <p style={{ color: "#475569", fontWeight: 600, fontSize: "1.05rem" }}>
+            Connecting to PrintGo…
+          </p>
+        </div>
       </main>
     );
+  }
+
+  if (!config) {
+    return (
+      <main className="page-shell">
+        {shopHeader}
+        <ShopUnavailableState error={configError} onRetry={loadShopConfig} />
+      </main>
+    );
+  }
 
   return (
     <main className="page-shell">
@@ -1017,131 +1109,16 @@ export function App() {
       {!busy && !paymentBusy && !quote && !paymentSuccess ? (
         <PwaInstallBanner />
       ) : null}
-      {showPricing && config ? (
-        <div
-          className="pricing-modal-backdrop"
-          onClick={() => setShowPricing(false)}
-        >
-          <div
-            className="pricing-modal-content"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="pricing-modal-title"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="pricing-modal-header">
-              <h2 id="pricing-modal-title">Pricing &amp; Rates</h2>
-              <button
-                type="button"
-                className="close-button"
-                aria-label="Close"
-                onClick={() => setShowPricing(false)}
-              >
-                &times;
-              </button>
-            </div>
-
-            {config.availablePrintOptions &&
-            config.availablePrintOptions.length > 0 ? (
-              <section className="pricing-info-section">
-                <h3>Printing Rates</h3>
-                <table className="pricing-table">
-                  <thead>
-                    <tr>
-                      <th>Option</th>
-                      <th>Sides</th>
-                      <th>Rate</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {config.availablePrintOptions.map((opt) => (
-                      <tr
-                        key={`${opt.paperSize}-${opt.colorMode}-${opt.sides}`}
-                      >
-                        <td>
-                          {opt.paperSize}{" "}
-                          {opt.colorMode === "BW" ? "B&W" : "Colour"}
-                        </td>
-                        <td>
-                          {opt.sides === "SINGLE"
-                            ? "Single-sided"
-                            : "Double-sided"}
-                        </td>
-                        <td>
-                          {opt.pricePerPagePaise !== undefined
-                            ? `₹${(opt.pricePerPagePaise / 100).toFixed(2)} / page`
-                            : "Standard"}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </section>
-            ) : null}
-
-            {config.addonServices && config.addonServices.length > 0 ? (
-              <section className="pricing-info-section">
-                <h3>Add-on Services</h3>
-                <ul className="pricing-addon-list">
-                  {config.addonServices.map((svc) => (
-                    <li key={svc.id}>
-                      <strong>{svc.name}</strong>
-                      <span>
-                        {svc.pricingType === "STAFF_PRICED"
-                          ? "Price decided by staff"
-                          : svc.fixedPricePaise === 0
-                            ? "FREE"
-                            : `₹${(svc.fixedPricePaise / 100).toFixed(2)}`}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            ) : null}
-
-            {config.priorityPrinting?.enabled ? (
-              <section className="pricing-info-section">
-                <h3>Priority Printing</h3>
-                <p>
-                  ⚡ Fast-track your print in the queue for an additional{" "}
-                  <strong>
-                    ₹{(config.priorityPrinting.feePaise / 100).toFixed(2)}
-                  </strong>
-                  .
-                </p>
-              </section>
-            ) : null}
-
-            {config.discountRules && config.discountRules.length > 0 ? (
-              <section className="pricing-info-section">
-                <h3>Volume Discounts</h3>
-                <ul className="pricing-addon-list">
-                  {config.discountRules.map((rule) => (
-                    <li key={rule.id}>
-                      <span>
-                        Orders above ₹{(rule.minSubtotalPaise / 100).toFixed(0)}
-                      </span>
-                      <strong style={{ color: "#16754A" }}>
-                        {rule.discountPercent}% OFF
-                      </strong>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            ) : null}
-
-            <div className="pricing-modal-footer">
-              <button
-                type="button"
-                className="primary-button fit"
-                onClick={() => setShowPricing(false)}
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <PricingModal
+        isOpen={showPricing}
+        config={config}
+        onClose={() => setShowPricing(false)}
+      />
+      <ShopInfoModal
+        isOpen={showInfo}
+        config={config}
+        onClose={() => setShowInfo(false)}
+      />
       {showInfo && config ? (
         <div
           className="pricing-modal-backdrop"
@@ -1225,585 +1202,65 @@ export function App() {
           onSubmit={(event) => void prepareReview(event)}
         >
           <div className="order-left">
-            <section className="step">
-              <div className="step-header">
-                <span className="step-number">1</span>
-                <h2>Customer Details</h2>
-                <p className="step-desc">
-                  Tell us a bit about yourself to get started.
-                </p>
-              </div>
-              <div className="details-grid">
-                <label>
-                  Name
-                  <div className="input-with-icon">
-                    <span className="icon">👤</span>
-                    <input
-                      required
-                      maxLength={120}
-                      aria-label="Name"
-                      value={customerName}
-                      onChange={(event) => setCustomerName(event.target.value)}
-                    />
-                  </div>
-                </label>
-                <label>
-                  Phone
-                  <div className="input-with-icon">
-                    <span className="icon">📞</span>
-                    <input
-                      required
-                      maxLength={30}
-                      aria-label="Phone"
-                      inputMode="tel"
-                      value={customerPhone}
-                      onChange={(event) => setCustomerPhone(event.target.value)}
-                    />
-                  </div>
-                </label>
-              </div>
-              {config?.addonServices && config.addonServices.length > 0 ? (
-                <div className="addon-selection-group">
-                  <span className="addon-group-label">Add-on Services</span>
-                  <div className="addon-checkbox-list">
-                    {config.addonServices.map((service) => {
-                      const isSelected = selectedAddonIds.includes(service.id);
-                      return (
-                        <label
-                          key={service.id}
-                          className={`addon-checkbox-item ${isSelected ? "selected" : ""}`}
-                        >
-                          <div className="addon-info">
-                            <span className="addon-icon">
-                              {service.name.toLowerCase().includes("bind")
-                                ? "📖"
-                                : service.name.toLowerCase().includes("staple")
-                                  ? "📎"
-                                  : "📄"}
-                            </span>
-                            <div>
-                              <span className="addon-name">{service.name}</span>
-                              <span className="addon-price-tag">
-                                {service.pricingType === "STAFF_PRICED"
-                                  ? "Price decided by staff"
-                                  : service.fixedPricePaise === 0
-                                    ? "FREE"
-                                    : `+₹${(service.fixedPricePaise / 100).toFixed(2)}`}
-                              </span>
-                            </div>
-                          </div>
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            disabled={
-                              busy || paymentBusy || Boolean(draftToken)
-                            }
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setSelectedAddonIds([
-                                  ...selectedAddonIds,
-                                  service.id,
-                                ]);
-                              } else {
-                                setSelectedAddonIds(
-                                  selectedAddonIds.filter(
-                                    (id) => id !== service.id,
-                                  ),
-                                );
-                              }
-                            }}
-                          />
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
-              ) : null}
-              <label htmlFor="customer-inst">Instructions (optional)</label>
-              <div className="input-with-icon textarea">
-                <span className="icon">📝</span>
-                <textarea
-                  placeholder="Any special instructions for your print job..."
-                  maxLength={500}
-                  aria-label="Instructions"
-                  id="customer-inst"
-                  value={instructions}
-                  onChange={(event) => setInstructions(event.target.value)}
-                />
-              </div>
-              <div className="char-count">{instructions.length}/500</div>
-            </section>
+            <CustomerDetailsStep
+              customerName={customerName}
+              onCustomerNameChange={setCustomerName}
+              customerPhone={customerPhone}
+              onCustomerPhoneChange={(val) => {
+                setCustomerPhone(val);
+                if (phoneError && isValidPhone(val)) {
+                  setPhoneError(null);
+                }
+              }}
+              phoneError={phoneError}
+              onPhoneBlur={() => {
+                if (customerPhone.trim() && !isValidPhone(customerPhone)) {
+                  setPhoneError(
+                    "Enter a valid phone number (at least 6 digits, e.g. 9876543210 or +91 98765 43210).",
+                  );
+                } else {
+                  setPhoneError(null);
+                }
+              }}
+              instructions={instructions}
+              onInstructionsChange={setInstructions}
+              addonServices={config.addonServices}
+              selectedAddonIds={selectedAddonIds}
+              onToggleAddon={(id, checked) => {
+                if (checked) {
+                  setSelectedAddonIds([...selectedAddonIds, id]);
+                } else {
+                  setSelectedAddonIds(
+                    selectedAddonIds.filter((serviceId) => serviceId !== id),
+                  );
+                }
+              }}
+              disabled={busy || paymentBusy || Boolean(draftToken)}
+            />
 
-            <section className="step">
-              <div className="step-header">
-                <span className="step-number">3</span>
-                <h2>Print Settings</h2>
-                <p className="step-desc">
-                  Choose how you want your files to be printed.
-                </p>
-              </div>
-              {selectedFile ? (
-                <>
-                  <div className="settings-file-selector">
-                    <label htmlFor="settings-file">File to configure</label>
-                    <div className="select-wrapper">
-                      <span className="icon">📄</span>
-                      <select
-                        id="settings-file"
-                        value={selectedFileIndex}
-                        onChange={(event) =>
-                          setSelectedFileIndex(Number(event.target.value))
-                        }
-                      >
-                        {files.map((item, index) => (
-                          <option key={item.clientId} value={index}>
-                            File {index + 1} — {item.name} ({item.pageCount}{" "}
-                            pages)
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="print-settings-grid">
-                    <div className="print-setting-col">
-                      <label style={{ margin: 0, fontWeight: 600 }}>
-                        Pages
-                      </label>
-                      <div className="visual-options horizontal">
-                        <label
-                          className={`visual-option-card ${selectedFile.pageMode === "ALL" ? "selected" : ""}`}
-                        >
-                          <input
-                            type="radio"
-                            checked={selectedFile.pageMode === "ALL"}
-                            onChange={() => patchSelected({ pageMode: "ALL" })}
-                          />
-                          <span className="radio-circle"></span>
-                          <span className="label">All pages</span>
-                        </label>
-                        <label
-                          className={`visual-option-card ${selectedFile.pageMode === "CUSTOM" ? "selected" : ""}`}
-                        >
-                          <input
-                            type="radio"
-                            checked={selectedFile.pageMode === "CUSTOM"}
-                            onChange={() =>
-                              patchSelected({ pageMode: "CUSTOM" })
-                            }
-                          />
-                          <span className="radio-circle"></span>
-                          <span className="label">Custom range</span>
-                        </label>
-                      </div>
-                      {selectedFile.pageMode === "CUSTOM" && (
-                        <input
-                          aria-label="Custom pages"
-                          placeholder="e.g. 1, 3, 5-10"
-                          value={selectedFile.customPages}
-                          onChange={(event) =>
-                            patchSelected({ customPages: event.target.value })
-                          }
-                          className="custom-pages-input"
-                        />
-                      )}
-                    </div>
-
-                    <div className="print-setting-col row-layout">
-                      <div className="copies-control">
-                        <label htmlFor="copies-input" style={{ margin: 0 }}>
-                          Copies
-                        </label>
-                        <div className="number-stepper">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              patchSelected({
-                                copies: Math.max(
-                                  MIN_PRINT_COPIES,
-                                  selectedFile.copies - 1,
-                                ),
-                              })
-                            }
-                          >
-                            -
-                          </button>
-                          <input
-                            id="copies-input"
-                            type="number"
-                            min={MIN_PRINT_COPIES}
-                            max={MAX_PRINT_COPIES}
-                            value={selectedFile.copies}
-                            onChange={(event) =>
-                              patchSelected({
-                                copies: Number(event.target.value),
-                              })
-                            }
-                          />
-                          <button
-                            type="button"
-                            onClick={() =>
-                              patchSelected({
-                                copies: Math.min(
-                                  MAX_PRINT_COPIES,
-                                  selectedFile.copies + 1,
-                                ),
-                              })
-                            }
-                          >
-                            +
-                          </button>
-                        </div>
-                      </div>
-                      <div className="paper-size-control">
-                        <label htmlFor="paper-size" style={{ margin: 0 }}>
-                          Paper size
-                        </label>
-                        <div className="select-wrapper">
-                          <span className="icon">📄</span>
-                          <select
-                            id="paper-size"
-                            value={selectedFile.paperSize}
-                            onChange={(event) =>
-                              patchSelected({
-                                paperSize: event.target.value as PaperSize,
-                              })
-                            }
-                          >
-                            <option value="A4">A4</option>
-                            <option
-                              value="A3"
-                              disabled={
-                                !config.availablePrintOptions.some(
-                                  (o) => o.paperSize === "A3",
-                                )
-                              }
-                            >
-                              {config.availablePrintOptions.some(
-                                (o) => o.paperSize === "A3",
-                              )
-                                ? "A3"
-                                : "A3 (A3 paper unavailable)"}
-                            </option>
-                          </select>
-                        </div>
-                        {!config.availablePrintOptions.some(
-                          (o) => o.paperSize === "A3",
-                        ) && (
-                          <span
-                            style={{
-                              fontSize: "0.75rem",
-                              color: "#64748b",
-                              marginTop: "0.25rem",
-                              display: "block",
-                            }}
-                          >
-                            A3 paper unavailable
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="print-setting-col">
-                      <label style={{ margin: 0 }}>Colour</label>
-                      <div className="visual-options horizontal">
-                        <label
-                          className={`visual-option-card ${selectedFile.colorMode === "BW" ? "selected" : ""} ${!config.availablePrintOptions.some((o) => o.paperSize === selectedFile.paperSize && o.colorMode === "BW") ? "disabled" : ""}`}
-                        >
-                          <input
-                            type="radio"
-                            name="colorMode"
-                            value="BW"
-                            checked={selectedFile.colorMode === "BW"}
-                            disabled={
-                              !config.availablePrintOptions.some(
-                                (o) =>
-                                  o.paperSize === selectedFile.paperSize &&
-                                  o.colorMode === "BW",
-                              )
-                            }
-                            onChange={() => patchSelected({ colorMode: "BW" })}
-                          />
-                          <span className="card-icon bw-icon"></span>
-                          <span className="label">Black & white</span>
-                          <span className="radio-circle"></span>
-                        </label>
-                        <label
-                          className={`visual-option-card ${selectedFile.colorMode === "COLOR" ? "selected" : ""} ${!config.availablePrintOptions.some((o) => o.paperSize === selectedFile.paperSize && o.colorMode === "COLOR") ? "disabled" : ""}`}
-                        >
-                          <input
-                            type="radio"
-                            name="colorMode"
-                            value="COLOR"
-                            checked={selectedFile.colorMode === "COLOR"}
-                            disabled={
-                              !config.availablePrintOptions.some(
-                                (o) =>
-                                  o.paperSize === selectedFile.paperSize &&
-                                  o.colorMode === "COLOR",
-                              )
-                            }
-                            onChange={() =>
-                              patchSelected({ colorMode: "COLOR" })
-                            }
-                          />
-                          <span className="card-icon color-icon"></span>
-                          <span className="label">
-                            Colour
-                            {!config.availablePrintOptions.some(
-                              (o) =>
-                                o.paperSize === selectedFile.paperSize &&
-                                o.colorMode === "COLOR",
-                            ) && (
-                              <span
-                                style={{
-                                  display: "block",
-                                  fontSize: "0.7rem",
-                                  color: "#64748b",
-                                  fontWeight: 400,
-                                }}
-                              >
-                                No colour printer available
-                              </span>
-                            )}
-                          </span>
-                          <span className="radio-circle"></span>
-                        </label>
-                      </div>
-                    </div>
-
-                    <div className="print-setting-col">
-                      <label style={{ margin: 0 }}>Sides</label>
-                      <div className="visual-options horizontal">
-                        <label
-                          className={`visual-option-card ${selectedFile.sides === "SINGLE" ? "selected" : ""} ${!config.availablePrintOptions.some((o) => o.paperSize === selectedFile.paperSize && o.colorMode === selectedFile.colorMode && o.sides === "SINGLE") ? "disabled" : ""}`}
-                        >
-                          <input
-                            type="radio"
-                            name="sides"
-                            value="SINGLE"
-                            checked={selectedFile.sides === "SINGLE"}
-                            disabled={
-                              !config.availablePrintOptions.some(
-                                (o) =>
-                                  o.paperSize === selectedFile.paperSize &&
-                                  o.colorMode === selectedFile.colorMode &&
-                                  o.sides === "SINGLE",
-                              )
-                            }
-                            onChange={() => patchSelected({ sides: "SINGLE" })}
-                          />
-                          <span className="card-icon single-side-icon">📄</span>
-                          <span className="label">Single-sided</span>
-                          <span className="radio-circle"></span>
-                        </label>
-                        <label
-                          className={`visual-option-card ${selectedFile.sides === "DOUBLE" ? "selected" : ""} ${!config.availablePrintOptions.some((o) => o.paperSize === selectedFile.paperSize && o.colorMode === selectedFile.colorMode && o.sides === "DOUBLE") ? "disabled" : ""}`}
-                        >
-                          <input
-                            type="radio"
-                            name="sides"
-                            value="DOUBLE"
-                            checked={selectedFile.sides === "DOUBLE"}
-                            disabled={
-                              !config.availablePrintOptions.some(
-                                (o) =>
-                                  o.paperSize === selectedFile.paperSize &&
-                                  o.colorMode === selectedFile.colorMode &&
-                                  o.sides === "DOUBLE",
-                              )
-                            }
-                            onChange={() => patchSelected({ sides: "DOUBLE" })}
-                          />
-                          <span className="card-icon double-side-icon">📑</span>
-                          <span className="label">
-                            Double-sided
-                            {!config.availablePrintOptions.some(
-                              (o) =>
-                                o.paperSize === selectedFile.paperSize &&
-                                o.colorMode === selectedFile.colorMode &&
-                                o.sides === "DOUBLE",
-                            ) && (
-                              <span
-                                style={{
-                                  display: "block",
-                                  fontSize: "0.72rem",
-                                  color: "#64748b",
-                                  fontWeight: 400,
-                                  marginTop: "0.15rem",
-                                }}
-                              >
-                                Duplex printing unavailable on current printers
-                              </span>
-                            )}
-                          </span>
-                          <span className="radio-circle"></span>
-                        </label>
-                      </div>
-                    </div>
-                  </div>
-                  {!optionAvailable && (
-                    <p className="error">
-                      {selectedFile?.sides === "DOUBLE" &&
-                      !config.availablePrintOptions.some(
-                        (o) =>
-                          o.paperSize === selectedFile.paperSize &&
-                          o.colorMode === selectedFile.colorMode &&
-                          o.sides === "DOUBLE",
-                      )
-                        ? "Double-sided printing is not supported for this paper and color option. Please switch to Single-sided."
-                        : "That print combination is not currently available."}
-                    </p>
-                  )}
-                  <button
-                    type="button"
-                    onClick={applySettingsToAll}
-                    className="apply-all-btn"
-                  >
-                    ⚡ Apply these settings to all files
-                  </button>
-                </>
-              ) : (
-                <p className="muted">Add a PDF to configure print settings.</p>
-              )}
-            </section>
+            <PrintSettingsStep
+              files={files}
+              selectedFile={selectedFile}
+              selectedFileIndex={selectedFileIndex}
+              onSelectFileIndex={setSelectedFileIndex}
+              printOptions={printOptions}
+              optionAvailable={optionAvailable}
+              onPatchSelected={patchSelected}
+              onApplySettingsToAll={applySettingsToAll}
+            />
           </div>
 
           <div className="order-right">
-            <section className="step">
-              <div className="step-header">
-                <span className="step-number">2</span>
-                <h2>Upload PDFs</h2>
-                <p className="step-desc">
-                  Upload one or more PDF files. Your printer will print them
-                  instantly.
-                </p>
-              </div>
-              <div className="file-list">
-                {files.map((item, index) => (
-                  <div
-                    key={item.clientId}
-                    className={`file-card-compact ${selectedFileIndex === index ? "active" : ""}`}
-                    onClick={() => setSelectedFileIndex(index)}
-                    role="button"
-                    tabIndex={0}
-                    aria-label={`Settings for File ${index + 1}, ${item.name}`}
-                  >
-                    <div className="file-icon-wrapper">
-                      <span className="pdf-icon-doc">PDF</span>
-                    </div>
-                    <div className="file-info">
-                      <span className="file-name" title={item.name}>
-                        {item.name.length > 30
-                          ? item.name.substring(0, 30) + "..."
-                          : item.name}
-                      </span>
-                      <span className="file-meta">
-                        {item.pageCount} pages · {humanFileSize(item.size)}
-                      </span>
-                      {(item.uploadStatus === "UPLOADING" ||
-                        item.uploadStatus === "VALIDATING") && (
-                        <div
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "8px",
-                            marginTop: "4px",
-                          }}
-                        >
-                          <progress
-                            value={item.uploadProgress}
-                            max="100"
-                            style={{ height: "6px", flexGrow: 1 }}
-                          />
-                          <span
-                            style={{ fontSize: "0.75rem", color: "#64748b" }}
-                          >
-                            {Math.round(item.uploadProgress)}%
-                          </span>
-                        </div>
-                      )}
-                      {item.uploadStatus === "FAILED" && (
-                        <span className="file-status status-error">
-                          {item.uploadError}
-                        </span>
-                      )}
-                    </div>
-                    <div className="file-actions-right">
-                      {item.uploadStatus === "UPLOADED" && (
-                        <span className="uploaded-badge">✓ Uploaded</span>
-                      )}
-                      <button
-                        type="button"
-                        className="remove-btn"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          removeFile(index);
-                        }}
-                        aria-label="Remove file"
-                      >
-                        &times;
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {files.length < (config?.maxOrderFiles ?? 10) && (
-                <label className="drop-zone">
-                  <div className="drop-icon">+</div>
-                  <div className="drop-title">Add another PDF</div>
-                  <div className="drop-subtitle">
-                    Choose files or drag and drop
-                  </div>
-                  <div className="choose-btn">Choose Files</div>
-                  <input
-                    type="file"
-                    aria-label="Choose Files"
-                    accept="application/pdf"
-                    multiple
-                    disabled={busy || paymentBusy || Boolean(draftToken)}
-
-                    onChange={(event) => {
-                      if (!event.target.files?.length) return;
-                      void chooseFiles(event.target.files);
-                      event.target.value = "";
-                    }}
-                  />
-                </label>
-              )}
-
-              <div className="upload-footer">
-                <span className="file-count">
-                  {files.length} of {config.maxOrderFiles ?? 10} files | Maximum{" "}
-                  {config ? humanFileSize(config.maxPdfSizeBytes) : "20.0 MB"}{" "}
-                  per file.
-                </span>
-                <a
-                  href="https://www.ilovepdf.com/compress_pdf"
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  className="compress-link"
-                >
-                  Need a smaller file? Open iLovePDF ↗
-                </a>
-                <p
-                  className="privacy-warning"
-                  style={{
-                    fontSize: "0.75rem",
-                    marginTop: "4px",
-                    color: "#64748b",
-                  }}
-                >
-                  iLovePDF is an external site; its privacy terms apply.
-                </p>
-              </div>
-              {fileError && (
-                <p className="error" role="alert">
-                  {fileError}
-                </p>
-              )}
-            </section>
+            <UploadPdfsStep
+              files={files}
+              selectedFileIndex={selectedFileIndex}
+              onSelectFileIndex={setSelectedFileIndex}
+              onRemoveFile={removeFile}
+              onChooseFiles={(fileList) => void chooseFiles(fileList)}
+              config={config}
+              fileError={fileError}
+              disabled={busy || paymentBusy || Boolean(draftToken)}
+            />
 
             <section className="step review">
               <div className="step-header">
@@ -1828,6 +1285,64 @@ export function App() {
                 >
                   {status}
                 </p>
+              )}
+
+              {pendingPaymentRecovery && !quote && (
+                <div
+                  style={{
+                    backgroundColor: "#FEF3C7",
+                    border: "1.5px solid #F59E0B",
+                    borderRadius: "8px",
+                    padding: "1rem",
+                    textAlign: "left",
+                    marginBottom: "1.5rem",
+                  }}
+                  role="alert"
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.5rem",
+                      marginBottom: "0.4rem",
+                    }}
+                  >
+                    <span style={{ fontSize: "1.25rem" }}>⚠️</span>
+                    <strong style={{ color: "#92400E" }}>
+                      Payment Verification Pending
+                    </strong>
+                  </div>
+                  <p
+                    style={{
+                      fontSize: "0.85rem",
+                      color: "#78350F",
+                      margin: "0 0 0.75rem",
+                    }}
+                  >
+                    Your payment was received, but server verification was
+                    interrupted by a network issue. Tap below to verify your
+                    payment and get your print job tracking code.
+                  </p>
+                  <button
+                    type="button"
+                    className="pay-button"
+                    style={{
+                      backgroundColor: "#D97706",
+                      borderColor: "#B45309",
+                      width: "100%",
+                      padding: "0.75rem",
+                    }}
+                    disabled={paymentBusy}
+                    onClick={() =>
+                      void recoverPayment(
+                        pendingPaymentRecovery.token,
+                        pendingPaymentRecovery.response,
+                      )
+                    }
+                  >
+                    {paymentBusy ? "Checking Status…" : "Check Payment Status"}
+                  </button>
+                </div>
               )}
 
               {!quote && (
@@ -1875,199 +1390,89 @@ export function App() {
               ) : null}
 
               {quote && (
-                <div className="review-summary">
-                  <div className="summary-section">
-                    <div className="summary-box">
-                      <div className="summary-label">Customer Details</div>
-                      <div className="summary-val">
-                        <span className="icon">👤</span> {customerName || "—"}
-                      </div>
-                      <div className="summary-val">
-                        <span className="icon">📞</span> {customerPhone || "—"}
-                      </div>
-                    </div>
-                    <div className="summary-box">
-                      <div className="summary-label">
-                        Files ({files.length})
-                      </div>
-                      <div className="summary-files">
-                        {files.map((f) => (
-                          <div key={f.clientId} className="summary-file-row">
-                            <span className="pdf-icon-small">PDF</span>
-                            <div className="summary-file-info">
-                              <span className="name" title={f.name}>
-                                {f.name.length > 25
-                                  ? f.name.substring(0, 25) + "..."
-                                  : f.name}
-                              </span>
-                              <span className="meta">
-                                {f.pageCount} pages · {humanFileSize(f.size)}
-                              </span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="summary-order">
-                    <div className="summary-label">Order Summary</div>
-                    {quote.files?.map((quoted, index) => (
-                      <div className="summary-row" key={quoted.fileId}>
-                        <span>File {index + 1}</span>
-                        <span>{formatInr(quoted.printingAmountPaise)}</span>
-                      </div>
-                    ))}
-                    <div className="summary-row">
-                      <span>Printing</span>
-                      <span>{formatInr(quote.printingAmountPaise)}</span>
-                    </div>
-                    {quote.serviceChargePaise ? (
-                      <div className="summary-row">
-                        <span>File service</span>
-                        <span>{formatInr(quote.serviceChargePaise)}</span>
-                      </div>
-                    ) : null}
-                    {quote.addonServices && quote.addonServices.length > 0
-                      ? quote.addonServices.map((s) => (
-                          <div className="summary-row" key={s.serviceId}>
-                            <span>{s.serviceName}</span>
-                            <span>
-                              {s.pricingType === "STAFF_PRICED"
-                                ? "TBD"
-                                : s.onlinePricePaise === 0
-                                  ? "FREE"
-                                  : formatInr(s.onlinePricePaise)}
-                            </span>
-                          </div>
-                        ))
-                      : null}
-                    {quote.priorityFeePaise && quote.priorityFeePaise > 0 ? (
-                      <div className="summary-row">
-                        <span>Priority queue</span>
-                        <span>{formatInr(quote.priorityFeePaise)}</span>
-                      </div>
-                    ) : null}
-                    {quote.discountAmountPaise &&
-                    quote.discountAmountPaise > 0 ? (
-                      <div className="summary-row discount">
-                        <span>
-                          Discount ({quote.appliedDiscount?.discountPercent}%
-                          off)
-                        </span>
-                        <span>-{formatInr(quote.discountAmountPaise)}</span>
-                      </div>
-                    ) : null}
-                  </div>
-
-                  <div className="total-box">
-                    <div className="total-label">Total Amount</div>
-                    <div className="total-value">
-                      {formatInr(quote.totalAmountPaise)}
-                    </div>
-
-                    {quote.addonServices?.some(
-                      (s) => s.pricingType === "STAFF_PRICED",
-                    ) && (
-                      <div className="staff-price-warning">
-                        Note: Staff-priced items will be paid at the counter.
-                      </div>
-                    )}
-
-                    {draftToken && (
-                      <div
-                        className="payment-methods"
-                        style={{
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: "0.6rem",
-                          marginTop: "0.75rem",
-                        }}
-                      >
-                        {config?.cashOrdersEnabled ? (
-                          <>
-                            <button
-                              type="button"
-                              className="pay-button"
-                              onClick={() => void pay()}
-                              disabled={
-                                paymentBusy ||
-                                busy ||
-                                cashSelecting ||
-                                Boolean(paymentSuccess)
-                              }
+                <OrderReviewSummary
+                  quote={quote}
+                  files={files}
+                  customerName={customerName}
+                  customerPhone={customerPhone}
+                >
+                  {draftToken && (
+                    <div
+                      className="payment-methods"
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "0.6rem",
+                        marginTop: "0.75rem",
+                      }}
+                    >
+                      {pendingPaymentRecovery ? (
+                        <div
+                          style={{
+                            backgroundColor: "#FEF3C7",
+                            border: "1.5px solid #F59E0B",
+                            borderRadius: "8px",
+                            padding: "1rem",
+                            textAlign: "left",
+                          }}
+                          role="alert"
+                        >
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "0.5rem",
+                              marginBottom: "0.4rem",
+                            }}
+                          >
+                            <span style={{ fontSize: "1.25rem" }}>⚠️</span>
+                            <strong
                               style={{
-                                display: "flex",
-                                flexDirection: "column",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                padding: "0.75rem 1rem",
-                                cursor: "pointer",
+                                color: "#92400E",
+                                fontSize: "0.95rem",
                               }}
                             >
-                              <span
-                                style={{ fontSize: "1rem", fontWeight: 700 }}
-                              >
-                                {paymentBusy
-                                  ? "Confirming payment…"
-                                  : `🔒 Pay Online (${formatInr(quote.totalAmountPaise)})`}
-                              </span>
-                              <span
-                                style={{
-                                  fontSize: "0.75rem",
-                                  fontWeight: 400,
-                                  opacity: 0.9,
-                                  marginTop: "0.15rem",
-                                }}
-                              >
-                                Print immediately after payment
-                              </span>
-                            </button>
-
-                            <button
-                              type="button"
-                              className="secondary-button"
-                              onClick={() => void selectCash()}
-                              disabled={
-                                paymentBusy ||
-                                busy ||
-                                cashSelecting ||
-                                Boolean(paymentSuccess)
-                              }
-                              style={{
-                                display: "flex",
-                                flexDirection: "column",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                padding: "0.65rem 1rem",
-                                cursor: "pointer",
-                                border: "1px solid #CBD5E1",
-                                borderRadius: "8px",
-                                backgroundColor: "#FFFFFF",
-                                color: "#1E293B",
-                              }}
-                            >
-                              <span
-                                style={{ fontSize: "0.95rem", fontWeight: 600 }}
-                              >
-                                {cashSelecting
-                                  ? "Selecting cash…"
-                                  : "💵 Pay Cash at Counter"}
-                              </span>
-                              <span
-                                style={{
-                                  fontSize: "0.75rem",
-                                  fontWeight: 400,
-                                  color: "#64748B",
-                                  marginTop: "0.15rem",
-                                }}
-                              >
-                                Printing starts after the shopkeeper confirms
-                                payment
-                              </span>
-                            </button>
-                          </>
-                        ) : (
+                              Payment Verification Pending
+                            </strong>
+                          </div>
+                          <p
+                            style={{
+                              margin: "0 0 0.75rem",
+                              fontSize: "0.88rem",
+                              color: "#78350F",
+                              lineHeight: "1.4",
+                            }}
+                          >
+                            Your payment was submitted to Razorpay, but
+                            connecting to the shop server timed out before
+                            confirmation arrived.
+                            <br />
+                            <strong>Please do not pay again.</strong> Tap below
+                            to check your payment status.
+                          </p>
+                          <button
+                            type="button"
+                            className="primary-button"
+                            onClick={() =>
+                              void recoverPayment(
+                                pendingPaymentRecovery.token,
+                                pendingPaymentRecovery.response,
+                              )
+                            }
+                            disabled={paymentBusy}
+                            style={{
+                              width: "100%",
+                              padding: "0.75rem",
+                              marginTop: 0,
+                            }}
+                          >
+                            {paymentBusy
+                              ? "Checking Status…"
+                              : "Check Payment Status"}
+                          </button>
+                        </div>
+                      ) : config?.cashOrdersEnabled ? (
+                        <>
                           <button
                             type="button"
                             className="pay-button"
@@ -2078,48 +1483,101 @@ export function App() {
                               cashSelecting ||
                               Boolean(paymentSuccess)
                             }
+                            style={{
+                              display: "flex",
+                              flexDirection: "column",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              padding: "0.75rem 1rem",
+                              cursor: "pointer",
+                            }}
                           >
-                            {paymentBusy
-                              ? "Confirming payment…"
-                              : `🔒 Pay ${formatInr(quote.totalAmountPaise)}`}
+                            <span style={{ fontSize: "1rem", fontWeight: 700 }}>
+                              {paymentBusy
+                                ? "Confirming payment…"
+                                : `🔒 Pay Online (${formatInr(quote.totalAmountPaise)})`}
+                            </span>
+                            <span
+                              style={{
+                                fontSize: "0.75rem",
+                                fontWeight: 400,
+                                opacity: 0.9,
+                                marginTop: "0.15rem",
+                              }}
+                            >
+                              Print immediately after payment
+                            </span>
                           </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
+
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() => void selectCash()}
+                            disabled={
+                              paymentBusy ||
+                              busy ||
+                              cashSelecting ||
+                              Boolean(paymentSuccess)
+                            }
+                            style={{
+                              display: "flex",
+                              flexDirection: "column",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              padding: "0.65rem 1rem",
+                              cursor: "pointer",
+                              border: "1px solid #CBD5E1",
+                              borderRadius: "8px",
+                              backgroundColor: "#FFFFFF",
+                              color: "#1E293B",
+                            }}
+                          >
+                            <span
+                              style={{ fontSize: "0.95rem", fontWeight: 600 }}
+                            >
+                              {cashSelecting
+                                ? "Selecting cash…"
+                                : "💵 Pay Cash at Counter"}
+                            </span>
+                            <span
+                              style={{
+                                fontSize: "0.75rem",
+                                fontWeight: 400,
+                                color: "#64748B",
+                                marginTop: "0.15rem",
+                              }}
+                            >
+                              Printing starts after the shopkeeper confirms
+                              payment
+                            </span>
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          className="pay-button"
+                          onClick={() => void pay()}
+                          disabled={
+                            paymentBusy ||
+                            busy ||
+                            cashSelecting ||
+                            Boolean(paymentSuccess)
+                          }
+                        >
+                          {paymentBusy
+                            ? "Confirming payment…"
+                            : `🔒 Pay ${formatInr(quote.totalAmountPaise)}`}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </OrderReviewSummary>
               )}
             </section>
           </div>
         </form>
       )}
-      <footer
-        className="customer-privacy-footer"
-        style={{
-          marginTop: "2.5rem",
-          paddingTop: "1.5rem",
-          borderTop: "1px solid #E1E5E2",
-          textAlign: "center",
-        }}
-      >
-        <p
-          className="muted"
-          style={{
-            fontSize: "0.85rem",
-            maxWidth: "520px",
-            margin: "0 auto 0.5rem auto",
-            lineHeight: "1.5",
-          }}
-        >
-          🔒 <strong>Privacy &amp; Automatic Cleanup:</strong> Unpaid uploads
-          are purged after 10 minutes. Completed print data is purged two hours
-          after the entire order finishes.
-        </p>
-        <p className="muted" style={{ fontSize: "0.8rem", margin: 0 }}>
-          Powered by <strong>{config?.appName ?? "PrintGo"}</strong> · Secure
-          Single-Shop Printing
-        </p>
-      </footer>
+      <CustomerPrivacyFooter appName={config?.appName} />
     </main>
   );
 }
