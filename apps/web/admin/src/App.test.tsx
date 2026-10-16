@@ -137,6 +137,9 @@ describe("Admin application", () => {
       await screen.findByRole("navigation", { name: "Admin navigation" }),
     ).toBeTruthy();
     expect(screen.getByRole("link", { name: "Live Orders" })).toBeTruthy();
+    const settingsButton = screen.getByRole("button", { name: /Settings/i });
+    expect(settingsButton).toBeTruthy();
+    await user.click(settingsButton);
     expect(screen.getByRole("link", { name: "Security" })).toBeTruthy();
     expect(
       await screen.findByRole("heading", { name: "ABC Xerox" }),

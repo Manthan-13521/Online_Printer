@@ -736,5 +736,183 @@ describe("AgentDaemon", () => {
 
       daemon.stop();
     });
+
+    describe("Instant Print Dispatch Optimizations (Phases 1 & 2)", () => {
+      it("Phase 1: WAKE_UP while pulse is in flight sets pendingWakeup and schedules immediate follow-up", async () => {
+        let resolveHeartbeat: (val: unknown) => void = () => undefined;
+        let heartbeatCount = 0;
+        const client = {
+          sendHeartbeat: vi.fn(() => {
+            heartbeatCount++;
+            if (heartbeatCount === 1) {
+              return Promise.resolve({
+                acknowledged: true,
+                serverTimeMs: Date.now(),
+                onlinePrintingEnabled: true,
+                printJobs: [],
+              });
+            }
+            // Second heartbeat stays in flight until resolveHeartbeat is called
+            return new Promise((resolve) => {
+              resolveHeartbeat = resolve;
+            });
+          }),
+        };
+
+        const daemon = new AgentDaemon({
+          credentialStore: createMockStore({
+            agentId: "a1",
+            agentSecret: "s1",
+            serverUrl: "http://localhost:8787",
+            displayName: "Test Agent",
+          }),
+          client: client as unknown as AgentClient,
+          printerAdapter: createMockAdapter(),
+          heartbeatIntervalMs: 5_000,
+        });
+
+        await daemon.start();
+        expect(client.sendHeartbeat).toHaveBeenCalledTimes(1);
+
+        // Advance 60s to let schedulePulse trigger the second pulse
+        vi.advanceTimersByTime(60_000);
+        await vi.waitFor(() =>
+          expect(client.sendHeartbeat).toHaveBeenCalledTimes(2),
+        );
+
+        // While pulse 2 is in flight, simulate WAKE_UP arriving
+        (
+          daemon as unknown as {
+            nextDelayMs: number;
+            wakeupTriggered: boolean;
+            isBeating: boolean;
+            pendingWakeup: boolean;
+            reschedulePulse: () => void;
+          }
+        ).nextDelayMs = 0;
+        (daemon as unknown as { wakeupTriggered: boolean }).wakeupTriggered =
+          true;
+        if ((daemon as unknown as { isBeating: boolean }).isBeating) {
+          (daemon as unknown as { pendingWakeup: boolean }).pendingWakeup =
+            true;
+        }
+        (
+          daemon as unknown as { reschedulePulse: () => void }
+        ).reschedulePulse();
+
+        expect(daemon.isPendingWakeup()).toBe(true);
+        expect(daemon.isWakeupTriggered()).toBe(true);
+
+        // Complete the in-flight heartbeat
+        resolveHeartbeat({
+          acknowledged: true,
+          serverTimeMs: Date.now(),
+          onlinePrintingEnabled: true,
+          printJobs: [],
+        });
+        await vi.waitFor(() => expect(daemon.isPendingWakeup()).toBe(false));
+
+        // Advance 0ms timer to fire immediate follow-up pulse
+        vi.advanceTimersByTime(0);
+        await vi.waitFor(() =>
+          expect(client.sendHeartbeat).toHaveBeenCalledTimes(3),
+        );
+
+        daemon.stop();
+      });
+
+      it("Phase 2: wakeup-triggered pulse skips redundant listPrinters call when healthy printers exist", async () => {
+        const client = {
+          sendHeartbeat: vi.fn(() =>
+            Promise.resolve({
+              acknowledged: true,
+              serverTimeMs: Date.now(),
+              onlinePrintingEnabled: true,
+              printJobs: [],
+            }),
+          ),
+        };
+        const adapter = createMockAdapter();
+
+        const daemon = new AgentDaemon({
+          credentialStore: createMockStore({
+            agentId: "a1",
+            agentSecret: "s1",
+            serverUrl: "http://localhost:8787",
+            displayName: "Test Agent",
+          }),
+          client: client as unknown as AgentClient,
+          printerAdapter: adapter,
+          heartbeatIntervalMs: 5_000,
+        });
+
+        await daemon.start();
+        expect(client.sendHeartbeat).toHaveBeenCalledTimes(1);
+        expect(adapter.listPrinters).toHaveBeenCalledTimes(1); // initial enumeration
+
+        // Mark that a wakeup event just arrived
+        (daemon as unknown as { wakeupTriggered: boolean }).wakeupTriggered =
+          true;
+        (daemon as unknown as { nextDelayMs: number }).nextDelayMs = 0;
+
+        // Run the wakeup pulse
+        await (daemon as unknown as { pulse: () => Promise<void> }).pulse();
+
+        expect(client.sendHeartbeat).toHaveBeenCalledTimes(2);
+        // Crucial verification: listPrinters should NOT have been called again!
+        expect(adapter.listPrinters).toHaveBeenCalledTimes(1);
+
+        daemon.stop();
+      });
+
+      it("Phase 2: wakeup-triggered pulse still queries printers if no healthy reports exist", async () => {
+        const client = {
+          sendHeartbeat: vi.fn(() =>
+            Promise.resolve({
+              acknowledged: true,
+              serverTimeMs: Date.now(),
+              onlinePrintingEnabled: true,
+              printJobs: [],
+            }),
+          ),
+        };
+        const adapter = createMockAdapter();
+        // Return OFFLINE printer
+        adapter.getStatus = vi.fn(() =>
+          Promise.resolve({ availability: "OFFLINE" as const }),
+        );
+
+        const daemon = new AgentDaemon({
+          credentialStore: createMockStore({
+            agentId: "a1",
+            agentSecret: "s1",
+            serverUrl: "http://localhost:8787",
+            displayName: "Test Agent",
+          }),
+          client: client as unknown as AgentClient,
+          printerAdapter: adapter,
+          heartbeatIntervalMs: 5_000,
+        });
+
+        await daemon.start();
+        expect(client.sendHeartbeat).toHaveBeenCalledTimes(1);
+        expect(adapter.listPrinters).toHaveBeenCalledTimes(1);
+
+        // Force last printer refresh to be past the threshold
+        (
+          daemon as unknown as { lastPrinterRefreshMs: number }
+        ).lastPrinterRefreshMs = 0;
+        (daemon as unknown as { wakeupTriggered: boolean }).wakeupTriggered =
+          true;
+
+        // Run wakeup pulse - because printer was OFFLINE, it must NOT skip refresh
+        await (daemon as unknown as { pulse: () => Promise<void> }).pulse();
+
+        expect(client.sendHeartbeat).toHaveBeenCalledTimes(2);
+        expect(adapter.listPrinters).toHaveBeenCalledTimes(2);
+
+        daemon.stop();
+      });
+    });
   });
 });

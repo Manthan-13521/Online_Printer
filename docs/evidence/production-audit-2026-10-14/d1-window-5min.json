@@ -1,0 +1,134 @@
+[
+  {
+    "dimensions": {
+      "datetimeFiveMinutes": "2026-10-14T13:40:00Z"
+    },
+    "sum": {
+      "readQueries": 21,
+      "rowsRead": 761,
+      "rowsWritten": 6,
+      "writeQueries": 3
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeFiveMinutes": "2026-10-14T13:45:00Z"
+    },
+    "sum": {
+      "readQueries": 310,
+      "rowsRead": 2189,
+      "rowsWritten": 265,
+      "writeQueries": 57
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeFiveMinutes": "2026-10-14T13:50:00Z"
+    },
+    "sum": {
+      "readQueries": 500,
+      "rowsRead": 3549,
+      "rowsWritten": 449,
+      "writeQueries": 97
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeFiveMinutes": "2026-10-14T13:55:00Z"
+    },
+    "sum": {
+      "readQueries": 744,
+      "rowsRead": 3706,
+      "rowsWritten": 582,
+      "writeQueries": 114
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeFiveMinutes": "2026-10-14T14:00:00Z"
+    },
+    "sum": {
+      "readQueries": 844,
+      "rowsRead": 7342,
+      "rowsWritten": 1517,
+      "writeQueries": 340
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeFiveMinutes": "2026-10-14T14:05:00Z"
+    },
+    "sum": {
+      "readQueries": 383,
+      "rowsRead": 4634,
+      "rowsWritten": 453,
+      "writeQueries": 96
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeFiveMinutes": "2026-10-14T14:10:00Z"
+    },
+    "sum": {
+      "readQueries": 611,
+      "rowsRead": 8556,
+      "rowsWritten": 905,
+      "writeQueries": 196
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeFiveMinutes": "2026-10-14T14:15:00Z"
+    },
+    "sum": {
+      "readQueries": 100,
+      "rowsRead": 3442,
+      "rowsWritten": 46,
+      "writeQueries": 11
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeFiveMinutes": "2026-10-14T14:20:00Z"
+    },
+    "sum": {
+      "readQueries": 175,
+      "rowsRead": 4010,
+      "rowsWritten": 79,
+      "writeQueries": 31
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeFiveMinutes": "2026-10-14T14:25:00Z"
+    },
+    "sum": {
+      "readQueries": 175,
+      "rowsRead": 3270,
+      "rowsWritten": 45,
+      "writeQueries": 16
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeFiveMinutes": "2026-10-14T14:30:00Z"
+    },
+    "sum": {
+      "readQueries": 149,
+      "rowsRead": 4320,
+      "rowsWritten": 6,
+      "writeQueries": 3
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeFiveMinutes": "2026-10-14T14:35:00Z"
+    },
+    "sum": {
+      "readQueries": 27,
+      "rowsRead": 994,
+      "rowsWritten": 2,
+      "writeQueries": 1
+    }
+  }
+]

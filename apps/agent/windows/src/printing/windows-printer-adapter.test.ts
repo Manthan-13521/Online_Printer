@@ -710,6 +710,100 @@ describe("DevelopmentPrinterAdapter", () => {
   });
 });
 
+describe("Instant Print Dispatch Optimizations (Phases 3, 4, 5)", () => {
+  it("Phase 3: getStatus respects extended maxCacheAgeMs when healthy", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(100_000);
+    const scripts: string[] = [];
+    const adapter = new WindowsPrinterAdapter((script) => {
+      scripts.push(script);
+      return Promise.resolve(
+        JSON.stringify({
+          Name: "Printer1",
+          PortName: "USB001",
+          WorkOffline: false,
+          PrinterStatus: 3,
+        }),
+      );
+    });
+
+    // First call probes PowerShell
+    const s1 = await adapter.getStatus("Printer1");
+    expect(s1.availability).toBe("ONLINE");
+    expect(scripts).toHaveLength(1);
+
+    // Call after 10s with default 5s maxAge -> re-probes (default cache expired)
+    vi.setSystemTime(110_000);
+    const s2 = await adapter.getStatus("Printer1");
+    expect(s2.availability).toBe("ONLINE");
+    expect(scripts).toHaveLength(2);
+
+    // Call after 20s with maxCacheAgeMs: 30_000 -> reuses cache!
+    vi.setSystemTime(120_000);
+    const s3 = await adapter.getStatus("Printer1", { maxCacheAgeMs: 30_000 });
+    expect(s3.availability).toBe("ONLINE");
+    expect(scripts).toHaveLength(2); // no new script executed!
+  });
+
+  it("Phase 3: getStatus fails closed and re-probes if cached status was not AVAILABLE", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(100_000);
+    const scripts: string[] = [];
+    let isOffline = true;
+    const adapter = new WindowsPrinterAdapter((script) => {
+      scripts.push(script);
+      return Promise.resolve(
+        JSON.stringify({
+          Name: "Printer1",
+          PortName: "USB001",
+          WorkOffline: isOffline,
+          PrinterStatus: isOffline ? 7 : 3,
+        }),
+      );
+    });
+
+    // Initial probe shows OFFLINE
+    const s1 = await adapter.getStatus("Printer1");
+    expect(s1.availability).toBe("OFFLINE");
+    expect(scripts).toHaveLength(1);
+
+    // Call after 10s with maxCacheAgeMs: 30_000 -> should NOT trust stale OFFLINE cache, must re-probe!
+    vi.setSystemTime(110_000);
+    isOffline = false; // printer recovered
+    const s2 = await adapter.getStatus("Printer1", { maxCacheAgeMs: 30_000 });
+    expect(s2.availability).toBe("ONLINE");
+    expect(scripts).toHaveLength(2); // fresh probe executed!
+  });
+
+  it("Phase 4 & 5: submitPdfJob injects pre-resolved SumatraPDF path and 30ms early spool polling", async () => {
+    const { executor, scripts } = createScriptCapturingExecutor("99");
+    const adapter = new WindowsPrinterAdapter(executor);
+
+    // Provide pre-resolved SumatraPDF path
+    (
+      adapter as unknown as { resolvedSumatraPath: string }
+    ).resolvedSumatraPath = "C:\\Custom\\SumatraPDF.exe";
+
+    await adapter.submitPdfJob({
+      printerId: "Test Printer",
+      localPdfPath: "C:\\printgo\\job.pdf",
+    });
+
+    const submitScript = scripts.find((s) => s.includes("SumatraPDF"));
+    expect(submitScript).toBeDefined();
+
+    // Phase 4: verifies pre-resolved Sumatra path injected into PS
+    expect(submitScript).toContain("Pre-resolved SumatraPDF path not found");
+    expect(submitScript).toContain("C:\\Custom\\SumatraPDF.exe");
+    expect(submitScript).not.toContain("$candidates = @(");
+
+    // Phase 5: verifies 30ms early spool polling
+    expect(submitScript).toContain(
+      "$sleepMs = if ($iteration -lt 3) { 30 } else { 80 }",
+    );
+  });
+});
+
 describe("createDefaultPrinterAdapter Production Guard", () => {
   it("fails closed on non-Windows host when running in production", () => {
     const originalEnv = process.env.NODE_ENV;

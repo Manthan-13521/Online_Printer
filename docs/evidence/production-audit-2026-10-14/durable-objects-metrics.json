@@ -1,0 +1,362 @@
+[
+  {
+    "dimensions": {
+      "datetimeFiveMinutes": "2026-10-14T14:30:00Z",
+      "namespaceId": "13ed3a7ae06c467f82362b7398d2a890",
+      "scriptName": "printgo-api",
+      "status": "success",
+      "type": "hibernation"
+    },
+    "sum": {
+      "errors": 0,
+      "requests": 8,
+      "responseBodySize": 0,
+      "wallTime": 5737
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeFiveMinutes": "2026-10-14T14:30:00Z",
+      "namespaceId": "13ed3a7ae06c467f82362b7398d2a890",
+      "scriptName": "printgo-api",
+      "status": "responseStreamDisconnected",
+      "type": "http"
+    },
+    "sum": {
+      "errors": 7,
+      "requests": 7,
+      "responseBodySize": 0,
+      "wallTime": 104706306
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeFiveMinutes": "2026-10-14T14:30:00Z",
+      "namespaceId": "13ed3a7ae06c467f82362b7398d2a890",
+      "scriptName": "printgo-api",
+      "status": "clientDisconnected",
+      "type": "http"
+    },
+    "sum": {
+      "errors": 1,
+      "requests": 1,
+      "responseBodySize": 0,
+      "wallTime": 347557658
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeFiveMinutes": "2026-10-14T13:45:00Z",
+      "namespaceId": "13ed3a7ae06c467f82362b7398d2a890",
+      "scriptName": "printgo-api",
+      "status": "clientDisconnected",
+      "type": "http"
+    },
+    "sum": {
+      "errors": 6,
+      "requests": 6,
+      "responseBodySize": 0,
+      "wallTime": 199156587
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeFiveMinutes": "2026-10-14T13:45:00Z",
+      "namespaceId": "13ed3a7ae06c467f82362b7398d2a890",
+      "scriptName": "printgo-api",
+      "status": "responseStreamDisconnected",
+      "type": "http"
+    },
+    "sum": {
+      "errors": 1,
+      "requests": 1,
+      "responseBodySize": 0,
+      "wallTime": 12743544
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeFiveMinutes": "2026-10-14T13:50:00Z",
+      "namespaceId": "13ed3a7ae06c467f82362b7398d2a890",
+      "scriptName": "printgo-api",
+      "status": "success",
+      "type": "hibernation"
+    },
+    "sum": {
+      "errors": 0,
+      "requests": 17,
+      "responseBodySize": 0,
+      "wallTime": 8832
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeFiveMinutes": "2026-10-14T14:00:00Z",
+      "namespaceId": "13ed3a7ae06c467f82362b7398d2a890",
+      "scriptName": "printgo-api",
+      "status": "success",
+      "type": "hibernation"
+    },
+    "sum": {
+      "errors": 0,
+      "requests": 2,
+      "responseBodySize": 0,
+      "wallTime": 3201
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeFiveMinutes": "2026-10-14T14:05:00Z",
+      "namespaceId": "13ed3a7ae06c467f82362b7398d2a890",
+      "scriptName": "printgo-api",
+      "status": "responseStreamDisconnected",
+      "type": "http"
+    },
+    "sum": {
+      "errors": 2,
+      "requests": 2,
+      "responseBodySize": 0,
+      "wallTime": 28125481
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeFiveMinutes": "2026-10-14T14:25:00Z",
+      "namespaceId": "13ed3a7ae06c467f82362b7398d2a890",
+      "scriptName": "printgo-api",
+      "status": "responseStreamDisconnected",
+      "type": "http"
+    },
+    "sum": {
+      "errors": 12,
+      "requests": 12,
+      "responseBodySize": 0,
+      "wallTime": 309317812
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeFiveMinutes": "2026-10-14T13:50:00Z",
+      "namespaceId": "13ed3a7ae06c467f82362b7398d2a890",
+      "scriptName": "printgo-api",
+      "status": "clientDisconnected",
+      "type": "http"
+    },
+    "sum": {
+      "errors": 14,
+      "requests": 14,
+      "responseBodySize": 0,
+      "wallTime": 61583237
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeFiveMinutes": "2026-10-14T14:10:00Z",
+      "namespaceId": "13ed3a7ae06c467f82362b7398d2a890",
+      "scriptName": "printgo-api",
+      "status": "responseStreamDisconnected",
+      "type": "http"
+    },
+    "sum": {
+      "errors": 10,
+      "requests": 10,
+      "responseBodySize": 0,
+      "wallTime": 236545769
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeFiveMinutes": "2026-10-14T13:45:00Z",
+      "namespaceId": "13ed3a7ae06c467f82362b7398d2a890",
+      "scriptName": "printgo-api",
+      "status": "success",
+      "type": "hibernation"
+    },
+    "sum": {
+      "errors": 0,
+      "requests": 6,
+      "responseBodySize": 0,
+      "wallTime": 4096
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeFiveMinutes": "2026-10-14T14:00:00Z",
+      "namespaceId": "13ed3a7ae06c467f82362b7398d2a890",
+      "scriptName": "printgo-api",
+      "status": "clientDisconnected",
+      "type": "http"
+    },
+    "sum": {
+      "errors": 1,
+      "requests": 1,
+      "responseBodySize": 0,
+      "wallTime": 73523213
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeFiveMinutes": "2026-10-14T14:35:00Z",
+      "namespaceId": "13ed3a7ae06c467f82362b7398d2a890",
+      "scriptName": "printgo-api",
+      "status": "success",
+      "type": "hibernation"
+    },
+    "sum": {
+      "errors": 0,
+      "requests": 1,
+      "responseBodySize": 0,
+      "wallTime": 2188
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeFiveMinutes": "2026-10-14T14:15:00Z",
+      "namespaceId": "13ed3a7ae06c467f82362b7398d2a890",
+      "scriptName": "printgo-api",
+      "status": "success",
+      "type": "hibernation"
+    },
+    "sum": {
+      "errors": 0,
+      "requests": 4,
+      "responseBodySize": 0,
+      "wallTime": 4338
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeFiveMinutes": "2026-10-14T14:10:00Z",
+      "namespaceId": "13ed3a7ae06c467f82362b7398d2a890",
+      "scriptName": "printgo-api",
+      "status": "success",
+      "type": "hibernation"
+    },
+    "sum": {
+      "errors": 0,
+      "requests": 10,
+      "responseBodySize": 0,
+      "wallTime": 8202
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeFiveMinutes": "2026-10-14T14:20:00Z",
+      "namespaceId": "13ed3a7ae06c467f82362b7398d2a890",
+      "scriptName": "printgo-api",
+      "status": "success",
+      "type": "hibernation"
+    },
+    "sum": {
+      "errors": 0,
+      "requests": 10,
+      "responseBodySize": 0,
+      "wallTime": 4020
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeFiveMinutes": "2026-10-14T14:00:00Z",
+      "namespaceId": "13ed3a7ae06c467f82362b7398d2a890",
+      "scriptName": "printgo-api",
+      "status": "responseStreamDisconnected",
+      "type": "http"
+    },
+    "sum": {
+      "errors": 1,
+      "requests": 1,
+      "responseBodySize": 0,
+      "wallTime": 87845958
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeFiveMinutes": "2026-10-14T13:50:00Z",
+      "namespaceId": "13ed3a7ae06c467f82362b7398d2a890",
+      "scriptName": "printgo-api",
+      "status": "responseStreamDisconnected",
+      "type": "http"
+    },
+    "sum": {
+      "errors": 3,
+      "requests": 3,
+      "responseBodySize": 0,
+      "wallTime": 708845550
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeFiveMinutes": "2026-10-14T14:20:00Z",
+      "namespaceId": "13ed3a7ae06c467f82362b7398d2a890",
+      "scriptName": "printgo-api",
+      "status": "responseStreamDisconnected",
+      "type": "http"
+    },
+    "sum": {
+      "errors": 5,
+      "requests": 5,
+      "responseBodySize": 0,
+      "wallTime": 259049474
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeFiveMinutes": "2026-10-14T14:20:00Z",
+      "namespaceId": "13ed3a7ae06c467f82362b7398d2a890",
+      "scriptName": "printgo-api",
+      "status": "clientDisconnected",
+      "type": "http"
+    },
+    "sum": {
+      "errors": 5,
+      "requests": 5,
+      "responseBodySize": 0,
+      "wallTime": 23747324
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeFiveMinutes": "2026-10-14T14:15:00Z",
+      "namespaceId": "13ed3a7ae06c467f82362b7398d2a890",
+      "scriptName": "printgo-api",
+      "status": "responseStreamDisconnected",
+      "type": "http"
+    },
+    "sum": {
+      "errors": 5,
+      "requests": 5,
+      "responseBodySize": 0,
+      "wallTime": 313311022
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeFiveMinutes": "2026-10-14T14:05:00Z",
+      "namespaceId": "13ed3a7ae06c467f82362b7398d2a890",
+      "scriptName": "printgo-api",
+      "status": "success",
+      "type": "hibernation"
+    },
+    "sum": {
+      "errors": 0,
+      "requests": 3,
+      "responseBodySize": 0,
+      "wallTime": 182457
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeFiveMinutes": "2026-10-14T14:25:00Z",
+      "namespaceId": "13ed3a7ae06c467f82362b7398d2a890",
+      "scriptName": "printgo-api",
+      "status": "success",
+      "type": "hibernation"
+    },
+    "sum": {
+      "errors": 0,
+      "requests": 12,
+      "responseBodySize": 0,
+      "wallTime": 11827
+    }
+  }
+]

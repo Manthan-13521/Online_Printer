@@ -1,0 +1,629 @@
+[
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T13:40:00Z"
+    },
+    "sum": {
+      "readQueries": 17,
+      "rowsRead": 727,
+      "rowsWritten": 2,
+      "writeQueries": 1
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T13:41:00Z"
+    },
+    "sum": {
+      "readQueries": 1,
+      "rowsRead": 8,
+      "rowsWritten": 0,
+      "writeQueries": 0
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T13:42:00Z"
+    },
+    "sum": {
+      "readQueries": 1,
+      "rowsRead": 9,
+      "rowsWritten": 2,
+      "writeQueries": 1
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T13:43:00Z"
+    },
+    "sum": {
+      "readQueries": 1,
+      "rowsRead": 8,
+      "rowsWritten": 0,
+      "writeQueries": 0
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T13:44:00Z"
+    },
+    "sum": {
+      "readQueries": 1,
+      "rowsRead": 9,
+      "rowsWritten": 2,
+      "writeQueries": 1
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T13:45:00Z"
+    },
+    "sum": {
+      "readQueries": 44,
+      "rowsRead": 871,
+      "rowsWritten": 0,
+      "writeQueries": 0
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T13:46:00Z"
+    },
+    "sum": {
+      "readQueries": 7,
+      "rowsRead": 90,
+      "rowsWritten": 2,
+      "writeQueries": 1
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T13:47:00Z"
+    },
+    "sum": {
+      "readQueries": 75,
+      "rowsRead": 307,
+      "rowsWritten": 59,
+      "writeQueries": 11
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T13:48:00Z"
+    },
+    "sum": {
+      "readQueries": 71,
+      "rowsRead": 451,
+      "rowsWritten": 143,
+      "writeQueries": 33
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T13:49:00Z"
+    },
+    "sum": {
+      "readQueries": 113,
+      "rowsRead": 470,
+      "rowsWritten": 61,
+      "writeQueries": 12
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T13:50:00Z"
+    },
+    "sum": {
+      "readQueries": 136,
+      "rowsRead": 1476,
+      "rowsWritten": 52,
+      "writeQueries": 13
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T13:51:00Z"
+    },
+    "sum": {
+      "readQueries": 67,
+      "rowsRead": 553,
+      "rowsWritten": 84,
+      "writeQueries": 19
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T13:52:00Z"
+    },
+    "sum": {
+      "readQueries": 12,
+      "rowsRead": 68,
+      "rowsWritten": 2,
+      "writeQueries": 1
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T13:53:00Z"
+    },
+    "sum": {
+      "readQueries": 91,
+      "rowsRead": 377,
+      "rowsWritten": 107,
+      "writeQueries": 22
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T13:54:00Z"
+    },
+    "sum": {
+      "readQueries": 194,
+      "rowsRead": 1075,
+      "rowsWritten": 204,
+      "writeQueries": 42
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T13:55:00Z"
+    },
+    "sum": {
+      "readQueries": 135,
+      "rowsRead": 1237,
+      "rowsWritten": 109,
+      "writeQueries": 21
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T13:56:00Z"
+    },
+    "sum": {
+      "readQueries": 153,
+      "rowsRead": 626,
+      "rowsWritten": 122,
+      "writeQueries": 24
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T13:57:00Z"
+    },
+    "sum": {
+      "readQueries": 115,
+      "rowsRead": 456,
+      "rowsWritten": 74,
+      "writeQueries": 15
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T13:58:00Z"
+    },
+    "sum": {
+      "readQueries": 214,
+      "rowsRead": 860,
+      "rowsWritten": 155,
+      "writeQueries": 31
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T13:59:00Z"
+    },
+    "sum": {
+      "readQueries": 127,
+      "rowsRead": 527,
+      "rowsWritten": 122,
+      "writeQueries": 23
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T14:00:00Z"
+    },
+    "sum": {
+      "readQueries": 126,
+      "rowsRead": 528,
+      "rowsWritten": 122,
+      "writeQueries": 23
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T14:01:00Z"
+    },
+    "sum": {
+      "readQueries": 161,
+      "rowsRead": 1682,
+      "rowsWritten": 359,
+      "writeQueries": 83
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T14:02:00Z"
+    },
+    "sum": {
+      "readQueries": 236,
+      "rowsRead": 1716,
+      "rowsWritten": 494,
+      "writeQueries": 112
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T14:03:00Z"
+    },
+    "sum": {
+      "readQueries": 191,
+      "rowsRead": 2201,
+      "rowsWritten": 420,
+      "writeQueries": 93
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T14:04:00Z"
+    },
+    "sum": {
+      "readQueries": 130,
+      "rowsRead": 1215,
+      "rowsWritten": 122,
+      "writeQueries": 29
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T14:05:00Z"
+    },
+    "sum": {
+      "readQueries": 73,
+      "rowsRead": 1804,
+      "rowsWritten": 28,
+      "writeQueries": 8
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T14:06:00Z"
+    },
+    "sum": {
+      "readQueries": 107,
+      "rowsRead": 1988,
+      "rowsWritten": 241,
+      "writeQueries": 53
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T14:07:00Z"
+    },
+    "sum": {
+      "readQueries": 13,
+      "rowsRead": 51,
+      "rowsWritten": 2,
+      "writeQueries": 1
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T14:08:00Z"
+    },
+    "sum": {
+      "readQueries": 119,
+      "rowsRead": 498,
+      "rowsWritten": 120,
+      "writeQueries": 22
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T14:09:00Z"
+    },
+    "sum": {
+      "readQueries": 71,
+      "rowsRead": 293,
+      "rowsWritten": 62,
+      "writeQueries": 12
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T14:10:00Z"
+    },
+    "sum": {
+      "readQueries": 86,
+      "rowsRead": 363,
+      "rowsWritten": 93,
+      "writeQueries": 16
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T14:11:00Z"
+    },
+    "sum": {
+      "readQueries": 178,
+      "rowsRead": 1522,
+      "rowsWritten": 195,
+      "writeQueries": 44
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T14:12:00Z"
+    },
+    "sum": {
+      "readQueries": 140,
+      "rowsRead": 2564,
+      "rowsWritten": 192,
+      "writeQueries": 43
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T14:13:00Z"
+    },
+    "sum": {
+      "readQueries": 204,
+      "rowsRead": 3114,
+      "rowsWritten": 423,
+      "writeQueries": 92
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T14:14:00Z"
+    },
+    "sum": {
+      "readQueries": 3,
+      "rowsRead": 993,
+      "rowsWritten": 2,
+      "writeQueries": 1
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T14:15:00Z"
+    },
+    "sum": {
+      "readQueries": 39,
+      "rowsRead": 915,
+      "rowsWritten": 42,
+      "writeQueries": 9
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T14:16:00Z"
+    },
+    "sum": {
+      "readQueries": 7,
+      "rowsRead": 61,
+      "rowsWritten": 2,
+      "writeQueries": 1
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T14:17:00Z"
+    },
+    "sum": {
+      "readQueries": 5,
+      "rowsRead": 15,
+      "rowsWritten": 0,
+      "writeQueries": 0
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T14:18:00Z"
+    },
+    "sum": {
+      "readQueries": 13,
+      "rowsRead": 1172,
+      "rowsWritten": 2,
+      "writeQueries": 1
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T14:19:00Z"
+    },
+    "sum": {
+      "readQueries": 36,
+      "rowsRead": 1279,
+      "rowsWritten": 0,
+      "writeQueries": 0
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T14:20:00Z"
+    },
+    "sum": {
+      "readQueries": 53,
+      "rowsRead": 926,
+      "rowsWritten": 17,
+      "writeQueries": 7
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T14:21:00Z"
+    },
+    "sum": {
+      "readQueries": 10,
+      "rowsRead": 34,
+      "rowsWritten": 15,
+      "writeQueries": 6
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T14:22:00Z"
+    },
+    "sum": {
+      "readQueries": 86,
+      "rowsRead": 2805,
+      "rowsWritten": 45,
+      "writeQueries": 17
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T14:23:00Z"
+    },
+    "sum": {
+      "readQueries": 21,
+      "rowsRead": 229,
+      "rowsWritten": 0,
+      "writeQueries": 0
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T14:24:00Z"
+    },
+    "sum": {
+      "readQueries": 5,
+      "rowsRead": 16,
+      "rowsWritten": 2,
+      "writeQueries": 1
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T14:25:00Z"
+    },
+    "sum": {
+      "readQueries": 1,
+      "rowsRead": 8,
+      "rowsWritten": 0,
+      "writeQueries": 0
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T14:26:00Z"
+    },
+    "sum": {
+      "readQueries": 50,
+      "rowsRead": 1034,
+      "rowsWritten": 25,
+      "writeQueries": 9
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T14:27:00Z"
+    },
+    "sum": {
+      "readQueries": 37,
+      "rowsRead": 1234,
+      "rowsWritten": 13,
+      "writeQueries": 4
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T14:28:00Z"
+    },
+    "sum": {
+      "readQueries": 30,
+      "rowsRead": 321,
+      "rowsWritten": 2,
+      "writeQueries": 1
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T14:29:00Z"
+    },
+    "sum": {
+      "readQueries": 57,
+      "rowsRead": 673,
+      "rowsWritten": 5,
+      "writeQueries": 2
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T14:30:00Z"
+    },
+    "sum": {
+      "readQueries": 68,
+      "rowsRead": 2428,
+      "rowsWritten": 2,
+      "writeQueries": 1
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T14:31:00Z"
+    },
+    "sum": {
+      "readQueries": 33,
+      "rowsRead": 996,
+      "rowsWritten": 0,
+      "writeQueries": 0
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T14:32:00Z"
+    },
+    "sum": {
+      "readQueries": 19,
+      "rowsRead": 357,
+      "rowsWritten": 2,
+      "writeQueries": 1
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T14:33:00Z"
+    },
+    "sum": {
+      "readQueries": 19,
+      "rowsRead": 356,
+      "rowsWritten": 0,
+      "writeQueries": 0
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T14:34:00Z"
+    },
+    "sum": {
+      "readQueries": 10,
+      "rowsRead": 183,
+      "rowsWritten": 2,
+      "writeQueries": 1
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T14:35:00Z"
+    },
+    "sum": {
+      "readQueries": 10,
+      "rowsRead": 182,
+      "rowsWritten": 0,
+      "writeQueries": 0
+    }
+  },
+  {
+    "dimensions": {
+      "datetimeMinute": "2026-10-14T14:36:00Z"
+    },
+    "sum": {
+      "readQueries": 17,
+      "rowsRead": 812,
+      "rowsWritten": 2,
+      "writeQueries": 1
+    }
+  }
+]

@@ -1,0 +1,852 @@
+[
+  {
+    "avg": {
+      "queryDurationMs": 1.38543125,
+      "rowsRead": 741,
+      "rowsWritten": 0
+    },
+    "count": 32,
+    "dimensions": {
+      "query": "WITH page AS (\n           SELECT id, created_at_ms FROM orders\n           WHERE (created_at_ms, id) < (?, ?)\n             AND status NOT IN ('CREATED', 'UPLOADING', 'UPLOADED', 'PAYMENT_PENDING', 'PAYMENT_FAILED', 'PAYMENT_CANCELLED')\n             AND (\n               pickup_code IS NOT NULL\n               OR public_job_code IS NOT NULL\n               OR paid_at_ms IS NOT NULL\n               OR EXISTS (SELECT 1 FROM payments p WHERE p.order_id = orders.id AND p.status = 'PAID')\n               OR status = 'MANUAL_PRINT'\n               OR EXISTS (\n                 SELECT 1 FROM order_addon_services s WHERE s.order_id = orders.id\n                   AND s.snapshot_handling_mode = 'MANUAL_PRINT'\n               )\n               OR EXISTS (\n                 SELECT 1 FROM order_events e WHERE e.order_id = orders.id\n                   AND e.event_type IN ('ORDER_MANUALLY_COMPLETED','ORDER_MANUALLY_PRINTED')\n               )\n             )\n           ORDER BY created_at_ms DESC, id DESC LIMIT ?\n         )\n         SELECT o.id, o.customer_name, o.customer_phone, o.created_at_ms, o.completed_at_ms, o.pickup_code,\n           o.is_priority,\n           CASE WHEN o.status = 'MANUAL_PRINT' OR EXISTS (\n             SELECT 1 FROM order_addon_services s WHERE s.order_id = o.id\n               AND s.snapshot_handling_mode = 'MANUAL_PRINT') OR EXISTS (\n             SELECT 1 FROM order_events e WHERE e.order_id = o.id\n               AND e.event_type IN ('ORDER_MANUALLY_COMPLETED','ORDER_MANUALLY_PRINTED'))\n             THEN 1 ELSE 0 END is_manual,\n           COALESCE((SELECT json_group_array(json_object('name', s.snapshot_name,\n             'onlinePricePaise', s.snapshot_price_charged_online_paise,\n             'handlingMode', s.snapshot_handling_mode))\n             FROM order_addon_services s WHERE s.order_id = o.id), '[]') addon_summary_json,\n           COALESCE((SELECT MAX(pay.amount_paise) FROM payments pay\n             WHERE pay.order_id = o.id AND pay.status = 'PAID'), 0) online_paid_paise,\n           o.due_at_pickup_paise, o.status final_status,\n           (SELECT pr.display_name FROM print_attempts a JOIN printers pr ON pr.id = a.printer_id\n             WHERE a.order_id = o.id ORDER BY a.attempt_number DESC LIMIT ?) printer_name,\n           (SELECT pr.display_name FROM print_attempts a JOIN printers pr ON pr.id = a.printer_id\n             WHERE a.order_id = o.id AND a.fallback_from_printer_id IS NOT NULL\n             ORDER BY a.attempt_number DESC LIMIT 1) fallback_printer_name,\n           (SELECT COUNT(*) FROM print_attempts a WHERE a.order_id = o.id) attempt_count,\n           COALESCE((SELECT json_group_array(json_object('status', st.status,\n             'code', st.failure_code, 'at', st.updated_at_ms))\n             FROM print_attempt_steps st WHERE st.order_id = o.id\n               AND st.status IN ('FAILED','BLOCKED','UNCERTAIN')), '[]') failure_json,\n           CASE WHEN EXISTS (\n             SELECT 1 FROM uploads u WHERE u.order_id = o.id\n               AND u.storage_status = 'UPLOADED' AND u.deleted_at_ms IS NULL\n           ) THEN 0 ELSE 1 END purged\n         FROM page JOIN orders o ON o.id = page.id\n         ORDER BY 2 DESC, 1 DESC"
+    },
+    "sum": {
+      "queryDurationMs": 44.3338,
+      "rowsRead": 23730,
+      "rowsReturned": 524,
+      "rowsWritten": 0
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 1.1372866666666668,
+      "rowsRead": 58,
+      "rowsWritten": 0
+    },
+    "count": 90,
+    "dimensions": {
+      "query": "SELECT o.id order_id, o.status order_status, p.id printer_id,\n          COALESCE(p.physical_device_id, 'AGENT_LOCK_' || p.agent_id) physical_device_id,\n          i.identification_sheet_enabled,\n          i.identification_sheet_placement, i.id_sheet_min_pages, i.id_sheet_min_amount_paise,\n          o.total_amount_paise,\n          (SELECT SUM(COALESCE(op.selected_page_count, op.source_page_count, 1) * op.copies)\n           FROM order_files op WHERE op.order_id = o.id) total_printed_pages,\n          o.identification_required, f.id file_id, f.position file_position,\n          (SELECT COUNT(*) FROM order_files all_files WHERE all_files.order_id = o.id) file_count,\n          (SELECT COUNT(*) FROM order_files remaining WHERE remaining.order_id = o.id\n            AND remaining.print_status <> 'PRINTED') remaining_files,\n          CASE WHEN i.default_production_printer_id IS NOT NULL\n                    AND p.id <> i.default_production_printer_id\n               THEN i.default_production_printer_id\n               ELSE NULL\n          END AS fallback_from_printer_id\n        FROM orders o\n        JOIN order_files f ON f.order_id = o.id AND f.id = COALESCE((\n          SELECT next_file.id FROM order_files next_file\n          WHERE next_file.order_id = o.id AND next_file.print_status <> 'PRINTED'\n          ORDER BY next_file.position LIMIT ?\n        ), (SELECT last_file.id FROM order_files last_file\n            WHERE last_file.order_id = o.id ORDER BY last_file.position DESC LIMIT 1))\n        JOIN payments pay ON pay.order_id = o.id AND pay.status = 'PAID'\n          AND pay.provider_payment_id IS NOT NULL AND pay.verified_at_ms IS NOT NULL\n        JOIN agents a ON a.id = ? AND a.is_active = 1 AND a.last_heartbeat_at_ms >= ?\n        JOIN printers p ON p.agent_id = a.id AND p.enabled = 1 AND p.status = 'ONLINE'\n          AND COALESCE(p.is_paused, 0) = 0\n          AND p.is_production_eligible = 1 AND p.is_virtual = 0\n          AND p.capabilities_json IS NOT NULL\n        JOIN installation i ON i.id = 1\n          AND (\n            (o.printer_id IS NOT NULL AND p.id = o.printer_id)\n            OR (o.printer_id IS NULL AND (\n              i.default_production_printer_id IS NULL\n              OR p.id = i.default_production_printer_id\n              OR (\n                -- Subcase B1: Capability routing — default printer is ONLINE and NOT paused,\n                -- but lacks the specific capability requested by file f\n                p.id <> i.default_production_printer_id\n                AND EXISTS (\n                  SELECT 1 FROM printers def\n                  WHERE def.id = i.default_production_printer_id\n                    AND def.enabled = 1 AND def.status = 'ONLINE' AND COALESCE(def.is_paused, 0) = 0\n                    AND (\n                      (f.color_mode = 'COLOR' AND (\n                        (def.verified_capabilities_json IS NOT NULL AND (json_extract(def.verified_capabilities_json, '$.verified.color') <> 1 OR json_extract(def.enabled_services_json, '$.color') <> 1))\n                        OR (def.verified_capabilities_json IS NULL AND json_extract(def.capabilities_json, '$.colour') <> 1 AND json_extract(def.capabilities_json, '$.colour') <> 'true')\n                      ))\n                      OR (f.sides <> 'SINGLE' AND (\n                        (def.verified_capabilities_json IS NOT NULL AND (json_extract(def.verified_capabilities_json, '$.verified.duplex') <> 1 OR json_extract(def.enabled_services_json, '$.duplex') <> 1))\n                        OR (def.verified_capabilities_json IS NULL AND json_extract(def.capabilities_json, '$.duplex') <> 1 AND json_extract(def.capabilities_json, '$.duplex') <> 'true')\n                      ))\n                      OR (f.paper_size = 'A3' AND (\n                        (def.verified_capabilities_json IS NOT NULL AND (json_extract(def.verified_capabilities_json, '$.verified.a3') <> 1 OR json_extract(def.enabled_services_json, '$.a3') <> 1))\n                        OR (def.verified_capabilities_json IS NULL AND json_extract(def.capabilities_json, '$.paperSizes') NOT LIKE '%A3%')\n          "
+    },
+    "sum": {
+      "queryDurationMs": 102.3558,
+      "rowsRead": 5226,
+      "rowsReturned": 24,
+      "rowsWritten": 0
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.31288421052631576,
+      "rowsRead": 114,
+      "rowsWritten": 0
+    },
+    "count": 38,
+    "dimensions": {
+      "query": "SELECT \n               COALESCE(\n                 (SELECT created_count FROM daily_order_stats WHERE date_key = ?),\n                 (SELECT COUNT(*) FROM orders WHERE strftime('%Y-%m-%d', datetime(created_at_ms / 1000 + 19800, 'unixepoch')) = ?)\n               ) as created_count,\n               COALESCE(\n                 (\n                   SELECT SUM(amount_paise) FROM (\n                     SELECT p.amount_paise\n                     FROM payments p\n                     WHERE p.status = 'PAID'\n                       AND strftime('%Y-%m-%d', datetime(p.verified_at_ms / 1000 + 19800, 'unixepoch')) = ?\n                     UNION ALL\n                     SELECT o.total_amount_paise AS amount_paise\n                     FROM orders o\n                     WHERE o.payment_method = 'CASH'\n                       AND o.status NOT IN ('CANCELLED', 'DRAFT')\n                       AND strftime('%Y-%m-%d', datetime(COALESCE(o.cash_confirmed_at_ms, o.paid_at_ms, o.created_at_ms) / 1000 + 19800, 'unixepoch')) = ?\n                       AND NOT EXISTS (\n                         SELECT 1 FROM payments p WHERE p.order_id = o.id AND p.status = 'PAID'\n                       )\n                   )\n                 ),\n                 (SELECT earnings_paise FROM daily_order_stats WHERE date_key = ?),\n                 0\n               ) as earnings_paise"
+    },
+    "sum": {
+      "queryDurationMs": 11.8896,
+      "rowsRead": 4332,
+      "rowsReturned": 38,
+      "rowsWritten": 0
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.7389706422018348,
+      "rowsRead": 34,
+      "rowsWritten": 0
+    },
+    "count": 109,
+    "dimensions": {
+      "query": "SELECT o.id order_id, pa.id attempt_id, o.claim_id, o.claim_expires_at_ms,\n        o.public_job_code, o.pickup_code, o.due_at_pickup_paise, o.printer_id, p.windows_printer_name,\n        COALESCE(o.physical_device_id, COALESCE(p.physical_device_id, 'AGENT_LOCK_' || p.agent_id)) physical_device_id,\n        p.verified_capabilities_json, p.enabled_services_json, p.capabilities_json,\n        f.r2_object_key,\n        f.size_bytes, f.source_page_count, f.selected_pages, f.copies,\n        f.paper_size, f.color_mode, f.sides, o.customer_name, o.customer_phone,\n        o.instructions, o.total_amount_paise, o.currency, o.paid_at_ms,\n        f.id file_id, f.position file_position, f.original_filename,\n        (SELECT COUNT(*) FROM order_files WHERE order_id = o.id) file_count,\n        i.shop_name, EXISTS(SELECT 1 FROM print_attempt_steps ids WHERE ids.print_attempt_id = pa.id AND ids.step_type = 'IDENTIFICATION_SHEET') identification_sheet_enabled, ps.id step_id,\n        ps.sequence_number, ps.step_type, ps.status step_status, ps.spooler_job_id,\n        (SELECT json_group_array(json_object(\n          'name', snapshot_name,\n          'pricingType', snapshot_pricing_type,\n          'priceChargedOnlinePaise', snapshot_price_charged_online_paise,\n          'handlingMode', snapshot_handling_mode\n        )) FROM order_addon_services WHERE order_id = o.id) addon_services_json\n      FROM orders o\n      JOIN print_attempts pa ON pa.order_id = o.id\n        AND pa.status IN ('CREATED','SUBMITTING','SPOOLING','PRINTING','BLOCKED')\n      JOIN print_attempt_steps ps ON ps.id = (\n        SELECT next_s.id FROM print_attempt_steps next_s\n        WHERE next_s.print_attempt_id = pa.id AND next_s.status <> 'SUCCEEDED'\n        ORDER BY CASE WHEN next_s.status IN ('PENDING', 'SUBMISSION_STARTED') THEN 0 ELSE 1 END ASC,\n                 next_s.sequence_number ASC\n        LIMIT ?\n      )\n      JOIN printers p ON p.id = o.printer_id AND p.agent_id = o.claimed_by_agent_id\n      JOIN order_files f ON f.id = COALESCE(pa.order_file_id,\n        (SELECT legacy.id FROM order_files legacy WHERE legacy.order_id = o.id ORDER BY legacy.position LIMIT 1))\n      JOIN installation i ON i.id = 1\n      WHERE o.claimed_by_agent_id = ?\n        AND o.status IN ('CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED')\n      ORDER BY o.queued_at_ms ASC, o.id ASC"
+    },
+    "sum": {
+      "queryDurationMs": 80.5478,
+      "rowsRead": 3715,
+      "rowsReturned": 109,
+      "rowsWritten": 0
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.29591428571428574,
+      "rowsRead": 178,
+      "rowsWritten": 0
+    },
+    "count": 14,
+    "dimensions": {
+      "query": "DELETE FROM retained_payment_records\n             WHERE COALESCE(payment_created_at_ms, purged_at_ms) <= ?"
+    },
+    "sum": {
+      "queryDurationMs": 4.1428,
+      "rowsRead": 2492,
+      "rowsReturned": 0,
+      "rowsWritten": 0
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.132745197740113,
+      "rowsRead": 12,
+      "rowsWritten": 0
+    },
+    "count": 177,
+    "dimensions": {
+      "query": "SELECT paper_size, color_mode, sides, price_per_page_paise FROM print_rates\n         WHERE enabled = 1\n         ORDER BY paper_size, color_mode, CASE WHEN sides = 'SINGLE' THEN 0 ELSE 1 END"
+    },
+    "sum": {
+      "queryDurationMs": 23.495900000000002,
+      "rowsRead": 2124,
+      "rowsReturned": 708,
+      "rowsWritten": 0
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.31464545454545456,
+      "rowsRead": 25,
+      "rowsWritten": 0
+    },
+    "count": 77,
+    "dimensions": {
+      "query": "SELECT ptc.id, ptc.printer_id, ptc.agent_id, ptc.status, ptc.spooler_job_id,\n                ptc.failure_code, ptc.failure_detail, ptc.created_at_ms, ptc.expires_at_ms,\n                ptc.claimed_at_ms, ptc.finished_at_ms, ptc.test_type, ptc.test_settings_json\n         FROM printers p JOIN printer_test_commands ptc ON ptc.id = (\n            SELECT id FROM printer_test_commands WHERE printer_id = p.id\n            ORDER BY created_at_ms DESC, id DESC LIMIT ?\n          )"
+    },
+    "sum": {
+      "queryDurationMs": 24.227700000000002,
+      "rowsRead": 1925,
+      "rowsReturned": 231,
+      "rowsWritten": 0
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.7717473684210528,
+      "rowsRead": 24,
+      "rowsWritten": 0
+    },
+    "count": 57,
+    "dimensions": {
+      "query": "WITH live_candidates AS (\n          SELECT * FROM (\n            SELECT id, public_job_code, pickup_code, is_priority, identification_required,\n              customer_name, customer_phone,\n              selected_pages, copies, paper_size, color_mode, sides,\n              total_amount_paise, currency, status, claimed_by_agent_id, printer_id,\n              error_category, raw_error, attempt_count, last_attempt_at_ms, next_retry_at_ms,\n              paid_at_ms, updated_at_ms\n            FROM orders\n            WHERE status IN ('QUEUED','CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED',\n              'PRINT_FAILED','ADMIN_ACTION_REQUIRED','RETRY_PENDING','NEEDS_ADMIN','COMPLETION_UNKNOWN')\n              AND cleanup_state = 'ACTIVE'\n              AND (\n                public_job_code IS NOT NULL\n                OR paid_at_ms IS NOT NULL\n                OR EXISTS (SELECT 1 FROM payments p WHERE p.order_id = orders.id AND p.status = 'PAID')\n                OR status = 'MANUAL_PRINT'\n                OR EXISTS (\n                  SELECT 1 FROM order_addon_services s WHERE s.order_id = orders.id\n                    AND s.snapshot_handling_mode = 'MANUAL_PRINT'\n                )\n                OR EXISTS (\n                  SELECT 1 FROM order_events e WHERE e.order_id = orders.id\n                    AND e.event_type IN ('ORDER_MANUALLY_COMPLETED','ORDER_MANUALLY_PRINTED')\n                )\n              )\n            UNION ALL\n            SELECT id, public_job_code, pickup_code, is_priority, identification_required,\n              customer_name, customer_phone,\n              selected_pages, copies, paper_size, color_mode, sides,\n              total_amount_paise, currency, status, claimed_by_agent_id, printer_id,\n              error_category, raw_error, attempt_count, last_attempt_at_ms, next_retry_at_ms,\n              paid_at_ms, updated_at_ms\n            FROM orders\n            WHERE status = 'PRINTED' AND updated_at_ms >= ?\n              AND cleanup_state = 'ACTIVE'\n              AND (\n                public_job_code IS NOT NULL\n                OR paid_at_ms IS NOT NULL\n                OR EXISTS (SELECT 1 FROM payments p WHERE p.order_id = orders.id AND p.status = 'PAID')\n                OR status = 'MANUAL_PRINT'\n                OR EXISTS (\n                  SELECT 1 FROM order_addon_services s WHERE s.order_id = orders.id\n                    AND s.snapshot_handling_mode = 'MANUAL_PRINT'\n                )\n                OR EXISTS (\n                  SELECT 1 FROM order_events e WHERE e.order_id = orders.id\n                    AND e.event_type IN ('ORDER_MANUALLY_COMPLETED','ORDER_MANUALLY_PRINTED')\n                )\n              )\n          )\n          ORDER BY updated_at_ms DESC\n          LIMIT ?\n        )\n        SELECT o.id order_id, o.public_job_code, o.pickup_code, o.is_priority, o.identification_required,\n          o.customer_name, o.customer_phone,\n          o.selected_pages, o.copies, o.paper_size, o.color_mode, o.sides,\n          o.total_amount_paise, o.currency, o.status, a.display_name agent_name,\n          p.display_name printer_name, pa.failure_detail,\n          o.error_category, o.raw_error, o.attempt_count, o.last_attempt_at_ms, o.next_retry_at_ms,\n          o.paid_at_ms, o.updated_at_ms\n        FROM live_candidates o\n        LEFT JOIN agents a ON a.id = o.claimed_by_agent_id\n        LEFT JOIN printers p ON p.id = o.printer_id\n        LEFT JOIN print_attempts pa ON pa.order_id = o.id AND pa.attempt_number =\n          (SELECT MAX(pa2.attempt_number) FROM print_attempts pa2 WHERE pa2.order_id = o.id)\n        ORDER BY o.updated_at_ms DESC"
+    },
+    "sum": {
+      "queryDurationMs": 43.98960000000001,
+      "rowsRead": 1388,
+      "rowsReturned": 70,
+      "rowsWritten": 0
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.08486778523489932,
+      "rowsRead": 7,
+      "rowsWritten": 0
+    },
+    "count": 149,
+    "dimensions": {
+      "query": "SELECT id, name, pricing_type, fixed_price_paise\n         FROM addon_services WHERE enabled = 1\n         ORDER BY display_order, name"
+    },
+    "sum": {
+      "queryDurationMs": 12.645299999999999,
+      "rowsRead": 1043,
+      "rowsReturned": 447,
+      "rowsWritten": 0
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.3230953125,
+      "rowsRead": 11,
+      "rowsWritten": 0
+    },
+    "count": 64,
+    "dimensions": {
+      "query": "SELECT o.id order_id, pa.id attempt_id, ps.id step_id,\n          ps.status step_status, ps.spooler_job_id, o.status order_status,\n          ps.step_type, pa.order_file_id, o.claim_id\n        FROM orders o JOIN print_attempts pa ON pa.order_id = o.id\n        JOIN print_attempt_steps ps ON ps.print_attempt_id = pa.id\n        WHERE o.claimed_by_agent_id = ?\n          AND o.status IN ('SPOOLING','PRINTING','PRINT_BLOCKED','PRINTED')\n          AND pa.status IN ('SUBMITTING','SPOOLING','PRINTING','BLOCKED')\n          AND NOT EXISTS (SELECT 1 FROM print_attempt_steps pending\n            WHERE pending.print_attempt_id = pa.id AND pending.status <> 'SUCCEEDED')\n        GROUP BY o.id\n        ORDER BY ps.sequence_number DESC"
+    },
+    "sum": {
+      "queryDurationMs": 20.6781,
+      "rowsRead": 734,
+      "rowsReturned": 0,
+      "rowsWritten": 0
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.10409999999999998,
+      "rowsRead": 52,
+      "rowsWritten": 0
+    },
+    "count": 14,
+    "dimensions": {
+      "query": "UPDATE cleanup_run_items SET status = 'DELETED', updated_at_ms = ?\n           WHERE status IN ('PENDING', 'FAILED')\n             AND NOT EXISTS (SELECT 1 FROM orders WHERE id = cleanup_run_items.order_id)"
+    },
+    "sum": {
+      "queryDurationMs": 1.4573999999999998,
+      "rowsRead": 728,
+      "rowsReturned": 0,
+      "rowsWritten": 0
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.302743192488263,
+      "rowsRead": 3,
+      "rowsWritten": 0
+    },
+    "count": 213,
+    "dimensions": {
+      "query": "SELECT o.id order_id, pa.id attempt_id, ps.id step_id, ps.status step_status,\n        ps.spooler_job_id, o.status order_status, ps.step_type, pa.order_file_id,\n        pa.attempt_number, pa.printer_id\n      FROM orders o JOIN print_attempts pa ON pa.order_id = o.id\n      JOIN print_attempt_steps ps ON ps.print_attempt_id = pa.id\n      WHERE o.id = ? AND ps.id = ? AND o.claimed_by_agent_id = ?\n        AND o.claim_id = ? AND o.claim_expires_at_ms > ?\n        AND o.cleanup_state = 'ACTIVE'"
+    },
+    "sum": {
+      "queryDurationMs": 64.48430000000002,
+      "rowsRead": 639,
+      "rowsReturned": 213,
+      "rowsWritten": 0
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.1562,
+      "rowsRead": 288,
+      "rowsWritten": 0
+    },
+    "count": 2,
+    "dimensions": {
+      "query": "DELETE FROM retained_provider_events\n             WHERE COALESCE(received_at_ms, purged_at_ms) <= ?"
+    },
+    "sum": {
+      "queryDurationMs": 0.3124,
+      "rowsRead": 576,
+      "rowsReturned": 0,
+      "rowsWritten": 0
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.21555971731448756,
+      "rowsRead": 2,
+      "rowsWritten": 0
+    },
+    "count": 283,
+    "dimensions": {
+      "query": "SELECT s.id, s.admin_id, s.expires_at_ms, s.revoked_at_ms,\n                a.login_identifier, a.is_active\n         FROM admin_sessions s\n         JOIN admins a ON a.id = s.admin_id\n         WHERE s.token_hash = ? LIMIT ?"
+    },
+    "sum": {
+      "queryDurationMs": 61.00339999999998,
+      "rowsRead": 566,
+      "rowsReturned": 283,
+      "rowsWritten": 0
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.37479062500000004,
+      "rowsRead": 16,
+      "rowsWritten": 0
+    },
+    "count": 32,
+    "dimensions": {
+      "query": "SELECT id, agent_id, display_name, windows_printer_name, enabled,\n                status, status_reason, capabilities_json, verified_capabilities_json, enabled_services_json, last_status_at_ms,\n                is_production_eligible, is_virtual, port_name, driver_name,\n                is_paused, paused_reason, paused_at_ms, last_health_check_at_ms, health_check_requested,\n                fallback_printer_id, auto_fallback_enabled, priority, physical_device_id\n         FROM printers ORDER BY priority DESC, windows_printer_name ASC"
+    },
+    "sum": {
+      "queryDurationMs": 11.993300000000001,
+      "rowsRead": 512,
+      "rowsReturned": 256,
+      "rowsWritten": 0
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.06579486166007906,
+      "rowsRead": 2,
+      "rowsWritten": 0
+    },
+    "count": 253,
+    "dimensions": {
+      "query": "SELECT id, min_subtotal_paise, discount_percent\n         FROM discount_rules WHERE enabled = 1\n         ORDER BY min_subtotal_paise ASC"
+    },
+    "sum": {
+      "queryDurationMs": 16.6461,
+      "rowsRead": 506,
+      "rowsReturned": 506,
+      "rowsWritten": 0
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.14623333333333333,
+      "rowsRead": 45,
+      "rowsWritten": 0
+    },
+    "count": 9,
+    "dimensions": {
+      "query": "DELETE FROM cleanup_runs\n           WHERE status IN ('COMPLETED','FAILED','PARTIAL')\n             AND completed_at_ms IS NOT NULL\n             AND completed_at_ms <= ?"
+    },
+    "sum": {
+      "queryDurationMs": 1.3161,
+      "rowsRead": 405,
+      "rowsReturned": 0,
+      "rowsWritten": 0
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.3963732142857142,
+      "rowsRead": 7,
+      "rowsWritten": 0
+    },
+    "count": 56,
+    "dimensions": {
+      "query": "SELECT id, display_name, is_active, last_heartbeat_at_ms,\n          (SELECT online_printing_enabled FROM installation WHERE id = 1) online_printing_enabled,\n          (EXISTS(SELECT 1 FROM printer_test_commands c WHERE c.agent_id = agents.id AND c.status = 'PENDING')\n           OR EXISTS(SELECT 1 FROM agent_control_commands cc WHERE cc.agent_id = agents.id AND cc.status = 'PENDING')) has_pending_command,\n          (EXISTS(\n            SELECT 1 FROM orders\n            WHERE status IN ('QUEUED','CLAIMED','SPOOLING','PRINTING')\n          ) OR EXISTS(\n            SELECT 1 FROM orders\n            WHERE status IN ('PRINT_BLOCKED','RETRY_PENDING')\n              AND (next_retry_at_ms IS NULL OR next_retry_at_ms <= ?)\n          ) OR EXISTS(\n            SELECT 1 FROM orders\n            WHERE status = 'PRINT_FAILED' AND cleanup_state = 'ACTIVE' AND updated_at_ms <= (? - 60000)\n          )) has_print_work\n         FROM agents WHERE credential_hash = ?"
+    },
+    "sum": {
+      "queryDurationMs": 22.196899999999996,
+      "rowsRead": 400,
+      "rowsReturned": 56,
+      "rowsWritten": 0
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.33466666666666667,
+      "rowsRead": 17,
+      "rowsWritten": 0
+    },
+    "count": 21,
+    "dimensions": {
+      "query": "UPDATE orders SET cleanup_state = 'ACTIVE', cleanup_run_id = NULL, updated_at_ms = ?\n           WHERE cleanup_state = 'CLAIMED'\n             AND (\n               cleanup_run_id IS NULL\n               OR NOT EXISTS (SELECT 1 FROM cleanup_runs r WHERE r.id = orders.cleanup_run_id)\n               OR EXISTS (SELECT 1 FROM cleanup_runs r WHERE r.id = orders.cleanup_run_id AND r.completed_at_ms IS NOT NULL)\n             )"
+    },
+    "sum": {
+      "queryDurationMs": 7.028,
+      "rowsRead": 375,
+      "rowsReturned": 0,
+      "rowsWritten": 0
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.4015909090909091,
+      "rowsRead": 8,
+      "rowsWritten": 6
+    },
+    "count": 44,
+    "dimensions": {
+      "query": "UPDATE orders SET selected_pages = ?, copies = ?, paper_size = ?,\n           color_mode = ?, sides = ?, printing_amount_paise = ?,\n           service_charge_paise = ?, total_amount_paise = ?,\n           is_priority = ?, priority_fee_paise = ?,\n           discount_amount_paise = ?, snapshot_discount_threshold_paise = ?,\n           snapshot_discount_percent = ?, identification_required = ?,\n           status = 'PAYMENT_PENDING', draft_expires_at_ms = ?, updated_at_ms = ?\n           WHERE draft_token_hash = ? AND cleanup_state = 'ACTIVE'\n             AND status IN ('UPLOADED','PAYMENT_PENDING','PAYMENT_FAILED','PAYMENT_CANCELLED')\n             AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.order_id = orders.id\n               AND p.status IN ('CREATED','PENDING','PAID'))\n             AND (SELECT COUNT(*) FROM order_files WHERE order_id = orders.id\n                    AND upload_status = 'UPLOADED') = ?\n             AND (SELECT COUNT(*) FROM order_files WHERE order_id = orders.id) = ?"
+    },
+    "sum": {
+      "queryDurationMs": 17.67,
+      "rowsRead": 372,
+      "rowsReturned": 0,
+      "rowsWritten": 264
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.07252727272727273,
+      "rowsRead": 8,
+      "rowsWritten": 0
+    },
+    "count": 44,
+    "dimensions": {
+      "query": "SELECT paper_size, color_mode, sides, price_per_page_paise, enabled FROM print_rates"
+    },
+    "sum": {
+      "queryDurationMs": 3.1912000000000003,
+      "rowsRead": 352,
+      "rowsReturned": 352,
+      "rowsWritten": 0
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.2520857142857143,
+      "rowsRead": 4,
+      "rowsWritten": 0
+    },
+    "count": 70,
+    "dimensions": {
+      "query": "SELECT 1 FROM orders\n         WHERE claim_expires_at_ms <= ?\n           AND status IN ('CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED')\n         LIMIT ?"
+    },
+    "sum": {
+      "queryDurationMs": 17.646,
+      "rowsRead": 330,
+      "rowsReturned": 0,
+      "rowsWritten": 0
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.2400647058823529,
+      "rowsRead": 9,
+      "rowsWritten": 0
+    },
+    "count": 34,
+    "dimensions": {
+      "query": "SELECT id, agent_id, display_name, windows_printer_name, status, status_reason,\n                is_paused, auto_fallback_enabled, fallback_printer_id, priority,\n                capabilities_json, verified_capabilities_json, enabled_services_json\n         FROM printers\n         WHERE enabled = 1 AND is_production_eligible = 1 AND is_virtual = 0 AND agent_id IN (?)\n         ORDER BY priority DESC, id ASC"
+    },
+    "sum": {
+      "queryDurationMs": 8.162199999999999,
+      "rowsRead": 306,
+      "rowsReturned": 34,
+      "rowsWritten": 0
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.2671,
+      "rowsRead": 96,
+      "rowsWritten": 0
+    },
+    "count": 3,
+    "dimensions": {
+      "query": "DELETE FROM cleanup_run_items\n           WHERE run_id IN (\n             SELECT id FROM cleanup_runs\n             WHERE status IN ('COMPLETED','FAILED','PARTIAL')\n               AND completed_at_ms IS NOT NULL\n               AND completed_at_ms <= ?\n           )"
+    },
+    "sum": {
+      "queryDurationMs": 0.8013,
+      "rowsRead": 288,
+      "rowsReturned": 0,
+      "rowsWritten": 0
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.07696029962546817,
+      "rowsRead": 1,
+      "rowsWritten": 0
+    },
+    "count": 267,
+    "dimensions": {
+      "query": "SELECT id FROM agents\n         WHERE is_active = 1\n           AND last_heartbeat_at_ms IS NOT NULL\n           AND last_heartbeat_at_ms >= ?"
+    },
+    "sum": {
+      "queryDurationMs": 20.5484,
+      "rowsRead": 267,
+      "rowsReturned": 267,
+      "rowsWritten": 0
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.09345703125000002,
+      "rowsRead": 1,
+      "rowsWritten": 0
+    },
+    "count": 256,
+    "dimensions": {
+      "query": "SELECT id, agent_id, status, is_paused, capabilities_json, verified_capabilities_json, enabled_services_json\n         FROM printers\n         WHERE enabled = 1 AND is_production_eligible = 1 AND is_virtual = 0"
+    },
+    "sum": {
+      "queryDurationMs": 23.925000000000004,
+      "rowsRead": 256,
+      "rowsReturned": 256,
+      "rowsWritten": 0
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.21,
+      "rowsRead": 9,
+      "rowsWritten": 0
+    },
+    "count": 25,
+    "dimensions": {
+      "query": "SELECT id, public_job_code, customer_name, customer_phone,\n                total_amount_paise, status, cash_expires_at_ms,\n                cash_grace_until_ms, created_at_ms\n         FROM orders\n         WHERE payment_method = 'CASH'\n           AND status = 'PAYMENT_PENDING'\n           AND cleanup_state = 'ACTIVE'\n           AND cash_grace_until_ms > ?\n         ORDER BY cash_expires_at_ms ASC"
+    },
+    "sum": {
+      "queryDurationMs": 5.25,
+      "rowsRead": 239,
+      "rowsReturned": 105,
+      "rowsWritten": 0
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.22609322033898308,
+      "rowsRead": 4,
+      "rowsWritten": 0
+    },
+    "count": 59,
+    "dimensions": {
+      "query": "SELECT 1 FROM (\n           SELECT 1 FROM orders\n           WHERE status IN ('QUEUED','CLAIMED','SPOOLING','PRINTING')\n           UNION ALL\n           SELECT 1 FROM orders\n           WHERE status IN ('PRINT_BLOCKED','RETRY_PENDING')\n             AND (next_retry_at_ms IS NULL OR next_retry_at_ms <= ?)\n           UNION ALL\n           SELECT 1 FROM orders\n           WHERE status = 'PRINT_FAILED' AND cleanup_state = 'ACTIVE' AND updated_at_ms <= ?\n         ) LIMIT ?"
+    },
+    "sum": {
+      "queryDurationMs": 13.339500000000001,
+      "rowsRead": 236,
+      "rowsReturned": 59,
+      "rowsWritten": 0
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.271664,
+      "rowsRead": 9,
+      "rowsWritten": 0
+    },
+    "count": 25,
+    "dimensions": {
+      "query": "SELECT p.id, p.display_name, p.windows_printer_name, p.status, p.status_reason, p.enabled, p.is_paused,\n                p.capabilities_json, p.verified_capabilities_json, p.enabled_services_json\n         FROM printers p\n         JOIN agents a ON a.id = p.agent_id\n         WHERE a.is_active = 1 AND p.enabled = 1"
+    },
+    "sum": {
+      "queryDurationMs": 6.7916,
+      "rowsRead": 225,
+      "rowsReturned": 25,
+      "rowsWritten": 0
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.2973368421052631,
+      "rowsRead": 11,
+      "rowsWritten": 0
+    },
+    "count": 19,
+    "dimensions": {
+      "query": "SELECT id, public_job_code, status, updated_at_ms,\n                COALESCE(queued_at_ms, paid_at_ms, created_at_ms, updated_at_ms) AS queued_at_ms,\n                printer_id, physical_device_id\n         FROM orders\n         WHERE cleanup_state = 'ACTIVE'\n           AND status IN ('QUEUED','CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED',\n                          'PRINT_FAILED','ADMIN_ACTION_REQUIRED','RETRY_PENDING',\n                          'NEEDS_ADMIN','COMPLETION_UNKNOWN')\n         ORDER BY COALESCE(queued_at_ms, paid_at_ms, created_at_ms, updated_at_ms) ASC"
+    },
+    "sum": {
+      "queryDurationMs": 5.649399999999999,
+      "rowsRead": 217,
+      "rowsReturned": 8,
+      "rowsWritten": 0
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.4333903225806452,
+      "rowsRead": 6,
+      "rowsWritten": 7
+    },
+    "count": 31,
+    "dimensions": {
+      "query": "UPDATE orders SET status = 'COMPLETED', printed_at_ms = COALESCE(printed_at_ms, ?),\n             completed_at_ms = COALESCE(completed_at_ms, ?), purge_at_ms = COALESCE(purge_at_ms, ?),\n             error_category = NULL, raw_error = NULL, next_retry_at_ms = NULL, updated_at_ms = ?\n             WHERE id = ? AND claim_id = ? AND status IN ('CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED')\n               AND EXISTS (SELECT 1 FROM order_files WHERE order_id = orders.id)\n               AND NOT EXISTS (SELECT 1 FROM order_files\n                 WHERE order_id = orders.id AND print_status <> 'PRINTED')\n               AND NOT EXISTS (SELECT 1 FROM order_addon_services\n                 WHERE order_id = orders.id AND snapshot_handling_mode IN ('MANUAL_PRINT','POST_PRINT'))"
+    },
+    "sum": {
+      "queryDurationMs": 13.4351,
+      "rowsRead": 186,
+      "rowsReturned": 0,
+      "rowsWritten": 217
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.3669581395348837,
+      "rowsRead": 4,
+      "rowsWritten": 0
+    },
+    "count": 43,
+    "dimensions": {
+      "query": "UPDATE orders SET claim_expires_at_ms = ?, updated_at_ms = ?\n       WHERE claimed_by_agent_id = ?\n         AND claim_expires_at_ms > ? AND claim_expires_at_ms <= ?\n         AND status IN ('CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED')"
+    },
+    "sum": {
+      "queryDurationMs": 15.7792,
+      "rowsRead": 184,
+      "rowsReturned": 0,
+      "rowsWritten": 0
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.1607,
+      "rowsRead": 43,
+      "rowsWritten": 0
+    },
+    "count": 4,
+    "dimensions": {
+      "query": "DELETE FROM payment_provider_events\n             WHERE received_at_ms <= ?\n                OR related_payment_id IN (\n                  SELECT id FROM payments WHERE created_at_ms <= ?\n                )"
+    },
+    "sum": {
+      "queryDurationMs": 0.6428,
+      "rowsRead": 172,
+      "rowsReturned": 0,
+      "rowsWritten": 0
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.2594105263157895,
+      "rowsRead": 2,
+      "rowsWritten": 0
+    },
+    "count": 57,
+    "dimensions": {
+      "query": "SELECT o.id AS order_id, u.id AS upload_id, u.r2_object_key,\n          o.customer_name, o.customer_phone, o.original_filename,\n          o.source_page_count, o.selected_pages, o.copies, o.paper_size,\n          o.color_mode, o.sides, o.printing_amount_paise,\n          o.service_charge_paise, o.total_amount_paise, o.is_priority, o.currency,\n          o.status AS order_status, o.public_job_code,\n          u.expected_size_bytes, u.size_bytes, u.storage_status,\n          o.draft_expires_at_ms, u.delete_after_ms\n        FROM orders o JOIN uploads u ON u.order_id = o.id\n        WHERE o.draft_token_hash = ? AND o.cleanup_state = 'ACTIVE'"
+    },
+    "sum": {
+      "queryDurationMs": 14.7864,
+      "rowsRead": 169,
+      "rowsReturned": 57,
+      "rowsWritten": 0
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.17734999999999998,
+      "rowsRead": 4,
+      "rowsWritten": 3
+    },
+    "count": 42,
+    "dimensions": {
+      "query": "INSERT INTO order_events (id, order_id, event_type, from_status, to_status,\n          actor_type, actor_id, created_at_ms)\n        SELECT ?, id, 'PRINT_JOB_CLAIMED', ?, 'CLAIMED', 'AGENT', ?, ?\n        FROM orders WHERE id = ? AND claim_id = ?"
+    },
+    "sum": {
+      "queryDurationMs": 7.4487,
+      "rowsRead": 168,
+      "rowsReturned": 0,
+      "rowsWritten": 126
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.21095688622754488,
+      "rowsRead": 1,
+      "rowsWritten": 0
+    },
+    "count": 167,
+    "dimensions": {
+      "query": "SELECT logo_key, app_name, shop_name, contact_phone, address, customer_notice,\n                online_printing_enabled, max_pdf_size_bytes, max_order_upload_bytes,\n                priority_printing_enabled, priority_fee_paise,\n                id_requirement_mode, id_threshold_paise, cash_orders_enabled\n         FROM installation WHERE id = 1"
+    },
+    "sum": {
+      "queryDurationMs": 35.2298,
+      "rowsRead": 167,
+      "rowsReturned": 167,
+      "rowsWritten": 0
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.4369153846153846,
+      "rowsRead": 12,
+      "rowsWritten": 0
+    },
+    "count": 13,
+    "dimensions": {
+      "query": "DELETE FROM payments\n             WHERE created_at_ms <= ?\n               AND status NOT IN ('CREATED', 'PENDING')"
+    },
+    "sum": {
+      "queryDurationMs": 5.6799,
+      "rowsRead": 165,
+      "rowsReturned": 0,
+      "rowsWritten": 0
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.508725,
+      "rowsRead": 18,
+      "rowsWritten": 8
+    },
+    "count": 8,
+    "dimensions": {
+      "query": "UPDATE orders SET\n           public_job_code = COALESCE(public_job_code, ?),\n           pickup_code = COALESCE(pickup_code, ?),\n           status = 'QUEUED',\n           paid_at_ms = COALESCE(paid_at_ms, ?),\n           queued_at_ms = COALESCE(queued_at_ms, ?),\n           cash_confirmed_at_ms = ?,\n           cash_confirmed_by_admin_id = ?,\n           updated_at_ms = ?\n         WHERE id = ?\n           AND payment_method = 'CASH'\n           AND status = 'PAYMENT_PENDING'\n           AND cleanup_state = 'ACTIVE'\n           AND (cash_grace_until_ms IS NULL OR cash_grace_until_ms > ?)\n           AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.order_id = orders.id AND p.status = 'PAID')"
+    },
+    "sum": {
+      "queryDurationMs": 4.0698,
+      "rowsRead": 150,
+      "rowsReturned": 0,
+      "rowsWritten": 64
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.15263061224489793,
+      "rowsRead": 3,
+      "rowsWritten": 0
+    },
+    "count": 49,
+    "dimensions": {
+      "query": "SELECT id, display_name, is_active, paired_at_ms, last_heartbeat_at_ms\n         FROM agents WHERE is_active = 1 ORDER BY last_heartbeat_at_ms DESC, created_at_ms DESC"
+    },
+    "sum": {
+      "queryDurationMs": 7.478899999999999,
+      "rowsRead": 147,
+      "rowsReturned": 49,
+      "rowsWritten": 0
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.0864,
+      "rowsRead": 15,
+      "rowsWritten": 0
+    },
+    "count": 8,
+    "dimensions": {
+      "query": "SELECT status, COUNT(*) as count \n             FROM orders \n             WHERE status IN ('QUEUED', 'CLAIMED', 'SPOOLING', 'PRINTING', 'PRINTED', 'AWAITING_FINISHING', 'ADMIN_ACTION_REQUIRED', 'PRINT_BLOCKED', 'NEEDS_ADMIN', 'COMPLETION_UNKNOWN', 'RETRY_PENDING')\n             GROUP BY status"
+    },
+    "sum": {
+      "queryDurationMs": 0.6912,
+      "rowsRead": 124,
+      "rowsReturned": 6,
+      "rowsWritten": 0
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.08191935483870967,
+      "rowsRead": 4,
+      "rowsWritten": 0
+    },
+    "count": 31,
+    "dimensions": {
+      "query": "SELECT min_bytes_exclusive, max_bytes_inclusive, charge_paise, enabled\n         FROM file_size_service_charges ORDER BY sort_order"
+    },
+    "sum": {
+      "queryDurationMs": 2.5395,
+      "rowsRead": 124,
+      "rowsReturned": 124,
+      "rowsWritten": 0
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.33039999999999997,
+      "rowsRead": 4,
+      "rowsWritten": 4
+    },
+    "count": 30,
+    "dimensions": {
+      "query": "INSERT OR IGNORE INTO order_events\n            (id, order_id, event_type, from_status, to_status, actor_type,\n             details_json, created_at_ms, idempotency_key)\n          SELECT ?, id, 'PAYMENT_ORDER_CREATED', status, 'PAYMENT_PENDING',\n            'CUSTOMER', ?, ?, ? FROM orders WHERE id = ?"
+    },
+    "sum": {
+      "queryDurationMs": 9.911999999999999,
+      "rowsRead": 120,
+      "rowsReturned": 0,
+      "rowsWritten": 120
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.2928428571428571,
+      "rowsRead": 2,
+      "rowsWritten": 3
+    },
+    "count": 56,
+    "dimensions": {
+      "query": "UPDATE uploads SET size_bytes = ?, mime_type = 'application/pdf',\n        storage_status = 'UPLOADED', uploaded_at_ms = ?, updated_at_ms = ?,\n        delete_after_ms = ?, validation_error_code = NULL WHERE id = ?"
+    },
+    "sum": {
+      "queryDurationMs": 16.3992,
+      "rowsRead": 112,
+      "rowsReturned": 0,
+      "rowsWritten": 168
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.22965000000000002,
+      "rowsRead": 3,
+      "rowsWritten": 4
+    },
+    "count": 36,
+    "dimensions": {
+      "query": "INSERT OR IGNORE INTO order_events\n            (id, order_id, event_type, from_status, to_status, actor_type,\n             details_json, created_at_ms, idempotency_key)\n           VALUES (?, ?, 'CASH_PAYMENT_CONFIRMED', 'PAYMENT_PENDING', 'PAID', 'ADMIN', ?, ?, ?)"
+    },
+    "sum": {
+      "queryDurationMs": 8.2674,
+      "rowsRead": 108,
+      "rowsReturned": 0,
+      "rowsWritten": 144
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.3121555555555556,
+      "rowsRead": 2,
+      "rowsWritten": 4
+    },
+    "count": 54,
+    "dimensions": {
+      "query": "UPDATE print_attempts SET status = 'SUBMITTING', updated_at_ms = ?\n        WHERE id = ? AND status IN ('CREATED','PRINTING') AND changes() = 1"
+    },
+    "sum": {
+      "queryDurationMs": 16.8564,
+      "rowsRead": 108,
+      "rowsReturned": 0,
+      "rowsWritten": 216
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.3094527777777778,
+      "rowsRead": 3,
+      "rowsWritten": 4
+    },
+    "count": 36,
+    "dimensions": {
+      "query": "UPDATE print_attempt_steps SET status = 'SUBMITTED', spooler_job_id = ?,\n          submitted_at_ms = ?, last_observed_at_ms = ?, updated_at_ms = ?\n        WHERE id = ? AND status = 'SUBMISSION_STARTED' AND spooler_job_id IS NULL\n          AND EXISTS (SELECT 1 FROM orders o\n            WHERE o.id = print_attempt_steps.order_id AND o.cleanup_state = 'ACTIVE'\n              AND o.claim_id = ?)"
+    },
+    "sum": {
+      "queryDurationMs": 11.1403,
+      "rowsRead": 108,
+      "rowsReturned": 0,
+      "rowsWritten": 144
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.21309019607843135,
+      "rowsRead": 2,
+      "rowsWritten": 0
+    },
+    "count": 51,
+    "dimensions": {
+      "query": "SELECT 1 open_run FROM cleanup_runs\n         WHERE scope = ? AND source = ?\n           AND status IN ('PENDING','RUNNING')\n         LIMIT ?"
+    },
+    "sum": {
+      "queryDurationMs": 10.8676,
+      "rowsRead": 102,
+      "rowsReturned": 0,
+      "rowsWritten": 0
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.09015670103092782,
+      "rowsRead": 1,
+      "rowsWritten": 0
+    },
+    "count": 97,
+    "dimensions": {
+      "query": "SELECT default_production_printer_id FROM installation WHERE id = 1"
+    },
+    "sum": {
+      "queryDurationMs": 8.745199999999999,
+      "rowsRead": 97,
+      "rowsReturned": 97,
+      "rowsWritten": 0
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.2358,
+      "rowsRead": 12,
+      "rowsWritten": 0
+    },
+    "count": 8,
+    "dimensions": {
+      "query": "SELECT order_id, service_id, snapshot_name, snapshot_pricing_type,\n                snapshot_price_charged_online_paise, snapshot_handling_mode\n         FROM order_addon_services WHERE order_id IN (?, ?, ?)\n         ORDER BY order_id, rowid"
+    },
+    "sum": {
+      "queryDurationMs": 1.8864,
+      "rowsRead": 96,
+      "rowsReturned": 24,
+      "rowsWritten": 0
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.2009290322580645,
+      "rowsRead": 3,
+      "rowsWritten": 4
+    },
+    "count": 31,
+    "dimensions": {
+      "query": "INSERT OR IGNORE INTO order_events (id, order_id, event_type, from_status,\n              to_status, actor_type, actor_id, idempotency_key, created_at_ms)\n            VALUES (?, ?, 'ORDER_PRINTED', ?, 'PRINTED', 'AGENT', ?, ?, ?)"
+    },
+    "sum": {
+      "queryDurationMs": 6.2288,
+      "rowsRead": 93,
+      "rowsReturned": 0,
+      "rowsWritten": 124
+    }
+  }
+]

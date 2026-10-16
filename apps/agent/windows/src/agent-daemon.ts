@@ -66,6 +66,10 @@ export class AgentDaemon {
   private timer: NodeJS.Timeout | null = null;
   private running = false;
   private isBeating = false;
+  // Phase 1: Survives the WAKE_UP race when a pulse is in progress
+  private pendingWakeup = false;
+  // Phase 2: Marks a wakeup-initiated pulse to skip redundant printer refresh
+  private wakeupTriggered = false;
   private ws: WebSocket | null = null;
   private readonly executedCommandIds = new Map<string, number>();
   private readonly executionJournal: ExecutionJournalStore =
@@ -206,6 +210,12 @@ export class AgentDaemon {
           if (data.type === "WAKE_UP") {
             this.log("Received instant wake-up notification");
             this.nextDelayMs = 0;
+            this.wakeupTriggered = true;
+            if (this.isBeating) {
+              // Pulse is in progress — flag it so the finally block
+              // will schedule an immediate follow-up instead of idle delay.
+              this.pendingWakeup = true;
+            }
             this.reschedulePulse();
           }
         } catch {
@@ -315,9 +325,22 @@ export class AgentDaemon {
         : this.isPrinterMonitoringStable
           ? 15 * 60 * 1_000
           : this.printerRefreshMs;
+      // Phase 2: On a wakeup-triggered pulse, skip printer refresh if we have
+      // recent healthy reports — speed matters more than a redundant probe.
+      const skipRefreshForWakeup =
+        this.wakeupTriggered &&
+        this.printerReports.length > 0 &&
+        this.printerReports.some(
+          (p) =>
+            p.status === "ONLINE" &&
+            p.isEligibleForProductionPrint !== false &&
+            !p.isVirtual,
+        );
+      this.wakeupTriggered = false; // consume the flag
       const refreshPrinters =
-        this.lastPrinterRefreshMs === -Infinity ||
-        Date.now() - this.lastPrinterRefreshMs >= refreshEveryMs;
+        !skipRefreshForWakeup &&
+        (this.lastPrinterRefreshMs === -Infinity ||
+          Date.now() - this.lastPrinterRefreshMs >= refreshEveryMs);
       if (refreshPrinters) {
         const summaries = await this.printerAdapter.listPrinters();
         const printerReports: AgentPrinterReport[] = [];
@@ -579,6 +602,12 @@ export class AgentDaemon {
       }
     } finally {
       this.isBeating = false;
+      if (this.pendingWakeup) {
+        this.pendingWakeup = false;
+        this.nextDelayMs = 0;
+        this.wakeupTriggered = true;
+        this.log("Processing deferred WAKE_UP signal from concurrent pulse");
+      }
     }
   }
 
@@ -936,6 +965,14 @@ export class AgentDaemon {
 
   isPrinterStable(): boolean {
     return this.isPrinterMonitoringStable;
+  }
+
+  isPendingWakeup(): boolean {
+    return this.pendingWakeup;
+  }
+
+  isWakeupTriggered(): boolean {
+    return this.wakeupTriggered;
   }
 
   isRunning(): boolean {

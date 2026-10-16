@@ -117,6 +117,8 @@ export class PaidPrintExecutor {
     }
 
     if (typeof this.printer.getStatus === "function") {
+      // Authoritative preflight check: fresh probe ensures fallback routing (FALLBACK_ASSIGNED)
+      // or queue unstarvation (BLOCKED_RELEASED) triggers before submission starts.
       const printerStatus = await this.printer.getStatus(
         job.windowsPrinterName,
       );

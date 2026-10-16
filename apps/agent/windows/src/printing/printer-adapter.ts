@@ -125,7 +125,10 @@ export interface PrinterChangeEvent {
 export interface PrinterAdapter {
   listPrinters(forceRefresh?: boolean): Promise<readonly PrinterSummary[]>;
   getCapabilities(printerId: string): Promise<PrinterCapabilities>;
-  getStatus(printerId: string): Promise<PrinterStatus>;
+  getStatus(
+    printerId: string,
+    opts?: { maxCacheAgeMs?: number },
+  ): Promise<PrinterStatus>;
   submitPdfJob(submission: PrintSubmission): Promise<SubmittedPrintJob>;
   getJobStatus(printerId: string, spoolJobId: string): Promise<PrintJobStatus>;
   cancelJob(printerId: string, spoolJobId: string): Promise<void>;

@@ -263,6 +263,8 @@ export async function handleAdminManualOrdersRequest(
         due_at_pickup_paise: number;
         paid_at_ms: number;
         file_count: number;
+        payment_method: string | null;
+        cash_confirmed_at_ms: number | null;
       }
       const result = await db
         .prepare(
@@ -270,7 +272,13 @@ export async function handleAdminManualOrdersRequest(
                   o.customer_name, o.customer_phone,
                   o.status, o.instructions, o.total_amount_paise, o.due_at_pickup_paise,
                   o.paid_at_ms,
-                  (SELECT COUNT(*) FROM order_files f WHERE f.order_id = o.id) file_count
+                  (SELECT COUNT(*) FROM order_files f WHERE f.order_id = o.id) file_count,
+                  CASE
+                    WHEN o.payment_method = 'CASH' OR o.cash_confirmed_at_ms IS NOT NULL THEN 'CASH'
+                    WHEN o.payment_method = 'ONLINE' THEN 'ONLINE'
+                    ELSE 'UNKNOWN'
+                  END payment_method,
+                  o.cash_confirmed_at_ms
            FROM orders o INDEXED BY orders_manual_queue_idx
            WHERE o.status IN ('MANUAL_PRINT', 'AWAITING_FINISHING')
              AND o.cleanup_state = 'ACTIVE'
@@ -308,6 +316,15 @@ export async function handleAdminManualOrdersRequest(
           dueAtPickupPaise: row.due_at_pickup_paise,
           currency: "INR" as const,
           paidAt: new Date(row.paid_at_ms).toISOString(),
+          paymentMethod:
+            row.payment_method === "CASH"
+              ? "CASH"
+              : row.payment_method === "ONLINE"
+                ? "ONLINE"
+                : "UNKNOWN",
+          cashConfirmedAt: row.cash_confirmed_at_ms
+            ? new Date(row.cash_confirmed_at_ms).toISOString()
+            : null,
           addonServices: snapshots,
           hasStaffPriced,
           hasPostPrint,

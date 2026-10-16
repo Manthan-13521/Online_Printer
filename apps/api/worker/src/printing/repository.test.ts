@@ -806,6 +806,49 @@ describe("paid-print D1 safety", () => {
     expect(live.some((o) => o.orderId === ids.order)).toBe(true);
   });
 
+  it("resolves paymentMethod correctly for CASH, ONLINE, and unverified orders in listLiveOrders", async () => {
+    seed(db);
+    const now = 1000;
+    const cashOrderId = "70000000-0000-4000-8000-000000000010";
+    const onlineOrderId = "70000000-0000-4000-8000-000000000020";
+
+    // 1. Cash Order
+    db.prepare(
+      `INSERT INTO orders (id, public_job_code, customer_name, customer_phone,
+       original_filename, selected_pages, source_page_count, copies, color_mode, paper_size,
+       sides, total_amount_paise, printing_amount_paise, status, created_at_ms, updated_at_ms,
+       paid_at_ms, queued_at_ms, payment_method, cash_confirmed_at_ms)
+       VALUES (?, 'PG-CSH999', 'Cash User', '+919876543210', 'doc.pdf', 'ALL', 1, 1, 'BW', 'A4',
+       'SINGLE', 500, 500, 'QUEUED', ?, ?, ?, ?, 'CASH', ?)`,
+    ).run(cashOrderId, now, now, now, now, now);
+
+    // 2. Online Order
+    db.prepare(
+      `INSERT INTO orders (id, public_job_code, customer_name, customer_phone,
+       original_filename, selected_pages, source_page_count, copies, color_mode, paper_size,
+       sides, total_amount_paise, printing_amount_paise, status, created_at_ms, updated_at_ms,
+       paid_at_ms, queued_at_ms, payment_method)
+       VALUES (?, 'PG-ONL999', 'Online User', '+919876543211', 'doc.pdf', 'ALL', 1, 1, 'BW', 'A4',
+       'SINGLE', 500, 500, 'QUEUED', ?, ?, ?, ?, 'ONLINE')`,
+    ).run(onlineOrderId, now, now, now, now);
+    db.prepare(
+      `INSERT INTO payments (id, order_id, provider, provider_order_id, provider_payment_id,
+       amount_paise, currency, status, verified_at_ms, created_at_ms, updated_at_ms)
+       VALUES (?, ?, 'RAZORPAY', 'raz_ord_1', 'raz_pay_1', 500, 'INR', 'PAID', ?, ?, ?)`,
+    ).run("70000000-0000-4000-8000-000000000021", onlineOrderId, now, now, now);
+
+    const live = await repository.listLiveOrders();
+    const cashLive = live.find((o) => o.orderId === cashOrderId);
+    expect(cashLive).toBeDefined();
+    expect(cashLive?.paymentMethod).toBe("CASH");
+    expect(cashLive?.cashConfirmedAt).toBe(new Date(now).toISOString());
+
+    const onlineLive = live.find((o) => o.orderId === onlineOrderId);
+    expect(onlineLive).toBeDefined();
+    expect(onlineLive?.paymentMethod).toBe("ONLINE");
+    expect(onlineLive?.cashConfirmedAt).toBeNull();
+  });
+
   it("rejects retryOrder on unpaid or PAYMENT_PENDING orders", async () => {
     seed(db);
     const unpaidOrderId = "70000000-0000-4000-8000-000000000002";

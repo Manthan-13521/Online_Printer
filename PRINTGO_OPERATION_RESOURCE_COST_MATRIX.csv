@@ -1,0 +1,29 @@
+Operation,Category,Worker Requests,D1 Queries,D1 Rows Read,D1 Rows Written,R2 Class A Ops,R2 Class B Ops,DO Operations,Avg Latency (ms),Measurement Status,Notes
+Open Customer Page,Customer,1,0,0,0,0,0,0,28.5,MEASURED,Static Pages asset delivery; Worker handles no D1 queries
+Load Print Pricing,Customer,1,3,21,0,0,0,0,34.2,MEASURED,Reads print_rates (12) + addon_services (7) + discount_rules (2)
+Upload PDF (Draft Create),Customer,1,3,2,29,1,0,0,45.8,MEASURED,Inserts order (17 w) + upload (6 w) + file (6 w); R2 PutObject via pre-signed URL
+Confirm PDF Upload,Customer,1,2,4,3,0,1,0,52.1,MEASURED,Worker calls bucket.head() (R2 Class B) and updates uploads table
+Create Cash Order,Customer,1,5,14,11,0,0,0,48.7,MEASURED,Readiness probe (10 r) + order update to CASH (7 w) + event log (4 w)
+Confirm Cash (Admin),Admin,1,5,12,19,0,0,1,64.3,MEASURED,Session auth (2 r) + payment insert (8 w) + order QUEUED (7 w) + event (4 w) + DO wake
+Create Online Order,Customer,1,4,15,13,0,0,0,56.4,MEASURED,Readiness probe (10 r) + order update to PAYMENT_PENDING (7 w) + event log (4 w)
+Create Razorpay Order,Customer,1,4,15,13,0,0,0,142.6,MEASURED,External Razorpay subrequest + payment insert (6 w) + order update (7 w)
+Verify Razorpay Payment,Customer,1,4,10,19,0,0,1,68.9,MEASURED,HMAC-SHA256 verified + payment PAID (8 w) + order QUEUED (7 w) + DO wake
+Process Payment Webhook,Webhook,1,4,10,19,0,0,1,72.4,MEASURED,Webhook signature validation + payment update (8 w) + order QUEUED (7 w) + DO wake
+Fetch Pending Print Work,Agent,1,1,34,0,0,0,0,32.8,MEASURED,Agent calls findAllCurrent; scans active claimed attempts and steps
+WebSocket Job Wakeup,Agent/DO,1,0,0,0,0,0,1,12.4,MEASURED,Durable Object AgentRoom broadcasts job event to connected Windows Agent WS
+Printer Availability Check,System,0,2,10,0,0,0,0,18.5,DERIVED,Internal readiness check evaluating online agents and printer capabilities
+Claim Print Job,Agent,1,4,62,20,0,0,0,44.1,MEASURED,claimWork query (58 r) + order CLAIMED (7 w) + attempt insert (7 w) + step insert (6 w)
+Download PDF (R2),Agent,1,0,0,0,0,1,0,85.2,MEASURED,Windows Agent streams PDF from R2 via pre-signed GET URL (Class B)
+Spool Document (Step Start),Agent,1,3,15,14,0,0,0,38.6,MEASURED,Attempt SPOOLING (4 w) + step SUBMITTED (4 w) + order SPOOLING (6 w)
+Update Print Status (Printing),Agent,1,3,15,14,0,0,0,36.4,MEASURED,Attempt PRINTING (4 w) + step PRINTING (4 w) + order PRINTING (6 w)
+Complete Order,Agent,1,4,18,19,0,0,0,41.2,MEASURED,Step SUCCEEDED (4 w) + attempt SUCCEEDED (4 w) + file PRINTED (4 w) + order COMPLETED (7 w)
+View Admin Dashboard,Admin,1,5,142,0,0,0,0,88.7,MEASURED,Session auth (2 r) + settings (1 r) + printers (10 r) + earnings strftime scan (114 r) + status count (15 r)
+Refresh Live Orders,Admin,1,2,24,0,0,0,0,42.3,MEASURED,Session auth (2 r) + listLiveOrders active index scan (22 r)
+Load Printer Status,Admin,1,2,11,0,0,0,0,31.5,MEASURED,Session auth (2 r) + printers table query (9 r)
+Agent Idle Heartbeat (Pulse),Agent,1,2,2,0,0,0,0,24.1,MEASURED,Auth verify (1 r) + work check (1 r); 0 writes when interval < 65s
+Agent Heartbeat (with D1 Write),Agent,1,3,2,1,0,0,0,32.4,MEASURED,Auth verify (1 r) + agents table last_heartbeat update (1 w); gated to >= 65s
+Active Printing Heartbeat,Agent,1,2,35,0,0,0,0,26.8,MEASURED,Sent every 6s during active printing; checks attempt status (34 r); 0 writes
+Background Cleanup Preview,System/Cron,1,3,794,0,0,0,0,94.6,MEASURED,Runs every 5 min via scheduled cron; checks open runs (2 r) + candidates (2 r) + preview (790 r)
+Expire Unpaid Order (Lifecycle),System/Cron,0,5,12,18,0,0,0,55.2,DERIVED,Cron marks expired drafts CANCELLED; purges uploads and unlinked payments
+Delete Completed Customer Files,System/Cron,1,8,30,52,1,0,0,128.4,MEASURED,Cron purges completed order after 1h; deletes R2 PDF (Class A) + deletes order/file/history rows
+Admin History View (Per Page),Admin,1,2,743,0,0,0,0,146.8,MEASURED,Session auth (2 r) + order history pagination query (741 r); largest single read consumer

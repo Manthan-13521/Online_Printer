@@ -1,0 +1,852 @@
+[
+  {
+    "avg": {
+      "queryDurationMs": 0.5452972972972974,
+      "rowsRead": 1,
+      "rowsWritten": 7
+    },
+    "count": 37,
+    "dimensions": {
+      "query": "UPDATE orders SET public_job_code = COALESCE(public_job_code, ?),\n          pickup_code = COALESCE(pickup_code, ?),\n          status = 'QUEUED', paid_at_ms = COALESCE(paid_at_ms, ?),\n          queued_at_ms = COALESCE(queued_at_ms, ?), updated_at_ms = ?\n         WHERE id = ? AND cleanup_state = 'ACTIVE' AND (\n           status IN ('PAYMENT_PENDING', 'PAYMENT_FAILED', 'PAYMENT_CANCELLED', 'PAID')\n           OR (status = 'QUEUED' AND public_job_code = ?)\n         )"
+    },
+    "sum": {
+      "queryDurationMs": 20.176000000000002,
+      "rowsRead": 71,
+      "rowsReturned": 0,
+      "rowsWritten": 272
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.4015909090909091,
+      "rowsRead": 8,
+      "rowsWritten": 6
+    },
+    "count": 44,
+    "dimensions": {
+      "query": "UPDATE orders SET selected_pages = ?, copies = ?, paper_size = ?,\n           color_mode = ?, sides = ?, printing_amount_paise = ?,\n           service_charge_paise = ?, total_amount_paise = ?,\n           is_priority = ?, priority_fee_paise = ?,\n           discount_amount_paise = ?, snapshot_discount_threshold_paise = ?,\n           snapshot_discount_percent = ?, identification_required = ?,\n           status = 'PAYMENT_PENDING', draft_expires_at_ms = ?, updated_at_ms = ?\n           WHERE draft_token_hash = ? AND cleanup_state = 'ACTIVE'\n             AND status IN ('UPLOADED','PAYMENT_PENDING','PAYMENT_FAILED','PAYMENT_CANCELLED')\n             AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.order_id = orders.id\n               AND p.status IN ('CREATED','PENDING','PAID'))\n             AND (SELECT COUNT(*) FROM order_files WHERE order_id = orders.id\n                    AND upload_status = 'UPLOADED') = ?\n             AND (SELECT COUNT(*) FROM order_files WHERE order_id = orders.id) = ?"
+    },
+    "sum": {
+      "queryDurationMs": 17.67,
+      "rowsRead": 372,
+      "rowsReturned": 0,
+      "rowsWritten": 264
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.38497000000000003,
+      "rowsRead": 2,
+      "rowsWritten": 6
+    },
+    "count": 40,
+    "dimensions": {
+      "query": "INSERT INTO order_files\n          (id, order_id, position, original_filename, r2_object_key,\n           expected_size_bytes, source_page_count, paper_size, color_mode, sides,\n           created_at_ms, updated_at_ms)\n          VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    },
+    "sum": {
+      "queryDurationMs": 15.398800000000001,
+      "rowsRead": 80,
+      "rowsReturned": 0,
+      "rowsWritten": 240
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.4333903225806452,
+      "rowsRead": 6,
+      "rowsWritten": 7
+    },
+    "count": 31,
+    "dimensions": {
+      "query": "UPDATE orders SET status = 'COMPLETED', printed_at_ms = COALESCE(printed_at_ms, ?),\n             completed_at_ms = COALESCE(completed_at_ms, ?), purge_at_ms = COALESCE(purge_at_ms, ?),\n             error_category = NULL, raw_error = NULL, next_retry_at_ms = NULL, updated_at_ms = ?\n             WHERE id = ? AND claim_id = ? AND status IN ('CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED')\n               AND EXISTS (SELECT 1 FROM order_files WHERE order_id = orders.id)\n               AND NOT EXISTS (SELECT 1 FROM order_files\n                 WHERE order_id = orders.id AND print_status <> 'PRINTED')\n               AND NOT EXISTS (SELECT 1 FROM order_addon_services\n                 WHERE order_id = orders.id AND snapshot_handling_mode IN ('MANUAL_PRINT','POST_PRINT'))"
+    },
+    "sum": {
+      "queryDurationMs": 13.4351,
+      "rowsRead": 186,
+      "rowsReturned": 0,
+      "rowsWritten": 217
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.18920555555555554,
+      "rowsRead": 2,
+      "rowsWritten": 6
+    },
+    "count": 36,
+    "dimensions": {
+      "query": "INSERT INTO uploads\n        (id, order_id, r2_object_key, original_filename, storage_status,\n         retention_reason, delete_after_ms, created_at_ms, updated_at_ms,\n         expected_size_bytes)\n        VALUES (?, ?, ?, ?, 'PENDING', 'UNPAID', ?, ?, ?, ?)"
+    },
+    "sum": {
+      "queryDurationMs": 6.8114,
+      "rowsRead": 72,
+      "rowsReturned": 0,
+      "rowsWritten": 216
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.3121555555555556,
+      "rowsRead": 2,
+      "rowsWritten": 4
+    },
+    "count": 54,
+    "dimensions": {
+      "query": "UPDATE print_attempts SET status = 'SUBMITTING', updated_at_ms = ?\n        WHERE id = ? AND status IN ('CREATED','PRINTING') AND changes() = 1"
+    },
+    "sum": {
+      "queryDurationMs": 16.8564,
+      "rowsRead": 108,
+      "rowsReturned": 0,
+      "rowsWritten": 216
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.3579714285714286,
+      "rowsRead": 2,
+      "rowsWritten": 7
+    },
+    "count": 28,
+    "dimensions": {
+      "query": "UPDATE orders SET status = 'AWAITING_FINISHING', printed_at_ms = COALESCE(printed_at_ms, ?), claimed_by_agent_id = NULL, claim_id = NULL, claim_expires_at_ms = NULL, error_category = NULL, raw_error = NULL, next_retry_at_ms = NULL, updated_at_ms = ? WHERE id = ? AND claim_id = ? AND status <> 'AWAITING_FINISHING'"
+    },
+    "sum": {
+      "queryDurationMs": 10.023200000000001,
+      "rowsRead": 56,
+      "rowsReturned": 0,
+      "rowsWritten": 196
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.2928428571428571,
+      "rowsRead": 2,
+      "rowsWritten": 3
+    },
+    "count": 56,
+    "dimensions": {
+      "query": "UPDATE uploads SET size_bytes = ?, mime_type = 'application/pdf',\n        storage_status = 'UPLOADED', uploaded_at_ms = ?, updated_at_ms = ?,\n        delete_after_ms = ?, validation_error_code = NULL WHERE id = ?"
+    },
+    "sum": {
+      "queryDurationMs": 16.3992,
+      "rowsRead": 112,
+      "rowsReturned": 0,
+      "rowsWritten": 168
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.1458181818181818,
+      "rowsRead": 2,
+      "rowsWritten": 5
+    },
+    "count": 33,
+    "dimensions": {
+      "query": "UPDATE print_attempts SET status = 'PRINTING', windows_job_id = COALESCE(windows_job_id, ?),\n          submitted_at_ms = COALESCE(submitted_at_ms, ?), last_observed_at_ms = ?, updated_at_ms = ?\n        WHERE id = ? AND changes() = 1"
+    },
+    "sum": {
+      "queryDurationMs": 4.811999999999999,
+      "rowsRead": 66,
+      "rowsReturned": 0,
+      "rowsWritten": 165
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.6208222222222223,
+      "rowsRead": 2,
+      "rowsWritten": 6
+    },
+    "count": 27,
+    "dimensions": {
+      "query": "UPDATE orders SET status = ?, print_started_at_ms = COALESCE(print_started_at_ms, ?),\n          claim_expires_at_ms = ?, updated_at_ms = ? WHERE id = ? AND claim_id = ?\n          AND status IN ('CLAIMED','PRINTING') AND changes() = 1"
+    },
+    "sum": {
+      "queryDurationMs": 16.7622,
+      "rowsRead": 54,
+      "rowsReturned": 0,
+      "rowsWritten": 162
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.6106454545454546,
+      "rowsRead": 2,
+      "rowsWritten": 7
+    },
+    "count": 22,
+    "dimensions": {
+      "query": "UPDATE orders\n           SET payment_method = 'CASH',\n               public_job_code = COALESCE(public_job_code, ?),\n               cash_selected_at_ms = ?,\n               cash_expires_at_ms = ?,\n               cash_grace_until_ms = ?,\n               draft_expires_at_ms = ?,\n               status = 'PAYMENT_PENDING',\n               updated_at_ms = ?\n           WHERE id = ? AND cleanup_state = 'ACTIVE' AND status IN ('UPLOADED', 'PAYMENT_PENDING')"
+    },
+    "sum": {
+      "queryDurationMs": 13.4342,
+      "rowsRead": 44,
+      "rowsReturned": 0,
+      "rowsWritten": 154
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.3094527777777778,
+      "rowsRead": 3,
+      "rowsWritten": 4
+    },
+    "count": 36,
+    "dimensions": {
+      "query": "UPDATE print_attempt_steps SET status = 'SUBMITTED', spooler_job_id = ?,\n          submitted_at_ms = ?, last_observed_at_ms = ?, updated_at_ms = ?\n        WHERE id = ? AND status = 'SUBMISSION_STARTED' AND spooler_job_id IS NULL\n          AND EXISTS (SELECT 1 FROM orders o\n            WHERE o.id = print_attempt_steps.order_id AND o.cleanup_state = 'ACTIVE'\n              AND o.claim_id = ?)"
+    },
+    "sum": {
+      "queryDurationMs": 11.1403,
+      "rowsRead": 108,
+      "rowsReturned": 0,
+      "rowsWritten": 144
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.22965000000000002,
+      "rowsRead": 3,
+      "rowsWritten": 4
+    },
+    "count": 36,
+    "dimensions": {
+      "query": "INSERT OR IGNORE INTO order_events\n            (id, order_id, event_type, from_status, to_status, actor_type,\n             details_json, created_at_ms, idempotency_key)\n           VALUES (?, ?, 'CASH_PAYMENT_CONFIRMED', 'PAYMENT_PENDING', 'PAID', 'ADMIN', ?, ?, ?)"
+    },
+    "sum": {
+      "queryDurationMs": 8.2674,
+      "rowsRead": 108,
+      "rowsReturned": 0,
+      "rowsWritten": 144
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.17734999999999998,
+      "rowsRead": 4,
+      "rowsWritten": 3
+    },
+    "count": 42,
+    "dimensions": {
+      "query": "INSERT INTO order_events (id, order_id, event_type, from_status, to_status,\n          actor_type, actor_id, created_at_ms)\n        SELECT ?, id, 'PRINT_JOB_CLAIMED', ?, 'CLAIMED', 'AGENT', ?, ?\n        FROM orders WHERE id = ? AND claim_id = ?"
+    },
+    "sum": {
+      "queryDurationMs": 7.4487,
+      "rowsRead": 168,
+      "rowsReturned": 0,
+      "rowsWritten": 126
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.21880000000000002,
+      "rowsRead": 2,
+      "rowsWritten": 6
+    },
+    "count": 21,
+    "dimensions": {
+      "query": "INSERT INTO print_attempt_steps (id, print_attempt_id, order_id, sequence_number,\n              step_type, created_at_ms, updated_at_ms)\n            SELECT ?, ?, ?, ?, 'CUSTOMER_DOCUMENT', ?, ? FROM print_attempts WHERE id = ?"
+    },
+    "sum": {
+      "queryDurationMs": 4.5948,
+      "rowsRead": 42,
+      "rowsReturned": 0,
+      "rowsWritten": 126
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.2009290322580645,
+      "rowsRead": 3,
+      "rowsWritten": 4
+    },
+    "count": 31,
+    "dimensions": {
+      "query": "INSERT OR IGNORE INTO order_events (id, order_id, event_type, from_status,\n              to_status, actor_type, actor_id, idempotency_key, created_at_ms)\n            VALUES (?, ?, 'ORDER_PRINTED', ?, 'PRINTED', 'AGENT', ?, ?, ?)"
+    },
+    "sum": {
+      "queryDurationMs": 6.2288,
+      "rowsRead": 93,
+      "rowsReturned": 0,
+      "rowsWritten": 124
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.33039999999999997,
+      "rowsRead": 4,
+      "rowsWritten": 4
+    },
+    "count": 30,
+    "dimensions": {
+      "query": "INSERT OR IGNORE INTO order_events\n            (id, order_id, event_type, from_status, to_status, actor_type,\n             details_json, created_at_ms, idempotency_key)\n          SELECT ?, id, 'PAYMENT_ORDER_CREATED', status, 'PAYMENT_PENDING',\n            'CUSTOMER', ?, ?, ? FROM orders WHERE id = ?"
+    },
+    "sum": {
+      "queryDurationMs": 9.911999999999999,
+      "rowsRead": 120,
+      "rowsReturned": 0,
+      "rowsWritten": 120
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.3189,
+      "rowsRead": 2,
+      "rowsWritten": 6
+    },
+    "count": 20,
+    "dimensions": {
+      "query": "UPDATE orders SET status = 'PRINTING', claim_expires_at_ms = ?, updated_at_ms = ?\n        WHERE id = ? AND claim_id = ? AND status IN ('SPOOLING','PRINT_BLOCKED') AND changes() = 1"
+    },
+    "sum": {
+      "queryDurationMs": 6.378,
+      "rowsRead": 40,
+      "rowsReturned": 0,
+      "rowsWritten": 120
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.2236529411764706,
+      "rowsRead": 3,
+      "rowsWritten": 7
+    },
+    "count": 17,
+    "dimensions": {
+      "query": "INSERT INTO print_attempts (id, order_id, attempt_number, agent_id, printer_id,\n          physical_device_id, status, identification_sheet_included, created_at_ms, updated_at_ms,\n          order_file_id, file_position, fallback_from_printer_id)\n        SELECT ?, id, COALESCE((SELECT MAX(attempt_number) + 1 FROM print_attempts\n          WHERE order_id = orders.id), 1), ?, ?, ?, 'CREATED', ?, ?, ?, ?, ?, ?\n        FROM orders WHERE id = ? AND claim_id = ? AND claimed_by_agent_id = ?"
+    },
+    "sum": {
+      "queryDurationMs": 3.8021000000000003,
+      "rowsRead": 51,
+      "rowsReturned": 0,
+      "rowsWritten": 119
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.8210285714285713,
+      "rowsRead": 2,
+      "rowsWritten": 17
+    },
+    "count": 7,
+    "dimensions": {
+      "query": "INSERT INTO orders\n        (id, customer_name, customer_phone, original_filename, source_page_count,\n         color_mode, paper_size, sides, instructions, status, created_at_ms,\n         updated_at_ms, draft_token_hash, draft_expires_at_ms)\n        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'UPLOADING', ?, ?, ?, ?)"
+    },
+    "sum": {
+      "queryDurationMs": 5.747199999999999,
+      "rowsRead": 14,
+      "rowsReturned": 0,
+      "rowsWritten": 119
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.2244888888888889,
+      "rowsRead": 3,
+      "rowsWritten": 4
+    },
+    "count": 27,
+    "dimensions": {
+      "query": "INSERT OR IGNORE INTO order_events (id, order_id, event_type, from_status,\n              to_status, actor_type, actor_id, idempotency_key, created_at_ms)\n            VALUES (?, ?, 'ORDER_PRINTED', ?, 'AWAITING_FINISHING', 'AGENT', ?, ?, ?)"
+    },
+    "sum": {
+      "queryDurationMs": 6.0612,
+      "rowsRead": 81,
+      "rowsReturned": 0,
+      "rowsWritten": 108
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.6132,
+      "rowsRead": 3,
+      "rowsWritten": 4
+    },
+    "count": 27,
+    "dimensions": {
+      "query": "UPDATE payments SET provider_payment_id = ?, status = 'PAID',\n            verified_at_ms = ?, updated_at_ms = ?\n          WHERE id = ? AND status IN ('CREATED', 'PENDING', 'FAILED', 'CANCELLED')"
+    },
+    "sum": {
+      "queryDurationMs": 16.5564,
+      "rowsRead": 81,
+      "rowsReturned": 0,
+      "rowsWritten": 108
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.4628,
+      "rowsRead": 4,
+      "rowsWritten": 6
+    },
+    "count": 14,
+    "dimensions": {
+      "query": "UPDATE orders SET status = CASE\n             WHEN NOT EXISTS (SELECT 1 FROM order_files WHERE order_id = ? AND upload_status <> 'UPLOADED')\n             THEN 'UPLOADED' ELSE 'UPLOADING' END,\n           updated_at_ms = ?, draft_expires_at_ms = ?\n           WHERE id = ? AND status IN ('UPLOADING','UPLOADED','PAYMENT_PENDING')"
+    },
+    "sum": {
+      "queryDurationMs": 6.4792,
+      "rowsRead": 56,
+      "rowsReturned": 0,
+      "rowsWritten": 84
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.28988888888888886,
+      "rowsRead": 3,
+      "rowsWritten": 3
+    },
+    "count": 27,
+    "dimensions": {
+      "query": "UPDATE print_attempt_steps SET status = 'SUBMISSION_STARTED',\n          submission_started_at_ms = ?, updated_at_ms = ?\n        WHERE id = ? AND print_attempt_id = ? AND status = 'PENDING'\n          AND EXISTS (SELECT 1 FROM orders o\n            WHERE o.id = print_attempt_steps.order_id AND o.cleanup_state = 'ACTIVE'\n              AND o.claim_id = ?)"
+    },
+    "sum": {
+      "queryDurationMs": 7.827,
+      "rowsRead": 81,
+      "rowsReturned": 0,
+      "rowsWritten": 81
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.20370749999999999,
+      "rowsRead": 1,
+      "rowsWritten": 2
+    },
+    "count": 40,
+    "dimensions": {
+      "query": "UPDATE agents SET last_heartbeat_at_ms = ?, updated_at_ms = ?\n       WHERE id = ? AND is_active = 1\n       AND (last_heartbeat_at_ms IS NULL OR last_heartbeat_at_ms <= ?)"
+    },
+    "sum": {
+      "queryDurationMs": 8.148299999999999,
+      "rowsRead": 40,
+      "rowsReturned": 0,
+      "rowsWritten": 80
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.39391818181818183,
+      "rowsRead": 3,
+      "rowsWritten": 7
+    },
+    "count": 11,
+    "dimensions": {
+      "query": "UPDATE orders SET status = 'COMPLETED', completed_at_ms = ?,\n                   purge_at_ms = ?, updated_at_ms = ?\n                 WHERE id = ? AND status = 'AWAITING_FINISHING' AND cleanup_state = 'ACTIVE'"
+    },
+    "sum": {
+      "queryDurationMs": 4.3331,
+      "rowsRead": 33,
+      "rowsReturned": 0,
+      "rowsWritten": 77
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.1861,
+      "rowsRead": 1,
+      "rowsWritten": 4
+    },
+    "count": 18,
+    "dimensions": {
+      "query": "INSERT INTO audit_logs\n       (id, actor_type, actor_id, action, entity_type, entity_id, created_at_ms)\n       VALUES (?, 'ADMIN', ?, ?, ?, ?, ?)"
+    },
+    "sum": {
+      "queryDurationMs": 3.3497999999999997,
+      "rowsRead": 18,
+      "rowsReturned": 0,
+      "rowsWritten": 72
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.1739,
+      "rowsRead": 3,
+      "rowsWritten": 4
+    },
+    "count": 16,
+    "dimensions": {
+      "query": "INSERT OR IGNORE INTO order_events\n           (id, order_id, event_type, from_status, to_status, actor_type,\n            details_json, created_at_ms, idempotency_key)\n           VALUES (?, ?, 'CASH_PAYMENT_SELECTED', ?, 'PAYMENT_PENDING', 'CUSTOMER', ?, ?, ?)"
+    },
+    "sum": {
+      "queryDurationMs": 2.7824,
+      "rowsRead": 48,
+      "rowsReturned": 0,
+      "rowsWritten": 64
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.508725,
+      "rowsRead": 18,
+      "rowsWritten": 8
+    },
+    "count": 8,
+    "dimensions": {
+      "query": "UPDATE orders SET\n           public_job_code = COALESCE(public_job_code, ?),\n           pickup_code = COALESCE(pickup_code, ?),\n           status = 'QUEUED',\n           paid_at_ms = COALESCE(paid_at_ms, ?),\n           queued_at_ms = COALESCE(queued_at_ms, ?),\n           cash_confirmed_at_ms = ?,\n           cash_confirmed_by_admin_id = ?,\n           updated_at_ms = ?\n         WHERE id = ?\n           AND payment_method = 'CASH'\n           AND status = 'PAYMENT_PENDING'\n           AND cleanup_state = 'ACTIVE'\n           AND (cash_grace_until_ms IS NULL OR cash_grace_until_ms > ?)\n           AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.order_id = orders.id AND p.status = 'PAID')"
+    },
+    "sum": {
+      "queryDurationMs": 4.0698,
+      "rowsRead": 150,
+      "rowsReturned": 0,
+      "rowsWritten": 64
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.3841,
+      "rowsRead": 6,
+      "rowsWritten": 6
+    },
+    "count": 10,
+    "dimensions": {
+      "query": "INSERT INTO payments\n            (id, order_id, provider_order_id, amount_paise, currency, status,\n             created_at_ms, updated_at_ms)\n          SELECT ?, o.id, ?, ?, 'INR', 'CREATED', ?, ? FROM orders o\n          WHERE o.id = ? AND o.cleanup_state = 'ACTIVE'\n            AND o.status IN ('PAYMENT_PENDING','PAYMENT_FAILED','PAYMENT_CANCELLED')\n            AND o.total_amount_paise = ?\n            AND EXISTS (SELECT 1 FROM order_files f WHERE f.order_id = o.id)\n            AND NOT EXISTS (SELECT 1 FROM order_files f WHERE f.order_id = o.id\n              AND f.upload_status <> 'UPLOADED')"
+    },
+    "sum": {
+      "queryDurationMs": 3.841,
+      "rowsRead": 60,
+      "rowsReturned": 0,
+      "rowsWritten": 60
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.1989,
+      "rowsRead": 1,
+      "rowsWritten": 1
+    },
+    "count": 48,
+    "dimensions": {
+      "query": "UPDATE installation SET next_pickup_code_index = ?, updated_at_ms = ? WHERE id = 1"
+    },
+    "sum": {
+      "queryDurationMs": 9.5472,
+      "rowsRead": 48,
+      "rowsReturned": 0,
+      "rowsWritten": 48
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.21546363636363636,
+      "rowsRead": 2,
+      "rowsWritten": 4
+    },
+    "count": 11,
+    "dimensions": {
+      "query": "UPDATE payment_provider_events SET processing_status = ?,\n          processed_at_ms = ?, related_payment_id = COALESCE(?, related_payment_id),\n          related_order_id = COALESCE(?, related_order_id)\n        WHERE provider = 'RAZORPAY' AND provider_event_id = ?"
+    },
+    "sum": {
+      "queryDurationMs": 2.3701,
+      "rowsRead": 22,
+      "rowsReturned": 0,
+      "rowsWritten": 44
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.21882000000000001,
+      "rowsRead": 1,
+      "rowsWritten": 4
+    },
+    "count": 10,
+    "dimensions": {
+      "query": "INSERT INTO audit_logs (\n             id, actor_type, actor_id, action, entity_type, entity_id, created_at_ms\n           ) VALUES (?, 'ADMIN', ?, ?, 'PRINTER', ?, ?)"
+    },
+    "sum": {
+      "queryDurationMs": 2.1882,
+      "rowsRead": 10,
+      "rowsReturned": 0,
+      "rowsWritten": 40
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.2339,
+      "rowsRead": 0,
+      "rowsWritten": 4
+    },
+    "count": 10,
+    "dimensions": {
+      "query": "INSERT INTO admin_sessions\n       (id, admin_id, token_hash, created_at_ms, expires_at_ms)\n       VALUES (?, ?, ?, ?, ?)"
+    },
+    "sum": {
+      "queryDurationMs": 2.339,
+      "rowsRead": 0,
+      "rowsReturned": 0,
+      "rowsWritten": 40
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.25590999999999997,
+      "rowsRead": 3,
+      "rowsWritten": 2
+    },
+    "count": 20,
+    "dimensions": {
+      "query": "UPDATE order_files SET print_status = ?,\n           spooler_job_id = COALESCE(spooler_job_id, ?),\n           printed_at_ms = CASE WHEN ? = 'PRINTED' THEN ? ELSE printed_at_ms END,\n           updated_at_ms = ? WHERE id = ?\n             AND EXISTS (SELECT 1 FROM orders o\n               WHERE o.id = order_files.order_id AND o.cleanup_state = 'ACTIVE')"
+    },
+    "sum": {
+      "queryDurationMs": 5.1182,
+      "rowsRead": 60,
+      "rowsReturned": 0,
+      "rowsWritten": 40
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.20906666666666665,
+      "rowsRead": 3,
+      "rowsWritten": 4
+    },
+    "count": 9,
+    "dimensions": {
+      "query": "INSERT OR IGNORE INTO order_events\n            (id, order_id, event_type, from_status, to_status, actor_type,\n             details_json, created_at_ms, idempotency_key)\n          VALUES (?, ?, 'PAYMENT_VERIFIED', 'PAYMENT_PENDING', 'PAID', ?, ?, ?, ?)"
+    },
+    "sum": {
+      "queryDurationMs": 1.8816,
+      "rowsRead": 27,
+      "rowsReturned": 0,
+      "rowsWritten": 36
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.1169,
+      "rowsRead": 3,
+      "rowsWritten": 3
+    },
+    "count": 10,
+    "dimensions": {
+      "query": "UPDATE uploads SET retention_reason = 'COMPLETED', delete_after_ms = ?, updated_at_ms = ?\n             WHERE order_id = ? AND storage_status = 'UPLOADED' AND retention_reason IS NOT 'COMPLETED'\n               AND EXISTS (SELECT 1 FROM orders WHERE id = uploads.order_id AND status = 'COMPLETED')"
+    },
+    "sum": {
+      "queryDurationMs": 1.169,
+      "rowsRead": 30,
+      "rowsReturned": 0,
+      "rowsWritten": 30
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.13642857142857143,
+      "rowsRead": 3,
+      "rowsWritten": 4
+    },
+    "count": 7,
+    "dimensions": {
+      "query": "INSERT OR IGNORE INTO order_events\n            (id, order_id, event_type, from_status, to_status, actor_type,\n             details_json, created_at_ms, idempotency_key)\n          VALUES (?, ?, 'JOB_CODE_ASSIGNED', 'PAID', 'PAID', 'SYSTEM', ?, ?, ?)"
+    },
+    "sum": {
+      "queryDurationMs": 0.9550000000000001,
+      "rowsRead": 21,
+      "rowsReturned": 0,
+      "rowsWritten": 28
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.3137636363636363,
+      "rowsRead": 2,
+      "rowsWritten": 1
+    },
+    "count": 22,
+    "dimensions": {
+      "query": "UPDATE order_files SET selected_pages = ?, selected_page_count = ?,\n             copies = ?, paper_size = ?, color_mode = ?, sides = ?,\n             printing_amount_paise = ?, service_charge_paise = ?, updated_at_ms = ?\n             WHERE id = ? AND order_id = (\n               SELECT id FROM orders WHERE draft_token_hash = ?\n                 AND cleanup_state = 'ACTIVE'\n                 AND status IN ('UPLOADED','PAYMENT_PENDING','PAYMENT_FAILED','PAYMENT_CANCELLED')\n                 AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.order_id = orders.id\n                   AND p.status IN ('CREATED','PENDING','PAID'))\n             ) AND upload_status = 'UPLOADED'"
+    },
+    "sum": {
+      "queryDurationMs": 6.902799999999999,
+      "rowsRead": 44,
+      "rowsReturned": 0,
+      "rowsWritten": 22
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.2828,
+      "rowsRead": 2,
+      "rowsWritten": 3
+    },
+    "count": 7,
+    "dimensions": {
+      "query": "UPDATE print_attempts SET status = 'SUCCEEDED', finished_at_ms = COALESCE(finished_at_ms, ?), updated_at_ms = ? WHERE id = ? AND status <> 'SUCCEEDED'"
+    },
+    "sum": {
+      "queryDurationMs": 1.9796,
+      "rowsRead": 14,
+      "rowsReturned": 0,
+      "rowsWritten": 21
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.2131,
+      "rowsRead": 1,
+      "rowsWritten": 2
+    },
+    "count": 10,
+    "dimensions": {
+      "query": "INSERT OR IGNORE INTO order_addon_services\n             (order_id, service_id, snapshot_name, snapshot_pricing_type,\n              snapshot_price_charged_online_paise, snapshot_handling_mode)\n           VALUES (?, ?, ?, ?, ?, ?)"
+    },
+    "sum": {
+      "queryDurationMs": 2.1310000000000002,
+      "rowsRead": 10,
+      "rowsReturned": 0,
+      "rowsWritten": 20
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.1463,
+      "rowsRead": 2,
+      "rowsWritten": 3
+    },
+    "count": 6,
+    "dimensions": {
+      "query": "UPDATE uploads SET retention_reason = 'UNRESOLVED_PAID_FAILURE', delete_after_ms = ?,\n             updated_at_ms = ? WHERE order_id = ?"
+    },
+    "sum": {
+      "queryDurationMs": 0.8778000000000001,
+      "rowsRead": 12,
+      "rowsReturned": 0,
+      "rowsWritten": 18
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.1083,
+      "rowsRead": 2,
+      "rowsWritten": 3
+    },
+    "count": 6,
+    "dimensions": {
+      "query": "UPDATE uploads SET retention_reason = 'UNRESOLVED_PAID_FAILURE', delete_after_ms = ?,\n            updated_at_ms = ? WHERE order_id = ?"
+    },
+    "sum": {
+      "queryDurationMs": 0.6497999999999999,
+      "rowsRead": 12,
+      "rowsReturned": 0,
+      "rowsWritten": 18
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.2709,
+      "rowsRead": 1,
+      "rowsWritten": 4
+    },
+    "count": 4,
+    "dimensions": {
+      "query": "INSERT INTO printer_test_commands (\n             id, printer_id, agent_id, status, test_type, test_settings_json, created_at_ms, expires_at_ms\n           ) VALUES (?, ?, ?, 'PENDING', ?, ?, ?, ?)"
+    },
+    "sum": {
+      "queryDurationMs": 1.0836,
+      "rowsRead": 4,
+      "rowsReturned": 0,
+      "rowsWritten": 16
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.1277,
+      "rowsRead": 1,
+      "rowsWritten": 4
+    },
+    "count": 3,
+    "dimensions": {
+      "query": "INSERT INTO audit_logs\n            (id, actor_type, actor_id, action, entity_type, entity_id, created_at_ms)\n           VALUES (?, 'ADMIN', ?, 'CONFIRM_CASH_PAYMENT', 'ORDER', ?, ?)"
+    },
+    "sum": {
+      "queryDurationMs": 0.3831,
+      "rowsRead": 3,
+      "rowsReturned": 0,
+      "rowsWritten": 12
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.3791,
+      "rowsRead": 1,
+      "rowsWritten": 6
+    },
+    "count": 2,
+    "dimensions": {
+      "query": "INSERT INTO payment_provider_events\n            (id, provider_event_id, event_type, received_at_ms, processing_status)\n          VALUES (?, ?, ?, ?, 'PROCESSING')"
+    },
+    "sum": {
+      "queryDurationMs": 0.7582,
+      "rowsRead": 2,
+      "rowsReturned": 0,
+      "rowsWritten": 12
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.4651,
+      "rowsRead": 2,
+      "rowsWritten": 3
+    },
+    "count": 4,
+    "dimensions": {
+      "query": "UPDATE printer_test_commands\n         SET status = ?,\n             spooler_job_id = COALESCE(?, spooler_job_id),\n             failure_code = ?,\n             failure_detail = ?,\n             finished_at_ms = COALESCE(?, finished_at_ms)\n         WHERE id = ? AND agent_id = ? AND status = ?"
+    },
+    "sum": {
+      "queryDurationMs": 1.8604,
+      "rowsRead": 8,
+      "rowsReturned": 0,
+      "rowsWritten": 12
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.1379,
+      "rowsRead": 2,
+      "rowsWritten": 1
+    },
+    "count": 10,
+    "dimensions": {
+      "query": "UPDATE order_files SET size_bytes = ?, mime_type = 'application/pdf',\n           upload_status = 'UPLOADED', uploaded_at_ms = ?, updated_at_ms = ?,\n           validation_error_code = NULL\n           WHERE id = ? AND order_id = ? AND upload_status = 'PENDING'"
+    },
+    "sum": {
+      "queryDurationMs": 1.379,
+      "rowsRead": 20,
+      "rowsReturned": 0,
+      "rowsWritten": 10
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.1874,
+      "rowsRead": 3,
+      "rowsWritten": 3
+    },
+    "count": 3,
+    "dimensions": {
+      "query": "INSERT INTO order_events (id, order_id, event_type, from_status, to_status,\n          actor_type, actor_id, created_at_ms) SELECT ?, ?, 'PRINT_STEP_STARTED', ?,\n          ?, 'AGENT', ?, ? WHERE changes() = 1"
+    },
+    "sum": {
+      "queryDurationMs": 0.5622,
+      "rowsRead": 9,
+      "rowsReturned": 0,
+      "rowsWritten": 9
+    }
+  },
+  {
+    "avg": {
+      "queryDurationMs": 0.17436666666666667,
+      "rowsRead": 0,
+      "rowsWritten": 3
+    },
+    "count": 3,
+    "dimensions": {
+      "query": "INSERT INTO discount_rules (id, min_subtotal_paise, discount_percent, enabled, created_at_ms, updated_at_ms)\n         VALUES (?, ?, ?, ?, ?, ?)"
+    },
+    "sum": {
+      "queryDurationMs": 0.5231,
+      "rowsRead": 0,
+      "rowsReturned": 0,
+      "rowsWritten": 9
+    }
+  }
+]

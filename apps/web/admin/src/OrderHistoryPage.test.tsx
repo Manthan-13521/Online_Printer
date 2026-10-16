@@ -1,0 +1,164 @@
+// @vitest-environment jsdom
+
+import { act, cleanup, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import type { AdminOrderHistoryEntry } from "@printgo/api-contract";
+import { OrderHistoryPage } from "./OrderHistoryPage";
+
+const { getOrderHistory, retryOrder, deleteOrder } = vi.hoisted(() => ({
+  getOrderHistory: vi.fn(),
+  retryOrder: vi.fn(),
+  deleteOrder: vi.fn(),
+}));
+
+vi.mock("./api", () => ({
+  adminApi: {
+    getOrderHistory,
+    retryOrder,
+    deleteOrder,
+  },
+  AdminApiError: class AdminApiError extends Error {
+    constructor(
+      public status: number,
+      public code: string,
+      message: string,
+    ) {
+      super(message);
+    }
+  },
+  friendlyAdminError: (err: unknown) =>
+    err instanceof Error ? err.message : String(err),
+}));
+
+const baseEntry: AdminOrderHistoryEntry = {
+  orderId: "ord-hist-1",
+  pickupCode: "P-101",
+  customerName: "Test Customer",
+  customerPhone: "+919876543210",
+  createdAt: new Date(Date.now() - 3600_000).toISOString(),
+  completedAt: new Date(Date.now() - 1800_000).toISOString(),
+  isPriority: false,
+  isManual: false,
+  addonServices: [],
+  onlinePaidPaise: 500,
+  dueAtPickupPaise: 0,
+  status: "COMPLETED",
+  printerUsed: "HP-LaserJet",
+  fallbackPrinter: null,
+  attemptCount: 1,
+  failureHistory: [],
+  purged: false,
+};
+
+describe("Admin OrderHistoryPage — Payment Method Display", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  });
+
+  it("displays Cash badge and Cash Paid for cash orders", async () => {
+    const cashOrder: AdminOrderHistoryEntry = {
+      ...baseEntry,
+      orderId: "ord-cash-1",
+      customerName: "Sunil Cash",
+      paymentMethod: "CASH",
+      onlinePaidPaise: 0,
+      amountPaidPaise: 750,
+      cashConfirmedAt: new Date(Date.now() - 1800_000).toISOString(),
+    };
+
+    getOrderHistory.mockResolvedValue({
+      ok: true,
+      data: {
+        orders: [cashOrder],
+        nextCursor: null,
+      },
+    });
+
+    render(<OrderHistoryPage onSessionExpired={vi.fn()} />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(screen.getByText("💵 Cash")).toBeDefined();
+    expect(screen.getByText("Payment Method")).toBeDefined();
+    expect(screen.getByText("Cash")).toBeDefined();
+    expect(screen.getByText("Cash Paid")).toBeDefined();
+    expect(screen.getByText("₹7.50")).toBeDefined();
+    expect(screen.getByText("Cash Confirmed")).toBeDefined();
+    expect(screen.queryByText("Online Paid")).toBeNull();
+  });
+
+  it("displays Online (Razorpay) badge and Online Paid for online orders", async () => {
+    const onlineOrder: AdminOrderHistoryEntry = {
+      ...baseEntry,
+      orderId: "ord-online-1",
+      customerName: "Ananya Online",
+      paymentMethod: "ONLINE",
+      onlinePaidPaise: 1200,
+      amountPaidPaise: 1200,
+      cashConfirmedAt: null,
+    };
+
+    getOrderHistory.mockResolvedValue({
+      ok: true,
+      data: {
+        orders: [onlineOrder],
+        nextCursor: null,
+      },
+    });
+
+    render(<OrderHistoryPage onSessionExpired={vi.fn()} />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(screen.getByText("💳 Online (Razorpay)")).toBeDefined();
+    expect(screen.getByText("Payment Method")).toBeDefined();
+    expect(screen.getByText("Online (Razorpay)")).toBeDefined();
+    expect(screen.getByText("Online Paid")).toBeDefined();
+    expect(screen.getByText("₹12.00")).toBeDefined();
+    expect(screen.queryByText("Cash Paid")).toBeNull();
+  });
+
+  it("displays Unknown badge and Paid Amount when paymentMethod is unknown", async () => {
+    const unknownOrder: AdminOrderHistoryEntry = {
+      ...baseEntry,
+      orderId: "ord-unknown-1",
+      customerName: "Legacy Order",
+      paymentMethod: "UNKNOWN",
+      onlinePaidPaise: 400,
+      amountPaidPaise: 400,
+      cashConfirmedAt: null,
+    };
+
+    getOrderHistory.mockResolvedValue({
+      ok: true,
+      data: {
+        orders: [unknownOrder],
+        nextCursor: null,
+      },
+    });
+
+    render(<OrderHistoryPage onSessionExpired={vi.fn()} />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(screen.getByText("⚠️ Unknown")).toBeDefined();
+    expect(screen.getByText("Payment Method")).toBeDefined();
+    expect(screen.getByText("Unknown")).toBeDefined();
+    expect(screen.getByText("Paid Amount")).toBeDefined();
+    expect(screen.getByText("₹4.00")).toBeDefined();
+  });
+});

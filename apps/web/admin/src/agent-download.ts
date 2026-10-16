@@ -47,6 +47,9 @@ export function getWindowsAgentReleaseConfig(): WindowsAgentReleaseConfig {
     /^[a-f0-9]{64}$/i.test(hash) &&
     /^v?\d+\.\d+\.\d+$/.test(version)
   ) {
+    const zipEnv = (
+      import.meta.env.VITE_WINDOWS_AGENT_ZIP_URL as string | undefined
+    )?.trim();
     return {
       downloadUrl: envUrl,
       fileName: "PrintGo-Setup.exe",
@@ -54,6 +57,7 @@ export function getWindowsAgentReleaseConfig(): WindowsAgentReleaseConfig {
       isLive: true,
       statusNote: "Installer provided by your shop technician",
       sha256: hash,
+      zipDownloadUrl: zipEnv || undefined,
     };
   }
   return {

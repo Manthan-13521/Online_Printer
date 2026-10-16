@@ -1,0 +1,63 @@
+{
+  "preTestIdle": {
+    "window": "2026-10-14T12:30:00Z to 2026-10-14T13:30:00Z (18:00 to 19:00 IST)",
+    "data": {
+      "d1AnalyticsAdaptiveGroups": [
+        {
+          "sum": {
+            "readQueries": 317,
+            "rowsRead": 9444,
+            "rowsWritten": 82,
+            "writeQueries": 38
+          }
+        }
+      ],
+      "durableObjectsInvocationsAdaptiveGroups": [
+        {
+          "sum": {
+            "errors": 2,
+            "requests": 4
+          }
+        }
+      ],
+      "r2OperationsAdaptiveGroups": [],
+      "workersInvocationsAdaptive": [
+        {
+          "sum": {
+            "cpuTimeUs": 302568,
+            "errors": 0,
+            "requests": 95,
+            "subrequests": 5
+          }
+        }
+      ]
+    }
+  },
+  "postTestIdle": {
+    "window": "2026-10-14T14:45:00Z to 2026-10-14T15:45:00Z (20:15 to 21:15 IST)",
+    "data": {
+      "d1AnalyticsAdaptiveGroups": [
+        {
+          "sum": {
+            "readQueries": 188,
+            "rowsRead": 9598,
+            "rowsWritten": 4,
+            "writeQueries": 4
+          }
+        }
+      ],
+      "durableObjectsInvocationsAdaptiveGroups": [],
+      "r2OperationsAdaptiveGroups": [],
+      "workersInvocationsAdaptive": [
+        {
+          "sum": {
+            "cpuTimeUs": 117083,
+            "errors": 0,
+            "requests": 12,
+            "subrequests": 0
+          }
+        }
+      ]
+    }
+  }
+}

@@ -74,6 +74,21 @@ const migrations = [
   "0017_phase5_fallback_and_reprint_protection.sql",
   "0018_phase6_history_cleanup.sql",
   "0019_phase7_restore_hot_indexes.sql",
+  "0020_order_retention_duration.sql",
+  "0021_daily_order_stats.sql",
+  "0022_dashboard_earnings.sql",
+  "0023_identification_sheet_conditions.sql",
+  "0024_printer_priority.sql",
+  "0025_verified_printer_capabilities.sql",
+  "0026_phase4_fallback_recovery.sql",
+  "0027_parallel_physical_printer_locks.sql",
+  "0028_fix_physical_device_locks.sql",
+  "0029_cash_orders_and_smart_payment.sql",
+  "0030_smart_print_recovery.sql",
+  "0031_isolate_disabled_printers.sql",
+  "0032_reconcile_corrupted_webhook_payment.sql",
+  "0033_reconcile_daily_earnings_online_and_cash.sql",
+  "0034_d1_live_orders_index.sql",
 ].map((name) =>
   readFileSync(
     new URL(`../../../../../database/migrations/${name}`, import.meta.url),
@@ -209,5 +224,73 @@ describe("D1OrderHistoryRepository", () => {
     const result = await repository.list(null);
     expect(result.orders).toHaveLength(1);
     expect(result.orders[0]?.purged).toBe(true);
+  });
+
+  it("distinguishes cash payments from online payments and extracts paymentMethod", async () => {
+    const now = Date.now();
+    const onlineOrderId = padUuid(301);
+    const cashOrderId = padUuid(302);
+    const unknownOrderId = padUuid(303);
+
+    // 1. Online Order
+    db.prepare(
+      `INSERT INTO orders (id, customer_name, customer_phone, original_filename,
+         source_page_count, color_mode, paper_size, sides, status, public_job_code, pickup_code,
+         printing_amount_paise, total_amount_paise, created_at_ms, updated_at_ms, paid_at_ms, payment_method)
+       VALUES (?, 'Online Cust', '+919876543210', 'doc.pdf', 1, 'BW', 'A4', 'SINGLE', 'COMPLETED', 'PG-ONL123', 'PA-ONL',
+               600, 600, ?, ?, ?, 'ONLINE')`,
+    ).run(onlineOrderId, now - 1000, now - 1000, now - 1000);
+    db.prepare(
+      `INSERT INTO payments (id, order_id, provider, provider_order_id, provider_payment_id,
+         amount_paise, currency, status, verified_at_ms, created_at_ms, updated_at_ms)
+       VALUES (?, ?, 'RAZORPAY', 'rp_ord_1', 'rp_pay_1', 600, 'INR', 'PAID', ?, ?, ?)`,
+    ).run(padUuid(311), onlineOrderId, now - 1000, now - 1000, now - 1000);
+
+    // 2. Cash Order
+    db.prepare(
+      `INSERT INTO orders (id, customer_name, customer_phone, original_filename,
+         source_page_count, color_mode, paper_size, sides, status, public_job_code, pickup_code,
+         printing_amount_paise, total_amount_paise, created_at_ms, updated_at_ms, paid_at_ms,
+         payment_method, cash_confirmed_at_ms)
+       VALUES (?, 'Cash Cust', '+919876543211', 'doc.pdf', 1, 'BW', 'A4', 'SINGLE', 'COMPLETED', 'PG-CSH123', 'PA-CSH',
+               800, 800, ?, ?, ?, 'CASH', ?)`,
+    ).run(cashOrderId, now - 2000, now - 2000, now - 2000, now - 2000);
+    db.prepare(
+      `INSERT INTO payments (id, order_id, provider, provider_order_id, provider_payment_id,
+         amount_paise, currency, status, verified_at_ms, created_at_ms, updated_at_ms)
+       VALUES (?, ?, 'CASH', 'cash_ord_1', 'cash_pay_1', 800, 'INR', 'PAID', ?, ?, ?)`,
+    ).run(padUuid(312), cashOrderId, now - 2000, now - 2000, now - 2000);
+
+    // 3. Legacy/Unknown Order (no payment records, NULL paid_at_ms)
+    db.prepare(
+      `INSERT INTO orders (id, customer_name, customer_phone, original_filename,
+         source_page_count, color_mode, paper_size, sides, status, public_job_code, pickup_code,
+         printing_amount_paise, total_amount_paise, created_at_ms, updated_at_ms, status)
+       VALUES (?, 'Legacy Cust', '+919876543212', 'doc.pdf', 1, 'BW', 'A4', 'SINGLE', 'MANUAL_PRINT', 'PG-LEG123', 'PA-LEG',
+               500, 500, ?, ?, 'MANUAL_PRINT')`,
+    ).run(unknownOrderId, now - 3000, now - 3000);
+
+    const result = await repository.list(null);
+    expect(result.orders).toHaveLength(3);
+
+    const onlineOrder = result.orders.find((o) => o.orderId === onlineOrderId);
+    expect(onlineOrder).toBeDefined();
+    expect(onlineOrder?.paymentMethod).toBe("ONLINE");
+    expect(onlineOrder?.onlinePaidPaise).toBe(600);
+    expect(onlineOrder?.amountPaidPaise).toBe(600);
+    expect(onlineOrder?.cashConfirmedAt).toBeNull();
+
+    const cashOrder = result.orders.find((o) => o.orderId === cashOrderId);
+    expect(cashOrder).toBeDefined();
+    expect(cashOrder?.paymentMethod).toBe("CASH");
+    expect(cashOrder?.onlinePaidPaise).toBe(0); // Never reports cash as online paid!
+    expect(cashOrder?.amountPaidPaise).toBe(800);
+    expect(cashOrder?.cashConfirmedAt).toBe(new Date(now - 2000).toISOString());
+
+    const unknownOrder = result.orders.find(
+      (o) => o.orderId === unknownOrderId,
+    );
+    expect(unknownOrder).toBeDefined();
+    expect(unknownOrder?.paymentMethod).toBe("UNKNOWN"); // Never defaults to ONLINE!
   });
 });

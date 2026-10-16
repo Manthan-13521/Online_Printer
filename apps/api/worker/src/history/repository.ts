@@ -11,6 +11,10 @@ interface HistoryRow {
   is_manual: number;
   addon_summary_json: string;
   online_paid_paise: number;
+  amount_paid_paise: number;
+  payment_method: string | null;
+  cash_confirmed_at_ms: number | null;
+  payment_status: string;
   due_at_pickup_paise: number;
   final_status: string;
   printer_name: string | null;
@@ -74,7 +78,29 @@ export class D1OrderHistoryRepository {
              'handlingMode', s.snapshot_handling_mode))
              FROM order_addon_services s WHERE s.order_id = o.id), '[]') addon_summary_json,
            COALESCE((SELECT MAX(pay.amount_paise) FROM payments pay
-             WHERE pay.order_id = o.id AND pay.status = 'PAID'), 0) online_paid_paise,
+             WHERE pay.order_id = o.id AND pay.status = 'PAID' AND pay.provider <> 'CASH'), 0) online_paid_paise,
+           COALESCE((SELECT MAX(pay.amount_paise) FROM payments pay
+             WHERE pay.order_id = o.id AND pay.status = 'PAID'), o.total_amount_paise, 0) amount_paid_paise,
+           CASE
+             WHEN o.payment_method = 'CASH'
+               OR o.cash_confirmed_at_ms IS NOT NULL
+               OR EXISTS (SELECT 1 FROM payments pay WHERE pay.order_id = o.id AND pay.provider = 'CASH' AND pay.status = 'PAID')
+               THEN 'CASH'
+             WHEN EXISTS (SELECT 1 FROM payments pay WHERE pay.order_id = o.id AND pay.provider = 'RAZORPAY' AND pay.status = 'PAID')
+               THEN 'ONLINE'
+             WHEN o.payment_method = 'ONLINE' AND (
+               o.paid_at_ms IS NOT NULL OR EXISTS (SELECT 1 FROM payments pay WHERE pay.order_id = o.id AND pay.status = 'PAID')
+             )
+               THEN 'ONLINE'
+             ELSE 'UNKNOWN'
+           END payment_method,
+           o.cash_confirmed_at_ms,
+           CASE
+             WHEN o.paid_at_ms IS NOT NULL OR EXISTS (SELECT 1 FROM payments pay WHERE pay.order_id = o.id AND pay.status = 'PAID') THEN 'PAID'
+             WHEN o.status = 'PAYMENT_FAILED' OR EXISTS (SELECT 1 FROM payments pay WHERE pay.order_id = o.id AND pay.status = 'FAILED') THEN 'FAILED'
+             WHEN o.status = 'PAYMENT_CANCELLED' OR EXISTS (SELECT 1 FROM payments pay WHERE pay.order_id = o.id AND pay.status = 'CANCELLED') THEN 'CANCELLED'
+             ELSE 'PENDING'
+           END payment_status,
            o.due_at_pickup_paise, o.status final_status,
            (SELECT pr.display_name FROM print_attempts a JOIN printers pr ON pr.id = a.printer_id
              WHERE a.order_id = o.id ORDER BY a.attempt_number DESC LIMIT 1) printer_name,
@@ -112,8 +138,21 @@ export class D1OrderHistoryRepository {
         addonServices: JSON.parse(
           row.addon_summary_json,
         ) as AdminOrderHistoryEntry["addonServices"],
+        paymentMethod:
+          row.payment_method === "CASH"
+            ? "CASH"
+            : row.payment_method === "ONLINE"
+              ? "ONLINE"
+              : "UNKNOWN",
+        paymentStatus:
+          (row.payment_status as AdminOrderHistoryEntry["paymentStatus"]) ??
+          "PENDING",
+        amountPaidPaise: row.amount_paid_paise,
         onlinePaidPaise: row.online_paid_paise,
         dueAtPickupPaise: row.due_at_pickup_paise,
+        cashConfirmedAt: row.cash_confirmed_at_ms
+          ? new Date(row.cash_confirmed_at_ms).toISOString()
+          : null,
         status: row.final_status,
         printerUsed: row.printer_name,
         fallbackPrinter: row.fallback_printer_name,

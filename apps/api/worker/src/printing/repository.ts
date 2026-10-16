@@ -2372,7 +2372,7 @@ export class D1PrintingRepository implements PrintingRepository {
               selected_pages, copies, paper_size, color_mode, sides,
               total_amount_paise, currency, status, claimed_by_agent_id, printer_id,
               error_category, raw_error, attempt_count, last_attempt_at_ms, next_retry_at_ms,
-              paid_at_ms, updated_at_ms
+              paid_at_ms, updated_at_ms, payment_method, cash_confirmed_at_ms
             FROM orders
             WHERE status IN ('QUEUED','CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED',
               'PRINT_FAILED','ADMIN_ACTION_REQUIRED','RETRY_PENDING','NEEDS_ADMIN','COMPLETION_UNKNOWN')
@@ -2397,7 +2397,7 @@ export class D1PrintingRepository implements PrintingRepository {
               selected_pages, copies, paper_size, color_mode, sides,
               total_amount_paise, currency, status, claimed_by_agent_id, printer_id,
               error_category, raw_error, attempt_count, last_attempt_at_ms, next_retry_at_ms,
-              paid_at_ms, updated_at_ms
+              paid_at_ms, updated_at_ms, payment_method, cash_confirmed_at_ms
             FROM orders
             WHERE status = 'PRINTED' AND updated_at_ms >= ?
               AND cleanup_state = 'ACTIVE'
@@ -2425,7 +2425,27 @@ export class D1PrintingRepository implements PrintingRepository {
           o.total_amount_paise, o.currency, o.status, a.display_name agent_name,
           p.display_name printer_name, pa.failure_detail,
           o.error_category, o.raw_error, o.attempt_count, o.last_attempt_at_ms, o.next_retry_at_ms,
-          o.paid_at_ms, o.updated_at_ms
+          o.paid_at_ms, o.updated_at_ms,
+          CASE
+            WHEN o.payment_method = 'CASH'
+              OR o.cash_confirmed_at_ms IS NOT NULL
+              OR EXISTS (SELECT 1 FROM payments pay WHERE pay.order_id = o.id AND pay.provider = 'CASH' AND pay.status = 'PAID')
+              THEN 'CASH'
+            WHEN EXISTS (SELECT 1 FROM payments pay WHERE pay.order_id = o.id AND pay.provider = 'RAZORPAY' AND pay.status = 'PAID')
+              THEN 'ONLINE'
+            WHEN o.payment_method = 'ONLINE' AND (
+              o.paid_at_ms IS NOT NULL OR EXISTS (SELECT 1 FROM payments pay WHERE pay.order_id = o.id AND pay.status = 'PAID')
+            )
+              THEN 'ONLINE'
+            ELSE 'UNKNOWN'
+          END payment_method,
+          o.cash_confirmed_at_ms,
+          CASE
+            WHEN o.paid_at_ms IS NOT NULL OR EXISTS (SELECT 1 FROM payments pay WHERE pay.order_id = o.id AND pay.status = 'PAID') THEN 'PAID'
+            WHEN o.status = 'PAYMENT_FAILED' OR EXISTS (SELECT 1 FROM payments pay WHERE pay.order_id = o.id AND pay.status = 'FAILED') THEN 'FAILED'
+            WHEN o.status = 'PAYMENT_CANCELLED' OR EXISTS (SELECT 1 FROM payments pay WHERE pay.order_id = o.id AND pay.status = 'CANCELLED') THEN 'CANCELLED'
+            ELSE 'PENDING'
+          END payment_status
         FROM live_candidates o
         LEFT JOIN agents a ON a.id = o.claimed_by_agent_id
         LEFT JOIN printers p ON p.id = o.printer_id
@@ -2460,6 +2480,9 @@ export class D1PrintingRepository implements PrintingRepository {
         next_retry_at_ms: number | null;
         paid_at_ms: number;
         updated_at_ms: number;
+        payment_method: string;
+        cash_confirmed_at_ms: number | null;
+        payment_status: string;
       }>();
     return result.results.map((row) => ({
       orderId: row.order_id,
@@ -2479,6 +2502,17 @@ export class D1PrintingRepository implements PrintingRepository {
       amountPaidPaise: row.total_amount_paise,
       currency: row.currency,
       status: row.status,
+      paymentMethod:
+        row.payment_method === "CASH"
+          ? "CASH"
+          : row.payment_method === "ONLINE"
+            ? "ONLINE"
+            : "UNKNOWN",
+      paymentStatus:
+        (row.payment_status as AdminLiveOrder["paymentStatus"]) ?? "PENDING",
+      cashConfirmedAt: row.cash_confirmed_at_ms
+        ? new Date(row.cash_confirmed_at_ms).toISOString()
+        : null,
       agentName: row.agent_name,
       printerName: row.printer_name,
       issue: row.raw_error ?? row.failure_detail ?? null,

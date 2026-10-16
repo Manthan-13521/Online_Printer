@@ -1,0 +1,249 @@
+[
+  {
+    "dimensions": {
+      "actionStatus": "success",
+      "actionType": "PutObject",
+      "bucketName": "printgo-pdfs",
+      "datetimeFiveMinutes": "2026-10-14T13:50:00Z"
+    },
+    "sum": {
+      "requests": 3,
+      "responseBytes": 0,
+      "responseObjectSize": 14868
+    }
+  },
+  {
+    "dimensions": {
+      "actionStatus": "success",
+      "actionType": "HeadObject",
+      "bucketName": "printgo-pdfs",
+      "datetimeFiveMinutes": "2026-10-14T14:00:00Z"
+    },
+    "sum": {
+      "requests": 2,
+      "responseBytes": 0,
+      "responseObjectSize": 0
+    }
+  },
+  {
+    "dimensions": {
+      "actionStatus": "success",
+      "actionType": "HeadObject",
+      "bucketName": "printgo-pdfs",
+      "datetimeFiveMinutes": "2026-10-14T13:55:00Z"
+    },
+    "sum": {
+      "requests": 15,
+      "responseBytes": 0,
+      "responseObjectSize": 0
+    }
+  },
+  {
+    "dimensions": {
+      "actionStatus": "success",
+      "actionType": "PutObject",
+      "bucketName": "printgo-pdfs",
+      "datetimeFiveMinutes": "2026-10-14T13:45:00Z"
+    },
+    "sum": {
+      "requests": 2,
+      "responseBytes": 0,
+      "responseObjectSize": 10092
+    }
+  },
+  {
+    "dimensions": {
+      "actionStatus": "success",
+      "actionType": "GetObject",
+      "bucketName": "printgo-pdfs",
+      "datetimeFiveMinutes": "2026-10-14T14:00:00Z"
+    },
+    "sum": {
+      "requests": 14,
+      "responseBytes": 55254,
+      "responseObjectSize": 68754
+    }
+  },
+  {
+    "dimensions": {
+      "actionStatus": "success",
+      "actionType": "HeadObject",
+      "bucketName": "printgo-pdfs",
+      "datetimeFiveMinutes": "2026-10-14T13:50:00Z"
+    },
+    "sum": {
+      "requests": 6,
+      "responseBytes": 0,
+      "responseObjectSize": 0
+    }
+  },
+  {
+    "dimensions": {
+      "actionStatus": "success",
+      "actionType": "GetObject",
+      "bucketName": "printgo-pdfs",
+      "datetimeFiveMinutes": "2026-10-14T14:05:00Z"
+    },
+    "sum": {
+      "requests": 9,
+      "responseBytes": 23949,
+      "responseObjectSize": 44199
+    }
+  },
+  {
+    "dimensions": {
+      "actionStatus": "success",
+      "actionType": "PutObject",
+      "bucketName": "printgo-pdfs",
+      "datetimeFiveMinutes": "2026-10-14T14:10:00Z"
+    },
+    "sum": {
+      "requests": 3,
+      "responseBytes": 0,
+      "responseObjectSize": 14733
+    }
+  },
+  {
+    "dimensions": {
+      "actionStatus": "success",
+      "actionType": "HeadObject",
+      "bucketName": "printgo-pdfs",
+      "datetimeFiveMinutes": "2026-10-14T14:05:00Z"
+    },
+    "sum": {
+      "requests": 3,
+      "responseBytes": 0,
+      "responseObjectSize": 0
+    }
+  },
+  {
+    "dimensions": {
+      "actionStatus": "success",
+      "actionType": "PutObject",
+      "bucketName": "printgo-pdfs",
+      "datetimeFiveMinutes": "2026-10-14T14:00:00Z"
+    },
+    "sum": {
+      "requests": 2,
+      "responseBytes": 0,
+      "responseObjectSize": 9822
+    }
+  },
+  {
+    "dimensions": {
+      "actionStatus": "success",
+      "actionType": "GetObject",
+      "bucketName": "printgo-pdfs",
+      "datetimeFiveMinutes": "2026-10-14T13:50:00Z"
+    },
+    "sum": {
+      "requests": 9,
+      "responseBytes": 1063418,
+      "responseObjectSize": 1083938
+    }
+  },
+  {
+    "dimensions": {
+      "actionStatus": "success",
+      "actionType": "PutObject",
+      "bucketName": "printgo-pdfs",
+      "datetimeFiveMinutes": "2026-10-14T14:05:00Z"
+    },
+    "sum": {
+      "requests": 3,
+      "responseBytes": 0,
+      "responseObjectSize": 14733
+    }
+  },
+  {
+    "dimensions": {
+      "actionStatus": "success",
+      "actionType": "GetObject",
+      "bucketName": "printgo-pdfs",
+      "datetimeFiveMinutes": "2026-10-14T14:20:00Z"
+    },
+    "sum": {
+      "requests": 1,
+      "responseBytes": 1044110,
+      "responseObjectSize": 1044110
+    }
+  },
+  {
+    "dimensions": {
+      "actionStatus": "success",
+      "actionType": "GetObject",
+      "bucketName": "printgo-pdfs",
+      "datetimeFiveMinutes": "2026-10-14T13:45:00Z"
+    },
+    "sum": {
+      "requests": 6,
+      "responseBytes": 1055300,
+      "responseObjectSize": 1069340
+    }
+  },
+  {
+    "dimensions": {
+      "actionStatus": "success",
+      "actionType": "HeadObject",
+      "bucketName": "printgo-pdfs",
+      "datetimeFiveMinutes": "2026-10-14T14:10:00Z"
+    },
+    "sum": {
+      "requests": 3,
+      "responseBytes": 0,
+      "responseObjectSize": 0
+    }
+  },
+  {
+    "dimensions": {
+      "actionStatus": "success",
+      "actionType": "PutObject",
+      "bucketName": "printgo-pdfs",
+      "datetimeFiveMinutes": "2026-10-14T13:55:00Z"
+    },
+    "sum": {
+      "requests": 9,
+      "responseBytes": 0,
+      "responseObjectSize": 44199
+    }
+  },
+  {
+    "dimensions": {
+      "actionStatus": "success",
+      "actionType": "GetObject",
+      "bucketName": "printgo-pdfs",
+      "datetimeFiveMinutes": "2026-10-14T14:10:00Z"
+    },
+    "sum": {
+      "requests": 12,
+      "responseBytes": 38682,
+      "responseObjectSize": 58932
+    }
+  },
+  {
+    "dimensions": {
+      "actionStatus": "success",
+      "actionType": "GetObject",
+      "bucketName": "printgo-pdfs",
+      "datetimeFiveMinutes": "2026-10-14T13:55:00Z"
+    },
+    "sum": {
+      "requests": 18,
+      "responseBytes": 27648,
+      "responseObjectSize": 88398
+    }
+  },
+  {
+    "dimensions": {
+      "actionStatus": "success",
+      "actionType": "HeadObject",
+      "bucketName": "printgo-pdfs",
+      "datetimeFiveMinutes": "2026-10-14T13:45:00Z"
+    },
+    "sum": {
+      "requests": 4,
+      "responseBytes": 0,
+      "responseObjectSize": 0
+    }
+  }
+]

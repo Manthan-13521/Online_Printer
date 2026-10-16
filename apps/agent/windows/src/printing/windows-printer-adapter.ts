@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import * as net from "node:net";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -133,6 +134,8 @@ export class WindowsPrinterAdapter implements PrinterAdapter {
   private readonly eventListeners = new Set<
     (event: PrinterChangeEvent) => void
   >();
+  // Phase 4: Cache the resolved SumatraPDF.exe path after first successful lookup
+  private resolvedSumatraPath: string | null = null;
 
   constructor(
     executor: PowerShellExecutor = defaultPowerShellExecutor,
@@ -140,6 +143,38 @@ export class WindowsPrinterAdapter implements PrinterAdapter {
   ) {
     this.executor = executor;
     this.socketProbe = socketProbe;
+  }
+
+  /**
+   * Phase 4: Resolve SumatraPDF.exe on the Node.js side once and cache it.
+   * Falls back to null if not found — the PS script will error with a clear message.
+   */
+  private resolveSumatraPath(): string | null {
+    if (this.resolvedSumatraPath) return this.resolvedSumatraPath;
+
+    const currentDir =
+      typeof __dirname !== "undefined"
+        ? __dirname
+        : path.dirname(fileURLToPath(import.meta.url));
+
+    const candidates = [
+      process.env.PRINTGO_SUMATRA_PATH,
+      path.resolve(path.dirname(process.execPath), "SumatraPDF.exe"),
+      path.resolve(process.cwd(), "SumatraPDF.exe"),
+      path.resolve(currentDir, "../../vendor/SumatraPDF.exe"),
+    ].filter(Boolean) as string[];
+
+    for (const c of candidates) {
+      try {
+        if (existsSync(c)) {
+          this.resolvedSumatraPath = c;
+          return c;
+        }
+      } catch {
+        /* continue */
+      }
+    }
+    return null;
   }
 
   subscribePrinterEvents(
@@ -453,12 +488,24 @@ Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $printer } | Select-O
     };
   }
 
-  async getStatus(printerId: string): Promise<PrinterStatus> {
+  async getStatus(
+    printerId: string,
+    opts?: { maxCacheAgeMs?: number },
+  ): Promise<PrinterStatus> {
     this.ensureWindows();
 
+    const maxAge = opts?.maxCacheAgeMs ?? 5_000;
     const cached = this.statusCache.get(printerId);
-    if (cached && Date.now() - cached.cachedAtMs < 5_000) {
-      return cached.status;
+    if (cached && Date.now() - cached.cachedAtMs < maxAge) {
+      const isHealthy =
+        cached.status.availability === "ONLINE" ||
+        cached.status.availability === "AVAILABLE";
+      // Extended cache only trusts healthy results — fail closed on stale unhealthy data
+      if (maxAge > 5_000 && !isHealthy) {
+        // Stale unhealthy cache — fall through to fresh probe
+      } else {
+        return cached.status;
+      }
     }
 
     const escapedName = printerId.replace(/'/g, "''");
@@ -542,6 +589,9 @@ Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $printer } | Select-O
     const escapedPdfPath = submission.localPdfPath.replace(/'/g, "''");
     const escapedSettings = settingsString.replace(/'/g, "''");
     const escapedDocIdentifier = docIdentifier.replace(/'/g, "''");
+
+    // Phase 4: Use Node.js-side cached SumatraPDF path when available
+    const cachedSumatraPath = this.resolveSumatraPath();
     const currentDir =
       typeof __dirname !== "undefined"
         ? __dirname
@@ -555,16 +605,19 @@ Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $printer } | Select-O
       path.dirname(process.execPath),
       "SumatraPDF.exe",
     );
+
     const escapedBundledSumatraPath = bundledSumatraPath.replace(/'/g, "''");
     const escapedCwdSumatraPath = cwdSumatraPath.replace(/'/g, "''");
     const escapedExecDirSumatraPath = execDirSumatraPath.replace(/'/g, "''");
 
-    const psScript = `
-$printer = '${escapedPrinterName}'
-$pdf = '${escapedPdfPath}'
-$docIdentifier = '${escapedDocIdentifier}'
-$settings = '${escapedSettings}'
-
+    const sumatraResolutionPs = cachedSumatraPath
+      ? `
+# 1. SumatraPDF path pre-resolved by Node.js (Phase 4 optimization)
+$sumatra = '${cachedSumatraPath.replace(/'/g, "''")}'
+if (-not (Test-Path $sumatra)) {
+    throw "Pre-resolved SumatraPDF path not found: $sumatra"
+}`
+      : `
 # 1. Resolve SumatraPDF executable location
 $sumatra = $env:PRINTGO_SUMATRA_PATH
 if (-not $sumatra -or -not (Test-Path $sumatra)) {
@@ -588,7 +641,15 @@ if (-not $sumatra -or -not (Test-Path $sumatra)) {
     if ($cmd) {
         $sumatra = $cmd.Source
     }
-}
+}`;
+
+    const psScript = `
+$printer = '${escapedPrinterName}'
+$pdf = '${escapedPdfPath}'
+$docIdentifier = '${escapedDocIdentifier}'
+$settings = '${escapedSettings}'
+
+${sumatraResolutionPs}
 
 # Fresh readiness in this same process, before any physical side effect. Never trust the idle snapshot here.
 $ready = Get-CimInstance Win32_Printer -ErrorAction Stop | Where-Object { $_.Name -eq $printer }
@@ -650,13 +711,16 @@ function Find-MatchedJob {
 }
 
 # Poll while process is running to catch jobs before fast despool
+$iteration = 0
 while (-not $proc.HasExited -and $stopwatch.ElapsedMilliseconds -lt 25000) {
-    Start-Sleep -Milliseconds 80
+    $sleepMs = if ($iteration -lt 3) { 30 } else { 80 }
+    Start-Sleep -Milliseconds $sleepMs
     $matchedJob = Find-MatchedJob
     if ($matchedJob) {
         $spoolCapturedAtMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
         break
     }
+    $iteration++
 }
 
 # 4. Wait for SumatraPDF process to complete transmission cleanly

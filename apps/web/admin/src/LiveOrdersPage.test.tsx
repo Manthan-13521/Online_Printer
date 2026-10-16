@@ -304,4 +304,56 @@ describe("Admin LiveOrdersPage — Compact Redesign", () => {
       screen.getByRole("button", { name: /Print Recovery/i }),
     ).toBeDefined();
   });
+
+  it("displays Cash badge and method for cash orders, Online (Razorpay) for online orders, and Unknown for unset", async () => {
+    const cashOrder: AdminLiveOrder = {
+      ...sampleOrder,
+      orderId: "ord-cash-1",
+      customerName: "Ramesh Cash",
+      paymentMethod: "CASH",
+      cashConfirmedAt: new Date(Date.now() - 30_000).toISOString(),
+    };
+    const onlineOrder: AdminLiveOrder = {
+      ...sampleOrder,
+      orderId: "ord-online-1",
+      customerName: "Priya Online",
+      paymentMethod: "ONLINE",
+    };
+    const unknownOrder: AdminLiveOrder = {
+      ...sampleOrder,
+      orderId: "ord-unknown-1",
+      customerName: "Unknown Customer",
+      paymentMethod: "UNKNOWN",
+    };
+
+    getLiveOrders.mockResolvedValue({
+      ok: true,
+      data: {
+        orders: [cashOrder, onlineOrder, unknownOrder],
+        stallDetails: null,
+      },
+    });
+
+    render(<LiveOrdersPage onSessionExpired={vi.fn()} />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    // 1. Cash order assertions
+    expect(screen.getByText("💵 Cash")).toBeDefined();
+    expect(screen.getByText("Cash Confirmed")).toBeDefined();
+
+    // 2. Online order assertions
+    expect(screen.getByText("💳 Online (Razorpay)")).toBeDefined();
+
+    // 3. Unknown order assertions
+    expect(screen.getByText("⚠️ Unknown Method")).toBeDefined();
+
+    // Verify Payment Method labels in the details
+    expect(screen.getAllByText("Payment Method")).toHaveLength(3);
+    expect(screen.getByText("Cash")).toBeDefined();
+    expect(screen.getByText("Online (Razorpay)")).toBeDefined();
+    expect(screen.getByText("Unknown")).toBeDefined();
+  });
 });
