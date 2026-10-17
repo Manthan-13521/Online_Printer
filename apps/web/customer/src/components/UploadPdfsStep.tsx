@@ -1,5 +1,6 @@
 import type { CustomerConfigData } from "@printgo/api-contract";
 import { humanFileSize, type LocalOrderFile } from "./customer-types";
+import { FloatingLoadingIndicator } from "./FloatingLoadingIndicator";
 
 export interface UploadPdfsStepProps {
   files: LocalOrderFile[];
@@ -10,6 +11,7 @@ export interface UploadPdfsStepProps {
   config: CustomerConfigData | null;
   fileError: string | null;
   disabled: boolean;
+  isInspectingFiles?: boolean;
 }
 
 export function UploadPdfsStep({
@@ -21,9 +23,10 @@ export function UploadPdfsStep({
   config,
   fileError,
   disabled,
+  isInspectingFiles = false,
 }: UploadPdfsStepProps) {
   return (
-    <section className="step">
+    <section className="step upload-pdfs-step">
       <div className="step-header">
         <span className="step-number">2</span>
         <h2>Upload PDFs</h2>
@@ -32,77 +35,143 @@ export function UploadPdfsStep({
         </p>
       </div>
       <div className="file-list">
-        {files.map((item, index) => (
+        {files.map((item, index) => {
+          const isUploading = item.uploadStatus === "UPLOADING";
+          const isPreparing =
+            item.uploadStatus === "VALIDATING" ||
+            item.uploadStatus === "FINALIZING";
+          const isUploaded = item.uploadStatus === "UPLOADED";
+          const isFailed = item.uploadStatus === "FAILED";
+
+          return (
+            <div
+              key={item.clientId}
+              className={`file-card-compact ${selectedFileIndex === index ? "active" : ""} ${isUploaded ? "uploaded" : ""} ${isFailed ? "has-error" : ""}`}
+              onClick={() => onSelectFileIndex(index)}
+              role="button"
+              tabIndex={0}
+              aria-label={`Settings for File ${index + 1}, ${item.name}`}
+            >
+              <div className="file-icon-wrapper">
+                <span className="pdf-icon-doc">PDF</span>
+              </div>
+              <div className="file-info">
+                <span className="file-name" title={item.name}>
+                  {item.name.length > 30
+                    ? item.name.substring(0, 30) + "..."
+                    : item.name}
+                </span>
+                <span className="file-meta">
+                  {item.pageCount} pages · {humanFileSize(item.size)}
+                </span>
+
+                {/* Real-time Loading & Progress Feedback */}
+                {isPreparing && (
+                  <div
+                    className="file-feedback-box preparing"
+                    role="status"
+                    aria-live="polite"
+                  >
+                    <FloatingLoadingIndicator size="xs" variant="green" />
+                    <span className="file-feedback-text">
+                      Preparing your file...
+                    </span>
+                    <progress
+                      value={0}
+                      max="100"
+                      className="sr-only-progress"
+                      aria-hidden="true"
+                    />
+                  </div>
+                )}
+
+                {isUploading && (
+                  <div
+                    className="file-feedback-box uploading"
+                    role="status"
+                    aria-live="polite"
+                  >
+                    <div className="file-feedback-row">
+                      <FloatingLoadingIndicator size="xs" variant="green" />
+                      <span className="file-feedback-text">
+                        Uploading your PDF...
+                      </span>
+                      <span className="file-upload-pct">
+                        {Math.round(item.uploadProgress)}%
+                      </span>
+                    </div>
+                    <div className="file-progress-track">
+                      <div
+                        className="file-progress-bar"
+                        style={{
+                          width: `${Math.max(8, item.uploadProgress)}%`,
+                        }}
+                      />
+                    </div>
+                    {/* Native progress bar preserved for accessibility & tests */}
+                    <progress
+                      value={item.uploadProgress}
+                      max="100"
+                      className="sr-only-progress"
+                    />
+                  </div>
+                )}
+
+                {isFailed && (
+                  <span className="file-status status-error" role="alert">
+                    ⚠️ {item.uploadError || "Upload failed. Please retry."}
+                  </span>
+                )}
+              </div>
+              <div className="file-actions-right">
+                {isUploaded && (
+                  <span className="uploaded-badge">✓ Uploaded</span>
+                )}
+                <button
+                  type="button"
+                  className="remove-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRemoveFile(index);
+                  }}
+                  aria-label={`Remove file ${item.name}`}
+                >
+                  &times;
+                </button>
+              </div>
+            </div>
+          );
+        })}
+
+        {/* Immediate feedback while user selected files are being prepared/parsed */}
+        {isInspectingFiles && (
           <div
-            key={item.clientId}
-            className={`file-card-compact ${selectedFileIndex === index ? "active" : ""}`}
-            onClick={() => onSelectFileIndex(index)}
-            role="button"
-            tabIndex={0}
-            aria-label={`Settings for File ${index + 1}, ${item.name}`}
+            className="file-card-compact file-card-inspecting"
+            role="status"
+            aria-live="polite"
           >
-            <div className="file-icon-wrapper">
+            <div className="file-icon-wrapper inspecting">
               <span className="pdf-icon-doc">PDF</span>
             </div>
             <div className="file-info">
-              <span className="file-name" title={item.name}>
-                {item.name.length > 30
-                  ? item.name.substring(0, 30) + "..."
-                  : item.name}
-              </span>
-              <span className="file-meta">
-                {item.pageCount} pages · {humanFileSize(item.size)}
-              </span>
-              {(item.uploadStatus === "UPLOADING" ||
-                item.uploadStatus === "VALIDATING") && (
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "8px",
-                    marginTop: "4px",
-                  }}
-                >
-                  <progress
-                    value={item.uploadProgress}
-                    max="100"
-                    style={{ height: "6px", flexGrow: 1 }}
-                  />
-                  <span style={{ fontSize: "0.75rem", color: "#64748b" }}>
-                    {Math.round(item.uploadProgress)}%
-                  </span>
-                </div>
-              )}
-              {item.uploadStatus === "FAILED" && (
-                <span className="file-status status-error">
-                  {item.uploadError}
+              <span className="file-name">Reading selected PDF...</span>
+              <div className="file-feedback-box preparing">
+                <FloatingLoadingIndicator size="xs" variant="green" />
+                <span className="file-feedback-text">
+                  Preparing your file...
                 </span>
-              )}
-            </div>
-            <div className="file-actions-right">
-              {item.uploadStatus === "UPLOADED" && (
-                <span className="uploaded-badge">✓ Uploaded</span>
-              )}
-              <button
-                type="button"
-                className="remove-btn"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onRemoveFile(index);
-                }}
-                aria-label="Remove file"
-              >
-                &times;
-              </button>
+              </div>
             </div>
           </div>
-        ))}
+        )}
       </div>
 
       {files.length < (config?.maxOrderFiles ?? 10) && (
         <label className="drop-zone">
           <div className="drop-icon">+</div>
-          <div className="drop-title">Add another PDF</div>
+          <div className="drop-title">
+            {files.length === 0 ? "Select PDF file" : "Add another PDF"}
+          </div>
           <div className="drop-subtitle">Choose files or drag and drop</div>
           <div className="choose-btn">Choose Files</div>
           <input
@@ -110,7 +179,7 @@ export function UploadPdfsStep({
             aria-label="Choose Files"
             accept="application/pdf"
             multiple
-            disabled={disabled}
+            disabled={disabled || isInspectingFiles}
             onChange={(event) => {
               if (!event.target.files?.length) return;
               onChooseFiles(event.target.files);

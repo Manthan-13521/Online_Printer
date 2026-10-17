@@ -44,6 +44,12 @@ export function normalizeAgentServerUrl(rawUrl: string): string {
       "PrintGo server URL is invalid.",
     );
   }
+  if (
+    url.hostname === "printgo-admin.pages.dev" ||
+    url.hostname === "printgo-customer.pages.dev"
+  ) {
+    url = new URL("https://printgo-api.printgo-worker.workers.dev");
+  }
   const isLoopback =
     url.hostname === "localhost" ||
     url.hostname === "127.0.0.1" ||

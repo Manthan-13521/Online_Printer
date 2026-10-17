@@ -233,6 +233,123 @@ describe("WindowsPrinterAdapter with mock executor", () => {
     expect(onlineStatus.availability).toBe("ONLINE");
   });
 
+  // Step 1 (V2): New accuracy tests for parsePrinterStatus fixes
+  it("returns UNKNOWN for PrinterStatus=2 (Unknown) — must NOT be promoted to ONLINE", async () => {
+    const adapter = new WindowsPrinterAdapter(() =>
+      Promise.resolve(
+        JSON.stringify({
+          Name: "Ambiguous Printer",
+          PrinterStatus: 2, // Unknown — insufficient positive evidence
+        }),
+      ),
+    );
+    await adapter.listPrinters();
+    const status = await adapter.getStatus("Ambiguous Printer");
+    expect(status.availability).toBe("UNKNOWN");
+  });
+
+  it("returns ONLINE for PrinterStatus=3 (Idle)", async () => {
+    const adapter = new WindowsPrinterAdapter(() =>
+      Promise.resolve(
+        JSON.stringify({
+          Name: "Idle Printer",
+          PrinterStatus: 3,
+        }),
+      ),
+    );
+    await adapter.listPrinters();
+    const status = await adapter.getStatus("Idle Printer");
+    expect(status.availability).toBe("ONLINE");
+  });
+
+  it("returns BLOCKED for ExtendedPrinterStatus=8 (Paused)", async () => {
+    const adapter = new WindowsPrinterAdapter(() =>
+      Promise.resolve(
+        JSON.stringify({
+          Name: "Paused Printer",
+          PrinterStatus: 3, // Would otherwise return ONLINE
+          ExtendedPrinterStatus: 8, // Driver says: Paused → BLOCKED
+        }),
+      ),
+    );
+    await adapter.listPrinters();
+    const status = await adapter.getStatus("Paused Printer");
+    expect(status.availability).toBe("BLOCKED");
+    expect(status.message).toBe("Printer is paused");
+  });
+
+  it("returns BLOCKED for ExtendedPrinterStatus=9 (Error)", async () => {
+    const adapter = new WindowsPrinterAdapter(() =>
+      Promise.resolve(
+        JSON.stringify({
+          Name: "Error Printer",
+          PrinterStatus: 3,
+          ExtendedPrinterStatus: 9, // Driver says: Error
+        }),
+      ),
+    );
+    await adapter.listPrinters();
+    const status = await adapter.getStatus("Error Printer");
+    expect(status.availability).toBe("BLOCKED");
+    expect(status.message).toBe("Printer error reported");
+  });
+
+  it("returns BLOCKED for DetectedErrorState=4 (Out of Paper)", async () => {
+    const adapter = new WindowsPrinterAdapter(() =>
+      Promise.resolve(
+        JSON.stringify({
+          Name: "Empty Printer",
+          WorkOffline: false,
+          DetectedErrorState: 4,
+        }),
+      ),
+    );
+    await adapter.listPrinters();
+    const status = await adapter.getStatus("Empty Printer");
+    expect(status.availability).toBe("BLOCKED");
+    expect(status.message).toBe("Out of Paper");
+  });
+
+  it("returns BLOCKED for DetectedErrorState=8 (Paper Jam) — regression test", async () => {
+    const adapter = new WindowsPrinterAdapter(() =>
+      Promise.resolve(
+        JSON.stringify({
+          Name: "Jammed Printer",
+          WorkOffline: false,
+          DetectedErrorState: 8,
+        }),
+      ),
+    );
+    await adapter.listPrinters();
+    const status = await adapter.getStatus("Jammed Printer");
+    expect(status.availability).toBe("BLOCKED");
+    expect(status.message).toBe("Paper Jam");
+  });
+
+  it("returns OFFLINE for WorkOffline=true regardless of other fields", async () => {
+    const adapter = new WindowsPrinterAdapter(() =>
+      Promise.resolve(
+        JSON.stringify({
+          Name: "Offline Printer",
+          WorkOffline: true,
+          PrinterStatus: 3, // Would otherwise be ONLINE
+        }),
+      ),
+    );
+    await adapter.listPrinters();
+    const status = await adapter.getStatus("Offline Printer");
+    expect(status.availability).toBe("OFFLINE");
+  });
+
+  it("returns UNKNOWN when no status fields are present", async () => {
+    const adapter = new WindowsPrinterAdapter(() =>
+      Promise.resolve(JSON.stringify({ Name: "Ghost Printer" })),
+    );
+    await adapter.listPrinters();
+    const status = await adapter.getStatus("Ghost Printer");
+    expect(status.availability).toBe("UNKNOWN");
+  });
+
   it("parses capabilities from Win32_Printer descriptions", async () => {
     const mockExecutor = vi.fn(() =>
       Promise.resolve(
@@ -773,6 +890,53 @@ describe("Instant Print Dispatch Optimizations (Phases 3, 4, 5)", () => {
     const s2 = await adapter.getStatus("Printer1", { maxCacheAgeMs: 30_000 });
     expect(s2.availability).toBe("ONLINE");
     expect(scripts).toHaveLength(2); // fresh probe executed!
+  });
+
+  it("Phase 2: parsePrinterStatus maps PrinterStatus=2 (Unknown) to UNKNOWN availability", () => {
+    const adapter = new WindowsPrinterAdapter();
+    const parse = (
+      adapter as unknown as {
+        parsePrinterStatus: (
+          p: Record<string, unknown>,
+          net?: boolean,
+        ) => { availability: string; message?: string };
+      }
+    ).parsePrinterStatus;
+
+    // PrinterStatus = 2 (Unknown)
+    const resultUnknown = parse.call(adapter, {
+      PrinterStatus: 2,
+      WorkOffline: false,
+    });
+    expect(resultUnknown.availability).toBe("UNKNOWN");
+    expect(resultUnknown.message).toContain(
+      "readiness is not reported by Windows",
+    );
+
+    // PrinterStatus = 3 (Idle) -> Genuine ONLINE
+    const resultIdle = parse.call(adapter, {
+      PrinterStatus: 3,
+      WorkOffline: false,
+    });
+    expect(resultIdle.availability).toBe("ONLINE");
+
+    // ExtendedPrinterStatus = 20 (Paper Jam) -> BLOCKED
+    const resultJam = parse.call(adapter, {
+      PrinterStatus: 3,
+      ExtendedPrinterStatus: 20,
+      WorkOffline: false,
+    });
+    expect(resultJam.availability).toBe("BLOCKED");
+    expect(resultJam.message).toBe("Paper Jam");
+
+    // ExtendedPrinterStatus = 21 (Out of Paper) -> BLOCKED
+    const resultPaperOut = parse.call(adapter, {
+      PrinterStatus: 3,
+      ExtendedPrinterStatus: 21,
+      WorkOffline: false,
+    });
+    expect(resultPaperOut.availability).toBe("BLOCKED");
+    expect(resultPaperOut.message).toBe("Out of Paper");
   });
 
   it("Phase 4 & 5: submitPdfJob injects pre-resolved SumatraPDF path and 30ms early spool polling", async () => {

@@ -939,6 +939,18 @@ export class D1PrintingRepository implements PrintingRepository {
         JOIN installation i ON i.id = 1
           AND (
             (o.printer_id IS NOT NULL AND p.id = o.printer_id)
+            OR (
+              -- Subcase A2: Pre-assigned order whose assigned printer is now faulted (paused/offline).
+              -- When auto_fallback_enabled=1, any healthy compatible printer may claim it.
+              -- Never silently reroute if the assigned printer is still healthy.
+              o.printer_id IS NOT NULL AND p.id <> o.printer_id
+              AND EXISTS (
+                SELECT 1 FROM printers assigned
+                WHERE assigned.id = o.printer_id
+                  AND assigned.auto_fallback_enabled = 1
+                  AND (assigned.enabled = 0 OR assigned.status <> 'ONLINE' OR COALESCE(assigned.is_paused, 0) = 1)
+              )
+            )
             OR (o.printer_id IS NULL AND (
               i.default_production_printer_id IS NULL
               OR p.id = i.default_production_printer_id
@@ -968,13 +980,14 @@ export class D1PrintingRepository implements PrintingRepository {
               )
               OR (
                 -- Subcase B2: Fallback routing — default printer is OFFLINE or PAUSED,
-                -- and auto-fallback is enabled pointing to this printer
+                -- and auto-fallback is enabled. When fallback_printer_id IS NULL, any
+                -- compatible healthy printer qualifies (shop-wide fallback).
                 p.id <> i.default_production_printer_id
                 AND EXISTS (
                   SELECT 1 FROM printers def
                   WHERE def.id = i.default_production_printer_id
                     AND def.auto_fallback_enabled = 1
-                    AND def.fallback_printer_id = p.id
+                    AND (def.fallback_printer_id IS NULL OR def.fallback_printer_id = p.id)
                     AND (def.enabled = 0 OR def.status <> 'ONLINE' OR COALESCE(def.is_paused, 0) = 1)
                 )
                 AND COALESCE(p.fallback_printer_id, '') <> i.default_production_printer_id
@@ -1498,7 +1511,7 @@ export class D1PrintingRepository implements PrintingRepository {
         return false;
       }
       if (
-        fileMeta.fallback_printer_id &&
+        fileMeta.fallback_printer_id !== null &&
         fileMeta.fallback_printer_id !== p.id
       ) {
         return false;
@@ -1620,6 +1633,18 @@ export class D1PrintingRepository implements PrintingRepository {
       const firstIsId = fileMeta.identification_sheet_placement === "FIRST";
 
       const statements: D1PreparedStatement[] = [
+        this.db
+          .prepare(
+            `UPDATE print_attempts SET status = 'FAILED', failure_code = ?, failure_detail = ?, finished_at_ms = ?, updated_at_ms = ?
+             WHERE id = ? AND status NOT IN ('SUCCEEDED', 'FAILED', 'CANCELLED')`,
+          )
+          .bind(
+            normFailure,
+            `Fallback reassigned to ${selected.display_name}`,
+            input.nowMs,
+            input.nowMs,
+            current.attempt_id,
+          ),
         this.db
           .prepare(
             `INSERT INTO print_attempts (

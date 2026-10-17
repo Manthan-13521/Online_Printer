@@ -235,6 +235,58 @@ describe("customer upload app", () => {
     expect(screen.queryByRole("button", { name: /upload pdf/i })).toBeNull();
   });
 
+  it("shows the printer-unavailable screen when all printers are offline or agent is disconnected", async () => {
+    vi.mocked(customerApi.config).mockResolvedValueOnce({
+      ...enabledConfig,
+      onlinePrintingEnabled: true,
+      availablePrintOptions: [],
+    });
+    render(<App />);
+    expect(
+      await screen.findByRole("heading", {
+        name: "Sorry, printing is temporarily unavailable.",
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Shop printers are currently offline or unavailable. Please check back in a few moments.",
+      ),
+    ).toBeTruthy();
+    // Verify four checkout sections are not shown
+    expect(screen.queryByLabelText("Name")).toBeNull();
+    expect(screen.queryByLabelText("Choose Files")).toBeNull();
+  });
+
+  it("keeps checkout accessible and allows order queuing when printers are healthy but occupied printing", async () => {
+    // When shop printers are actively printing existing jobs, onlinePrintingEnabled remains true
+    // and availablePrintOptions has supported options. The 4 checkout sections must remain fully usable!
+    vi.mocked(customerApi.config).mockResolvedValueOnce({
+      ...enabledConfig,
+      onlinePrintingEnabled: true,
+      availablePrintOptions: [
+        {
+          paperSize: "A4" as const,
+          colorMode: "BW" as const,
+          sides: "SINGLE" as const,
+        },
+      ],
+    });
+    render(<App />);
+
+    // All 4 checkout sections must be rendered and visible
+    expect(await screen.findByLabelText("Name")).toBeTruthy();
+    expect(screen.getByLabelText("Phone")).toBeTruthy();
+    expect(screen.getByLabelText("Choose Files")).toBeTruthy();
+    expect(screen.getByText("Print Settings")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Review Order" })).toBeTruthy();
+
+    // Unavailable screen must NOT be shown
+    expect(
+      screen.queryByText("Sorry, printing is temporarily unavailable."),
+    ).toBeNull();
+    expect(screen.queryByText("Sorry, we're currently closed.")).toBeNull();
+  });
+
   it("shows PDF limits and the external compression privacy warning", async () => {
     render(<App />);
     expect(await screen.findByText("ABC Xerox")).toBeTruthy();
@@ -380,10 +432,14 @@ describe("customer upload app", () => {
     const pay = await screen.findByRole("button", { name: "🔒 Pay ₹21.00" });
     await user.click(pay);
     expect(
-      screen.getByRole("button", { name: "Confirming payment…" }),
+      screen.getByRole("button", {
+        name: /Finding the best printer|Confirming payment/i,
+      }),
     ).toHaveProperty("disabled", true);
     await user.click(
-      screen.getByRole("button", { name: "Confirming payment…" }),
+      screen.getByRole("button", {
+        name: /Finding the best printer|Confirming payment/i,
+      }),
     );
     expect(customerApi.createPayment).toHaveBeenCalledTimes(1);
   });

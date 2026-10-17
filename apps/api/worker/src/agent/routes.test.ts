@@ -92,16 +92,74 @@ describe("Agent HTTP Routes", () => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        pairCode: "ABCD-EFGH",
+        pairCode: "123-456",
         displayName: "Front Desk PC",
       }),
     });
 
     const response = await handleAgentRequest(request, env, service);
     expect(response.status).toBe(400);
-    expect(await response.json()).toMatchObject({
+    expect(await response.json()).toEqual({
       ok: false,
-      error: { code: "PAIR_CODE_EXPIRED" },
+      error: {
+        code: "PAIR_CODE_EXPIRED",
+        message:
+          "The pairing code has expired (valid for 10 minutes). Please generate a fresh code from your shop Admin.",
+      },
+    });
+  });
+
+  it("returns 400 when pair code has already been used", async () => {
+    const service = createMockService();
+    vi.mocked(service.pair).mockRejectedValueOnce(
+      new AgentError("PAIR_CODE_ALREADY_USED"),
+    );
+
+    const request = new Request("https://api.example.com/api/agent/pair", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        pairCode: "123-456",
+        displayName: "Front Desk PC",
+      }),
+    });
+
+    const response = await handleAgentRequest(request, env, service);
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      ok: false,
+      error: {
+        code: "PAIR_CODE_ALREADY_USED",
+        message:
+          "This pairing code has already been used. Please generate a fresh code from your shop Admin.",
+      },
+    });
+  });
+
+  it("returns 400 when pair code is invalid", async () => {
+    const service = createMockService();
+    vi.mocked(service.pair).mockRejectedValueOnce(
+      new AgentError("PAIR_CODE_INVALID"),
+    );
+
+    const request = new Request("https://api.example.com/api/agent/pair", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        pairCode: "999-999",
+        displayName: "Front Desk PC",
+      }),
+    });
+
+    const response = await handleAgentRequest(request, env, service);
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      ok: false,
+      error: {
+        code: "PAIR_CODE_INVALID",
+        message:
+          "The pairing code is invalid. Please double-check the code from your shop Admin.",
+      },
     });
   });
 

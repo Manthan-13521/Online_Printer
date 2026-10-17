@@ -85,12 +85,17 @@ export async function handleAgentPrintingRequest(
         "Claim credential is required.",
         NO_STORE,
       );
-    if (match[3] === "start")
-      return ok(
-        await service.startStep(token, orderId, stepId, claimId),
-        200,
-        NO_STORE,
+    if (match[3] === "start") {
+      const result = await service.startStep(token, orderId, stepId, claimId);
+      void import("../agent/wake").then((m) =>
+        m.notifyAdmin(env, {
+          type: "ADMIN_ORDER_UPDATE",
+          orderId,
+          status: "SPOOLING",
+        }),
       );
+      return ok(result, 200, NO_STORE);
+    }
     if (match[3] === "submitted") {
       const spoolerJobId = shortText(input.spoolerJobId, 100);
       if (!spoolerJobId)
@@ -100,17 +105,21 @@ export async function handleAgentPrintingRequest(
           "Spooler job ID is required.",
           NO_STORE,
         );
-      return ok(
-        await service.recordSubmission(
-          token,
-          orderId,
-          stepId,
-          claimId,
-          spoolerJobId,
-        ),
-        200,
-        NO_STORE,
+      const result = await service.recordSubmission(
+        token,
+        orderId,
+        stepId,
+        claimId,
+        spoolerJobId,
       );
+      void import("../agent/wake").then((m) =>
+        m.notifyAdmin(env, {
+          type: "ADMIN_ORDER_UPDATE",
+          orderId,
+          status: "PRINTING",
+        }),
+      );
+      return ok(result, 200, NO_STORE);
     }
     if (match[3] === "preflight-failure") {
       const failureCode = shortText(input.failureCode, 50);
@@ -122,18 +131,22 @@ export async function handleAgentPrintingRequest(
           NO_STORE,
         );
       const failureDetail = shortText(input.failureDetail, 500);
-      return ok(
-        await service.handlePreflightFailure(
-          token,
-          orderId,
-          stepId,
-          claimId,
-          failureCode,
-          failureDetail,
-        ),
-        200,
-        NO_STORE,
+      const result = await service.handlePreflightFailure(
+        token,
+        orderId,
+        stepId,
+        claimId,
+        failureCode,
+        failureDetail,
       );
+      void import("../agent/wake").then((m) =>
+        m.notifyAdmin(env, {
+          type: "ADMIN_ORDER_UPDATE",
+          orderId,
+          status: "PREFLIGHT_FAILURE",
+        }),
+      );
+      return ok(result, 200, NO_STORE);
     }
     if (
       !["BLOCKED", "SUCCEEDED", "FAILED", "UNCERTAIN"].includes(
@@ -168,11 +181,15 @@ export async function handleAgentPrintingRequest(
           : "UNKNOWN",
       failureDetail: shortText(input.failureDetail, 500),
     };
-    return ok(
-      await service.recordResult(token, orderId, stepId, report),
-      200,
-      NO_STORE,
+    const result = await service.recordResult(token, orderId, stepId, report);
+    void import("../agent/wake").then((m) =>
+      m.notifyAdmin(env, {
+        type: "ADMIN_ORDER_UPDATE",
+        orderId,
+        status: report.status,
+      }),
     );
+    return ok(result, 200, NO_STORE);
   } catch (caught) {
     if (caught instanceof PrintingError) {
       if (caught.code === "AGENT_UNAUTHORIZED")

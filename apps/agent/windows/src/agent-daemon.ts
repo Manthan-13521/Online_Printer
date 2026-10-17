@@ -201,8 +201,9 @@ export class AgentDaemon {
       const wsUrl = new URL(this.credentials.serverUrl);
       wsUrl.protocol = wsUrl.protocol === "https:" ? "wss:" : "ws:";
       wsUrl.pathname = "/api/agent/ws";
+      wsUrl.searchParams.set("token", this.credentials.agentSecret);
 
-      this.ws = new WebSocket(wsUrl.toString(), [this.credentials.agentSecret]);
+      this.ws = new WebSocket(wsUrl.toString(), ["printgo-agent-v1"]);
 
       this.ws.onmessage = (event) => {
         try {
@@ -214,6 +215,21 @@ export class AgentDaemon {
             if (this.isBeating) {
               // Pulse is in progress — flag it so the finally block
               // will schedule an immediate follow-up instead of idle delay.
+              this.pendingWakeup = true;
+            }
+            this.reschedulePulse();
+          } else if (data.type === "PROBE_PRINTER") {
+            const targetPrinterId = (
+              data as { type: string; printerId?: string }
+            ).printerId;
+            this.log(
+              `Received PROBE_PRINTER request for printer: ${targetPrinterId ?? "all"}`,
+            );
+            // Force immediate fresh hardware probe on next pulse.
+            // Do NOT set wakeupTriggered — that flag suppresses printer refresh.
+            this.lastPrinterRefreshMs = -Infinity;
+            this.nextDelayMs = 0;
+            if (this.isBeating) {
               this.pendingWakeup = true;
             }
             this.reschedulePulse();
@@ -314,14 +330,21 @@ export class AgentDaemon {
     this.isBeating = true;
 
     try {
+      const productionPrintersForRefresh = this.printerReports.filter(
+        (p) => p.isEligibleForProductionPrint !== false && !p.isVirtual,
+      );
+      const printersToCheckForRefresh =
+        productionPrintersForRefresh.length > 0
+          ? productionPrintersForRefresh
+          : this.printerReports;
       const unhealthy =
-        this.printerReports.length === 0 ||
-        this.printerReports.some((p) => p.status !== "ONLINE");
-      // A blocked/unhealthy printer needs a local health probe every two minutes;
+        printersToCheckForRefresh.length === 0 ||
+        printersToCheckForRefresh.some((p) => p.status !== "ONLINE");
+      // A blocked/unhealthy printer needs a local health probe every 30 seconds;
       // when healthy and stable, safety fallback probe is every 15 minutes;
       // otherwise, during startup/recovery, probes run every 60 seconds.
       const refreshEveryMs = unhealthy
-        ? 120_000
+        ? 30_000
         : this.isPrinterMonitoringStable
           ? 15 * 60 * 1_000
           : this.printerRefreshMs;
@@ -473,13 +496,29 @@ export class AgentDaemon {
       } else {
         this.idlePolls = Math.min(this.idlePolls + 1, 4);
       }
-      if (heartbeatData.onlinePrintingEnabled === false || !ready) {
-        this.nextDelayMs = 60_000;
-      } else if (rawJobs.length > 0 || this.activeLanes.size > 0) {
+      const productionPrintersForDelay = this.printerReports.filter(
+        (p) => p.isEligibleForProductionPrint !== false && !p.isVirtual,
+      );
+      const printersToCheckForDelay =
+        productionPrintersForDelay.length > 0
+          ? productionPrintersForDelay
+          : this.printerReports;
+      const anyFaulted =
+        printersToCheckForDelay.length === 0 ||
+        printersToCheckForDelay.some((p) => p.status !== "ONLINE");
+
+      if (rawJobs.length > 0 || this.activeLanes.size > 0) {
         this.nextDelayMs = 6_000;
+      } else if (anyFaulted) {
+        // While any printer fault persists, recheck hardware locally every 30 seconds in actual elapsed scheduling
+        this.nextDelayMs = 30_000;
+      } else if (heartbeatData.onlinePrintingEnabled === false || !ready) {
+        this.nextDelayMs = 60_000;
       } else {
-        // OPT-7: 120s idle heartbeat when WebSocket is connected; 60s fallback when disconnected
-        this.nextDelayMs = this.isWebSocketConnected() ? 120_000 : 60_000;
+        // 60s idle heartbeat schedule: perfectly aligned with the 40s D1 write throttle and 90s claim cutoff.
+        // Guarantees an idle agent's D1 heartbeat is never older than 60s (preventing false offline states after 2, 5, 10, 30 min idle),
+        // while consuming only ~900 requests/day (<1.0% of Cloudflare Free Tier).
+        this.nextDelayMs = 60_000;
       }
       if (Date.now() - this.lastStatusWriteMs >= 60_000 || refreshPrinters) {
         this.lastStatusWriteMs = Date.now();

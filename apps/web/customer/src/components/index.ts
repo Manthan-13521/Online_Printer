@@ -8,3 +8,5 @@ export * from "./CustomerDetailsStep";
 export * from "./PrintSettingsStep";
 export * from "./UploadPdfsStep";
 export * from "./OrderReviewSummary";
+export * from "./FloatingLoadingIndicator";
+export * from "./BowingStaffIllustration";

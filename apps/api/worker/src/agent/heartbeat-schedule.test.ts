@@ -57,7 +57,7 @@ const emptyPulseInput: ValidatedAgentHeartbeatInput = {
 };
 
 describe("Agent Heartbeat Scheduling & Write Throttle", () => {
-  it("idle polling at 60s intervals with 65s throttle executes writes on alternating polls (every 120s)", async () => {
+  it("idle polling at 45s intervals with 40s throttle executes writes on every poll (45s freshness for 90s D1 check)", async () => {
     let now = 1_000_000;
     const { repo, getUpdateCount, getLastHeartbeat } = createMockRepo(now);
     const service = new AgentService(repo, () => now);
@@ -66,68 +66,73 @@ describe("Agent Heartbeat Scheduling & Write Throttle", () => {
     expect(getUpdateCount()).toBe(0);
     expect(getLastHeartbeat()).toBe(now);
 
-    // Poll 1 at t = 60s (60,000ms): elapsed is 60s < 65s -> THROTTLED (0 writes)
-    now += 60_000;
+    // Poll 1 at t = 45s (45,000ms): elapsed is 45s >= 40s -> WRITTEN (1 write)
+    now += 45_000;
     const p1 = await service.heartbeat("secret", emptyPulseInput, false);
     expect(p1.acknowledged).toBe(true);
-    expect(getUpdateCount()).toBe(0);
+    expect(getUpdateCount()).toBe(1);
+    expect(getLastHeartbeat()).toBe(1_045_000);
+    // Verified: D1 last_heartbeat age is 0s, well within 90s threshold!
+    expect(now - getLastHeartbeat()!).toBeLessThan(90_000);
 
-    // Poll 2 at t = 120s (120,000ms): elapsed is 120s >= 65s -> WRITTEN (1 write)
-    now += 60_000;
+    // Poll 2 at t = 90s: elapsed is 45s >= 40s -> WRITTEN (2 writes total)
+    now += 45_000;
     const p2 = await service.heartbeat("secret", emptyPulseInput, false);
     expect(p2.acknowledged).toBe(true);
-    expect(getUpdateCount()).toBe(1);
-    expect(getLastHeartbeat()).toBe(1_120_000);
+    expect(getUpdateCount()).toBe(2);
+    expect(getLastHeartbeat()).toBe(1_090_000);
+    expect(now - getLastHeartbeat()!).toBeLessThan(90_000);
 
-    // Poll 3 at t = 180s: elapsed is 60s < 65s -> THROTTLED (1 write total)
-    now += 60_000;
+    // Poll 3 at t = 135s: elapsed is 45s >= 40s -> WRITTEN (3 writes total)
+    now += 45_000;
     const p3 = await service.heartbeat("secret", emptyPulseInput, false);
     expect(p3.acknowledged).toBe(true);
-    expect(getUpdateCount()).toBe(1);
+    expect(getUpdateCount()).toBe(3);
+    expect(getLastHeartbeat()).toBe(1_135_000);
+    expect(now - getLastHeartbeat()!).toBeLessThan(90_000);
 
-    // Poll 4 at t = 240s: elapsed is 120s >= 65s -> WRITTEN (2 writes total)
-    now += 60_000;
-    const p4 = await service.heartbeat("secret", emptyPulseInput, false);
-    expect(p4.acknowledged).toBe(true);
-    expect(getUpdateCount()).toBe(2);
-    expect(getLastHeartbeat()).toBe(1_240_000);
+    // Sub-40s jitter poll at t = 155s (20s later): elapsed 20s < 40s -> THROTTLED (0 extra writes)
+    now += 20_000;
+    const pJitter = await service.heartbeat("secret", emptyPulseInput, false);
+    expect(pJitter.acknowledged).toBe(true);
+    expect(getUpdateCount()).toBe(3); // Throttled!
+    expect(now - getLastHeartbeat()!).toBeLessThan(90_000);
 
-    // Simulate full 15-hour idle period (900 polls of 60s each)
-    // Over 900 polls starting from poll 5 to 900 (896 more polls):
-    // Alternating polls trigger writes every 120s.
-    for (let poll = 5; poll <= 900; poll++) {
-      now += 60_000;
+    // Simulate full 15-hour idle period (1200 polls of 45s each)
+    for (let poll = 5; poll <= 1200; poll++) {
+      now += 45_000;
       await service.heartbeat("secret", emptyPulseInput, false);
+      expect(now - getLastHeartbeat()!).toBeLessThan(90_000);
     }
 
-    // In 900 polls spanning 54,000s, exactly 54,000 / 120 = 450 writes occur!
-    expect(getUpdateCount()).toBe(450);
+    // Every 45s poll triggers a single write, maintaining permanent freshness under 90s
+    expect(getUpdateCount()).toBe(1199);
   });
 
-  it("active polling at 6s intervals triggers writes every 66s (every 11th poll)", async () => {
+  it("active polling at 6s intervals triggers writes every 42s (every 7th poll)", async () => {
     let now = 1_000_000;
     const { repo, getUpdateCount } = createMockRepo(now);
     const service = new AgentService(repo, () => now);
 
-    // 10 active polls at 6s intervals (t = 6s through t = 60s): all throttled
-    for (let i = 1; i <= 10; i++) {
+    // 6 active polls at 6s intervals (t = 6s through t = 36s): all throttled
+    for (let i = 1; i <= 6; i++) {
       now += 6_000;
       await service.heartbeat("secret", emptyPulseInput, false);
       expect(getUpdateCount()).toBe(0);
     }
 
-    // 11th active poll at t = 66s: elapsed is 66s >= 65s -> write occurs!
+    // 7th active poll at t = 42s: elapsed is 42s >= 40s -> write occurs!
     now += 6_000;
     await service.heartbeat("secret", emptyPulseInput, false);
     expect(getUpdateCount()).toBe(1);
 
     // In 1 hour of continuous active printing (600 polls at 6s intervals):
-    // Writes occur every 66s -> Math.floor(3600 / 66) = 54 writes
-    for (let i = 12; i <= 600; i++) {
+    // Writes occur every 42s -> Math.floor(3600 / 42) = 85 writes
+    for (let i = 8; i <= 600; i++) {
       now += 6_000;
       await service.heartbeat("secret", emptyPulseInput, false);
     }
-    expect(getUpdateCount()).toBe(54);
+    expect(getUpdateCount()).toBe(85);
   });
 
   it("reconnecting agent after 90s disconnect writes immediately and remains within 150s offline threshold", async () => {

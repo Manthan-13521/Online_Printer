@@ -121,6 +121,7 @@ export class PaidPrintExecutor {
       // or queue unstarvation (BLOCKED_RELEASED) triggers before submission starts.
       const printerStatus = await this.printer.getStatus(
         job.windowsPrinterName,
+        { maxCacheAgeMs: 60_000 },
       );
       if (
         printerStatus &&

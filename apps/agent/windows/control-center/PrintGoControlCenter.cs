@@ -4,7 +4,9 @@ using System.Collections.Generic;
 using System.Web.Script.Serialization;
 using System.Drawing;
 using System.IO;
+using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Windows.Forms;
 
 namespace PrintGo.ControlCenter
@@ -50,45 +52,104 @@ namespace PrintGo.ControlCenter
         private string agentExePath;
         private string sumatraExePath;
 
-        private static System.Threading.Mutex singleInstanceMutex;
+        private static Mutex singleInstanceMutex;
+        private static EventWaitHandle pairEventWaitHandle;
+        private const string SINGLE_INSTANCE_MUTEX_NAME = "PrintGo_ControlCenter_SingleInstance_Mutex";
+        private const string PAIR_EVENT_NAME = "PrintGo_ControlCenter_Pair_Event";
 
         [STAThread]
         public static void Main(string[] args)
         {
+            bool startMinimized = false;
+            string pairUrl = null;
+
+            foreach (var arg in args)
+            {
+                if (arg.Equals("--minimized", StringComparison.OrdinalIgnoreCase) ||
+                    arg.Equals("-m", StringComparison.OrdinalIgnoreCase))
+                {
+                    startMinimized = true;
+                }
+                else if (arg.StartsWith("printgo://", StringComparison.OrdinalIgnoreCase))
+                {
+                    pairUrl = arg;
+                }
+            }
+
             bool createdNew;
-            singleInstanceMutex = new System.Threading.Mutex(true, "PrintGo_ControlCenter_SingleInstance_Mutex", out createdNew);
+            singleInstanceMutex = new Mutex(true, SINGLE_INSTANCE_MUTEX_NAME, out createdNew);
             if (!createdNew)
             {
-                // Another instance of Control Center is already running. Exit cleanly.
+                // Another instance of Control Center is already running.
+                if (!string.IsNullOrEmpty(pairUrl))
+                {
+                    try
+                    {
+                        string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                        string printgoDir = Path.Combine(localAppData, "PrintGo");
+                        if (!Directory.Exists(printgoDir)) Directory.CreateDirectory(printgoDir);
+                        string pendingFile = Path.Combine(printgoDir, "pending-pair.url");
+                        File.WriteAllText(pendingFile, pairUrl);
+
+                        // Signal the primary instance
+                        using (var pairEvent = EventWaitHandle.OpenExisting(PAIR_EVENT_NAME))
+                        {
+                            pairEvent.Set();
+                        }
+                    }
+                    catch
+                    {
+                        // Signal or write error ignored on exit
+                    }
+                }
                 return;
             }
 
+            RegisteredWaitHandle registeredWait = null;
             try
             {
+                bool createdEvent;
+                pairEventWaitHandle = new EventWaitHandle(false, EventResetMode.AutoReset, PAIR_EVENT_NAME, out createdEvent);
+
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
 
-                bool startMinimized = false;
-                string pairUrl = null;
-
-                foreach (var arg in args)
-                {
-                    if (arg.Equals("--minimized", StringComparison.OrdinalIgnoreCase) ||
-                        arg.Equals("-m", StringComparison.OrdinalIgnoreCase))
-                    {
-                        startMinimized = true;
-                    }
-                    else if (arg.StartsWith("printgo://", StringComparison.OrdinalIgnoreCase))
-                    {
-                        pairUrl = arg;
-                    }
-                }
-
                 var form = new ControlCenterForm(startMinimized, pairUrl);
+
+                registeredWait = ThreadPool.RegisterWaitForSingleObject(
+                    pairEventWaitHandle,
+                    (state, timedOut) =>
+                    {
+                        if (!timedOut && form != null && !form.IsDisposed)
+                        {
+                            try
+                            {
+                                form.BeginInvoke(new Action(() =>
+                                {
+                                    form.RestoreWindow();
+                                    form.CheckPendingPairUrl();
+                                }));
+                            }
+                            catch { }
+                        }
+                    },
+                    null,
+                    -1,
+                    false
+                );
+
                 Application.Run(form);
             }
             finally
             {
+                if (registeredWait != null)
+                {
+                    try { registeredWait.Unregister(null); } catch { }
+                }
+                if (pairEventWaitHandle != null)
+                {
+                    try { pairEventWaitHandle.Dispose(); } catch { }
+                }
                 if (singleInstanceMutex != null)
                 {
                     try { singleInstanceMutex.ReleaseMutex(); } catch { }
@@ -114,6 +175,7 @@ namespace PrintGo.ControlCenter
             {
                 HandlePairUrl(pairUrl);
             }
+            CheckPendingPairUrl();
 
             EnsureSingleAgentRunning();
             RefreshStatus();
@@ -515,12 +577,31 @@ namespace PrintGo.ControlCenter
             base.OnFormClosing(e);
         }
 
-        private void RestoreWindow()
+        public void RestoreWindow()
         {
             Show();
             WindowState = FormWindowState.Normal;
             ShowInTaskbar = true;
             BringToFront();
+            Activate();
+        }
+
+        public void CheckPendingPairUrl()
+        {
+            try
+            {
+                string pendingFile = Path.Combine(appDataDir, "pending-pair.url");
+                if (File.Exists(pendingFile))
+                {
+                    string url = File.ReadAllText(pendingFile).Trim();
+                    try { File.Delete(pendingFile); } catch { }
+                    if (!string.IsNullOrEmpty(url))
+                    {
+                        HandlePairUrl(url);
+                    }
+                }
+            }
+            catch { }
         }
 
         private void ExitApplication()
@@ -723,7 +804,7 @@ namespace PrintGo.ControlCenter
                     File.Exists(agentExePath),
                     sumatraExePath ?? "Not Detected",
                     !string.IsNullOrEmpty(sumatraExePath) && File.Exists(sumatraExePath),
-                    File.Exists(Path.Combine(appDataDir, "credentials.enc")) ? "Present (DPAPI Encrypted)" : "Missing (Unpaired)",
+                    (File.Exists(Path.Combine(appDataDir, "agent-credentials.dat")) || File.Exists(Path.Combine(appDataDir, "credentials.enc"))) ? "Present (DPAPI Encrypted)" : "Missing (Unpaired)",
                     GetActiveServerUrl(),
                     Process.GetProcessesByName("PrintGo-Agent").Length,
                     Process.GetProcessesByName("SumatraPDF").Length,
@@ -851,15 +932,33 @@ namespace PrintGo.ControlCenter
                 catch { }
             }
 
-            if (string.IsNullOrEmpty(code))
+            if (!string.IsNullOrEmpty(code))
+            {
+                string cleanCode = Regex.Replace(code.ToUpperInvariant(), @"[\s\-]", "");
+                if (cleanCode.Length == 6)
+                {
+                    code = cleanCode.Substring(0, 3) + "-" + cleanCode.Substring(3, 3);
+                }
+                else if (cleanCode.Length == 8)
+                {
+                    code = cleanCode.Substring(0, 4) + "-" + cleanCode.Substring(4, 4);
+                }
+            }
+            else
             {
                 string clean = Regex.Replace(input.ToUpperInvariant(), @"[\s\-]", "");
-                if (Regex.IsMatch(clean, @"^[A-Z0-9]{8}$"))
+                if (Regex.IsMatch(clean, @"^[A-Z0-9]{6}$"))
+                {
+                    code = clean.Substring(0, 3) + "-" + clean.Substring(3, 3);
+                    server = GetActiveServerUrl();
+                }
+                else if (Regex.IsMatch(clean, @"^[A-Z0-9]{8}$"))
                 {
                     code = clean.Substring(0, 4) + "-" + clean.Substring(4, 4);
                     server = GetActiveServerUrl();
                 }
-                else if (Regex.IsMatch(input.ToUpperInvariant(), @"^[A-Z0-9]{4}-[A-Z0-9]{4}$"))
+                else if (Regex.IsMatch(input.ToUpperInvariant(), @"^[A-Z0-9]{3}-[A-Z0-9]{3}$") ||
+                         Regex.IsMatch(input.ToUpperInvariant(), @"^[A-Z0-9]{4}-[A-Z0-9]{4}$"))
                 {
                     code = input.ToUpperInvariant();
                     server = GetActiveServerUrl();
@@ -869,7 +968,7 @@ namespace PrintGo.ControlCenter
             if (string.IsNullOrEmpty(code) || string.IsNullOrEmpty(server))
             {
                 MessageBox.Show(
-                    "Please enter a valid 8-digit pairing code (e.g. 7777-8888) from your shop Admin.",
+                    "Please enter a valid pairing code (e.g. 123-456 or 7777-8888) from your shop Admin.",
                     "Invalid Pairing Code",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Warning
@@ -922,15 +1021,25 @@ namespace PrintGo.ControlCenter
             catch { }
 
             Uri origin;
-            if (!Regex.IsMatch(code, @"^[A-Z0-9]{4}-[A-Z0-9]{4}$") ||
-                !Uri.TryCreate(server, UriKind.Absolute, out origin) || origin.Scheme != "https" ||
-                origin.UserInfo != "" || origin.AbsolutePath != "/" || origin.Query != "" || origin.Fragment != "")
+            bool isCodeValid = Regex.IsMatch(code, @"^([A-Z0-9]{3}-[A-Z0-9]{3}|[A-Z0-9]{4}-[A-Z0-9]{4})$");
+            bool isUrlValid = Uri.TryCreate(server, UriKind.Absolute, out origin);
+            bool isLoopback = isUrlValid && (origin.Host == "localhost" || origin.Host == "127.0.0.1" || origin.Host == "[::1]");
+            bool isSchemeValid = isUrlValid && (origin.Scheme == "https" || (origin.Scheme == "http" && isLoopback));
+            bool isCleanPath = isUrlValid && (origin.AbsolutePath == "/" || origin.AbsolutePath == "") && origin.Query == "" && origin.Fragment == "" && origin.UserInfo == "";
+
+            if (!isCodeValid || !isUrlValid || !isSchemeValid || !isCleanPath)
             {
                 MessageBox.Show("The pairing code or server URL is invalid. Please try again.", "Connection Failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
 
             string cleanServer = origin.GetLeftPart(UriPartial.Authority);
+            if (origin.Host.Equals("printgo-admin.pages.dev", StringComparison.OrdinalIgnoreCase) ||
+                origin.Host.Equals("printgo-customer.pages.dev", StringComparison.OrdinalIgnoreCase))
+            {
+                cleanServer = "https://printgo-api.printgo-worker.workers.dev";
+            }
+
             string args = "--pair-only --pair " + code + " --server \"" + cleanServer + "\"";
             var psi = new ProcessStartInfo
             {
@@ -942,10 +1051,16 @@ namespace PrintGo.ControlCenter
                 RedirectStandardOutput = true
             };
 
+            var stdoutSb = new StringBuilder();
+            var stderrSb = new StringBuilder();
+
             using (var process = Process.Start(psi))
             {
-                process.StandardOutput.ReadToEnd();
-                process.StandardError.ReadToEnd();
+                process.OutputDataReceived += (s, e) => { if (e.Data != null) stdoutSb.AppendLine(e.Data); };
+                process.ErrorDataReceived += (s, e) => { if (e.Data != null) stderrSb.AppendLine(e.Data); };
+                process.BeginOutputReadLine();
+                process.BeginErrorReadLine();
+
                 if (!process.WaitForExit(60000))
                 {
                     try { process.Kill(); } catch { }
@@ -956,8 +1071,38 @@ namespace PrintGo.ControlCenter
 
                 if (process.ExitCode != 0)
                 {
+                    string errOut = stderrSb.ToString().Trim();
+                    string failMessage;
+
+                    if (process.ExitCode == 10)
+                    {
+                        failMessage = "This pairing code has expired (valid for 10 minutes).\n\nPlease generate a fresh code from your shop Admin.";
+                    }
+                    else if (process.ExitCode == 11)
+                    {
+                        failMessage = "This pairing code has already been used.\n\nPlease generate a fresh code from your shop Admin.";
+                    }
+                    else if (process.ExitCode == 12)
+                    {
+                        failMessage = "The pairing code is invalid. Please double-check the code shown in your shop Admin.";
+                    }
+                    else if (process.ExitCode == 13)
+                    {
+                        failMessage = "Network connection error.\n\nCould not reach the PrintGo server at:\n" + cleanServer + "\n\nPlease check your internet connection and verify the server URL.";
+                    }
+                    else if (!string.IsNullOrEmpty(errOut))
+                    {
+                        string[] lines = errOut.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                        string lastLine = lines.Length > 0 ? lines[lines.Length - 1].Trim() : errOut;
+                        failMessage = "Pairing failed: " + lastLine + "\n\nPlease verify the pairing code from your shop Admin.";
+                    }
+                    else
+                    {
+                        failMessage = "Pairing failed. The code may be invalid, expired, or already used.\n\nPlease generate a fresh code from your shop Admin.";
+                    }
+
                     MessageBox.Show(
-                        "Pairing failed. The code may have expired (valid for 10 minutes) or has already been used.\n\nGenerate a fresh code from your shop Admin.",
+                        failMessage,
                         "Pairing Unsuccessful",
                         MessageBoxButtons.OK,
                         MessageBoxIcon.Warning
@@ -996,7 +1141,7 @@ namespace PrintGo.ControlCenter
                 lblSumatraStatus.ForeColor = Color.FromArgb(194, 65, 12);
             }
 
-            bool credsExist = File.Exists(Path.Combine(appDataDir, "credentials.enc"));
+            bool credsExist = File.Exists(Path.Combine(appDataDir, "agent-credentials.dat")) || File.Exists(Path.Combine(appDataDir, "credentials.enc"));
             if (credsExist)
             {
                 lblDpapiStatus.Text = "✓ Shop Pairing Active (Encrypted via Windows DPAPI)";
@@ -1157,7 +1302,7 @@ namespace PrintGo.ControlCenter
 
             var lblSubtitle = new Label
             {
-                Text = "Enter the 8-character code from Admin (e.g. 7777-8888):\r\nLowercase letters are automatically converted to uppercase.",
+                Text = "Enter the pairing code from Admin (e.g. 123-456 or 7777-8888):\r\nLowercase letters and dashes are handled automatically.",
                 ForeColor = Color.FromArgb(100, 116, 139),
                 Location = new Point(24, 52),
                 Size = new Size(400, 38)

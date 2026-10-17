@@ -17,6 +17,7 @@ import type { WorkerEnv } from "../env";
 import { error, ok } from "../http";
 import { D1AgentRepository } from "./repository";
 import { AgentError, AgentService } from "./service";
+import { probeAgentPrinter } from "./wake";
 
 const MAX_JSON_BYTES = 16 * 1024;
 
@@ -62,7 +63,8 @@ export async function handleAdminPrinterRequest(
       request.method === "POST" &&
       pathname === "/api/admin/agents/pair-code"
     ) {
-      const pairCodeData = await agentService.createPairCode();
+      const requestUrl = new URL(request.url);
+      const pairCodeData = await agentService.createPairCode(requestUrl.origin);
       return withAdminCors(ok(pairCodeData, 201), env.ADMIN_ALLOWED_ORIGIN);
     }
 
@@ -166,6 +168,9 @@ export async function handleAdminPrinterRequest(
         printerId,
         session.admin.id,
       );
+      // Fire-and-forget: push a live hardware probe to the connected agent
+      // so the next heartbeat carries fresh data instead of stale D1 cache.
+      probeAgentPrinter(env, printerId);
       return withAdminCors(ok(result, 200), env.ADMIN_ALLOWED_ORIGIN);
     }
 

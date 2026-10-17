@@ -66,7 +66,9 @@ export class AgentService {
     private readonly printing?: PrintingService,
   ) {}
 
-  async createPairCode(): Promise<{ pairCode: string; expiresAt: string }> {
+  async createPairCode(
+    serverUrl?: string,
+  ): Promise<{ pairCode: string; expiresAt: string; serverUrl?: string }> {
     const pairCode = generatePairCode();
     const normalized = normalizePairCode(pairCode);
     const codeHash = await hashSessionToken(normalized);
@@ -83,6 +85,7 @@ export class AgentService {
     return {
       pairCode,
       expiresAt: new Date(expiresAtMs).toISOString(),
+      ...(serverUrl ? { serverUrl } : {}),
     };
   }
 
@@ -156,7 +159,7 @@ export class AgentService {
     if (
       reportPrinters ||
       agent.lastHeartbeatAtMs === null ||
-      nowMs - agent.lastHeartbeatAtMs >= 65_000
+      nowMs - agent.lastHeartbeatAtMs >= 40_000
     ) {
       await this.repository.updateHeartbeat({
         agentId: agent.id,

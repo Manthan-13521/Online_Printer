@@ -41,6 +41,7 @@ export function PrinterPage({
   // Pair code state
   const [pairCode, setPairCode] = useState<string | null>(null);
   const [pairExpiresAt, setPairExpiresAt] = useState<string | null>(null);
+  const [pairServerUrl, setPairServerUrl] = useState<string | null>(null);
   const [generatingCode, setGeneratingCode] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
@@ -284,6 +285,9 @@ export function PrinterPage({
       if (res.ok) {
         setPairCode(res.data.pairCode);
         setPairExpiresAt(res.data.expiresAt);
+        if (res.data.serverUrl) {
+          setPairServerUrl(res.data.serverUrl);
+        }
         setCopiedCode(false);
       }
     } catch (caught: unknown) {
@@ -515,11 +519,19 @@ export function PrinterPage({
     }
   }
 
+  const resolvedServerUrl =
+    pairServerUrl ||
+    import.meta.env.VITE_AGENT_API_URL ||
+    import.meta.env.VITE_API_BASE_URL ||
+    (typeof window !== "undefined" &&
+    window.location.hostname.includes("pages.dev")
+      ? "https://printgo-api.printgo-worker.workers.dev"
+      : typeof window !== "undefined"
+        ? window.location.origin
+        : "https://printgo-api.printgo-worker.workers.dev");
+
   const connectionLink = pairCode
-    ? buildAgentConnectionUrl(
-        pairCode,
-        String(import.meta.env.VITE_API_BASE_URL || window.location.origin),
-      )
+    ? buildAgentConnectionUrl(pairCode, resolvedServerUrl)
     : null;
 
   function copyPairCodeOnly() {

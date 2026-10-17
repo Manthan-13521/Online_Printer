@@ -458,6 +458,24 @@ Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $printer } | Select-O
       return { availability: "ONLINE" };
     }
 
+    // ExtendedPrinterStatus provides more granular fault codes when the driver supports it.
+    // 8=Paused, 9=Error, 20=Paper Jam, 21=Out of Paper → BLOCKED.
+    // We skip ambiguous codes (1=Other, 2=Unknown) to avoid false positives.
+    if (p.ExtendedPrinterStatus !== undefined) {
+      if (p.ExtendedPrinterStatus === 8) {
+        return { availability: "BLOCKED", message: "Printer is paused" };
+      }
+      if (p.ExtendedPrinterStatus === 9) {
+        return { availability: "BLOCKED", message: "Printer error reported" };
+      }
+      if (p.ExtendedPrinterStatus === 20) {
+        return { availability: "BLOCKED", message: "Paper Jam" };
+      }
+      if (p.ExtendedPrinterStatus === 21) {
+        return { availability: "BLOCKED", message: "Out of Paper" };
+      }
+    }
+
     const host = extractHostFromPortName(p.PortName);
     if (host !== null) {
       if (isNetworkReachable === false) {
@@ -471,17 +489,13 @@ Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $printer } | Select-O
       }
     }
 
-    // When Windows reports WorkOffline is false, or reports a defined PrinterStatus (such as 2=Unknown/Default,
-    // 3=Idle, 4=Printing, 5=Warmup) or DetectedErrorState is 0/2 (no error detected), the printer is ready.
-    if (
-      p.WorkOffline === false ||
-      p.PrinterStatus !== undefined ||
-      p.DetectedErrorState === 0 ||
-      p.DetectedErrorState === 2
-    ) {
+    // PrinterStatus === 3 means Idle — the printer is ready and waiting for a job.
+    if (p.PrinterStatus === 3) {
       return { availability: "ONLINE" };
     }
 
+    // NOTE: PrinterStatus === 2 (Unknown) must NOT be promoted to ONLINE.
+    // Without positive proof of readiness, return UNKNOWN to fail closed.
     return {
       availability: "UNKNOWN",
       message: "Printer readiness is not reported by Windows",
@@ -511,7 +525,7 @@ Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $printer } | Select-O
     const escapedName = printerId.replace(/'/g, "''");
     const psCommand = `
 $printer = '${escapedName}'
-Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $printer } | Select-Object Name, WorkOffline, PrinterStatus, DetectedErrorState, PortName | ConvertTo-Json -Compress
+Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $printer } | Select-Object Name, WorkOffline, PrinterStatus, DetectedErrorState, ExtendedPrinterStatus, PortName | ConvertTo-Json -Compress
     `.trim();
 
     try {

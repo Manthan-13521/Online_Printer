@@ -9,6 +9,7 @@ import {
   ShopInfoModal,
   ShopUnavailableState,
   UploadPdfsStep,
+  FloatingLoadingIndicator,
   customerErrorMessage,
   humanFileSize,
   isValidPhone,
@@ -161,6 +162,10 @@ export function App() {
   const [showInfo, setShowInfo] = useState(false);
   const [configError, setConfigError] = useState<string | null>(null);
   const [phoneError, setPhoneError] = useState<string | null>(null);
+  const [isInspectingFiles, setIsInspectingFiles] = useState(false);
+  const [paymentPhase, setPaymentPhase] = useState<
+    "IDLE" | "CHECKING_AVAILABILITY" | "FINDING_PRINTER" | "PREPARING_PAYMENT"
+  >("IDLE");
   const [pendingPaymentRecovery, setPendingPaymentRecovery] = useState<{
     token: string;
     response?: RazorpaySuccessResponse;
@@ -369,53 +374,58 @@ export function App() {
       availableOpts[0];
     if (!preferredOption) return;
     const added: LocalOrderFile[] = [];
-    for (const selectedFile of incoming) {
-      if (
-        !selectedFile.name.toLocaleLowerCase().endsWith(".pdf") ||
-        (selectedFile.type && selectedFile.type !== "application/pdf")
-      ) {
-        setFileError("Choose PDF files only.");
-        return;
+    setIsInspectingFiles(true);
+    try {
+      for (const selectedFile of incoming) {
+        if (
+          !selectedFile.name.toLocaleLowerCase().endsWith(".pdf") ||
+          (selectedFile.type && selectedFile.type !== "application/pdf")
+        ) {
+          setFileError("Choose PDF files only.");
+          return;
+        }
+        if (
+          selectedFile.size <= 0 ||
+          selectedFile.size > config.maxPdfSizeBytes
+        ) {
+          setFileError(
+            `PDFs must be between 1 byte and ${humanFileSize(config.maxPdfSizeBytes)}.`,
+          );
+          return;
+        }
+        try {
+          const pages = await inspectPdf(selectedFile);
+          added.push({
+            clientId: crypto.randomUUID(),
+            file: selectedFile,
+            name: selectedFile.name,
+            size: selectedFile.size,
+            pageCount: pages,
+            uploaded: false,
+            uploadStatus: "SELECTED",
+            uploadProgress: 0,
+            uploadError: null,
+            pageMode: "ALL",
+            customPages: `1-${pages}`,
+            copies: 1,
+            paperSize: preferredOption.paperSize,
+            colorMode: preferredOption.colorMode,
+            sides: "SINGLE", // Always Single-sided by default for new orders and newly uploaded files
+          });
+        } catch (caught) {
+          setFileError(
+            caught instanceof Error && caught.message === "PASSWORD_PROTECTED"
+              ? "Password-protected PDFs are not supported. Remove the password and try again."
+              : "This PDF is corrupted or cannot be read.",
+          );
+          return;
+        }
       }
-      if (
-        selectedFile.size <= 0 ||
-        selectedFile.size > config.maxPdfSizeBytes
-      ) {
-        setFileError(
-          `PDFs must be between 1 byte and ${humanFileSize(config.maxPdfSizeBytes)}.`,
-        );
-        return;
-      }
-      try {
-        const pages = await inspectPdf(selectedFile);
-        added.push({
-          clientId: crypto.randomUUID(),
-          file: selectedFile,
-          name: selectedFile.name,
-          size: selectedFile.size,
-          pageCount: pages,
-          uploaded: false,
-          uploadStatus: "SELECTED",
-          uploadProgress: 0,
-          uploadError: null,
-          pageMode: "ALL",
-          customPages: `1-${pages}`,
-          copies: 1,
-          paperSize: preferredOption.paperSize,
-          colorMode: preferredOption.colorMode,
-          sides: "SINGLE", // Always Single-sided by default for new orders and newly uploaded files
-        });
-      } catch (caught) {
-        setFileError(
-          caught instanceof Error && caught.message === "PASSWORD_PROTECTED"
-            ? "Password-protected PDFs are not supported. Remove the password and try again."
-            : "This PDF is corrupted or cannot be read.",
-        );
-        return;
-      }
+      setFiles((current) => [...current, ...added]);
+      setSelectedFileIndex(files.length);
+    } finally {
+      setIsInspectingFiles(false);
     }
-    setFiles((current) => [...current, ...added]);
-    setSelectedFileIndex(files.length);
   }
 
   async function prepareReview(event: React.FormEvent) {
@@ -743,6 +753,7 @@ export function App() {
       window.history.pushState(null, "", `/track/${encodeURIComponent(code)}`);
       setTrackingJobCode(code);
     } catch (caught) {
+      setPaymentPhase("IDLE");
       setStatus(paymentErrorMessage(caught));
       setPaymentBusy(false);
       setPendingPaymentRecovery({ token, response });
@@ -826,6 +837,7 @@ export function App() {
       },
       modal: {
         ondismiss: () => {
+          setPaymentPhase("IDLE");
           setPaymentBusy(true);
           setStatus("Recording payment cancellation…");
           void customerApi
@@ -848,6 +860,7 @@ export function App() {
       theme: { color: "#16754A" },
     });
     instance.on("payment.failed", () => {
+      setPaymentPhase("IDLE");
       setPaymentBusy(false);
       setStatus(
         "Payment failed. No print job was created. You can retry payment.",
@@ -859,7 +872,8 @@ export function App() {
   async function pay() {
     if (!quote || !draftToken || paymentBusy || paymentSuccess) return;
     setPaymentBusy(true);
-    setStatus("Rechecking the current price and printer readiness…");
+    setPaymentPhase("CHECKING_AVAILABILITY");
+    setStatus("Checking printer availability…");
     try {
       const freshConfig = await customerApi.config();
       setConfig(freshConfig);
@@ -883,10 +897,13 @@ export function App() {
               : `Selected printing options for "${unsupported.name}" are no longer supported by available printers. Please review your settings.`;
           setStatus(msg);
           setPaymentBusy(false);
+          setPaymentPhase("IDLE");
           return;
         }
       }
 
+      setPaymentPhase("FINDING_PRINTER");
+      setStatus("Finding the best printer…");
       const result = await customerApi.createPayment(draftToken, {
         acknowledgedTotalPaise: quote.totalAmountPaise,
       });
@@ -896,13 +913,16 @@ export function App() {
           "The price changed. Review the updated total, then press Pay again to acknowledge it.",
         );
         setPaymentBusy(false);
+        setPaymentPhase("IDLE");
         return;
       }
-      setStatus("Opening secure Razorpay checkout…");
+      setPaymentPhase("PREPARING_PAYMENT");
+      setStatus("Preparing secure payment…");
       await openCheckout(draftToken, result);
     } catch (caught) {
       setStatus(paymentErrorMessage(caught));
       setPaymentBusy(false);
+      setPaymentPhase("IDLE");
     }
   }
 
@@ -1081,12 +1101,10 @@ export function App() {
     return (
       <main className="page-shell" aria-busy="true">
         <div style={{ textAlign: "center", padding: "4rem 1rem" }}>
-          <div
-            className="spinner"
-            style={{ margin: "0 auto 1.25rem" }}
-            aria-hidden="true"
-          />
-          <p style={{ color: "#475569", fontWeight: 600, fontSize: "1.05rem" }}>
+          <div style={{ marginBottom: "1.25rem" }}>
+            <FloatingLoadingIndicator size="lg" variant="green" />
+          </div>
+          <p style={{ color: "#123b4a", fontWeight: 700, fontSize: "1.05rem" }}>
             Connecting to PrintGo…
           </p>
         </div>
@@ -1098,7 +1116,33 @@ export function App() {
     return (
       <main className="page-shell">
         {shopHeader}
-        <ShopUnavailableState error={configError} onRetry={loadShopConfig} />
+        <ShopUnavailableState
+          reason="NETWORK_ERROR"
+          error={configError}
+          onRetry={loadShopConfig}
+        />
+      </main>
+    );
+  }
+
+  const isShopClosed = !config.onlinePrintingEnabled;
+  const isPrintersUnavailable =
+    config.onlinePrintingEnabled &&
+    (!config.availablePrintOptions ||
+      config.availablePrintOptions.length === 0);
+
+  if (isShopClosed || isPrintersUnavailable) {
+    return (
+      <main className="page-shell">
+        {shopHeader}
+        <ShopUnavailableState
+          reason={isShopClosed ? "SHOP_CLOSED" : "PRINTER_UNAVAILABLE"}
+          shopName={config.shopName}
+          contactPhone={config.contactPhone}
+          customerNotice={config.customerNotice}
+          onRetry={loadShopConfig}
+        />
+        <CustomerPrivacyFooter appName={config?.appName} />
       </main>
     );
   }
@@ -1188,374 +1232,290 @@ export function App() {
           </div>
         </div>
       ) : null}
-      {!config?.onlinePrintingEnabled ? (
-        <section className="notice" role="status">
-          <h2>Online printing is currently unavailable</h2>
-          <p>
-            Please contact the shop
-            {config?.contactPhone ? ` at ${config.contactPhone}` : ""}.
-          </p>
-        </section>
-      ) : (
-        <form
-          className="order-layout"
-          onSubmit={(event) => void prepareReview(event)}
-        >
-          <div className="order-left">
-            <CustomerDetailsStep
-              customerName={customerName}
-              onCustomerNameChange={setCustomerName}
-              customerPhone={customerPhone}
-              onCustomerPhoneChange={(val) => {
-                setCustomerPhone(val);
-                if (phoneError && isValidPhone(val)) {
-                  setPhoneError(null);
-                }
-              }}
-              phoneError={phoneError}
-              onPhoneBlur={() => {
-                if (customerPhone.trim() && !isValidPhone(customerPhone)) {
-                  setPhoneError(
-                    "Enter a valid phone number (at least 6 digits, e.g. 9876543210 or +91 98765 43210).",
-                  );
-                } else {
-                  setPhoneError(null);
-                }
-              }}
-              instructions={instructions}
-              onInstructionsChange={setInstructions}
-              addonServices={config.addonServices}
-              selectedAddonIds={selectedAddonIds}
-              onToggleAddon={(id, checked) => {
-                if (checked) {
-                  setSelectedAddonIds([...selectedAddonIds, id]);
-                } else {
-                  setSelectedAddonIds(
-                    selectedAddonIds.filter((serviceId) => serviceId !== id),
-                  );
-                }
-              }}
-              disabled={busy || paymentBusy || Boolean(draftToken)}
-            />
+      <form
+        className="order-layout"
+        onSubmit={(event) => void prepareReview(event)}
+      >
+        <div className="order-step-container step-1-container">
+          <CustomerDetailsStep
+            customerName={customerName}
+            onCustomerNameChange={setCustomerName}
+            customerPhone={customerPhone}
+            onCustomerPhoneChange={(val) => {
+              setCustomerPhone(val);
+              if (phoneError && isValidPhone(val)) {
+                setPhoneError(null);
+              }
+            }}
+            phoneError={phoneError}
+            onPhoneBlur={() => {
+              if (customerPhone.trim() && !isValidPhone(customerPhone)) {
+                setPhoneError(
+                  "Enter a valid phone number (at least 6 digits, e.g. 9876543210 or +91 98765 43210).",
+                );
+              } else {
+                setPhoneError(null);
+              }
+            }}
+            instructions={instructions}
+            onInstructionsChange={setInstructions}
+            addonServices={config.addonServices}
+            selectedAddonIds={selectedAddonIds}
+            onToggleAddon={(id, checked) => {
+              if (checked) {
+                setSelectedAddonIds([...selectedAddonIds, id]);
+              } else {
+                setSelectedAddonIds(
+                  selectedAddonIds.filter((serviceId) => serviceId !== id),
+                );
+              }
+            }}
+            disabled={busy || paymentBusy || Boolean(draftToken)}
+          />
+        </div>
 
-            <PrintSettingsStep
-              files={files}
-              selectedFile={selectedFile}
-              selectedFileIndex={selectedFileIndex}
-              onSelectFileIndex={setSelectedFileIndex}
-              printOptions={printOptions}
-              optionAvailable={optionAvailable}
-              onPatchSelected={patchSelected}
-              onApplySettingsToAll={applySettingsToAll}
-            />
-          </div>
+        <div className="order-step-container step-2-container">
+          <UploadPdfsStep
+            files={files}
+            selectedFileIndex={selectedFileIndex}
+            onSelectFileIndex={setSelectedFileIndex}
+            onRemoveFile={removeFile}
+            onChooseFiles={(fileList) => void chooseFiles(fileList)}
+            config={config}
+            fileError={fileError}
+            disabled={busy || paymentBusy || Boolean(draftToken)}
+            isInspectingFiles={isInspectingFiles}
+          />
+        </div>
 
-          <div className="order-right">
-            <UploadPdfsStep
-              files={files}
-              selectedFileIndex={selectedFileIndex}
-              onSelectFileIndex={setSelectedFileIndex}
-              onRemoveFile={removeFile}
-              onChooseFiles={(fileList) => void chooseFiles(fileList)}
-              config={config}
-              fileError={fileError}
-              disabled={busy || paymentBusy || Boolean(draftToken)}
-            />
+        <div className="order-step-container step-3-container">
+          <PrintSettingsStep
+            files={files}
+            selectedFile={selectedFile}
+            selectedFileIndex={selectedFileIndex}
+            onSelectFileIndex={setSelectedFileIndex}
+            printOptions={printOptions}
+            optionAvailable={optionAvailable}
+            onPatchSelected={patchSelected}
+            onApplySettingsToAll={applySettingsToAll}
+          />
+        </div>
 
-            <section className="step review">
-              <div className="step-header">
-                <span className="step-number">4</span>
-                <h2>Review & Payment</h2>
-                <p className="step-desc">
-                  Review your order details and pay securely to continue.
-                </p>
-              </div>
+        <div className="order-step-container step-4-container">
+          <section className="step review">
+            <div className="step-header">
+              <span className="step-number">4</span>
+              <h2>Review & Payment</h2>
+              <p className="step-desc">
+                Review your order details and pay securely to continue.
+              </p>
+            </div>
 
-              {status && (
-                <p
-                  role="status"
-                  className="status-message"
-                  style={{
-                    margin: "0 0 1rem",
-                    padding: "0.75rem",
-                    background: "#f8fafc",
-                    borderRadius: "8px",
-                    border: "1px solid #cbd5e1",
-                  }}
-                >
-                  {status}
-                </p>
-              )}
+            {status && (
+              <p
+                role="status"
+                className="status-message"
+                style={{
+                  margin: "0 0 1rem",
+                  padding: "0.75rem",
+                  background: "#f8fafc",
+                  borderRadius: "8px",
+                  border: "1px solid #cbd5e1",
+                }}
+              >
+                {status}
+              </p>
+            )}
 
-              {pendingPaymentRecovery && !quote && (
+            {pendingPaymentRecovery && !quote && (
+              <div
+                style={{
+                  backgroundColor: "#FEF3C7",
+                  border: "1.5px solid #F59E0B",
+                  borderRadius: "8px",
+                  padding: "1rem",
+                  textAlign: "left",
+                  marginBottom: "1.5rem",
+                }}
+                role="alert"
+              >
                 <div
                   style={{
-                    backgroundColor: "#FEF3C7",
-                    border: "1.5px solid #F59E0B",
-                    borderRadius: "8px",
-                    padding: "1rem",
-                    textAlign: "left",
-                    marginBottom: "1.5rem",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.5rem",
+                    marginBottom: "0.4rem",
                   }}
-                  role="alert"
                 >
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "0.5rem",
-                      marginBottom: "0.4rem",
-                    }}
-                  >
-                    <span style={{ fontSize: "1.25rem" }}>⚠️</span>
-                    <strong style={{ color: "#92400E" }}>
-                      Payment Verification Pending
-                    </strong>
-                  </div>
-                  <p
-                    style={{
-                      fontSize: "0.85rem",
-                      color: "#78350F",
-                      margin: "0 0 0.75rem",
-                    }}
-                  >
-                    Your payment was received, but server verification was
-                    interrupted by a network issue. Tap below to verify your
-                    payment and get your print job tracking code.
-                  </p>
-                  <button
-                    type="button"
-                    className="pay-button"
-                    style={{
-                      backgroundColor: "#D97706",
-                      borderColor: "#B45309",
-                      width: "100%",
-                      padding: "0.75rem",
-                    }}
-                    disabled={paymentBusy}
-                    onClick={() =>
-                      void recoverPayment(
-                        pendingPaymentRecovery.token,
-                        pendingPaymentRecovery.response,
-                      )
-                    }
-                  >
-                    {paymentBusy ? "Checking Status…" : "Check Payment Status"}
-                  </button>
+                  <span style={{ fontSize: "1.25rem" }}>⚠️</span>
+                  <strong style={{ color: "#92400E" }}>
+                    Payment Verification Pending
+                  </strong>
                 </div>
-              )}
-
-              {!quote && (
+                <p
+                  style={{
+                    fontSize: "0.85rem",
+                    color: "#78350F",
+                    margin: "0 0 0.75rem",
+                  }}
+                >
+                  Your payment was received, but server verification was
+                  interrupted by a network issue. Tap below to verify your
+                  payment and get your print job tracking code.
+                </p>
                 <button
-                  type="submit"
+                  type="button"
                   className="pay-button"
                   style={{
+                    backgroundColor: "#D97706",
+                    borderColor: "#B45309",
                     width: "100%",
-                    marginBottom: "1.5rem",
-                    padding: "1rem",
-                    fontSize: "1.1rem",
+                    padding: "0.75rem",
                   }}
-                  disabled={busy || files.length === 0}
+                  disabled={paymentBusy}
+                  onClick={() =>
+                    void recoverPayment(
+                      pendingPaymentRecovery.token,
+                      pendingPaymentRecovery.response,
+                    )
+                  }
                 >
-                  {busy
-                    ? "Calculating..."
-                    : files.some((f) => f.uploadStatus === "FAILED")
-                      ? "Try upload again"
-                      : "Review Order"}
+                  {paymentBusy ? "Checking Status…" : "Check Payment Status"}
                 </button>
-              )}
+              </div>
+            )}
 
-              {config?.priorityPrinting?.enabled ? (
-                <div
-                  className={`priority-selector ${isPriority ? "active" : ""}`}
-                >
-                  <div className="priority-content">
-                    <span className="priority-icon">⚡</span>
-                    <div className="priority-text">
-                      <label>
-                        Priority Printing (+
-                        {formatInr(config.priorityPrinting.feePaise)})
-                      </label>
-                      <p>Fast-track your job in the print queue.</p>
-                    </div>
+            {!quote && (
+              <button
+                type="submit"
+                className="pay-button"
+                style={{
+                  width: "100%",
+                  marginBottom: "1.5rem",
+                  padding: "1rem",
+                  fontSize: "1.1rem",
+                }}
+                disabled={busy || files.length === 0}
+              >
+                {busy
+                  ? "Calculating..."
+                  : files.some((f) => f.uploadStatus === "FAILED")
+                    ? "Try upload again"
+                    : "Review Order"}
+              </button>
+            )}
+
+            {config?.priorityPrinting?.enabled ? (
+              <div
+                className={`priority-selector ${isPriority ? "active" : ""}`}
+              >
+                <div className="priority-content">
+                  <span className="priority-icon">⚡</span>
+                  <div className="priority-text">
+                    <label>
+                      Priority Printing (+
+                      {formatInr(config.priorityPrinting.feePaise)})
+                    </label>
+                    <p>Fast-track your job in the print queue.</p>
                   </div>
-                  <input
-                    type="checkbox"
-                    checked={isPriority}
-                    disabled={busy || paymentBusy}
-                    onChange={(e) => void togglePriority(e.target.checked)}
-                    className="priority-checkbox"
-                  />
                 </div>
-              ) : null}
+                <input
+                  type="checkbox"
+                  checked={isPriority}
+                  disabled={busy || paymentBusy}
+                  onChange={(e) => void togglePriority(e.target.checked)}
+                  className="priority-checkbox"
+                />
+              </div>
+            ) : null}
 
-              {quote && (
-                <OrderReviewSummary
-                  quote={quote}
-                  files={files}
-                  customerName={customerName}
-                  customerPhone={customerPhone}
-                >
-                  {draftToken && (
-                    <div
-                      className="payment-methods"
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: "0.6rem",
-                        marginTop: "0.75rem",
-                      }}
-                    >
-                      {pendingPaymentRecovery ? (
+            {quote && (
+              <OrderReviewSummary
+                quote={quote}
+                files={files}
+                customerName={customerName}
+                customerPhone={customerPhone}
+              >
+                {draftToken && (
+                  <div
+                    className="payment-methods"
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "0.6rem",
+                      marginTop: "0.75rem",
+                    }}
+                  >
+                    {pendingPaymentRecovery ? (
+                      <div
+                        style={{
+                          backgroundColor: "#FEF3C7",
+                          border: "1.5px solid #F59E0B",
+                          borderRadius: "8px",
+                          padding: "1rem",
+                          textAlign: "left",
+                        }}
+                        role="alert"
+                      >
                         <div
                           style={{
-                            backgroundColor: "#FEF3C7",
-                            border: "1.5px solid #F59E0B",
-                            borderRadius: "8px",
-                            padding: "1rem",
-                            textAlign: "left",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "0.5rem",
+                            marginBottom: "0.4rem",
                           }}
-                          role="alert"
                         >
-                          <div
+                          <span style={{ fontSize: "1.25rem" }}>⚠️</span>
+                          <strong
                             style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: "0.5rem",
-                              marginBottom: "0.4rem",
+                              color: "#92400E",
+                              fontSize: "0.95rem",
                             }}
                           >
-                            <span style={{ fontSize: "1.25rem" }}>⚠️</span>
-                            <strong
-                              style={{
-                                color: "#92400E",
-                                fontSize: "0.95rem",
-                              }}
-                            >
-                              Payment Verification Pending
-                            </strong>
-                          </div>
-                          <p
-                            style={{
-                              margin: "0 0 0.75rem",
-                              fontSize: "0.88rem",
-                              color: "#78350F",
-                              lineHeight: "1.4",
-                            }}
-                          >
-                            Your payment was submitted to Razorpay, but
-                            connecting to the shop server timed out before
-                            confirmation arrived.
-                            <br />
-                            <strong>Please do not pay again.</strong> Tap below
-                            to check your payment status.
-                          </p>
-                          <button
-                            type="button"
-                            className="primary-button"
-                            onClick={() =>
-                              void recoverPayment(
-                                pendingPaymentRecovery.token,
-                                pendingPaymentRecovery.response,
-                              )
-                            }
-                            disabled={paymentBusy}
-                            style={{
-                              width: "100%",
-                              padding: "0.75rem",
-                              marginTop: 0,
-                            }}
-                          >
-                            {paymentBusy
-                              ? "Checking Status…"
-                              : "Check Payment Status"}
-                          </button>
+                            Payment Verification Pending
+                          </strong>
                         </div>
-                      ) : config?.cashOrdersEnabled ? (
-                        <>
-                          <button
-                            type="button"
-                            className="pay-button"
-                            onClick={() => void pay()}
-                            disabled={
-                              paymentBusy ||
-                              busy ||
-                              cashSelecting ||
-                              Boolean(paymentSuccess)
-                            }
-                            style={{
-                              display: "flex",
-                              flexDirection: "column",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              padding: "0.75rem 1rem",
-                              cursor: "pointer",
-                            }}
-                          >
-                            <span style={{ fontSize: "1rem", fontWeight: 700 }}>
-                              {paymentBusy
-                                ? "Confirming payment…"
-                                : `🔒 Pay Online (${formatInr(quote.totalAmountPaise)})`}
-                            </span>
-                            <span
-                              style={{
-                                fontSize: "0.75rem",
-                                fontWeight: 400,
-                                opacity: 0.9,
-                                marginTop: "0.15rem",
-                              }}
-                            >
-                              Print immediately after payment
-                            </span>
-                          </button>
-
-                          <button
-                            type="button"
-                            className="secondary-button"
-                            onClick={() => void selectCash()}
-                            disabled={
-                              paymentBusy ||
-                              busy ||
-                              cashSelecting ||
-                              Boolean(paymentSuccess)
-                            }
-                            style={{
-                              display: "flex",
-                              flexDirection: "column",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              padding: "0.65rem 1rem",
-                              cursor: "pointer",
-                              border: "1px solid #CBD5E1",
-                              borderRadius: "8px",
-                              backgroundColor: "#FFFFFF",
-                              color: "#1E293B",
-                            }}
-                          >
-                            <span
-                              style={{ fontSize: "0.95rem", fontWeight: 600 }}
-                            >
-                              {cashSelecting
-                                ? "Selecting cash…"
-                                : "💵 Pay Cash at Counter"}
-                            </span>
-                            <span
-                              style={{
-                                fontSize: "0.75rem",
-                                fontWeight: 400,
-                                color: "#64748B",
-                                marginTop: "0.15rem",
-                              }}
-                            >
-                              Printing starts after the shopkeeper confirms
-                              payment
-                            </span>
-                          </button>
-                        </>
-                      ) : (
+                        <p
+                          style={{
+                            margin: "0 0 0.75rem",
+                            fontSize: "0.88rem",
+                            color: "#78350F",
+                            lineHeight: "1.4",
+                          }}
+                        >
+                          Your payment was submitted to Razorpay, but connecting
+                          to the shop server timed out before confirmation
+                          arrived.
+                          <br />
+                          <strong>Please do not pay again.</strong> Tap below to
+                          check your payment status.
+                        </p>
                         <button
                           type="button"
-                          className="pay-button"
+                          className="primary-button"
+                          onClick={() =>
+                            void recoverPayment(
+                              pendingPaymentRecovery.token,
+                              pendingPaymentRecovery.response,
+                            )
+                          }
+                          disabled={paymentBusy}
+                          style={{
+                            width: "100%",
+                            padding: "0.75rem",
+                            marginTop: 0,
+                          }}
+                        >
+                          {paymentBusy
+                            ? "Checking Status…"
+                            : "Check Payment Status"}
+                        </button>
+                      </div>
+                    ) : config?.cashOrdersEnabled ? (
+                      <>
+                        <button
+                          type="button"
+                          className={`pay-button ${paymentBusy ? "loading" : ""}`}
                           onClick={() => void pay()}
                           disabled={
                             paymentBusy ||
@@ -1563,20 +1523,154 @@ export function App() {
                             cashSelecting ||
                             Boolean(paymentSuccess)
                           }
+                          aria-busy={paymentBusy}
+                          style={{
+                            display: "flex",
+                            flexDirection: paymentBusy ? "row" : "column",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            gap: paymentBusy ? "0.65rem" : "0",
+                            padding: "0.85rem 1.25rem",
+                            cursor: paymentBusy ? "wait" : "pointer",
+                          }}
                         >
-                          {paymentBusy
-                            ? "Confirming payment…"
-                            : `🔒 Pay ${formatInr(quote.totalAmountPaise)}`}
+                          {paymentBusy ? (
+                            <>
+                              <FloatingLoadingIndicator
+                                size="sm"
+                                variant="green"
+                              />
+                              <span
+                                style={{
+                                  fontSize: "1rem",
+                                  fontWeight: 700,
+                                  color: "#123b4a",
+                                }}
+                              >
+                                {paymentPhase === "CHECKING_AVAILABILITY"
+                                  ? "Checking printer availability…"
+                                  : paymentPhase === "PREPARING_PAYMENT"
+                                    ? "Preparing secure payment…"
+                                    : "Finding the best printer…"}
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              <span
+                                style={{ fontSize: "1rem", fontWeight: 700 }}
+                              >
+                                🔒 Pay Online (
+                                {formatInr(quote.totalAmountPaise)})
+                              </span>
+                              <span
+                                style={{
+                                  fontSize: "0.75rem",
+                                  fontWeight: 400,
+                                  opacity: 0.9,
+                                  marginTop: "0.15rem",
+                                }}
+                              >
+                                Print immediately after payment
+                              </span>
+                            </>
+                          )}
                         </button>
-                      )}
-                    </div>
-                  )}
-                </OrderReviewSummary>
-              )}
-            </section>
-          </div>
-        </form>
-      )}
+
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          onClick={() => void selectCash()}
+                          disabled={
+                            paymentBusy ||
+                            busy ||
+                            cashSelecting ||
+                            Boolean(paymentSuccess)
+                          }
+                          style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            padding: "0.65rem 1rem",
+                            cursor: "pointer",
+                            border: "1px solid #CBD5E1",
+                            borderRadius: "8px",
+                            backgroundColor: "#FFFFFF",
+                            color: "#1E293B",
+                          }}
+                        >
+                          <span
+                            style={{ fontSize: "0.95rem", fontWeight: 600 }}
+                          >
+                            {cashSelecting
+                              ? "Selecting cash…"
+                              : "💵 Pay Cash at Counter"}
+                          </span>
+                          <span
+                            style={{
+                              fontSize: "0.75rem",
+                              fontWeight: 400,
+                              color: "#64748B",
+                              marginTop: "0.15rem",
+                            }}
+                          >
+                            Printing starts after the shopkeeper confirms
+                            payment
+                          </span>
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        className={`pay-button ${paymentBusy ? "loading" : ""}`}
+                        onClick={() => void pay()}
+                        disabled={
+                          paymentBusy ||
+                          busy ||
+                          cashSelecting ||
+                          Boolean(paymentSuccess)
+                        }
+                        aria-busy={paymentBusy}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          gap: paymentBusy ? "0.65rem" : "0",
+                          cursor: paymentBusy ? "wait" : "pointer",
+                        }}
+                      >
+                        {paymentBusy ? (
+                          <>
+                            <FloatingLoadingIndicator
+                              size="sm"
+                              variant="green"
+                            />
+                            <span
+                              style={{
+                                fontSize: "1rem",
+                                fontWeight: 700,
+                                color: "#123b4a",
+                              }}
+                            >
+                              {paymentPhase === "CHECKING_AVAILABILITY"
+                                ? "Checking printer availability…"
+                                : paymentPhase === "PREPARING_PAYMENT"
+                                  ? "Preparing secure payment…"
+                                  : "Finding the best printer…"}
+                            </span>
+                          </>
+                        ) : (
+                          `🔒 Pay ${formatInr(quote.totalAmountPaise)}`
+                        )}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </OrderReviewSummary>
+            )}
+          </section>
+        </div>
+      </form>
       <CustomerPrivacyFooter appName={config?.appName} />
     </main>
   );

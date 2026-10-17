@@ -583,6 +583,7 @@ export type CancelCustomerPaymentResponse =
 export interface AdminCreatePairCodeData {
   pairCode: string;
   expiresAt: string;
+  serverUrl?: string;
 }
 
 export type AdminCreatePairCodeResponse = ApiResponse<AdminCreatePairCodeData>;

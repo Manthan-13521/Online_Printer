@@ -53,7 +53,12 @@ class CloudflareResponse extends OriginalResponse {
     init?: ResponseInit & { webSocket?: unknown },
   ) {
     if (init && init.status === 101) {
-      super(null, { status: 200, statusText: "Switching Protocols" });
+      const respInit: ResponseInit = {
+        status: 200,
+        statusText: "Switching Protocols",
+      };
+      if (init.headers) respInit.headers = init.headers;
+      super(null, respInit);
       Object.defineProperty(this, "status", { value: 101, writable: false });
       if (init.webSocket) {
         Object.defineProperty(this, "webSocket", {
@@ -82,11 +87,22 @@ if (
 describe("Admin & Agent WebSocket End-to-End Delivery & Latency Benchmark", () => {
   function createTestDOState() {
     const acceptedSockets: MockWebSocket[] = [];
+    const taggedSockets = new Map<string, MockWebSocket[]>();
     return {
-      acceptWebSocket: vi.fn((ws: MockWebSocket) => {
+      acceptWebSocket: vi.fn((ws: MockWebSocket, tags?: string[]) => {
         acceptedSockets.push(ws);
+        if (tags) {
+          for (const tag of tags) {
+            const list = taggedSockets.get(tag) ?? [];
+            list.push(ws);
+            taggedSockets.set(tag, list);
+          }
+        }
       }),
-      getWebSockets: vi.fn(() => [...acceptedSockets]),
+      getWebSockets: vi.fn((tag?: string) => {
+        if (tag) return [...(taggedSockets.get(tag) ?? [])];
+        return [...acceptedSockets];
+      }),
       acceptedSockets,
     };
   }
@@ -99,7 +115,7 @@ describe("Admin & Agent WebSocket End-to-End Delivery & Latency Benchmark", () =
     const connectReq = new Request("http://do/connect", {
       headers: { Upgrade: "websocket" },
     });
-    const connectRes = room.fetch(connectReq);
+    const connectRes = await room.fetch(connectReq);
     expect(connectRes.status).toBe(101);
 
     const client = (connectRes as unknown as { webSocket: MockWebSocket })
@@ -125,7 +141,7 @@ describe("Admin & Agent WebSocket End-to-End Delivery & Latency Benchmark", () =
     // Trigger Wake
     const startSend = performance.now();
     const wakeReq = new Request("http://do/wake", { method: "POST" });
-    const wakeRes = room.fetch(wakeReq);
+    const wakeRes = await room.fetch(wakeReq);
     expect(wakeRes.status).toBe(200);
 
     await wakePromise;
@@ -155,7 +171,7 @@ describe("Admin & Agent WebSocket End-to-End Delivery & Latency Benchmark", () =
 
     // Connect all 5 listeners
     for (const name of tabNames) {
-      const res = room.fetch(
+      const res = await room.fetch(
         new Request("http://do/connect", { headers: { Upgrade: "websocket" } }),
       );
       const socket = (res as unknown as { webSocket: MockWebSocket }).webSocket;
@@ -181,7 +197,7 @@ describe("Admin & Agent WebSocket End-to-End Delivery & Latency Benchmark", () =
     );
 
     // Fire broadcast
-    const wakeRes = room.fetch(
+    const wakeRes = await room.fetch(
       new Request("http://do/wake", { method: "POST" }),
     );
     expect(wakeRes.status).toBe(200);
@@ -208,7 +224,7 @@ describe("Admin & Agent WebSocket End-to-End Delivery & Latency Benchmark", () =
     const state = createTestDOState();
     const room = new AgentRoom(state as unknown as DurableObjectState);
 
-    const res = room.fetch(
+    const res = await room.fetch(
       new Request("http://do/connect", { headers: { Upgrade: "websocket" } }),
     );
     const client = (res as unknown as { webSocket: MockWebSocket }).webSocket;
@@ -229,7 +245,7 @@ describe("Admin & Agent WebSocket End-to-End Delivery & Latency Benchmark", () =
     // Fire 50 rapid pulses
     const burstStart = performance.now();
     for (let i = 0; i < 50; i++) {
-      room.fetch(new Request("http://do/wake", { method: "POST" }));
+      void room.fetch(new Request("http://do/wake", { method: "POST" }));
     }
 
     await allReceived;
@@ -276,5 +292,121 @@ describe("Admin & Agent WebSocket End-to-End Delivery & Latency Benchmark", () =
     );
     expect(resInvalid.status).toBe(401);
     expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("safely negotiates printgo-agent-v1 subprotocol and tags socket as agent", async () => {
+    const state = createTestDOState();
+    const room = new AgentRoom(state as unknown as DurableObjectState);
+
+    const req = new Request("http://do/connect?role=agent", {
+      headers: {
+        Upgrade: "websocket",
+        "Sec-WebSocket-Protocol": "printgo-agent-v1",
+      },
+    });
+
+    const res = await room.fetch(req);
+    expect(res.status).toBe(101);
+    expect(res.headers.get("Sec-WebSocket-Protocol")).toBe("printgo-agent-v1");
+    expect(state.getWebSockets("agent").length).toBe(1);
+    expect(state.getWebSockets("admin").length).toBe(0);
+  });
+
+  it("safely negotiates single token subprotocol for legacy agent and echoes it", async () => {
+    const state = createTestDOState();
+    const room = new AgentRoom(state as unknown as DurableObjectState);
+
+    const legacySecret = "legacy_secret_token_12345";
+    const req = new Request("http://do/connect?role=agent", {
+      headers: {
+        Upgrade: "websocket",
+        "Sec-WebSocket-Protocol": legacySecret,
+      },
+    });
+
+    const res = await room.fetch(req);
+    expect(res.status).toBe(101);
+    expect(res.headers.get("Sec-WebSocket-Protocol")).toBe(legacySecret);
+    expect(state.getWebSockets("agent").length).toBe(1);
+  });
+
+  it("refuses to echo arbitrary subprotocols for admin role", async () => {
+    const state = createTestDOState();
+    const room = new AgentRoom(state as unknown as DurableObjectState);
+
+    const req = new Request("http://do/connect?role=admin", {
+      headers: {
+        Upgrade: "websocket",
+        "Sec-WebSocket-Protocol": "some-arbitrary-hacker-protocol",
+      },
+    });
+
+    const res = await room.fetch(req);
+    expect(res.status).toBe(101);
+    // Arbitrary protocol must NEVER be echoed!
+    expect(res.headers.get("Sec-WebSocket-Protocol")).toBeNull();
+    expect(state.getWebSockets("admin").length).toBe(1);
+    expect(state.getWebSockets("agent").length).toBe(0);
+  });
+
+  it("delivers /notify-admin strictly to admin sockets without leaking to agent sockets (0 feedback loops)", async () => {
+    const state = createTestDOState();
+    const room = new AgentRoom(state as unknown as DurableObjectState);
+
+    // 1. Connect an agent socket
+    const agentRes = await room.fetch(
+      new Request("http://do/connect?role=agent", {
+        headers: {
+          Upgrade: "websocket",
+          "Sec-WebSocket-Protocol": "printgo-agent-v1",
+        },
+      }),
+    );
+    const agentWs = (agentRes as unknown as { webSocket: MockWebSocket })
+      .webSocket;
+
+    // 2. Connect an admin socket
+    const adminRes = await room.fetch(
+      new Request("http://do/connect?role=admin", {
+        headers: { Upgrade: "websocket" },
+      }),
+    );
+    const adminWs = (adminRes as unknown as { webSocket: MockWebSocket })
+      .webSocket;
+
+    let agentReceivedMessage = false;
+    let adminReceivedMessage = false;
+    let receivedPayload: unknown = null;
+
+    agentWs.onmessage = () => {
+      agentReceivedMessage = true;
+    };
+
+    adminWs.onmessage = (event) => {
+      adminReceivedMessage = true;
+      receivedPayload = JSON.parse(event.data);
+    };
+
+    // 3. Send step transition notification via /notify-admin
+    const notifyRes = await room.fetch(
+      new Request("http://do/notify-admin", {
+        method: "POST",
+        body: JSON.stringify({
+          type: "ADMIN_ORDER_UPDATE",
+          orderId: "ord-test-123",
+          status: "SPOOLING",
+        }),
+      }),
+    );
+    expect(notifyRes.status).toBe(200);
+
+    // 4. Assert: Admin received update instantly, Agent received ZERO messages!
+    expect(adminReceivedMessage).toBe(true);
+    expect(receivedPayload).toEqual({
+      type: "ADMIN_ORDER_UPDATE",
+      orderId: "ord-test-123",
+      status: "SPOOLING",
+    });
+    expect(agentReceivedMessage).toBe(false); // PROVEN: 0 feedback loops to agent!
   });
 });

@@ -1,5 +1,5 @@
 const PAIR_CODE_ALPHABET = "0123456789";
-const PAIR_CODE_LENGTH = 8;
+export const PAIR_CODE_LENGTH = 6;
 
 export function generatePairCode(
   fillRandom: (bytes: Uint8Array) => Uint8Array = (bytes) =>
@@ -8,7 +8,7 @@ export function generatePairCode(
   const bytes = fillRandom(new Uint8Array(PAIR_CODE_LENGTH));
   let code = "";
   for (let i = 0; i < PAIR_CODE_LENGTH; i += 1) {
-    if (i === 4) code += "-";
+    if (i === 3) code += "-";
     code += PAIR_CODE_ALPHABET[(bytes[i] ?? 0) % PAIR_CODE_ALPHABET.length];
   }
   return code;

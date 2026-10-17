@@ -9,8 +9,10 @@ import type {
   CustomerQuoteData,
 } from "@printgo/api-contract";
 import {
+  BowingStaffIllustration,
   CustomerDetailsStep,
   CustomerPrivacyFooter,
+  FloatingLoadingIndicator,
   OrderReviewSummary,
   PricingModal,
   PrintSettingsStep,
@@ -219,8 +221,69 @@ describe("Customer Components & Helpers", () => {
     });
   });
 
+  describe("FloatingLoadingIndicator", () => {
+    it("renders default indicator with hourglass icon", () => {
+      const { container } = render(<FloatingLoadingIndicator />);
+      const indicator = container.querySelector(".pg-floating-indicator");
+      expect(indicator).toBeTruthy();
+      expect(indicator?.classList.contains("pg-floating-indicator--sm")).toBe(
+        true,
+      );
+      expect(
+        indicator?.classList.contains("pg-floating-indicator--green"),
+      ).toBe(true);
+      expect(container.querySelector("svg.pg-floating-svg")).toBeTruthy();
+    });
+
+    it("renders custom sizes, variants, and accessible status labels", () => {
+      render(
+        <FloatingLoadingIndicator
+          size="lg"
+          variant="white"
+          label="Finding the best printer..."
+        />,
+      );
+      const statusElement = screen.getByRole("status", {
+        name: "Finding the best printer...",
+      });
+      expect(statusElement).toBeTruthy();
+      expect(
+        statusElement.classList.contains("pg-floating-indicator--lg"),
+      ).toBe(true);
+      expect(
+        statusElement.classList.contains("pg-floating-indicator--white"),
+      ).toBe(true);
+      expect(screen.getByText("Finding the best printer...")).toBeTruthy();
+    });
+
+    it("supports rendering without badge wrapper", () => {
+      const { container } = render(
+        <FloatingLoadingIndicator showBadge={false} variant="dark" />,
+      );
+      expect(container.querySelector(".pg-floating-badge")).toBeNull();
+      expect(container.querySelector(".pg-floating-icon")).toBeTruthy();
+    });
+  });
+
+  describe("BowingStaffIllustration", () => {
+    it("renders static SVG illustration with correct dimensions", () => {
+      const { container } = render(<BowingStaffIllustration size={160} />);
+      const svg = container.querySelector("svg");
+      expect(svg).toBeTruthy();
+      expect(svg?.getAttribute("width")).toBe("160");
+      expect(svg?.getAttribute("height")).toBe("200");
+      expect(svg?.getAttribute("viewBox")).toBe("0 0 160 200");
+    });
+
+    it("renders un-animated static elements strictly without animation tags", () => {
+      const { container } = render(<BowingStaffIllustration />);
+      expect(container.querySelectorAll("animate")).toHaveLength(0);
+      expect(container.querySelectorAll("animateTransform")).toHaveLength(0);
+    });
+  });
+
   describe("ShopUnavailableState", () => {
-    it("renders error message and retry button", () => {
+    it("renders generic network error and retry button", () => {
       const handleRetry = vi.fn();
       render(
         <ShopUnavailableState
@@ -231,10 +294,63 @@ describe("Customer Components & Helpers", () => {
 
       expect(screen.getByText("Shop Temporarily Unavailable")).toBeTruthy();
       expect(screen.getByText("Server connection timed out.")).toBeTruthy();
+      expect(
+        screen.getByText(
+          "We're sorry for the inconvenience. Please try again shortly.",
+        ),
+      ).toBeTruthy();
       fireEvent.click(
         screen.getByRole("button", { name: /retry connection/i }),
       );
       expect(handleRetry).toHaveBeenCalled();
+    });
+
+    it("renders shop closed state with apologetic message and Try Again button", () => {
+      const handleRetry = vi.fn();
+      render(
+        <ShopUnavailableState
+          reason="SHOP_CLOSED"
+          shopName="PrintGo Downtown"
+          contactPhone="9876543210"
+          customerNotice="We reopen tomorrow at 8:00 AM."
+          onRetry={handleRetry}
+        />,
+      );
+
+      expect(screen.getByText("Sorry, we're currently closed.")).toBeTruthy();
+      expect(
+        screen.getByText("Online printing is currently unavailable"),
+      ).toBeTruthy();
+      expect(screen.getByText("We reopen tomorrow at 8:00 AM.")).toBeTruthy();
+      expect(screen.getByRole("link", { name: "9876543210" })).toBeTruthy();
+
+      const retryBtn = screen.getByRole("button", { name: /try again/i });
+      expect(retryBtn).toBeTruthy();
+      fireEvent.click(retryBtn);
+      expect(handleRetry).toHaveBeenCalledTimes(1);
+    });
+
+    it("renders printer unavailable state with apologetic message", () => {
+      const handleRetry = vi.fn();
+      render(
+        <ShopUnavailableState
+          reason="PRINTER_UNAVAILABLE"
+          onRetry={handleRetry}
+        />,
+      );
+
+      expect(
+        screen.getByText("Sorry, printing is temporarily unavailable."),
+      ).toBeTruthy();
+      expect(
+        screen.getByText(
+          "Shop printers are currently offline or unavailable. Please check back in a few moments.",
+        ),
+      ).toBeTruthy();
+
+      const retryBtn = screen.getByRole("button", { name: /try again/i });
+      fireEvent.click(retryBtn);
+      expect(handleRetry).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -381,6 +497,80 @@ describe("Customer Components & Helpers", () => {
 
       fireEvent.click(screen.getByRole("button", { name: /remove file/i }));
       expect(handleRemove).toHaveBeenCalledWith(0);
+    });
+
+    it("displays 'Preparing your file...' when status is VALIDATING", () => {
+      const preparingFile: LocalOrderFile = {
+        ...sampleFile,
+        uploaded: false,
+        uploadStatus: "VALIDATING",
+      };
+
+      render(
+        <UploadPdfsStep
+          files={[preparingFile]}
+          selectedFileIndex={0}
+          onSelectFileIndex={vi.fn()}
+          onRemoveFile={vi.fn()}
+          onChooseFiles={vi.fn()}
+          config={null}
+          fileError={null}
+          disabled={false}
+        />,
+      );
+
+      expect(screen.getByText("Preparing your file...")).toBeTruthy();
+    });
+
+    it("displays 'Uploading your PDF...' and progress percentage when status is UPLOADING", () => {
+      const uploadingFile: LocalOrderFile = {
+        ...sampleFile,
+        uploaded: false,
+        uploadStatus: "UPLOADING",
+        uploadProgress: 65,
+      };
+
+      render(
+        <UploadPdfsStep
+          files={[uploadingFile]}
+          selectedFileIndex={0}
+          onSelectFileIndex={vi.fn()}
+          onRemoveFile={vi.fn()}
+          onChooseFiles={vi.fn()}
+          config={null}
+          fileError={null}
+          disabled={false}
+        />,
+      );
+
+      expect(screen.getByText("Uploading your PDF...")).toBeTruthy();
+      expect(screen.getByText("65%")).toBeTruthy();
+    });
+
+    it("displays friendly error message when status is FAILED", () => {
+      const failedFile: LocalOrderFile = {
+        ...sampleFile,
+        uploaded: false,
+        uploadStatus: "FAILED",
+        uploadError: "Network connection dropped during upload.",
+      };
+
+      render(
+        <UploadPdfsStep
+          files={[failedFile]}
+          selectedFileIndex={0}
+          onSelectFileIndex={vi.fn()}
+          onRemoveFile={vi.fn()}
+          onChooseFiles={vi.fn()}
+          config={null}
+          fileError={null}
+          disabled={false}
+        />,
+      );
+
+      expect(
+        screen.getByText("⚠️ Network connection dropped during upload."),
+      ).toBeTruthy();
     });
   });
 

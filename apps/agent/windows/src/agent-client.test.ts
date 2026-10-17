@@ -2,7 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AgentPrintJob } from "@printgo/api-contract";
 
-import { AgentApiError, AgentAuthError, AgentClient } from "./agent-client";
+import {
+  AgentApiError,
+  AgentAuthError,
+  AgentClient,
+  normalizeAgentServerUrl,
+} from "./agent-client";
 
 function mockResponse(status: number, ok: boolean, body: unknown): Response {
   return {
@@ -246,6 +251,41 @@ describe("AgentClient", () => {
           failureDetail: "Printer is offline",
         }),
       }),
+    );
+  });
+});
+
+describe("normalizeAgentServerUrl", () => {
+  it("redirects Cloudflare Pages admin origin to the production Worker API origin", () => {
+    expect(normalizeAgentServerUrl("https://printgo-admin.pages.dev")).toBe(
+      "https://printgo-api.printgo-worker.workers.dev",
+    );
+    expect(normalizeAgentServerUrl("https://printgo-customer.pages.dev")).toBe(
+      "https://printgo-api.printgo-worker.workers.dev",
+    );
+  });
+
+  it("preserves standard HTTPS API origins", () => {
+    expect(
+      normalizeAgentServerUrl("https://printgo-api.printgo-worker.workers.dev"),
+    ).toBe("https://printgo-api.printgo-worker.workers.dev");
+    expect(normalizeAgentServerUrl("https://api.printgo.shop/")).toBe(
+      "https://api.printgo.shop",
+    );
+  });
+
+  it("allows loopback HTTP for development", () => {
+    expect(normalizeAgentServerUrl("http://localhost:8787")).toBe(
+      "http://localhost:8787",
+    );
+    expect(normalizeAgentServerUrl("http://127.0.0.1:8787")).toBe(
+      "http://127.0.0.1:8787",
+    );
+  });
+
+  it("rejects insecure remote HTTP", () => {
+    expect(() => normalizeAgentServerUrl("http://insecure.shop.com")).toThrow(
+      AgentApiError,
     );
   });
 });

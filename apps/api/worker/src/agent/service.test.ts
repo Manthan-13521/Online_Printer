@@ -48,10 +48,9 @@ describe("AgentService", () => {
     const repo = createMockRepository();
     const service = new AgentService(repo, () => 1_000_000);
 
-    const result = await service.createPairCode();
-    expect(result.pairCode).toMatch(
-      /^[0-9A-HJ-KM-NP-TV-Z]{4}-[0-9A-HJ-KM-NP-TV-Z]{4}$/,
-    );
+    const result = await service.createPairCode("https://api.printgo.shop");
+    expect(result.pairCode).toMatch(/^[0-9]{3}-[0-9]{3}$/);
+    expect(result.serverUrl).toBe("https://api.printgo.shop");
     expect(new Date(result.expiresAt).getTime()).toBe(
       1_000_000 + AGENT_PAIR_CODE_LIFETIME_MS,
     );

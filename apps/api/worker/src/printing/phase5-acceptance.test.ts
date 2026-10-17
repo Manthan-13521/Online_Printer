@@ -432,14 +432,14 @@ describe("PRINTGO — PHASE 5 ACCEPTANCE TEST SUITE: PERFORMANCE, LOAD & STABILI
     // Empirical verification:
     // 60 pulses executed over 60 minutes.
     // Pulse 1: reportPrinters = true -> writes agents + printers.
-    // Pulses 2..60: reportPrinters = false. Since 60s < 65_000ms threshold, D1 write is skipped on alternate pulses!
-    // Heartbeat writes trigger only every 120s (when elapsed >= 65_000ms).
-    // In 60 minutes, exactly 30 heartbeat writes to agents occur (pulse 1, 3, 5, ..., 59).
-    expect(heartbeatWriteCount).toBe(30);
+    // Pulses 2..60: reportPrinters = false. 40s write throttle allows each 60s pulse to write fresh timestamps to D1,
+    // ensuring the agent is never falsely flagged as dead by the 90s D1 liveness check.
+    // In 60 minutes, exactly 60 heartbeat writes to agents occur (1 per minute).
+    expect(heartbeatWriteCount).toBe(60);
     expect(printerWriteCount).toBe(1);
-    // Total D1 writes for 60 minutes of continuous idle is strictly bounded to <= 32 writes
-    expect(metrics.changedRows).toBeLessThanOrEqual(32);
-    // Average statements per pulse is bounded to <= 2 statements
+    // Total D1 writes for 60 minutes of continuous idle is strictly bounded to <= 62 writes (well within 100k/day Free Tier)
+    expect(metrics.changedRows).toBeLessThanOrEqual(62);
+    // Average statements per pulse is bounded to <= 2.5 statements
     expect(metrics.statements / 60).toBeLessThanOrEqual(2.5);
   });
 

@@ -869,23 +869,43 @@ body {
   line-height: 1.2;
 }
 
-/* Layout */
+/* Layout: Mobile 1-2-3-4 Single Column & Desktop 2-Column Grid */
 .order-layout {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 1.5rem;
-  grid-template-columns: 1fr;
 }
 @media (min-width: 960px) {
   .order-layout {
+    display: grid;
     grid-template-columns: 1fr 1fr;
-    align-items: flex-start;
+    grid-template-areas:
+      "step1 step2"
+      "step3 step4";
+    align-items: start;
+    gap: 1.5rem;
   }
+  .step-1-container {
+    grid-area: step1;
+  }
+  .step-2-container {
+    grid-area: step2;
+  }
+  .step-3-container {
+    grid-area: step3;
+  }
+  .step-4-container {
+    grid-area: step4;
+  }
+}
+.order-step-container {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 .order-left,
 .order-right {
-  display: grid;
-  gap: 1.5rem;
-  align-content: start;
+  display: contents;
 }
 
 /* Steps */
@@ -1597,4 +1617,280 @@ label {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border-width: 0;
+}
+
+/* ==========================================================================
+   FLOATING ANIMATION SYSTEM (Lightweight & Reduced-Motion Aware)
+   ========================================================================== */
+@keyframes pg-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3.5px);
+  }
+}
+
+.pg-floating-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  animation: pg-float 2.2s ease-in-out infinite;
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pg-floating-icon {
+    animation: none !important;
+  }
+}
+
+.pg-floating-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pg-floating-badge {
+  flex-shrink: 0;
+}
+
+.pg-floating-label {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #123b4a;
+}
+
+/* ==========================================================================
+   PAY BUTTON — PREMIUM PRINTER AVAILABILITY LOADING STATE
+   ========================================================================== */
+.pay-button.loading,
+.pay-button.loading:disabled {
+  background: #ffffff !important;
+  color: #123b4a !important;
+  border: 1.5px solid #16754a !important;
+  box-shadow: 0 4px 14px rgba(22, 117, 74, 0.12) !important;
+  opacity: 1 !important;
+  cursor: wait !important;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.pay-button.loading span {
+  color: #123b4a !important;
+}
+
+.pay-button {
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  min-height: 48px;
+}
+
+/* ==========================================================================
+   REAL-TIME PDF UPLOAD FEEDBACK & PROGRESS
+   ========================================================================== */
+.file-feedback-box {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.45rem;
+  padding: 0.45rem 0.65rem;
+  border-radius: 6px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  transition: all 0.2s ease;
+}
+
+.file-feedback-box.preparing {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.file-feedback-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.file-feedback-text {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #166534;
+  flex-grow: 1;
+}
+
+.file-feedback-box.preparing .file-feedback-text {
+  color: #334155;
+}
+
+.file-upload-pct {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #16754a;
+}
+
+.file-progress-track {
+  width: 100%;
+  height: 5px;
+  background: #e2e8f0;
+  border-radius: 9999px;
+  overflow: hidden;
+}
+
+.file-progress-bar {
+  height: 100%;
+  background: #16754a;
+  border-radius: 9999px;
+  transition: width 0.2s ease-out;
+}
+
+.sr-only-progress {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+.file-card-compact {
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.file-card-compact.uploaded {
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+
+.file-card-compact.has-error {
+  border-color: #fca5a5;
+  background: #fef2f2;
+}
+
+.file-card-inspecting {
+  border: 1.5px dashed #16754a;
+  background: #f0fdf4;
+}
+
+.file-icon-wrapper.inspecting {
+  background: #16754a;
+}
+
+/* ==========================================================================
+   RESPONSIVE DESIGN POLISH (320px, 375px, 390px, 430px, 768px, 1024px)
+   ========================================================================== */
+
+/* Prevent iOS Safari 16px auto-zoom */
+@media screen and (max-width: 768px) {
+  input[type="text"],
+  input[type="tel"],
+  input[type="number"],
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* Mobile & Touch Viewports (320px - 640px) */
+@media (max-width: 640px) {
+  .page-shell {
+    padding: 0.85rem 0.75rem;
+  }
+
+  .step {
+    padding: 1.15rem 1rem;
+    border-radius: 0.85rem;
+  }
+
+  .order-layout {
+    gap: 1.15rem;
+  }
+
+  .step-header h2 {
+    font-size: 1.15rem;
+  }
+
+  .step-desc {
+    font-size: 0.825rem;
+  }
+
+  .details-grid {
+    grid-template-columns: 1fr;
+    gap: 0.85rem;
+    margin-bottom: 1rem;
+  }
+
+  .file-card-compact {
+    padding: 0.65rem;
+    gap: 0.75rem;
+  }
+
+  .file-icon-wrapper {
+    width: 36px;
+    height: 42px;
+  }
+
+  .file-name {
+    font-size: 0.85rem;
+  }
+
+  .number-stepper {
+    height: 44px;
+  }
+
+  .number-stepper button {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .visual-option-card {
+    min-height: 44px;
+    padding: 0.65rem 0.5rem;
+  }
+
+  .visual-option-card .label {
+    font-size: 0.85rem;
+  }
+
+  .pay-button {
+    padding: 0.85rem 1rem;
+    font-size: 1.05rem;
+  }
+}
+
+/* Very Small Mobile Viewports (320px - 400px, e.g. iPhone SE) */
+@media (max-width: 400px) {
+  .page-shell {
+    padding: 0.75rem 0.5rem;
+  }
+
+  .step {
+    padding: 1rem 0.75rem;
+  }
+
+  .row-layout {
+    grid-template-columns: 1fr;
+    gap: 0.85rem;
+  }
+
+  .visual-options.horizontal {
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+
+  .file-actions-right {
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.35rem;
+  }
 }

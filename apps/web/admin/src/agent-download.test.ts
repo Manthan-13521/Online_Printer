@@ -40,13 +40,22 @@ describe("approved installer configuration", () => {
 
 it("connection link carries the exact shop origin without credentials", () => {
   const link = buildAgentConnectionUrl(
-    "ABCD-EFGH",
+    "123-456",
     "https://shop-api.example.test",
   );
   expect(new URL(link!).searchParams.get("server")).toBe(
     "https://shop-api.example.test",
   );
-  expect(new URL(link!).searchParams.get("code")).toBe("ABCD-EFGH");
+  expect(new URL(link!).searchParams.get("code")).toBe("123-456");
+
+  const loopbackLink = buildAgentConnectionUrl(
+    "123-456",
+    "http://localhost:8787",
+  );
+  expect(loopbackLink).toBe(
+    "printgo://connect?server=http%3A%2F%2Flocalhost%3A8787&code=123-456",
+  );
+
   expect(
     buildAgentConnectionUrl("ABCD-EFGH", "https://secret@example.test"),
   ).toBeNull();

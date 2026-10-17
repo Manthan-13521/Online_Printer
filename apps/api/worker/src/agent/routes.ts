@@ -40,15 +40,27 @@ function mapAgentError(caught: unknown): Response {
         NO_STORE,
       );
     }
-    if (
-      caught.code === "PAIR_CODE_INVALID" ||
-      caught.code === "PAIR_CODE_EXPIRED" ||
-      caught.code === "PAIR_CODE_ALREADY_USED"
-    ) {
+    if (caught.code === "PAIR_CODE_INVALID") {
       return error(
         400,
-        caught.code,
-        "The pairing code is invalid, expired, or has already been used.",
+        "PAIR_CODE_INVALID",
+        "The pairing code is invalid. Please double-check the code from your shop Admin.",
+        NO_STORE,
+      );
+    }
+    if (caught.code === "PAIR_CODE_EXPIRED") {
+      return error(
+        400,
+        "PAIR_CODE_EXPIRED",
+        "The pairing code has expired (valid for 10 minutes). Please generate a fresh code from your shop Admin.",
+        NO_STORE,
+      );
+    }
+    if (caught.code === "PAIR_CODE_ALREADY_USED") {
+      return error(
+        400,
+        "PAIR_CODE_ALREADY_USED",
+        "This pairing code has already been used. Please generate a fresh code from your shop Admin.",
         NO_STORE,
       );
     }
@@ -102,7 +114,18 @@ export async function handleAgentRequest(
   }
 
   if (request.method === "GET" && pathname === "/api/agent/ws") {
-    const token = request.headers.get("Sec-WebSocket-Protocol"); // Client sends token as subprotocol
+    const url = new URL(request.url);
+    const queryToken = url.searchParams.get("token");
+    const headerToken = bearerToken(request);
+    const subprotocols = (request.headers.get("Sec-WebSocket-Protocol") ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    // Token might be queryToken, headerToken, or a non-"printgo-agent-v1" protocol entry
+    const protocolToken =
+      subprotocols.find((p) => p !== "printgo-agent-v1") ?? null;
+    const token = queryToken || headerToken || protocolToken;
+
     if (!token) {
       return error(401, "AGENT_UNAUTHORIZED", "Agent token required", NO_STORE);
     }
@@ -114,7 +137,7 @@ export async function handleAgentRequest(
     }
     const id = env.AGENT_ROOM.idFromName("shop");
     const room = env.AGENT_ROOM.get(id);
-    const newReq = new Request("http://do/connect", request);
+    const newReq = new Request("http://do/connect?role=agent", request);
     return room.fetch(newReq);
   }
 
@@ -158,6 +181,11 @@ export async function handleAgentRequest(
         validation.value.printers.length > 0
       ) {
         void import("./wake").then((m) => m.wakeAgent(env));
+      }
+      if (result.printJobs && result.printJobs.length > 0) {
+        void import("./wake").then((m) =>
+          m.notifyAdmin(env, { type: "ADMIN_ORDER_UPDATE" }),
+        );
       }
       return ok(result, 200, NO_STORE);
     } catch (caught) {

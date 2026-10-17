@@ -520,7 +520,7 @@ export class D1AgentRepository implements AgentRepository {
 
       if (existing) {
         const capsChanged = existing.capabilities_json !== capsJson;
-        const effectiveStatus = p.status === "UNKNOWN" ? "ONLINE" : p.status;
+        const effectiveStatus = p.status;
         const statusChanged = existing.status !== effectiveStatus;
         const reasonChanged =
           existing.status_reason !== (p.statusReason ?? null);
@@ -585,7 +585,7 @@ export class D1AgentRepository implements AgentRepository {
           );
         }
       } else {
-        const effectiveStatus = p.status === "UNKNOWN" ? "ONLINE" : p.status;
+        const effectiveStatus = p.status;
         const autoEnable =
           !p.isVirtual && isFirstRegistration && (p.isDefault || index === 0);
         statements.push(

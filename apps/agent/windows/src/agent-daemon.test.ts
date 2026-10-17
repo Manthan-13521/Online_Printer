@@ -230,7 +230,7 @@ describe("AgentDaemon", () => {
     daemon.stop();
   });
 
-  it("checks a blocked printer every two minutes while keeping Agent liveness pulses", async () => {
+  it("checks a blocked printer every 30 seconds while keeping Agent liveness pulses", async () => {
     const adapter = createMockAdapter();
     vi.mocked(adapter.getStatus).mockResolvedValue({
       availability: "BLOCKED",
@@ -254,12 +254,22 @@ describe("AgentDaemon", () => {
 
     await daemon.start();
     expect(adapter.listPrinters).toHaveBeenCalledTimes(1);
-    await vi.advanceTimersByTimeAsync(90_000);
+    expect(client.sendHeartbeat).toHaveBeenCalledTimes(1);
+
+    // At t=30s: with a blocked printer, nextDelayMs is 30s. Second pulse runs and re-probes hardware.
+    await vi.advanceTimersByTimeAsync(30_000);
     expect(client.sendHeartbeat).toHaveBeenCalledTimes(2);
-    expect(adapter.listPrinters).toHaveBeenCalledTimes(1);
+    expect(adapter.listPrinters).toHaveBeenCalledTimes(2);
+
+    // At t=60s: third pulse runs and re-probes hardware.
     await vi.advanceTimersByTimeAsync(30_000);
     expect(client.sendHeartbeat).toHaveBeenCalledTimes(3);
-    expect(adapter.listPrinters).toHaveBeenCalledTimes(2);
+    expect(adapter.listPrinters).toHaveBeenCalledTimes(3);
+
+    // At t=90s: fourth pulse runs.
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(client.sendHeartbeat).toHaveBeenCalledTimes(4);
+    expect(adapter.listPrinters).toHaveBeenCalledTimes(4);
     daemon.stop();
   });
 
@@ -583,7 +593,7 @@ describe("AgentDaemon", () => {
   });
 
   describe("Phase 8C: OPT-7 and OPT-8 Smart Optimizations", () => {
-    it("OPT-7: uses 120s idle heartbeat when WebSocket is connected, and 60s fallback when disconnected", async () => {
+    it("OPT-7: uses 60s idle heartbeat schedule aligned with 40s D1 write throttle and 90s claim cutoff", async () => {
       const client = {
         sendHeartbeat: vi.fn(() =>
           Promise.resolve({
@@ -607,7 +617,7 @@ describe("AgentDaemon", () => {
       await daemon.start();
       expect(client.sendHeartbeat).toHaveBeenCalledTimes(1);
 
-      // Advance 60s -> pulse 2 runs (WebSocket disconnected)
+      // Advance 60s -> pulse 2 runs
       await vi.advanceTimersByTimeAsync(60_000);
       expect(client.sendHeartbeat).toHaveBeenCalledTimes(2);
 
@@ -620,16 +630,16 @@ describe("AgentDaemon", () => {
       };
       expect(daemon.isWebSocketConnected()).toBe(true);
 
-      // Advance 60s -> pulse 3 runs while WS is connected, setting nextDelayMs to 120_000
+      // Advance 60s -> pulse 3 runs while WS is connected (never stalls for 120s)
       await vi.advanceTimersByTimeAsync(60_000);
       expect(client.sendHeartbeat).toHaveBeenCalledTimes(3);
 
-      // At +60s (halfway through 120s), heartbeat should NOT fire
-      await vi.advanceTimersByTimeAsync(60_000);
+      // At +30s (halfway through 60s), heartbeat should NOT fire
+      await vi.advanceTimersByTimeAsync(30_000);
       expect(client.sendHeartbeat).toHaveBeenCalledTimes(3);
 
-      // At +120s, next heartbeat fires (call 4)
-      await vi.advanceTimersByTimeAsync(60_000);
+      // At +30s (total 60s), next heartbeat fires (call 4)
+      await vi.advanceTimersByTimeAsync(30_000);
       expect(client.sendHeartbeat).toHaveBeenCalledTimes(4);
 
       daemon.stop();
@@ -912,6 +922,62 @@ describe("AgentDaemon", () => {
         expect(adapter.listPrinters).toHaveBeenCalledTimes(2);
 
         daemon.stop();
+      });
+
+      it("Phase 2: agent daemon schedules 30s delay when a printer is faulty and executes repeated probes at 30s intervals", async () => {
+        vi.useFakeTimers();
+        const client = {
+          sendHeartbeat: vi.fn(() =>
+            Promise.resolve({
+              acknowledged: true,
+              serverTimeMs: Date.now(),
+              onlinePrintingEnabled: true,
+              printJobs: [],
+            }),
+          ),
+        };
+        const adapter = createMockAdapter();
+        adapter.getStatus = vi.fn(() =>
+          Promise.resolve({
+            availability: "BLOCKED" as const,
+            message: "Paper Jam",
+          }),
+        );
+
+        const daemon = new AgentDaemon({
+          credentialStore: createMockStore({
+            agentId: "a1",
+            agentSecret: "s1",
+            serverUrl: "http://localhost:8787",
+            displayName: "Test Agent",
+          }),
+          client: client as unknown as AgentClient,
+          printerAdapter: adapter,
+          heartbeatIntervalMs: 5_000,
+        });
+
+        await daemon.start();
+        expect(adapter.listPrinters).toHaveBeenCalledTimes(1);
+        expect(client.sendHeartbeat).toHaveBeenCalledTimes(1);
+        expect((daemon as unknown as { nextDelayMs: number }).nextDelayMs).toBe(
+          30_000,
+        );
+
+        // Advance 30 seconds
+        await vi.advanceTimersByTimeAsync(30_000);
+        expect(adapter.listPrinters).toHaveBeenCalledTimes(2);
+        expect(client.sendHeartbeat).toHaveBeenCalledTimes(2);
+        expect((daemon as unknown as { nextDelayMs: number }).nextDelayMs).toBe(
+          30_000,
+        );
+
+        // Advance another 30 seconds
+        await vi.advanceTimersByTimeAsync(30_000);
+        expect(adapter.listPrinters).toHaveBeenCalledTimes(3);
+        expect(client.sendHeartbeat).toHaveBeenCalledTimes(3);
+
+        daemon.stop();
+        vi.useRealTimers();
       });
     });
   });

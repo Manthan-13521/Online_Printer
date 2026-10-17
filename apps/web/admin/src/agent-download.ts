@@ -76,15 +76,22 @@ export function buildAgentConnectionUrl(
 ): string | null {
   try {
     const server = new URL(serverUrl);
+    const isLoopback =
+      server.hostname === "localhost" ||
+      server.hostname === "127.0.0.1" ||
+      server.hostname === "[::1]";
+
     if (
-      server.protocol !== "https:" ||
+      (server.protocol !== "https:" &&
+        !(server.protocol === "http:" && isLoopback)) ||
       server.username ||
       server.password ||
-      server.pathname !== "/" ||
+      (server.pathname !== "/" && server.pathname !== "") ||
       server.search ||
       server.hash
-    )
+    ) {
       return null;
+    }
     return (
       "printgo://connect?server=" +
       encodeURIComponent(server.origin) +

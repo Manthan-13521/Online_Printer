@@ -280,7 +280,9 @@ SumatraPDF:
 
   if (pairCodeArg) {
     pairCodeArg = pairCodeArg.trim().toUpperCase();
-    if (/^[A-Z0-9]{8}$/.test(pairCodeArg)) {
+    if (/^[A-Z0-9]{6}$/.test(pairCodeArg)) {
+      pairCodeArg = `${pairCodeArg.slice(0, 3)}-${pairCodeArg.slice(3)}`;
+    } else if (/^[A-Z0-9]{8}$/.test(pairCodeArg)) {
       pairCodeArg = `${pairCodeArg.slice(0, 4)}-${pairCodeArg.slice(4)}`;
     }
   }
@@ -367,12 +369,14 @@ SumatraPDF:
         output: process.stdout,
       });
       const input = await rl.question(
-        "[PGO] No existing pairing credentials found.\nEnter pairing code from PrintGo Admin (format: XXXX-XXXX, or press Enter to skip): ",
+        "[PGO] No existing pairing credentials found.\nEnter pairing code from PrintGo Admin (format: XXX-XXX or XXXX-XXXX, or press Enter to skip): ",
       );
       rl.close();
       if (input.trim()) {
         pairCodeArg = input.trim().toUpperCase();
-        if (/^[A-Z0-9]{8}$/.test(pairCodeArg)) {
+        if (/^[A-Z0-9]{6}$/.test(pairCodeArg)) {
+          pairCodeArg = `${pairCodeArg.slice(0, 3)}-${pairCodeArg.slice(3)}`;
+        } else if (/^[A-Z0-9]{8}$/.test(pairCodeArg)) {
           pairCodeArg = `${pairCodeArg.slice(0, 4)}-${pairCodeArg.slice(4)}`;
         }
       }
@@ -428,9 +432,14 @@ SumatraPDF:
     try {
       await daemon.pair(serverUrl, pairCodeArg, displayName);
     } catch (err: unknown) {
-      logger.error(
-        `Pairing failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      logger.error(`Pairing failed: ${errorMessage}`);
+      if (err instanceof AgentApiError) {
+        if (err.code === "PAIR_CODE_EXPIRED") process.exit(10);
+        if (err.code === "PAIR_CODE_ALREADY_USED") process.exit(11);
+        if (err.code === "PAIR_CODE_INVALID") process.exit(12);
+        if (err.code === "NETWORK_ERROR") process.exit(13);
+      }
       process.exit(1);
     }
   }

@@ -29,10 +29,11 @@ function createMockAgentService(
   overrides: Partial<AgentService> = {},
 ): AgentService {
   return {
-    createPairCode: vi.fn(() =>
+    createPairCode: vi.fn((serverUrl?: string) =>
       Promise.resolve({
         pairCode: "ABCD-EFGH",
         expiresAt: "2026-09-26T12:00:00.000Z",
+        ...(serverUrl ? { serverUrl } : {}),
       }),
     ),
     listAgentsWithPrinters: vi.fn(() =>
@@ -165,8 +166,12 @@ describe("Admin Printer & Agent HTTP Routes", () => {
       data: {
         pairCode: "ABCD-EFGH",
         expiresAt: "2026-09-26T12:00:00.000Z",
+        serverUrl: "https://api.example.com",
       },
     });
+    expect(agentService.createPairCode).toHaveBeenCalledWith(
+      "https://api.example.com",
+    );
   });
 
   it("lists agents and printers", async () => {

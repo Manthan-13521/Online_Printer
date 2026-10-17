@@ -38,6 +38,6 @@ export async function handleAdminWebSocket(
 
   const id = env.AGENT_ROOM.idFromName("shop");
   const room = env.AGENT_ROOM.get(id);
-  const newReq = new Request("http://do/connect", request);
+  const newReq = new Request("http://do/connect?role=admin", request);
   return room.fetch(newReq);
 }

@@ -36,7 +36,7 @@ export function useAdminWebSocket(onWakeUp: () => void): void {
                 typeof data === "object" &&
                 data !== null &&
                 "type" in data &&
-                data.type === "WAKE_UP"
+                (data.type === "WAKE_UP" || data.type === "ADMIN_ORDER_UPDATE")
               ) {
                 onWakeUpRef.current();
               }

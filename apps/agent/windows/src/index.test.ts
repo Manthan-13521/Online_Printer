@@ -5,6 +5,7 @@ import {
   checkSumatraPdfInstalled,
   runCli,
 } from "./index.js";
+import { AgentApiError } from "./agent-client.js";
 
 describe("checkSumatraPdfInstalled", () => {
   const originalPlatform = process.platform;
@@ -78,7 +79,25 @@ describe("runCli CLI flags", () => {
     expect(start).not.toHaveBeenCalled();
   });
 
-  it("normalizes lowercase pair codes without hyphen and uses default server when --server is omitted", async () => {
+  it("normalizes 6-digit pair codes and uses default server when --server is omitted", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const pair = vi.spyOn(AgentDaemon.prototype, "pair").mockResolvedValue({
+      agentId: "test",
+      agentSecret: "test-secret",
+      serverUrl: "https://printgo-api.printgo-worker.workers.dev",
+      displayName: "test",
+    });
+    vi.spyOn(AgentDaemon.prototype, "start").mockResolvedValue(true);
+    process.argv = ["node", "index.js", "--pair-only", "--pair", "123456"];
+    await runCli();
+    expect(pair).toHaveBeenCalledWith(
+      "https://printgo-api.printgo-worker.workers.dev",
+      "123-456",
+      expect.any(String),
+    );
+  });
+
+  it("normalizes lowercase 8-digit pair codes without hyphen", async () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
     const pair = vi.spyOn(AgentDaemon.prototype, "pair").mockResolvedValue({
       agentId: "test",
@@ -95,6 +114,56 @@ describe("runCli CLI flags", () => {
       expect.any(String),
     );
   });
+
+  it("extracts server and pair code from printgo:// deep link URL argument", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const pair = vi.spyOn(AgentDaemon.prototype, "pair").mockResolvedValue({
+      agentId: "test",
+      agentSecret: "test-secret",
+      serverUrl: "https://custom-shop.example",
+      displayName: "test",
+    });
+    vi.spyOn(AgentDaemon.prototype, "start").mockResolvedValue(true);
+    process.argv = [
+      "node",
+      "index.js",
+      "--pair-only",
+      "printgo://connect?server=https%3A%2F%2Fcustom-shop.example&code=123-456",
+    ];
+    await runCli();
+    expect(pair).toHaveBeenCalledWith(
+      "https://custom-shop.example",
+      "123-456",
+      expect.any(String),
+    );
+  });
+
+  it.each([
+    ["PAIR_CODE_EXPIRED", 10],
+    ["PAIR_CODE_ALREADY_USED", 11],
+    ["PAIR_CODE_INVALID", 12],
+    ["NETWORK_ERROR", 13],
+  ])(
+    "exits with code %i on %s error during pairing",
+    async (code, expectedExit) => {
+      const exitSpy = vi
+        .spyOn(process, "exit")
+        .mockImplementation((() => {}) as never);
+      vi.spyOn(AgentDaemon.prototype, "pair").mockRejectedValue(
+        new AgentApiError(code, 400, "Pairing failure test"),
+      );
+      process.argv = [
+        "node",
+        "index.js",
+        "--pair",
+        "123-456",
+        "--server",
+        "https://example.test",
+      ];
+      await runCli();
+      expect(exitSpy).toHaveBeenCalledWith(expectedExit);
+    },
+  );
 
   afterEach(() => {
     process.argv = [...originalArgv];
