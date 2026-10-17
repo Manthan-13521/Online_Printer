@@ -15,7 +15,7 @@ namespace PrintGo.ControlCenter
     {
         private NotifyIcon trayIcon;
         private ContextMenuStrip trayMenu;
-        private Timer refreshTimer;
+        private System.Windows.Forms.Timer refreshTimer;
 
         // UI Controls
         private Label lblShopTitle;
@@ -180,7 +180,7 @@ namespace PrintGo.ControlCenter
             EnsureSingleAgentRunning();
             RefreshStatus();
 
-            refreshTimer = new Timer();
+            refreshTimer = new System.Windows.Forms.Timer();
             refreshTimer.Interval = 2500;
             refreshTimer.Tick += (s, e) => RefreshStatus();
             refreshTimer.Start();
