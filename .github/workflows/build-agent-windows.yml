@@ -274,30 +274,34 @@ jobs:
           }
           Set-Content -Path "$relDir/SHA256SUMS.txt" -Value ($lines -join "`n")
 
-          $tag = if ($env:GITHUB_REF_TYPE -eq "tag") { $env:GITHUB_REF_NAME } else { "v2.1.0-phase9" }
-          Write-Host "Updating release $tag with verified assets..."
-
-          # Check if release exists; if not, create it
           try {
-            gh release view "$tag"
-          } catch {
-            Write-Host "Release $tag does not exist. Creating release..."
+            $tag = if ($env:GITHUB_REF_TYPE -eq "tag") { $env:GITHUB_REF_NAME } else { "v2.1.0-phase9" }
+            Write-Host "Updating release $tag with verified assets..."
+
+            # Check if release exists; if not, create it
             try {
-              gh release create "$tag" --title "PrintGo Command Center $tag" --notes "Automated release build of Windows Command Center GUI and Agent"
+              gh release view "$tag"
             } catch {
-              Write-Warning "Could not create release $tag: $_"
+              Write-Host "Release $tag does not exist. Creating release..."
+              try {
+                gh release create "$tag" --title "PrintGo Command Center $tag" --notes "Automated release build of Windows Command Center GUI and Agent"
+              } catch {
+                Write-Warning "Could not create release $tag. Error: $_"
+              }
             }
-          }
 
-          # Delete outdated assets if present
-          try { gh release delete-asset "$tag" PrintGo-Windows-Test.zip PrintGo-Command-Center.exe SumatraPDF.exe --yes } catch { }
+            # Delete outdated assets if present
+            try { gh release delete-asset "$tag" PrintGo-Windows-Test.zip PrintGo-Command-Center.exe SumatraPDF.exe --yes } catch { }
 
-          # Upload all verified packages + SHA256SUMS.txt
-          try {
-            $filesToUpload = Get-ChildItem -Path "$relDir" | ForEach-Object { $_.FullName }
-            gh release upload "$tag" $filesToUpload --clobber
+            # Upload all verified packages + SHA256SUMS.txt
+            try {
+              $filesToUpload = Get-ChildItem -Path "$relDir" | ForEach-Object { $_.FullName }
+              gh release upload "$tag" $filesToUpload --clobber
+            } catch {
+              Write-Warning "GitHub release asset upload failed or was skipped. Error: $_"
+            }
           } catch {
-            Write-Warning "GitHub release asset upload failed or was skipped: $_"
+            Write-Warning "Release step encountered an error: $_"
           }
 
       - name: Upload Windows Command Center & Agent Artifacts
