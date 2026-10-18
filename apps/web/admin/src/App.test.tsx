@@ -248,7 +248,6 @@ describe("Admin application", () => {
     await user.clear(name);
     await user.type(name, "City Prints");
     expect(screen.getByText("Unsaved changes")).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: "Save Changes" }));
 
     await waitFor(() =>
       expect(mockedApi.updateSettings).toHaveBeenCalledWith({
@@ -420,7 +419,6 @@ describe("Admin application", () => {
     );
     await user.clear(input);
     await user.type(input, "3.25");
-    await user.click(screen.getByRole("button", { name: "Save Pricing" }));
     await waitFor(() =>
       expect(mockedApi.updatePricing).toHaveBeenCalledTimes(1),
     );
@@ -443,7 +441,6 @@ describe("Admin application", () => {
     );
     await user.clear(input);
     await user.type(input, "1.234");
-    await user.click(screen.getByRole("button", { name: "Save Pricing" }));
     expect(
       await screen.findByText(
         "Enter prices in rupees with no more than two decimal places.",
@@ -522,7 +519,6 @@ describe("Admin application", () => {
     await user.selectOptions(retentionSelect, "6");
     expect(screen.getByText("Unsaved changes")).toBeTruthy();
 
-    await user.click(screen.getByRole("button", { name: "Save Changes" }));
     await waitFor(() =>
       expect(mockedApi.updateSettings).toHaveBeenCalledWith({
         ...settings,

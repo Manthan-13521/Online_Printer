@@ -19,21 +19,7 @@ export function ShopHeader({
 }: ShopHeaderProps) {
   return (
     <header className="hero">
-      <div className="hero-top-row">
-        <div className="hero-branding">
-          {config?.logoUrl ? (
-            <img
-              src={resolveCustomerApiUrl(config.logoUrl)}
-              alt="Shop logo"
-              style={{ maxWidth: 144, maxHeight: 80, objectFit: "contain" }}
-            />
-          ) : (
-            <h1 className="logo-text">
-              {config?.shopName ?? "Online printing"}
-            </h1>
-          )}
-        </div>
-
+      <div className="hero-top-container">
         <form className="track-printing-form" onSubmit={onTrackSubmit}>
           <div className="track-input-wrapper">
             <span className="track-icon">📦</span>
@@ -48,14 +34,30 @@ export function ShopHeader({
           </div>
         </form>
 
-        <div className="hero-actions">
-          <button
-            type="button"
-            className="pricing-info-button"
-            onClick={onOpenPricing}
-          >
-            ⓘ Pricing & Info
-          </button>
+        <div className="hero-brand-pricing-row">
+          <div className="hero-branding">
+            {config?.logoUrl ? (
+              <img
+                src={resolveCustomerApiUrl(config.logoUrl)}
+                alt="Shop logo"
+                style={{ maxWidth: 144, maxHeight: 72, objectFit: "contain" }}
+              />
+            ) : (
+              <h1 className="logo-text">
+                {config?.shopName ?? "Online printing"}
+              </h1>
+            )}
+          </div>
+
+          <div className="hero-actions">
+            <button
+              type="button"
+              className="pricing-info-button"
+              onClick={onOpenPricing}
+            >
+              ⓘ Pricing & Info
+            </button>
+          </div>
         </div>
       </div>
 

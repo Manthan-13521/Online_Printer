@@ -137,8 +137,8 @@ export function PricingPage({
     setMessage(null);
   }
 
-  async function save(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function save(event?: FormEvent<HTMLFormElement>) {
+    if (event) event.preventDefault();
     if (!draft || saving || !dirty) return;
     const printRates = draft.printRates.map(({ rupees, ...rate }) => ({
       ...rate,
@@ -195,6 +195,14 @@ export function PricingPage({
       setSaving(false);
     }
   }
+
+  useEffect(() => {
+    if (!draft || !dirty || saving) return;
+    const timer = setTimeout(() => {
+      void save();
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [draft, dirty, saving]);
 
   if (loading) {
     return (
@@ -417,16 +425,13 @@ export function PricingPage({
         </section>
 
         <div className="save-bar">
-          <span className={dirty ? "unsaved" : "saved-state"}>
-            {dirty ? "Unsaved changes" : "All changes saved"}
+          <span className={dirty || saving ? "unsaved" : "saved-state"}>
+            {saving
+              ? "Saving…"
+              : dirty
+                ? "Unsaved changes"
+                : "All changes saved"}
           </span>
-          <button
-            className="primary-button fit"
-            disabled={!dirty || saving}
-            type="submit"
-          >
-            {saving ? "Saving…" : "Save Pricing"}
-          </button>
         </div>
       </form>
 

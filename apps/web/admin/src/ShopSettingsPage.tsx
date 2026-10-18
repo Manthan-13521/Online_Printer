@@ -84,8 +84,8 @@ export function ShopSettingsPage({
     setMessage(null);
   }
 
-  async function save(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function save(event?: FormEvent<HTMLFormElement>) {
+    if (event) event.preventDefault();
     if (!settings || saving || !dirty) return;
     setSaving(true);
     setError(null);
@@ -108,6 +108,14 @@ export function ShopSettingsPage({
       setSaving(false);
     }
   }
+
+  useEffect(() => {
+    if (!settings || !dirty || saving) return;
+    const timer = setTimeout(() => {
+      void save();
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [settings, dirty, saving]);
 
   async function changeLogo(file: File | null) {
     if (logoBusy) return;
@@ -564,16 +572,13 @@ export function ShopSettingsPage({
         </section>
 
         <div className="save-bar">
-          <span className={dirty ? "unsaved" : "saved-state"}>
-            {dirty ? "Unsaved changes" : "All changes saved"}
+          <span className={dirty || saving ? "unsaved" : "saved-state"}>
+            {saving
+              ? "Saving…"
+              : dirty
+                ? "Unsaved changes"
+                : "All changes saved"}
           </span>
-          <button
-            className="primary-button fit"
-            disabled={!dirty || saving}
-            type="submit"
-          >
-            {saving ? "Saving…" : "Save Changes"}
-          </button>
         </div>
       </form>
 
