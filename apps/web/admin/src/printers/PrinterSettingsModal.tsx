@@ -1,6 +1,7 @@
 import type { AdminPrinterDetails } from "@printgo/api-contract";
 import type { PrinterCapabilityFeatures } from "@printgo/domain";
 import type React from "react";
+import { useEffect, useState } from "react";
 import { formatSimpleCapabilities } from "./printer-helpers";
 
 export interface PrinterSettingsModalProps {
@@ -54,6 +55,12 @@ export function PrinterSettingsModal({
   onSetDefault,
   onSaveSettings,
 }: PrinterSettingsModalProps) {
+  const [priorityDraft, setPriorityDraft] = useState(String(formPriority));
+
+  useEffect(() => {
+    setPriorityDraft(String(formPriority));
+  }, [formPriority, printer?.id]);
+
   if (!printer) return null;
 
   return (
@@ -245,8 +252,27 @@ export function PrinterSettingsModal({
               type="number"
               min={0}
               max={100}
-              value={formPriority}
-              onChange={(e) => setFormPriority(Number(e.target.value) || 0)}
+              value={priorityDraft}
+              onChange={(e) => {
+                const text = e.target.value;
+                setPriorityDraft(text);
+                if (text.trim() === "") return;
+                const p = parseInt(text, 10);
+                if (!isNaN(p)) {
+                  setFormPriority(Math.min(100, Math.max(0, p)));
+                }
+              }}
+              onBlur={() => {
+                const p = parseInt(priorityDraft, 10);
+                if (isNaN(p) || p < 0) {
+                  setPriorityDraft("0");
+                  setFormPriority(0);
+                } else {
+                  const clamped = Math.min(100, Math.max(0, p));
+                  setPriorityDraft(String(clamped));
+                  setFormPriority(clamped);
+                }
+              }}
             />
             <p
               className="muted"

@@ -1,6 +1,7 @@
 import type { CustomerConfigData } from "@printgo/api-contract";
 import type { PaperSize } from "@printgo/domain";
 import { MAX_PRINT_COPIES, MIN_PRINT_COPIES } from "@printgo/domain";
+import { useEffect, useState } from "react";
 import type { LocalOrderFile } from "./customer-types";
 
 export interface PrintSettingsStepProps {
@@ -24,6 +25,16 @@ export function PrintSettingsStep({
   onPatchSelected,
   onApplySettingsToAll,
 }: PrintSettingsStepProps) {
+  const [copiesDraft, setCopiesDraft] = useState(
+    selectedFile ? String(selectedFile.copies) : "1",
+  );
+
+  useEffect(() => {
+    if (selectedFile) {
+      setCopiesDraft(String(selectedFile.copies));
+    }
+  }, [selectedFile?.clientId, selectedFile?.copies]);
+
   return (
     <section className="step">
       <div className="step-header">
@@ -119,12 +130,29 @@ export function PrintSettingsStep({
                     type="number"
                     min={MIN_PRINT_COPIES}
                     max={MAX_PRINT_COPIES}
-                    value={selectedFile.copies}
-                    onChange={(event) =>
-                      onPatchSelected({
-                        copies: Number(event.target.value),
-                      })
-                    }
+                    value={copiesDraft}
+                    onChange={(event) => {
+                      const text = event.target.value;
+                      setCopiesDraft(text);
+                      if (text.trim() === "") return;
+                      const c = parseInt(text, 10);
+                      if (!isNaN(c) && c >= 1) {
+                        onPatchSelected({
+                          copies: Math.min(MAX_PRINT_COPIES, c),
+                        });
+                      }
+                    }}
+                    onBlur={() => {
+                      const c = parseInt(copiesDraft, 10);
+                      if (isNaN(c) || c < MIN_PRINT_COPIES) {
+                        setCopiesDraft(String(MIN_PRINT_COPIES));
+                        onPatchSelected({ copies: MIN_PRINT_COPIES });
+                      } else {
+                        const clamped = Math.min(MAX_PRINT_COPIES, c);
+                        setCopiesDraft(String(clamped));
+                        onPatchSelected({ copies: clamped });
+                      }
+                    }}
                   />
                   <button
                     type="button"

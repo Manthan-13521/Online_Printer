@@ -45,6 +45,15 @@ export function ShopSettingsPage({
   const [logoBusy, setLogoBusy] = useState(false);
   const [confirmPause, setConfirmPause] = useState(false);
   const [resettingCode, setResettingCode] = useState(false);
+  const [thresholdDraft, setThresholdDraft] = useState("");
+
+  useEffect(() => {
+    if (settings?.identificationSheetMinAmountPaise != null) {
+      setThresholdDraft(
+        String(Math.round(settings.identificationSheetMinAmountPaise / 100)),
+      );
+    }
+  }, [settings?.identificationSheetMinAmountPaise]);
 
   const dirty =
     settings !== null && JSON.stringify(settings) !== JSON.stringify(saved);
@@ -510,19 +519,36 @@ export function ShopSettingsPage({
                     id="id-sheet-min-amount"
                     max={100000}
                     min={1}
+                    value={thresholdDraft}
                     onChange={(event) => {
-                      const val = parseInt(event.target.value, 10);
-                      patch({
-                        identificationSheetMinAmountPaise: isNaN(val)
-                          ? 5000
-                          : Math.max(1, val * 100),
-                      });
+                      const text = event.target.value;
+                      setThresholdDraft(text);
+                      if (text.trim() === "") return;
+                      const val = parseInt(text, 10);
+                      if (!isNaN(val) && val >= 1) {
+                        patch({
+                          identificationSheetMinAmountPaise: Math.min(
+                            100000,
+                            val * 100,
+                          ),
+                        });
+                      }
+                    }}
+                    onBlur={() => {
+                      const val = parseInt(thresholdDraft, 10);
+                      if (isNaN(val) || val < 1) {
+                        setThresholdDraft("50");
+                        patch({ identificationSheetMinAmountPaise: 5000 });
+                      } else {
+                        const clamped = Math.min(100000, val);
+                        setThresholdDraft(String(clamped));
+                        patch({
+                          identificationSheetMinAmountPaise: clamped * 100,
+                        });
+                      }
                     }}
                     style={{ width: "90px", padding: "0.25rem 0.5rem" }}
                     type="number"
-                    value={Math.round(
-                      settings.identificationSheetMinAmountPaise / 100,
-                    )}
                   />
                 </div>
               ) : null}

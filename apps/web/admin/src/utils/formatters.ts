@@ -30,6 +30,12 @@ export function formatDateTime(iso: string | null | undefined): string {
   return new Date(iso).toLocaleString();
 }
 
+/** Formats an ISO date string into a localized time-only string (e.g. 8:35:03 PM). */
+export function formatTimeOnly(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleTimeString();
+}
+
 /** Extracts up to 2 uppercase initial letters from a customer's name. */
 export function getInitials(name?: string | null): string {
   if (!name || !name.trim()) return "C";

@@ -88,16 +88,13 @@ describe("Admin OrderHistoryPage — Payment Method Display", () => {
       await vi.advanceTimersByTimeAsync(0);
     });
 
-    expect(screen.getByText("💵 Cash")).toBeDefined();
-    expect(screen.getByText("Payment Method")).toBeDefined();
-    expect(screen.getByText("Cash")).toBeDefined();
-    expect(screen.getByText("Cash Paid")).toBeDefined();
-    expect(screen.getByText("₹7.50")).toBeDefined();
+    expect(screen.getByText("💵 Cash · Paid ₹7.50")).toBeDefined();
     expect(screen.getByText("Cash Confirmed")).toBeDefined();
+    expect(screen.queryByText("Payment Method")).toBeNull();
     expect(screen.queryByText("Online Paid")).toBeNull();
   });
 
-  it("displays Online (Razorpay) badge and Online Paid for online orders", async () => {
+  it("displays Paid badge for online orders", async () => {
     const onlineOrder: AdminOrderHistoryEntry = {
       ...baseEntry,
       orderId: "ord-online-1",
@@ -122,15 +119,12 @@ describe("Admin OrderHistoryPage — Payment Method Display", () => {
       await vi.advanceTimersByTimeAsync(0);
     });
 
-    expect(screen.getByText("💳 Online (Razorpay)")).toBeDefined();
-    expect(screen.getByText("Payment Method")).toBeDefined();
-    expect(screen.getByText("Online (Razorpay)")).toBeDefined();
-    expect(screen.getByText("Online Paid")).toBeDefined();
-    expect(screen.getByText("₹12.00")).toBeDefined();
-    expect(screen.queryByText("Cash Paid")).toBeNull();
+    expect(screen.getByText("Paid ₹12")).toBeDefined();
+    expect(screen.queryByText("Payment Method")).toBeNull();
+    expect(screen.queryByText("Online Paid")).toBeNull();
   });
 
-  it("displays Unknown badge and Paid Amount when paymentMethod is unknown", async () => {
+  it("displays Paid badge when paymentMethod is unknown", async () => {
     const unknownOrder: AdminOrderHistoryEntry = {
       ...baseEntry,
       orderId: "ord-unknown-1",
@@ -155,11 +149,9 @@ describe("Admin OrderHistoryPage — Payment Method Display", () => {
       await vi.advanceTimersByTimeAsync(0);
     });
 
-    expect(screen.getByText("⚠️ Unknown")).toBeDefined();
-    expect(screen.getByText("Payment Method")).toBeDefined();
-    expect(screen.getByText("Unknown")).toBeDefined();
-    expect(screen.getByText("Paid Amount")).toBeDefined();
-    expect(screen.getByText("₹4.00")).toBeDefined();
+    expect(screen.getByText("Paid ₹4")).toBeDefined();
+    expect(screen.queryByText("Payment Method")).toBeNull();
+    expect(screen.queryByText("Paid Amount")).toBeNull();
   });
 
   it("opens accessible deletion modal, allows canceling, and confirms permanent deletion", async () => {

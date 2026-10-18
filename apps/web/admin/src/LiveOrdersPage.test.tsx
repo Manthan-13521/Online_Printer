@@ -341,19 +341,13 @@ describe("Admin LiveOrdersPage — Compact Redesign", () => {
     });
 
     // 1. Cash order assertions
-    expect(screen.getByText("💵 Cash")).toBeDefined();
+    expect(screen.getByText("💵 Cash · Paid ₹6")).toBeDefined();
     expect(screen.getByText("Cash Confirmed")).toBeDefined();
 
-    // 2. Online order assertions
-    expect(screen.getByText("💳 Online (Razorpay)")).toBeDefined();
+    // 2. Online & Unknown order assertions
+    expect(screen.getAllByText("Paid ₹6")).toHaveLength(2);
 
-    // 3. Unknown order assertions
-    expect(screen.getByText("⚠️ Unknown Method")).toBeDefined();
-
-    // Verify Payment Method labels in the details
-    expect(screen.getAllByText("Payment Method")).toHaveLength(3);
-    expect(screen.getByText("Cash")).toBeDefined();
-    expect(screen.getByText("Online (Razorpay)")).toBeDefined();
-    expect(screen.getByText("Unknown")).toBeDefined();
+    // Verify Payment Method was removed from details
+    expect(screen.queryByText("Payment Method")).toBeNull();
   });
 });

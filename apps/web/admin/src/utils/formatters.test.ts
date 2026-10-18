@@ -3,6 +3,7 @@ import {
   formatDateTime,
   formatPaise,
   formatRelativeTime,
+  formatTimeOnly,
   getInitials,
 } from "./formatters";
 
@@ -29,6 +30,19 @@ describe("admin formatters", () => {
     it("formats a valid ISO timestamp", () => {
       const iso = "2026-09-26T12:00:00.000Z";
       expect(formatDateTime(iso)).toBe(new Date(iso).toLocaleString());
+    });
+  });
+
+  describe("formatTimeOnly", () => {
+    it("returns dash for null or undefined", () => {
+      expect(formatTimeOnly(null)).toBe("—");
+      expect(formatTimeOnly(undefined)).toBe("—");
+      expect(formatTimeOnly("")).toBe("—");
+    });
+
+    it("formats a valid ISO timestamp as time only", () => {
+      const iso = "2026-09-26T12:00:00.000Z";
+      expect(formatTimeOnly(iso)).toBe(new Date(iso).toLocaleTimeString());
     });
   });
 

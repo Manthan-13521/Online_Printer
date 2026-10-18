@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Pagination } from "./Pagination";
 import { adminApi, AdminApiError, friendlyAdminError } from "./api";
 import {
-  formatDateTime as time,
+  formatTimeOnly as time,
   formatPaise as amount,
 } from "./utils/formatters";
 
@@ -201,41 +201,52 @@ export function OrderHistoryPage({
                   {order.paymentMethod === "CASH" ? (
                     <span
                       style={{
-                        fontWeight: 600,
-                        padding: "0.1rem 0.5rem",
+                        fontWeight: 700,
+                        padding: "0.15rem 0.55rem",
                         borderRadius: "4px",
                         backgroundColor: "#dcfce7",
                         color: "#166534",
                         fontSize: "0.85rem",
                       }}
                     >
-                      💵 Cash
-                    </span>
-                  ) : order.paymentMethod === "ONLINE" ? (
-                    <span
-                      style={{
-                        fontWeight: 600,
-                        padding: "0.1rem 0.5rem",
-                        borderRadius: "4px",
-                        backgroundColor: "#e0f2fe",
-                        color: "#0369a1",
-                        fontSize: "0.85rem",
-                      }}
-                    >
-                      💳 Online (Razorpay)
+                      💵 Cash · Paid ₹
+                      {((order.amountPaidPaise ?? order.onlinePaidPaise ?? 0) /
+                        100) %
+                        1 ===
+                      0
+                        ? (order.amountPaidPaise ??
+                            order.onlinePaidPaise ??
+                            0) / 100
+                        : (
+                            (order.amountPaidPaise ??
+                              order.onlinePaidPaise ??
+                              0) / 100
+                          ).toFixed(2)}
                     </span>
                   ) : (
                     <span
                       style={{
-                        fontWeight: 600,
-                        padding: "0.1rem 0.5rem",
+                        fontWeight: 700,
+                        padding: "0.15rem 0.55rem",
                         borderRadius: "4px",
-                        backgroundColor: "#fef3c7",
-                        color: "#92400e",
+                        backgroundColor: "#dcfce7",
+                        color: "#166534",
                         fontSize: "0.85rem",
                       }}
                     >
-                      ⚠️ Unknown
+                      Paid ₹
+                      {((order.amountPaidPaise ?? order.onlinePaidPaise ?? 0) /
+                        100) %
+                        1 ===
+                      0
+                        ? (order.amountPaidPaise ??
+                            order.onlinePaidPaise ??
+                            0) / 100
+                        : (
+                            (order.amountPaidPaise ??
+                              order.onlinePaidPaise ??
+                              0) / 100
+                          ).toFixed(2)}
                     </span>
                   )}
                 </div>
@@ -292,28 +303,6 @@ export function OrderHistoryPage({
                   <dd style={{ fontSize: "1.0rem" }}>{order.customerPhone}</dd>
                 </div>
               ) : null}
-              <div>
-                <dt style={{ fontSize: "0.86rem" }}>Payment Method</dt>
-                <dd style={{ fontSize: "1.0rem", fontWeight: 600 }}>
-                  {order.paymentMethod === "CASH"
-                    ? "Cash"
-                    : order.paymentMethod === "ONLINE"
-                      ? "Online (Razorpay)"
-                      : "Unknown"}
-                </dd>
-              </div>
-              <div>
-                <dt style={{ fontSize: "0.86rem" }}>
-                  {order.paymentMethod === "CASH"
-                    ? "Cash Paid"
-                    : order.paymentMethod === "ONLINE"
-                      ? "Online Paid"
-                      : "Paid Amount"}
-                </dt>
-                <dd style={{ fontSize: "1.0rem", fontWeight: 600 }}>
-                  {amount(order.amountPaidPaise ?? order.onlinePaidPaise)}
-                </dd>
-              </div>
               {order.cashConfirmedAt ? (
                 <div>
                   <dt style={{ fontSize: "0.86rem" }}>Cash Confirmed</dt>

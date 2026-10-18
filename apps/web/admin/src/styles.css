@@ -747,6 +747,11 @@ legend {
 .live-order-list {
   display: grid;
   gap: 1rem;
+  max-width: 40rem;
+}
+.live-order {
+  max-width: 40rem;
+  width: 100%;
 }
 .live-order-heading {
   display: flex;
@@ -937,7 +942,7 @@ legend {
 .history-list {
   display: grid;
   gap: 1rem;
-  max-width: 58rem;
+  max-width: 40rem;
   margin-block: 1.5rem;
 }
 .history-details {

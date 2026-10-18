@@ -1,11 +1,5 @@
 import type { AdminLiveOrder } from "@printgo/api-contract";
-
-function money(paise: number): string {
-  return new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-  }).format(paise / 100);
-}
+import { formatTimeOnly } from "../utils/formatters";
 
 function summary(order: AdminLiveOrder): string {
   const print = order.printSummary;
@@ -79,40 +73,33 @@ export function LiveOrderRow({
               <span
                 style={{
                   fontWeight: 700,
-                  padding: "0.1rem 0.5rem",
+                  padding: "0.15rem 0.55rem",
                   borderRadius: "4px",
                   backgroundColor: "#dcfce7",
                   color: "#166534",
                   fontSize: "0.85rem",
                 }}
               >
-                💵 Cash
-              </span>
-            ) : order.paymentMethod === "ONLINE" ? (
-              <span
-                style={{
-                  fontWeight: 700,
-                  padding: "0.1rem 0.5rem",
-                  borderRadius: "4px",
-                  backgroundColor: "#e0f2fe",
-                  color: "#0369a1",
-                  fontSize: "0.85rem",
-                }}
-              >
-                💳 Online (Razorpay)
+                💵 Cash · Paid ₹
+                {(order.amountPaidPaise / 100) % 1 === 0
+                  ? order.amountPaidPaise / 100
+                  : (order.amountPaidPaise / 100).toFixed(2)}
               </span>
             ) : (
               <span
                 style={{
                   fontWeight: 700,
-                  padding: "0.1rem 0.5rem",
+                  padding: "0.15rem 0.55rem",
                   borderRadius: "4px",
-                  backgroundColor: "#fef3c7",
-                  color: "#92400e",
+                  backgroundColor: "#dcfce7",
+                  color: "#166534",
                   fontSize: "0.85rem",
                 }}
               >
-                ⚠️ Unknown Method
+                Paid ₹
+                {(order.amountPaidPaise / 100) % 1 === 0
+                  ? order.amountPaidPaise / 100
+                  : (order.amountPaidPaise / 100).toFixed(2)}
               </span>
             )}
           </div>
@@ -182,24 +169,10 @@ export function LiveOrderRow({
           <dt>Phone</dt>
           <dd>{order.customerPhone}</dd>
         </div>
-        <div>
-          <dt>Payment Method</dt>
-          <dd>
-            {order.paymentMethod === "CASH"
-              ? "Cash"
-              : order.paymentMethod === "ONLINE"
-                ? "Online (Razorpay)"
-                : "Unknown"}
-          </dd>
-        </div>
-        <div>
-          <dt>Paid</dt>
-          <dd>{money(order.amountPaidPaise)}</dd>
-        </div>
         {order.cashConfirmedAt ? (
           <div>
             <dt>Cash Confirmed</dt>
-            <dd>{new Date(order.cashConfirmedAt).toLocaleTimeString()}</dd>
+            <dd>{formatTimeOnly(order.cashConfirmedAt)}</dd>
           </div>
         ) : null}
         <div>
@@ -212,7 +185,7 @@ export function LiveOrderRow({
         </div>
         <div>
           <dt>Updated</dt>
-          <dd>{new Date(order.updatedAt).toLocaleString()}</dd>
+          <dd>{formatTimeOnly(order.updatedAt)}</dd>
         </div>
       </dl>
       {order.issue ? (
