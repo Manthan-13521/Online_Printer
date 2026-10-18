@@ -4,6 +4,7 @@ import { D1AdminAuthRepository } from "../auth/repository";
 import { AdminAuthService, AuthError } from "../auth/service";
 import type { WorkerEnv } from "../env";
 import { error, ok } from "../http";
+import { probeAgentPrinter } from "../agent/wake";
 import { D1OrderHistoryRepository } from "../history/repository";
 import { D1PrintingRepository } from "./repository";
 import { createPrintingService } from "./routes";
@@ -61,9 +62,7 @@ export async function handleAdminOrdersRequest(
     ) {
       const printingService = createPrintingService(env);
       const result = await printingService.recoverQueue(session.admin.id);
-      void import("../agent/wake").then((m) => {
-        m.probeAgentPrinter(env, "all");
-      });
+      await probeAgentPrinter(env, "all");
       return withAdminCors(ok(result, 200), env.ADMIN_ALLOWED_ORIGIN);
     }
 
@@ -92,9 +91,7 @@ export async function handleAdminOrdersRequest(
         session.admin.id,
         printerId,
       );
-      void import("../agent/wake").then((m) => {
-        m.probeAgentPrinter(env, printerId ?? "all");
-      });
+      await probeAgentPrinter(env, printerId ?? "all");
       return withAdminCors(ok(result, 200), env.ADMIN_ALLOWED_ORIGIN);
     }
 

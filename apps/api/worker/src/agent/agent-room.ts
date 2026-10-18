@@ -1,5 +1,6 @@
 export class AgentRoom {
   private state: DurableObjectState;
+  private pendingAgentWake = false;
 
   constructor(state: DurableObjectState) {
     this.state = state;
@@ -39,6 +40,17 @@ export class AgentRoom {
 
       this.state.acceptWebSocket(server, [role]);
 
+      // If an authorized order arrived while agent was disconnected/reconnecting,
+      // deliver the pending WAKE_UP immediately on connection!
+      if (role === "agent" && this.pendingAgentWake) {
+        this.pendingAgentWake = false;
+        try {
+          server.send(JSON.stringify({ type: "WAKE_UP" }));
+        } catch {
+          // Ignored
+        }
+      }
+
       const responseInit: ResponseInit = {
         status: 101,
         webSocket: client,
@@ -55,11 +67,17 @@ export class AgentRoom {
     if (url.pathname === "/wake" && request.method === "POST") {
       // 1. Wake connected Windows Agents immediately for order claiming
       const agentSockets = this.state.getWebSockets("agent");
-      for (const ws of agentSockets) {
-        try {
-          ws.send(JSON.stringify({ type: "WAKE_UP" }));
-        } catch {
-          // Ignored
+      if (agentSockets.length === 0) {
+        // Buffer wake so when the agent connects/reconnects, it immediately claims work
+        this.pendingAgentWake = true;
+      } else {
+        this.pendingAgentWake = false;
+        for (const ws of agentSockets) {
+          try {
+            ws.send(JSON.stringify({ type: "WAKE_UP" }));
+          } catch {
+            // Ignored
+          }
         }
       }
 
@@ -110,6 +128,29 @@ export class AgentRoom {
     }
 
     return new Response("Not found", { status: 404 });
+  }
+
+  webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): void {
+    try {
+      const text =
+        typeof message === "string"
+          ? message
+          : new TextDecoder().decode(message);
+      const data = JSON.parse(text) as { type?: string };
+      if (data.type === "PING") {
+        ws.send(JSON.stringify({ type: "PONG" }));
+      }
+    } catch {
+      // Ignored
+    }
+  }
+
+  webSocketClose(ws: WebSocket, code: number, reason: string): void {
+    try {
+      ws.close(code, reason || "Closed by client");
+    } catch {
+      // Ignored
+    }
   }
 
   private async handleProbe(request: Request): Promise<Response> {

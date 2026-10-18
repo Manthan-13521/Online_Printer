@@ -9,6 +9,7 @@ import { error, ok } from "../http";
 import { D1AgentRepository } from "./repository";
 import { AgentError, AgentService } from "./service";
 import { createPrintingService } from "../printing/routes";
+import { notifyAdmin, wakeAgent } from "./wake";
 
 const MAX_JSON_BYTES = 32 * 1024;
 const NO_STORE = { "Cache-Control": "no-store" } as const;
@@ -180,12 +181,10 @@ export async function handleAgentRequest(
         validation.value.printers &&
         validation.value.printers.length > 0
       ) {
-        void import("./wake").then((m) => m.wakeAgent(env));
+        await wakeAgent(env);
       }
       if (result.printJobs && result.printJobs.length > 0) {
-        void import("./wake").then((m) =>
-          m.notifyAdmin(env, { type: "ADMIN_ORDER_UPDATE" }),
-        );
+        await notifyAdmin(env, { type: "ADMIN_ORDER_UPDATE" });
       }
       return ok(result, 200, NO_STORE);
     } catch (caught) {

@@ -30,6 +30,7 @@ import { HttpRazorpayClient } from "../payments/razorpay";
 import { PaymentError, PaymentService } from "../payments/service";
 import { D1TrackingRepository } from "../tracking/repository";
 import { TrackingError, TrackingService } from "../tracking/service";
+import { wakeAgent } from "../agent/wake";
 
 const NO_STORE = { "Cache-Control": "no-store" } as const;
 const MAX_JSON_BODY_BYTES = 8 * 1024;
@@ -133,7 +134,7 @@ function actionsFromEnv(env: WorkerEnv): CustomerActions {
       paymentService.createCheckout(token, input.acknowledgedTotalPaise),
     verifyPayment: async (token, input) => {
       const result = await paymentService.verify(token, input);
-      void import("../agent/wake").then((m) => m.wakeAgent(env));
+      await wakeAgent(env);
       return result;
     },
     cancelPayment: (token, input) =>
@@ -630,7 +631,7 @@ export async function handleCustomerRequest(
       pathname === "/api/customer/payments/cash-select"
     ) {
       const res = await actions.selectCashPayment(token);
-      void import("../agent/wake").then((m) => m.wakeAgent(env));
+      await wakeAgent(env);
       return ok(res, 200, corsHeaders(env));
     }
     if (request.method === "POST" && pathname === "/api/customer/draft/files") {

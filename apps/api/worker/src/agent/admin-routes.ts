@@ -170,7 +170,7 @@ export async function handleAdminPrinterRequest(
       );
       // Fire-and-forget: push a live hardware probe to the connected agent
       // so the next heartbeat carries fresh data instead of stale D1 cache.
-      probeAgentPrinter(env, printerId);
+      await probeAgentPrinter(env, printerId);
       return withAdminCors(ok(result, 200), env.ADMIN_ALLOWED_ORIGIN);
     }
 

@@ -17,6 +17,7 @@ import {
   type RazorpayPayment,
 } from "./razorpay";
 import { PaymentService } from "./service";
+import { wakeAgent } from "../agent/wake";
 
 const MAX_WEBHOOK_BYTES = 128 * 1024;
 const NO_STORE = { "Cache-Control": "no-store" } as const;
@@ -226,7 +227,7 @@ export async function handleRazorpayWebhook(
       orderId,
       nowMs: dependencies.now(),
     });
-    void import("../agent/wake").then((m) => m.wakeAgent(env));
+    await wakeAgent(env);
     return ok({ received: true }, 200, NO_STORE);
   } catch {
     await dependencies.payments.finishProviderEvent({

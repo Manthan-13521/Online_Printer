@@ -21,6 +21,7 @@ import type { WorkerEnv } from "../env";
 import { error, ok } from "../http";
 import { D1PaymentRepository } from "../payments/repository";
 import { AddonServiceError, D1AddonServiceRepository } from "./repository";
+import { wakeAgent } from "../agent/wake";
 
 const MAX_BODY_BYTES = 16 * 1024;
 
@@ -437,7 +438,7 @@ export async function handleAdminManualOrdersRequest(
               "Order is not in MANUAL_PRINT status.",
             );
           } else {
-            void import("../agent/wake").then((m) => m.wakeAgent(env));
+            await wakeAgent(env);
             response = ok({ orderId, status: nextStatus });
           }
         } else if (action === "mark-finished") {
@@ -501,7 +502,7 @@ export async function handleAdminManualOrdersRequest(
                 ),
             ]);
 
-            void import("../agent/wake").then((m) => m.wakeAgent(env));
+            await wakeAgent(env);
             response = ok({ orderId, status: "COMPLETED" });
           }
         } else if (action === "set-pickup-charge") {
@@ -520,7 +521,7 @@ export async function handleAdminManualOrdersRequest(
               rec.dueAtPickupPaise,
               nowMs,
             );
-            void import("../agent/wake").then((m) => m.wakeAgent(env));
+            await wakeAgent(env);
             response = ok({ orderId, dueAtPickupPaise: rec.dueAtPickupPaise });
           }
         } else if (action === "confirm-cash") {
@@ -532,7 +533,7 @@ export async function handleAdminManualOrdersRequest(
               adminId: session.admin.id,
               nowMs,
             });
-            void import("../agent/wake").then((m) => m.wakeAgent(env));
+            await wakeAgent(env);
             response = ok(confirmed);
           } catch (caught) {
             if (

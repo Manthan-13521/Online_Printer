@@ -73,6 +73,8 @@ export class AgentDaemon {
   // Phase 2: Marks a wakeup-initiated pulse to skip redundant printer refresh
   private wakeupTriggered = false;
   private ws: WebSocket | null = null;
+  private wsReconnectDelayMs = 2_000;
+  private wsPingTimer: NodeJS.Timeout | null = null;
   private readonly executedCommandIds = new Map<string, number>();
   private readonly executionJournal: ExecutionJournalStore =
     new ExecutionJournalStore();
@@ -193,10 +195,15 @@ export class AgentDaemon {
 
     // Cleanup existing connection
     if (this.ws) {
+      this.ws.onopen = null;
       this.ws.onclose = null;
       this.ws.onerror = null;
       this.ws.onmessage = null;
       this.ws.close();
+    }
+    if (this.wsPingTimer) {
+      clearInterval(this.wsPingTimer);
+      this.wsPingTimer = null;
     }
 
     try {
@@ -206,6 +213,38 @@ export class AgentDaemon {
       wsUrl.searchParams.set("token", this.credentials.agentSecret);
 
       this.ws = new WebSocket(wsUrl.toString(), ["printgo-agent-v1"]);
+
+      this.ws.onopen = () => {
+        this.log(
+          "Connected to server WebSocket. Immediate work-check pulse scheduled.",
+        );
+        this.wsReconnectDelayMs = 2_000;
+        this.nextDelayMs = 0;
+        this.wakeupTriggered = true;
+        if (this.isBeating) {
+          this.pendingWakeup = true;
+        }
+        this.reschedulePulse();
+
+        // Periodic keep-alive ping (every 30s) prevents NAT gateway and Cloudflare idle connection drops
+        if (this.wsPingTimer) {
+          clearInterval(this.wsPingTimer);
+          this.wsPingTimer = null;
+        }
+        this.wsPingTimer = setInterval(() => {
+          if (
+            this.ws &&
+            (this.ws as unknown as { readyState?: number }).readyState === 1
+          ) {
+            try {
+              this.ws.send(JSON.stringify({ type: "PING" }));
+            } catch {
+              // Ignored
+            }
+          }
+        }, 30_000);
+        this.wsPingTimer.unref?.();
+      };
 
       this.ws.onmessage = (event) => {
         try {
@@ -249,12 +288,14 @@ export class AgentDaemon {
 
       this.ws.onclose = () => {
         this.ws = null;
-        if (this.nextDelayMs > 60_000) {
-          this.nextDelayMs = 60_000;
-          this.reschedulePulse();
+        if (this.wsPingTimer) {
+          clearInterval(this.wsPingTimer);
+          this.wsPingTimer = null;
         }
         if (this.running) {
-          setTimeout(() => this.connectWebSocket(), 15_000); // Reconnect backoff
+          const delay = this.wsReconnectDelayMs;
+          this.wsReconnectDelayMs = Math.min(15_000, delay * 2);
+          setTimeout(() => this.connectWebSocket(), delay);
         }
       };
     } catch (err) {
@@ -262,7 +303,9 @@ export class AgentDaemon {
         `Failed to initiate WebSocket: ${err instanceof Error ? err.message : String(err)}`,
       );
       if (this.running) {
-        setTimeout(() => this.connectWebSocket(), 15_000);
+        const delay = this.wsReconnectDelayMs;
+        this.wsReconnectDelayMs = Math.min(15_000, delay * 2);
+        setTimeout(() => this.connectWebSocket(), delay);
       }
     }
   }
@@ -306,6 +349,10 @@ export class AgentDaemon {
       this.ws.onclose = null;
       this.ws.close();
       this.ws = null;
+    }
+    if (this.wsPingTimer) {
+      clearInterval(this.wsPingTimer);
+      this.wsPingTimer = null;
     }
     this.unsubscribeFromPrinterEvents();
     this.consecutiveHealthyChecks = 0;

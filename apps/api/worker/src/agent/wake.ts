@@ -1,20 +1,25 @@
 import type { WorkerEnv } from "../env";
 
-export function wakeAgent(env: WorkerEnv): void {
+export async function wakeAgent(env: WorkerEnv): Promise<void> {
+  if (!env.AGENT_ROOM) return;
   try {
     const id = env.AGENT_ROOM.idFromName("shop");
     const room = env.AGENT_ROOM.get(id);
     const req = new Request("http://do/wake", { method: "POST" });
-    // Fire and forget without blocking
-    void room.fetch(req).catch(() => {
-      // Ignored
-    });
-  } catch {
-    // Ignored
+    const res = await room.fetch(req);
+    if (!res.ok) {
+      console.warn(`[WAKE] AgentRoom /wake returned HTTP ${res.status}`);
+    }
+  } catch (err) {
+    console.warn("[WAKE] Failed to wake agent via Durable Object:", err);
   }
 }
 
-export function probeAgentPrinter(env: WorkerEnv, printerId: string): void {
+export async function probeAgentPrinter(
+  env: WorkerEnv,
+  printerId: string,
+): Promise<void> {
+  if (!env.AGENT_ROOM) return;
   try {
     const id = env.AGENT_ROOM.idFromName("shop");
     const room = env.AGENT_ROOM.get(id);
@@ -23,18 +28,23 @@ export function probeAgentPrinter(env: WorkerEnv, printerId: string): void {
       body: JSON.stringify({ printerId }),
       headers: { "Content-Type": "application/json" },
     });
-    void room.fetch(req).catch(() => {
-      // Ignored
-    });
-  } catch {
-    // Ignored
+    const res = await room.fetch(req);
+    if (!res.ok) {
+      console.warn(`[PROBE] AgentRoom /probe returned HTTP ${res.status}`);
+    }
+  } catch (err) {
+    console.warn(
+      "[PROBE] Failed to probe agent printer via Durable Object:",
+      err,
+    );
   }
 }
 
-export function notifyAdmin(
+export async function notifyAdmin(
   env: WorkerEnv,
   payload?: Record<string, unknown>,
-): void {
+): Promise<void> {
+  if (!env.AGENT_ROOM) return;
   try {
     const id = env.AGENT_ROOM.idFromName("shop");
     const room = env.AGENT_ROOM.get(id);
@@ -43,11 +53,16 @@ export function notifyAdmin(
       body: JSON.stringify(payload ?? { type: "ADMIN_ORDER_UPDATE" }),
       headers: { "Content-Type": "application/json" },
     });
-    // Fire and forget without blocking
-    void room.fetch(req).catch(() => {
-      // Ignored
-    });
-  } catch {
-    // Ignored
+    const res = await room.fetch(req);
+    if (!res.ok) {
+      console.warn(
+        `[NOTIFY_ADMIN] AgentRoom /notify-admin returned HTTP ${res.status}`,
+      );
+    }
+  } catch (err) {
+    console.warn(
+      "[NOTIFY_ADMIN] Failed to notify admin via Durable Object:",
+      err,
+    );
   }
 }
