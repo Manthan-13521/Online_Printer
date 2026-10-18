@@ -62,7 +62,6 @@ export async function handleAdminOrdersRequest(
       const printingService = createPrintingService(env);
       const result = await printingService.recoverQueue(session.admin.id);
       void import("../agent/wake").then((m) => {
-        m.wakeAgent(env);
         m.probeAgentPrinter(env, "all");
       });
       return withAdminCors(ok(result, 200), env.ADMIN_ALLOWED_ORIGIN);
@@ -94,7 +93,6 @@ export async function handleAdminOrdersRequest(
         printerId,
       );
       void import("../agent/wake").then((m) => {
-        m.wakeAgent(env);
         m.probeAgentPrinter(env, printerId ?? "all");
       });
       return withAdminCors(ok(result, 200), env.ADMIN_ALLOWED_ORIGIN);

@@ -68,6 +68,8 @@ export class AgentDaemon {
   private isBeating = false;
   // Phase 1: Survives the WAKE_UP race when a pulse is in progress
   private pendingWakeup = false;
+  // Phase 2: Marks an explicit printer probe request (e.g. from recovery or health check)
+  private pendingProbe = false;
   // Phase 2: Marks a wakeup-initiated pulse to skip redundant printer refresh
   private wakeupTriggered = false;
   private ws: WebSocket | null = null;
@@ -226,7 +228,9 @@ export class AgentDaemon {
               `Received PROBE_PRINTER request for printer: ${targetPrinterId ?? "all"}`,
             );
             // Force immediate fresh hardware probe on next pulse.
-            // Do NOT set wakeupTriggered — that flag suppresses printer refresh.
+            // Explicitly set pendingProbe and clear wakeupTriggered so racing WAKE_UP cannot suppress it.
+            this.pendingProbe = true;
+            this.wakeupTriggered = false;
             this.lastPrinterRefreshMs = -Infinity;
             this.nextDelayMs = 0;
             if (this.isBeating) {
@@ -348,9 +352,15 @@ export class AgentDaemon {
         : this.isPrinterMonitoringStable
           ? 15 * 60 * 1_000
           : this.printerRefreshMs;
+      const isExplicitProbe =
+        this.pendingProbe || this.lastPrinterRefreshMs === -Infinity;
+      this.pendingProbe = false;
+
       // Phase 2: On a wakeup-triggered pulse, skip printer refresh if we have
       // recent healthy reports — speed matters more than a redundant probe.
+      // NEVER skip if an explicit probe was requested!
       const skipRefreshForWakeup =
+        !isExplicitProbe &&
         this.wakeupTriggered &&
         this.printerReports.length > 0 &&
         this.printerReports.some(
@@ -362,7 +372,8 @@ export class AgentDaemon {
       this.wakeupTriggered = false; // consume the flag
       const refreshPrinters =
         !skipRefreshForWakeup &&
-        (this.lastPrinterRefreshMs === -Infinity ||
+        (isExplicitProbe ||
+          this.lastPrinterRefreshMs === -Infinity ||
           Date.now() - this.lastPrinterRefreshMs >= refreshEveryMs);
       if (refreshPrinters) {
         const summaries = await this.printerAdapter.listPrinters();
@@ -644,8 +655,14 @@ export class AgentDaemon {
       if (this.pendingWakeup) {
         this.pendingWakeup = false;
         this.nextDelayMs = 0;
-        this.wakeupTriggered = true;
-        this.log("Processing deferred WAKE_UP signal from concurrent pulse");
+        if (!this.pendingProbe) {
+          this.wakeupTriggered = true;
+        }
+        this.log(
+          this.pendingProbe
+            ? "Processing deferred PROBE_PRINTER signal from concurrent pulse"
+            : "Processing deferred WAKE_UP signal from concurrent pulse",
+        );
       }
     }
   }
@@ -1008,6 +1025,10 @@ export class AgentDaemon {
 
   isPendingWakeup(): boolean {
     return this.pendingWakeup;
+  }
+
+  isPendingProbe(): boolean {
+    return this.pendingProbe;
   }
 
   isWakeupTriggered(): boolean {

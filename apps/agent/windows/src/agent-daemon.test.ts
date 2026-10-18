@@ -979,6 +979,163 @@ describe("AgentDaemon", () => {
         daemon.stop();
         vi.useRealTimers();
       });
+
+      it("PROBE_PRINTER forces immediate hardware probe and sends fresh printer report in heartbeat", async () => {
+        vi.useFakeTimers();
+        const client = {
+          sendHeartbeat: vi.fn(() =>
+            Promise.resolve({
+              acknowledged: true,
+              serverTimeMs: Date.now(),
+              onlinePrintingEnabled: true,
+              printJobs: [],
+            }),
+          ),
+        };
+        const adapter = createMockAdapter();
+
+        const daemon = new AgentDaemon({
+          credentialStore: createMockStore({
+            agentId: "a1",
+            agentSecret: "s1",
+            serverUrl: "http://localhost:8787",
+            displayName: "Test Agent",
+          }),
+          client: client as unknown as AgentClient,
+          printerAdapter: adapter,
+          heartbeatIntervalMs: 5_000,
+        });
+
+        await daemon.start();
+        expect(adapter.listPrinters).toHaveBeenCalledTimes(1);
+        expect(client.sendHeartbeat).toHaveBeenCalledTimes(1);
+
+        // Simulate WebSocket receiving PROBE_PRINTER
+        (
+          daemon as unknown as {
+            pendingProbe: boolean;
+            wakeupTriggered: boolean;
+            lastPrinterRefreshMs: number;
+            nextDelayMs: number;
+            reschedulePulse: () => void;
+          }
+        ).pendingProbe = true;
+        (daemon as unknown as { wakeupTriggered: boolean }).wakeupTriggered =
+          false;
+        (
+          daemon as unknown as { lastPrinterRefreshMs: number }
+        ).lastPrinterRefreshMs = -Infinity;
+        (daemon as unknown as { nextDelayMs: number }).nextDelayMs = 0;
+        (
+          daemon as unknown as { reschedulePulse: () => void }
+        ).reschedulePulse();
+
+        expect(daemon.isPendingProbe()).toBe(true);
+
+        // Advance 0ms timer to trigger pulse
+        await vi.advanceTimersByTimeAsync(0);
+
+        // Hardware probe must be called again immediately
+        expect(adapter.listPrinters).toHaveBeenCalledTimes(2);
+        expect(client.sendHeartbeat).toHaveBeenCalledTimes(2);
+        expect(daemon.isPendingProbe()).toBe(false);
+
+        daemon.stop();
+        vi.useRealTimers();
+      });
+
+      it("PROBE_PRINTER while pulse is in flight preserves pendingProbe and executes hardware probe on follow-up", async () => {
+        vi.useFakeTimers();
+        let resolveHeartbeat: (val: unknown) => void = () => undefined;
+        let heartbeatCount = 0;
+        const client = {
+          sendHeartbeat: vi.fn(() => {
+            heartbeatCount++;
+            if (heartbeatCount === 1) {
+              return Promise.resolve({
+                acknowledged: true,
+                serverTimeMs: Date.now(),
+                onlinePrintingEnabled: true,
+                printJobs: [],
+              });
+            }
+            return new Promise((resolve) => {
+              resolveHeartbeat = resolve;
+            });
+          }),
+        };
+        const adapter = createMockAdapter();
+
+        const daemon = new AgentDaemon({
+          credentialStore: createMockStore({
+            agentId: "a1",
+            agentSecret: "s1",
+            serverUrl: "http://localhost:8787",
+            displayName: "Test Agent",
+          }),
+          client: client as unknown as AgentClient,
+          printerAdapter: adapter,
+          heartbeatIntervalMs: 5_000,
+        });
+
+        await daemon.start();
+        expect(adapter.listPrinters).toHaveBeenCalledTimes(1);
+        expect(client.sendHeartbeat).toHaveBeenCalledTimes(1);
+
+        // Advance 60s for pulse 2
+        vi.advanceTimersByTime(60_000);
+        await vi.waitFor(() =>
+          expect(client.sendHeartbeat).toHaveBeenCalledTimes(2),
+        );
+
+        // While pulse 2 is in flight, PROBE_PRINTER arrives
+        (
+          daemon as unknown as {
+            pendingProbe: boolean;
+            wakeupTriggered: boolean;
+            lastPrinterRefreshMs: number;
+            nextDelayMs: number;
+            isBeating: boolean;
+            pendingWakeup: boolean;
+            reschedulePulse: () => void;
+          }
+        ).pendingProbe = true;
+        (daemon as unknown as { wakeupTriggered: boolean }).wakeupTriggered =
+          false;
+        (
+          daemon as unknown as { lastPrinterRefreshMs: number }
+        ).lastPrinterRefreshMs = -Infinity;
+        (daemon as unknown as { nextDelayMs: number }).nextDelayMs = 0;
+        if ((daemon as unknown as { isBeating: boolean }).isBeating) {
+          (daemon as unknown as { pendingWakeup: boolean }).pendingWakeup =
+            true;
+        }
+        (
+          daemon as unknown as { reschedulePulse: () => void }
+        ).reschedulePulse();
+
+        expect(daemon.isPendingProbe()).toBe(true);
+        expect(daemon.isPendingWakeup()).toBe(true);
+
+        // Complete the in-flight heartbeat
+        resolveHeartbeat({
+          acknowledged: true,
+          serverTimeMs: Date.now(),
+          onlinePrintingEnabled: true,
+          printJobs: [],
+        });
+        await vi.waitFor(() => expect(daemon.isPendingWakeup()).toBe(false));
+
+        // Advance 0ms timer for follow-up pulse
+        await vi.advanceTimersByTimeAsync(0);
+
+        // Follow-up pulse must execute the probe (adapter called)
+        expect(adapter.listPrinters).toHaveBeenCalledTimes(3);
+        expect(client.sendHeartbeat).toHaveBeenCalledTimes(3);
+
+        daemon.stop();
+        vi.useRealTimers();
+      });
     });
   });
 });

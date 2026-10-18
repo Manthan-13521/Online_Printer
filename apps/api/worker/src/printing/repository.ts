@@ -3076,6 +3076,20 @@ export class D1PrintingRepository implements PrintingRepository {
       }>();
 
     const orderRows = orders.results ?? [];
+    if (orderRows.length === 0) {
+      return {
+        isStalled: false,
+        stalledSinceMs: null,
+        stalledDurationMs: null,
+        stalledOrderId: null,
+        stalledOrderCode: null,
+        reason: null,
+        printerIssue: null,
+        waitingCount: 0,
+        activeCount: 0,
+        needsReviewCount: 0,
+      };
+    }
     let waitingCount = 0;
     let activeCount = 0;
     let needsReviewCount = 0;
@@ -3322,28 +3336,33 @@ export class D1PrintingRepository implements PrintingRepository {
     const STALL_THRESHOLD_MS = 5 * 60 * 1000;
     const details: string[] = [];
 
-    // 1. Identify primary/active printer and agent connectivity
-    const printerRow = await this.db
+    // 1. Identify active printers, primary printer, and agent connectivity in a single query
+    const activePrintersRows = await this.db
       .prepare(
         `SELECT p.id, p.agent_id, p.display_name, p.windows_printer_name, p.status, p.status_reason,
+                p.capabilities_json, p.verified_capabilities_json, p.enabled_services_json,
                 a.last_heartbeat_at_ms, a.is_active
          FROM printers p
          JOIN agents a ON a.id = p.agent_id
          WHERE a.is_active = 1 AND p.enabled = 1
-         ORDER BY (p.status = 'ONLINE') DESC, p.priority ASC
-         LIMIT 1`,
+         ORDER BY (p.status = 'ONLINE') DESC, p.priority ASC`,
       )
-      .first<{
+      .all<{
         id: string;
         agent_id: string;
         display_name: string;
         windows_printer_name: string;
         status: string;
         status_reason: string | null;
+        capabilities_json: string | null;
+        verified_capabilities_json: string | null;
+        enabled_services_json: string | null;
         last_heartbeat_at_ms: number | null;
         is_active: number;
       }>();
 
+    const activePrintersList = activePrintersRows.results ?? [];
+    const printerRow = activePrintersList[0] ?? null;
     const isPrinterOnline = printerRow?.status === "ONLINE";
     const printerDisplayName = printerRow?.display_name ?? null;
 
@@ -3482,30 +3501,9 @@ export class D1PrintingRepository implements PrintingRepository {
     // If any order in QUEUED or RETRY_PENDING cannot be printed by ANY enabled active printer
     // (e.g. order requires Duplex or Color or A3, but no enabled printer supports it):
     // Move it to ADMIN_ACTION_REQUIRED to unblock the queue and notify the operator!
-    const activePrintersRows = await this.db
-      .prepare(
-        `SELECT p.id, p.agent_id, p.display_name, p.windows_printer_name, p.status, p.status_reason,
-                p.capabilities_json, p.verified_capabilities_json, p.enabled_services_json
-         FROM printers p
-         JOIN agents a ON a.id = p.agent_id
-         WHERE a.is_active = 1 AND p.enabled = 1`,
-      )
-      .all<{
-        id: string;
-        agent_id: string;
-        display_name: string;
-        windows_printer_name: string;
-        status: string;
-        status_reason: string | null;
-        capabilities_json: string | null;
-        verified_capabilities_json: string | null;
-        enabled_services_json: string | null;
-      }>();
-    const activePrintersList = activePrintersRows.results ?? [];
-
     const waitingForReview = await this.db
       .prepare(
-        `SELECT o.id, o.public_job_code, f.paper_size, f.color_mode, f.sides
+        `SELECT o.id, o.public_job_code, o.status, f.paper_size, f.color_mode, f.sides
          FROM orders o
          JOIN order_files f ON f.order_id = o.id
          WHERE o.status IN ('QUEUED', 'RETRY_PENDING') AND o.cleanup_state = 'ACTIVE'
@@ -3514,6 +3512,7 @@ export class D1PrintingRepository implements PrintingRepository {
       .all<{
         id: string;
         public_job_code: string | null;
+        status: string;
         paper_size: string;
         color_mode: string;
         sides: string;
@@ -3524,6 +3523,8 @@ export class D1PrintingRepository implements PrintingRepository {
       {
         orderId: string;
         publicJobCode: string | null;
+        status: string;
+        quarantined?: boolean;
         files: Array<{ paper_size: string; color_mode: string; sides: string }>;
       }
     >();
@@ -3531,6 +3532,7 @@ export class D1PrintingRepository implements PrintingRepository {
       const existing = waitingOrdersMap.get(row.id) ?? {
         orderId: row.id,
         publicJobCode: row.public_job_code,
+        status: row.status,
         files: [],
       };
       existing.files.push({
@@ -3624,6 +3626,7 @@ export class D1PrintingRepository implements PrintingRepository {
           )
           .run();
 
+        orderData.quarantined = true;
         capabilityQuarantinedCount++;
         details.push(
           `Order ${orderData.publicJobCode ?? orderId} requires ${missingReason}, but no enabled printer supports this. Moved to Needs Review (queue unblocked).`,
@@ -3689,15 +3692,13 @@ export class D1PrintingRepository implements PrintingRepository {
       }
     }
 
-    // 5. Calculate remaining waiting orders count
-    const waitingRes = await this.db
-      .prepare(
-        `SELECT COUNT(*) as count FROM orders
-         WHERE status = 'QUEUED' AND cleanup_state = 'ACTIVE'`,
-      )
-      .first<{ count: number }>();
-
-    const resumedOrdersCount = waitingRes?.count ?? 0;
+    // 5. Calculate remaining waiting orders count without redundant D1 query
+    let resumedOrdersCount = 0;
+    for (const orderData of waitingOrdersMap.values()) {
+      if (orderData.status === "QUEUED" && !orderData.quarantined) {
+        resumedOrdersCount++;
+      }
+    }
     details.push(
       `Print queue now has ${resumedOrdersCount} order(s) ready to print in FIFO/priority order.`,
     );
