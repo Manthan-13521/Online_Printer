@@ -267,6 +267,50 @@ describe("Printer Helpers & Components", () => {
       fireEvent.click(screen.getByRole("button", { name: "Disable" }));
       expect(handleToggle).toHaveBeenCalledWith(samplePrinter);
     });
+
+    it("displays Problem alert box and Check Again button when printer status is UNKNOWN", () => {
+      const handleCheckHealth = vi.fn();
+      const unknownPrinter: AdminPrinterDetails = {
+        ...samplePrinter,
+        status: "UNKNOWN",
+        statusReason: "Printer readiness is not reported by Windows",
+      };
+
+      render(
+        <PrinterCard
+          printer={unknownPrinter}
+          isDefault={true}
+          isAgentOnline={true}
+          activeAgent={
+            { id: "ag-1", isOnline: true } as unknown as AdminAgentDetails
+          }
+          testPrint={null}
+          isTesting={false}
+          togglingPrinterId={null}
+          settingDefaultId={null}
+          checkingHealthId={null}
+          requestingTestPrintId={null}
+          displayedPrinters={[unknownPrinter]}
+          onOpenTestPrintMenu={vi.fn()}
+          onOpenSettings={vi.fn()}
+          onOpenVerification={vi.fn()}
+          onRequestTestPrint={vi.fn()}
+          onTogglePrinter={vi.fn()}
+          onSetDefault={vi.fn()}
+          onCheckHealth={handleCheckHealth}
+        />,
+      );
+
+      expect(screen.getByText("Problem:")).toBeTruthy();
+      expect(
+        screen.getByText(/Windows has not reported printer readiness/i),
+      ).toBeTruthy();
+
+      const checkAgainBtn = screen.getByRole("button", { name: "Check Again" });
+      expect(checkAgainBtn).toBeTruthy();
+      fireEvent.click(checkAgainBtn);
+      expect(handleCheckHealth).toHaveBeenCalledWith(unknownPrinter.id);
+    });
   });
 
   describe("PrinterSettingsModal", () => {

@@ -3721,15 +3721,28 @@ export class D1PrintingRepository implements PrintingRepository {
       )
       .run();
 
-    const finalMessage =
+    let baseMessage: string;
+    if (capabilityQuarantinedCount > 0) {
+      baseMessage = `Print Recovery complete: ${capabilityQuarantinedCount} order(s) moved to Needs Review (printer capability mismatch). ${resumedOrdersCount} order(s) ready in queue.`;
+    } else if (
       recoveredOrdersCount > 0 ||
-      capabilityQuarantinedCount > 0 ||
       reviewRows.length > 0 ||
       (stalledInFlight.results?.length ?? 0) > 0
-        ? capabilityQuarantinedCount > 0
-          ? `Print Recovery complete: ${capabilityQuarantinedCount} order(s) moved to Needs Review (printer capability mismatch). ${resumedOrdersCount} order(s) ready in queue.`
-          : `Print Recovery complete: ${recoveredOrdersCount} order(s) reclaimed safely, ${reviewRows.length} lock(s) cleared. ${resumedOrdersCount} order(s) ready in queue.`
-        : `Print Recovery checked: No stalled in-flight orders or stale locks found. ${resumedOrdersCount} order(s) ready in queue.`;
+    ) {
+      baseMessage = `Print Recovery complete: ${recoveredOrdersCount} order(s) reclaimed safely, ${reviewRows.length} lock(s) cleared. ${resumedOrdersCount} order(s) ready in queue.`;
+    } else {
+      baseMessage = `Print Recovery checked: No stalled in-flight orders or stale locks found. ${resumedOrdersCount} order(s) ready in queue.`;
+    }
+
+    if (!isPrinterOnline) {
+      details.push(
+        `Dispatched hardware probe to Windows Agent to refresh printer readiness for "${printerDisplayName ?? "all printers"}".`,
+      );
+    }
+
+    const finalMessage = !isPrinterOnline
+      ? `${baseMessage} Note: Printer "${printerDisplayName ?? "Unknown"}" is currently ${printerRow?.status ?? "OFFLINE"}. Dispatched hardware probe to Agent.`
+      : baseMessage;
 
     return {
       recoveredOrdersCount,

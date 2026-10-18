@@ -10,3 +10,4 @@ export * from "./UploadPdfsStep";
 export * from "./OrderReviewSummary";
 export * from "./FloatingLoadingIndicator";
 export * from "./BowingStaffIllustration";
+export * from "./WhatsAppFloatingButton";

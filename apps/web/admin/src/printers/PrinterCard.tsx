@@ -55,7 +55,11 @@ export function PrinterCard({
   onCheckHealth,
 }: PrinterCardProps) {
   const hasProblem =
-    p.isPaused || p.status === "BLOCKED" || p.status === "ERROR";
+    p.isPaused ||
+    p.status === "BLOCKED" ||
+    p.status === "ERROR" ||
+    p.status === "OFFLINE" ||
+    p.status === "UNKNOWN";
 
   return (
     <div
@@ -312,7 +316,7 @@ export function PrinterCard({
         >
           <div>
             <strong>Problem: </strong>
-            {friendlyPrinterMessage(p.statusReason, p.pausedReason)}
+            {friendlyPrinterMessage(p.status, p.statusReason || p.pausedReason)}
           </div>
           <button
             type="button"

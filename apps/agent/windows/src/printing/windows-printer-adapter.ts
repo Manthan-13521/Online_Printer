@@ -108,6 +108,7 @@ interface CimPrinterOutput {
   PrinterStatus?: number;
   DetectedErrorState?: number;
   ExtendedPrinterStatus?: number;
+  ModernStatus?: string | null;
   Color?: boolean;
   Duplex?: boolean;
   Capabilities?: number[];
@@ -223,7 +224,17 @@ export class WindowsPrinterAdapter implements PrinterAdapter {
     const fields = full
       ? "Name, Default, WorkOffline, PrinterStatus, DetectedErrorState, ExtendedPrinterStatus, Color, CapabilityDescriptions, PrinterPaperNames, PortName, DriverName"
       : "Name, WorkOffline, PrinterStatus, DetectedErrorState, DriverName, PortName";
-    const psCommand = `Get-CimInstance Win32_Printer | Select-Object ${fields} | ConvertTo-Json -Compress`;
+    const psCommand = `
+$modern = @{}
+try {
+  Get-Printer -ErrorAction SilentlyContinue | ForEach-Object {
+    if ($_.Name) { $modern[$_.Name] = [string]$_.PrinterStatus }
+  }
+} catch {}
+Get-CimInstance Win32_Printer | Select-Object ${fields} | ForEach-Object {
+  $_ | Add-Member -NotePropertyName ModernStatus -NotePropertyValue ($modern[$_.Name]) -Force -PassThru
+} | ConvertTo-Json -Compress
+    `.trim();
 
     try {
       const output = (await this.executor(psCommand)).trim();
@@ -476,6 +487,55 @@ Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $printer } | Select-O
       }
     }
 
+    // Modern MSFT_Printer status (from Get-Printer) for explicit faults
+    const modern = p.ModernStatus
+      ? String(p.ModernStatus).trim().toLowerCase()
+      : null;
+    if (modern) {
+      if (
+        modern === "offline" ||
+        modern === "8" ||
+        modern === "notavailable" ||
+        modern === "13" ||
+        modern === "serverunknown" ||
+        modern === "24"
+      ) {
+        return { availability: "OFFLINE", message: "Printer is offline" };
+      }
+      if (modern === "paused" || modern === "1") {
+        return { availability: "BLOCKED", message: "Printer is paused" };
+      }
+      if (modern === "error" || modern === "2") {
+        return { availability: "BLOCKED", message: "Printer error reported" };
+      }
+      if (
+        modern === "paperjam" ||
+        modern === "4" ||
+        modern === "paperproblem" ||
+        modern === "7"
+      ) {
+        return { availability: "BLOCKED", message: "Paper Jam" };
+      }
+      if (modern === "paperout" || modern === "5") {
+        return { availability: "BLOCKED", message: "Out of Paper" };
+      }
+      if (modern === "dooropen" || modern === "23") {
+        return { availability: "BLOCKED", message: "Door or Cover Open" };
+      }
+      if (modern === "notoner" || modern === "19") {
+        return { availability: "BLOCKED", message: "Out of Toner" };
+      }
+      if (modern === "outputbinfull" || modern === "12") {
+        return { availability: "BLOCKED", message: "Output Bin Full" };
+      }
+      if (modern === "userintervention" || modern === "21") {
+        return {
+          availability: "BLOCKED",
+          message: "User intervention required",
+        };
+      }
+    }
+
     const host = extractHostFromPortName(p.PortName);
     if (host !== null) {
       if (isNetworkReachable === false) {
@@ -494,8 +554,32 @@ Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $printer } | Select-O
       return { availability: "ONLINE" };
     }
 
-    // NOTE: PrinterStatus === 2 (Unknown) must NOT be promoted to ONLINE.
-    // Without positive proof of readiness, return UNKNOWN to fail closed.
+    // When CIM reports PrinterStatus === 2 (Unknown) for WSD/USB printers,
+    // modern Windows PrintManagement API (Get-Printer / MSFT_Printer) often reports
+    // 'Normal', 'Idle', 'Ready', or actively printing/busy.
+    if (modern) {
+      const isModernReady =
+        modern === "normal" ||
+        modern === "0" ||
+        modern === "idle" ||
+        modern === "ready" ||
+        modern === "printing" ||
+        modern === "11" ||
+        modern === "busy" ||
+        modern === "10" ||
+        modern === "processing" ||
+        modern === "15" ||
+        modern === "warmingup" ||
+        modern === "17" ||
+        modern === "powersave" ||
+        modern === "25";
+      if (isModernReady) {
+        return { availability: "ONLINE" };
+      }
+    }
+
+    // NOTE: Without positive proof of readiness from CIM, socket probe, or Get-Printer,
+    // return UNKNOWN to fail closed. NEVER blindly convert UNKNOWN into ONLINE.
     return {
       availability: "UNKNOWN",
       message: "Printer readiness is not reported by Windows",
@@ -525,7 +609,14 @@ Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $printer } | Select-O
     const escapedName = printerId.replace(/'/g, "''");
     const psCommand = `
 $printer = '${escapedName}'
-Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $printer } | Select-Object Name, WorkOffline, PrinterStatus, DetectedErrorState, ExtendedPrinterStatus, PortName | ConvertTo-Json -Compress
+$modern = $null
+try {
+  $mp = Get-Printer -Name $printer -ErrorAction SilentlyContinue
+  if ($mp) { $modern = [string]$mp.PrinterStatus }
+} catch {}
+Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $printer } | Select-Object Name, WorkOffline, PrinterStatus, DetectedErrorState, ExtendedPrinterStatus, PortName | ForEach-Object {
+  $_ | Add-Member -NotePropertyName ModernStatus -NotePropertyValue $modern -Force -PassThru
+} | ConvertTo-Json -Compress
     `.trim();
 
     try {
@@ -667,8 +758,15 @@ ${sumatraResolutionPs}
 
 # Fresh readiness in this same process, before any physical side effect. Never trust the idle snapshot here.
 $ready = Get-CimInstance Win32_Printer -ErrorAction Stop | Where-Object { $_.Name -eq $printer }
+$modernReady = $null
+try {
+    $mp = Get-Printer -Name $printer -ErrorAction SilentlyContinue
+    if ($mp) { $modernReady = [string]$mp.PrinterStatus }
+} catch {}
+
 if (-not $ready -or $ready.WorkOffline -or $ready.PrinterStatus -in @(6,7) -or
-    $ready.DetectedErrorState -in @(4,6,7,8,9,10,11)) {
+    $ready.DetectedErrorState -in @(4,6,7,8,9,10,11) -or
+    ($modernReady -and $modernReady.ToLower() -in @('offline', '8', 'error', '2', 'paperjam', '4', 'paperout', '5', 'dooropen', '23', 'notoner', '19', 'paused', '1', 'notavailable', '13', 'serverunknown', '24'))) {
     throw "Printer readiness could not be confirmed before submission."
 }
 

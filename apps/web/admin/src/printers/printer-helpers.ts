@@ -16,10 +16,14 @@ export function friendlyPrinterMessage(
   code: string | null | undefined,
   detail: string | null | undefined,
 ): string {
+  const text = `${detail ?? ""} ${code ?? ""}`.trim().toLowerCase();
+  if (text.includes("paper tray is empty")) {
+    return "Paper tray is empty. Please load paper.";
+  }
+  if (text.includes("not reported by windows")) {
+    return "Windows has not reported printer readiness. Click 'Check Again' to probe hardware.";
+  }
   if (detail && detail.trim().length > 0) {
-    if (detail.toLowerCase().includes("paper tray is empty")) {
-      return "Paper tray is empty. Please load paper.";
-    }
     return detail;
   }
   switch (code) {
@@ -44,6 +48,8 @@ export function friendlyPrinterMessage(
       return "Printer requires attention.";
     case "PRINTER_ERROR":
       return "Printer hardware reported an error.";
+    case "UNKNOWN":
+      return "Printer readiness status is not reported by Windows. Click 'Check Again' to probe hardware.";
     default:
       return "Printer reported an issue.";
   }

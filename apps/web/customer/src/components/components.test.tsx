@@ -20,6 +20,7 @@ import {
   ShopInfoModal,
   ShopUnavailableState,
   UploadPdfsStep,
+  WhatsAppFloatingButton,
   customerErrorMessage,
   humanFileSize,
   isValidPhone,
@@ -305,7 +306,7 @@ describe("Customer Components & Helpers", () => {
       expect(handleRetry).toHaveBeenCalled();
     });
 
-    it("renders shop closed state with apologetic message and Try Again button", () => {
+    it("renders shop closed state with apologetic message, without Try Again button, and with WhatsApp button", () => {
       const handleRetry = vi.fn();
       render(
         <ShopUnavailableState
@@ -324,18 +325,26 @@ describe("Customer Components & Helpers", () => {
       expect(screen.getByText("We reopen tomorrow at 8:00 AM.")).toBeTruthy();
       expect(screen.getByRole("link", { name: "9876543210" })).toBeTruthy();
 
-      const retryBtn = screen.getByRole("button", { name: /try again/i });
-      expect(retryBtn).toBeTruthy();
-      fireEvent.click(retryBtn);
-      expect(handleRetry).toHaveBeenCalledTimes(1);
+      // Try Again button must NOT be present on unavailable screen
+      expect(screen.queryByRole("button", { name: /try again/i })).toBeNull();
+
+      // WhatsApp floating button MUST be present
+      const waButton = screen.getByRole("link", { name: /chat on whatsapp/i });
+      expect(waButton).toBeTruthy();
+      expect(waButton.getAttribute("href")).toContain(
+        "https://wa.me/919876543210",
+      );
+      expect(waButton.getAttribute("href")).toContain(
+        encodeURIComponent("PrintGo Downtown"),
+      );
     });
 
-    it("renders printer unavailable state with apologetic message", () => {
-      const handleRetry = vi.fn();
+    it("renders printer unavailable state with apologetic message, without Try Again button, and with WhatsApp button", () => {
       render(
         <ShopUnavailableState
           reason="PRINTER_UNAVAILABLE"
-          onRetry={handleRetry}
+          shopName="PrintGo Downtown"
+          contactPhone="+91 98765 43210"
         />,
       );
 
@@ -348,9 +357,36 @@ describe("Customer Components & Helpers", () => {
         ),
       ).toBeTruthy();
 
-      const retryBtn = screen.getByRole("button", { name: /try again/i });
-      fireEvent.click(retryBtn);
-      expect(handleRetry).toHaveBeenCalledTimes(1);
+      // Try Again button must NOT be present
+      expect(screen.queryByRole("button", { name: /try again/i })).toBeNull();
+
+      // WhatsApp floating button MUST be present
+      const waButton = screen.getByRole("link", { name: /chat on whatsapp/i });
+      expect(waButton).toBeTruthy();
+      expect(waButton.getAttribute("href")).toContain(
+        "https://wa.me/919876543210",
+      );
+    });
+  });
+
+  describe("WhatsAppFloatingButton", () => {
+    it("formats 10-digit Indian phone with 91 prefix and default encoded message", () => {
+      render(
+        <WhatsAppFloatingButton phone="9876543210" shopName="QuickPrint" />,
+      );
+      const link = screen.getByRole("link", { name: /chat on whatsapp/i });
+      expect(link.getAttribute("href")).toBe(
+        `https://wa.me/919876543210?text=${encodeURIComponent(
+          "Hello QuickPrint, I wanted to print some documents, but online printing is currently unavailable. Could you please assist?",
+        )}`,
+      );
+      expect(link.getAttribute("target")).toBe("_blank");
+      expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+    });
+
+    it("does not render when phone is empty or missing", () => {
+      const { container } = render(<WhatsAppFloatingButton phone="" />);
+      expect(container.firstChild).toBeNull();
     });
   });
 

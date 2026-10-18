@@ -123,6 +123,7 @@ describe("WindowsPrinterAdapter with mock executor", () => {
     expect(submit).toContain(
       "$ready.DetectedErrorState -in @(4,6,7,8,9,10,11)",
     );
+    expect(submit).toContain("$modernReady");
     expect(submit.indexOf("$ready = Get-CimInstance")).toBeLessThan(
       submit.indexOf("ProcessStartInfo"),
     );
@@ -246,6 +247,74 @@ describe("WindowsPrinterAdapter with mock executor", () => {
     await adapter.listPrinters();
     const status = await adapter.getStatus("Ambiguous Printer");
     expect(status.availability).toBe("UNKNOWN");
+  });
+
+  it("returns ONLINE when CIM reports PrinterStatus=2 but modern Get-Printer confirms Normal (e.g. HP WSD)", async () => {
+    const adapter = new WindowsPrinterAdapter(() =>
+      Promise.resolve(
+        JSON.stringify({
+          Name: "HP Laser MFP 131 133 135-138",
+          PortName: "WSD-a0997a0e-8c55-4451-8692-de08ed3098bb",
+          WorkOffline: false,
+          PrinterStatus: 2, // CIM reports Unknown
+          DetectedErrorState: 0,
+          ModernStatus: "Normal", // Get-Printer reports Normal
+        }),
+      ),
+    );
+    await adapter.listPrinters();
+    const status = await adapter.getStatus("HP Laser MFP 131 133 135-138");
+    expect(status.availability).toBe("ONLINE");
+  });
+
+  it("returns OFFLINE when modern Get-Printer reports Offline even if CIM reports PrinterStatus=2", async () => {
+    const adapter = new WindowsPrinterAdapter(() =>
+      Promise.resolve(
+        JSON.stringify({
+          Name: "HP Laser MFP 131 133 135-138",
+          WorkOffline: false,
+          PrinterStatus: 2,
+          ModernStatus: "Offline",
+        }),
+      ),
+    );
+    await adapter.listPrinters();
+    const status = await adapter.getStatus("HP Laser MFP 131 133 135-138");
+    expect(status.availability).toBe("OFFLINE");
+  });
+
+  it("returns BLOCKED when modern Get-Printer reports PaperJam or DoorOpen", async () => {
+    const adapter = new WindowsPrinterAdapter(() =>
+      Promise.resolve(
+        JSON.stringify({
+          Name: "HP Laser MFP 131 133 135-138",
+          WorkOffline: false,
+          PrinterStatus: 2,
+          ModernStatus: "PaperJam",
+        }),
+      ),
+    );
+    await adapter.listPrinters();
+    const status = await adapter.getStatus("HP Laser MFP 131 133 135-138");
+    expect(status.availability).toBe("BLOCKED");
+    expect(status.message).toBe("Paper Jam");
+  });
+
+  it("fails closed to UNKNOWN when PrinterStatus=2 and modern Get-Printer is absent or null", async () => {
+    const adapter = new WindowsPrinterAdapter(() =>
+      Promise.resolve(
+        JSON.stringify({
+          Name: "HP Laser MFP 131 133 135-138",
+          WorkOffline: false,
+          PrinterStatus: 2,
+          ModernStatus: null,
+        }),
+      ),
+    );
+    await adapter.listPrinters();
+    const status = await adapter.getStatus("HP Laser MFP 131 133 135-138");
+    expect(status.availability).toBe("UNKNOWN");
+    expect(status.message).toBe("Printer readiness is not reported by Windows");
   });
 
   it("returns ONLINE for PrinterStatus=3 (Idle)", async () => {

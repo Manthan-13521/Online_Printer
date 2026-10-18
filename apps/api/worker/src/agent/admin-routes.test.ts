@@ -129,6 +129,13 @@ function createMockAgentService(
           verifiedAt: new Date(1700000000000).toISOString(),
         }),
     ),
+    checkPrinterHealth: vi.fn((printerId: string) =>
+      Promise.resolve({
+        isPaused: false,
+        status: "ONLINE",
+        message: `Printer ${printerId} health check requested. Fresh hardware probe dispatched.`,
+      }),
+    ),
     ...overrides,
   } as unknown as AgentService;
 }
@@ -591,5 +598,49 @@ describe("Admin Printer & Agent HTTP Routes", () => {
       ok: false,
       error: { code: "VALIDATION_ERROR" },
     });
+  });
+
+  it("handles check-health request and triggers hardware probe", async () => {
+    const authService = createMockAuth();
+    const agentService = createMockAgentService();
+    const fetchMock = vi.fn(() => Promise.resolve(new Response("OK")));
+    const testEnv = {
+      ...env,
+      AGENT_ROOM: {
+        idFromName: vi.fn(() => "room_id"),
+        get: vi.fn(() => ({ fetch: fetchMock })),
+      },
+    } as unknown as WorkerEnv;
+
+    const request = new Request(
+      "https://api.example.com/api/admin/printers/printer_1/check-health",
+      {
+        method: "POST",
+        headers: {
+          Origin: env.ADMIN_ALLOWED_ORIGIN,
+          Cookie: "__Host-printgo_admin=valid_token",
+        },
+      },
+    );
+
+    const response = await handleAdminPrinterRequest(
+      request,
+      testEnv,
+      agentService,
+      authService,
+    );
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toMatchObject({
+      ok: true,
+      data: {
+        status: "ONLINE",
+      },
+    });
+    expect(agentService.checkPrinterHealth).toHaveBeenCalledWith(
+      "printer_1",
+      "admin_100",
+    );
+    expect(fetchMock).toHaveBeenCalled();
   });
 });

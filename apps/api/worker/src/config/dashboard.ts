@@ -36,8 +36,34 @@ export async function handleDashboard(
           env.DB.prepare(
             `SELECT 
                COALESCE(
-                 (SELECT created_count FROM daily_order_stats WHERE date_key = ?),
-                 (SELECT COUNT(*) FROM orders WHERE strftime('%Y-%m-%d', datetime(created_at_ms / 1000 + 19800, 'unixepoch')) = ?)
+                 (
+                   SELECT COUNT(*) FROM (
+                     SELECT p.order_id
+                     FROM payments p
+                     WHERE p.status = 'PAID'
+                       AND strftime('%Y-%m-%d', datetime(p.verified_at_ms / 1000 + 19800, 'unixepoch')) = ?
+                     UNION
+                     SELECT p.order_id
+                     FROM retained_payment_records p
+                     WHERE p.status = 'PAID'
+                       AND strftime('%Y-%m-%d', datetime(p.verified_at_ms / 1000 + 19800, 'unixepoch')) = ?
+                     UNION
+                     SELECT o.id AS order_id
+                     FROM orders o
+                     WHERE o.payment_method = 'CASH'
+                       AND o.status NOT IN ('CANCELLED', 'DRAFT', 'CREATED', 'UPLOADING', 'UPLOADED', 'PAYMENT_PENDING', 'PAYMENT_FAILED', 'PAYMENT_CANCELLED')
+                       AND strftime('%Y-%m-%d', datetime(COALESCE(o.cash_confirmed_at_ms, o.paid_at_ms, o.created_at_ms) / 1000 + 19800, 'unixepoch')) = ?
+                       AND NOT EXISTS (
+                         SELECT 1 FROM payments p WHERE p.order_id = o.id AND p.status = 'PAID'
+                       )
+                     UNION
+                     SELECT o.id AS order_id
+                     FROM orders o
+                     WHERE o.paid_at_ms IS NOT NULL
+                       AND strftime('%Y-%m-%d', datetime(o.paid_at_ms / 1000 + 19800, 'unixepoch')) = ?
+                   )
+                 ),
+                 0
                ) as created_count,
                COALESCE(
                  (
@@ -60,7 +86,7 @@ export async function handleDashboard(
                  (SELECT earnings_paise FROM daily_order_stats WHERE date_key = ?),
                  0
                ) as earnings_paise`,
-          ).bind(dateKey, dateKey, dateKey, dateKey, dateKey),
+          ).bind(dateKey, dateKey, dateKey, dateKey, dateKey, dateKey, dateKey),
           env.DB.prepare(
             `SELECT status, COUNT(*) as count 
              FROM orders 

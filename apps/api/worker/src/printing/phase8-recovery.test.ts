@@ -1018,4 +1018,86 @@ describe("PRINTGO — PHASE 8 ACCEPTANCE TEST SUITE: SMART PRINT RECOVERY & QUEU
     expect(claimed.length).toBe(1);
     expect(claimed[0]?.orderId).toBe(orderId);
   });
+
+  it("Scenario 8.16: UNKNOWN printer readiness — Print Recovery returns honest message with hardware probe dispatched", async () => {
+    // Set printer to UNKNOWN
+    db.exec(`
+      UPDATE printers
+      SET status = 'UNKNOWN',
+          status_reason = 'Printer readiness is not reported by Windows',
+          updated_at_ms = ${currentSimulatedTime}
+      WHERE id = '${PRINTER_1_ID}';
+    `);
+
+    insertOrder(1, { status: "QUEUED" });
+
+    const recovery = await printingRepo.recoverQueue({
+      adminId: ADMIN_ID,
+      nowMs: currentSimulatedTime,
+    });
+
+    expect(recovery.printerOnline).toBe(false);
+    expect(recovery.message).toContain("UNKNOWN");
+    expect(recovery.message).toContain("Dispatched hardware probe to Agent");
+    expect(recovery.details).toContainEqual(
+      expect.stringContaining("Dispatched hardware probe to Windows Agent"),
+    );
+
+    // Verify claimOrRenewAll fails closed while printer is UNKNOWN
+    const claimed = await printingRepo.claimOrRenewAll(
+      AGENT_ID,
+      currentSimulatedTime,
+    );
+    expect(claimed.length).toBe(0);
+  });
+
+  it("Scenario 8.17: Incompatible disabled thermal printer is never chosen as fallback for A4 order", async () => {
+    // Primary HP printer is UNKNOWN
+    db.exec(`
+      UPDATE printers
+      SET status = 'UNKNOWN',
+          updated_at_ms = ${currentSimulatedTime}
+      WHERE id = '${PRINTER_1_ID}';
+    `);
+
+    // Secondary printer is a disabled thermal label printer (no A4 support)
+    const thermalPrinterId = crypto.randomUUID();
+    db.exec(`
+      INSERT INTO printers (
+        id, agent_id, display_name, windows_printer_name, enabled, status,
+        capabilities_json, is_production_eligible, is_virtual, port_name,
+        created_at_ms, updated_at_ms
+      ) VALUES (
+        '${thermalPrinterId}', '${AGENT_ID}', 'Xprinter XP-TT426B', 'Xprinter XP-TT426B',
+        0, 'ONLINE', '{"colour":false,"duplex":false,"paperSizes":["CUSTOM"]}',
+        1, 0, 'USB001', ${currentSimulatedTime}, ${currentSimulatedTime}
+      );
+    `);
+
+    const orderId = insertOrder(1, { status: "QUEUED" });
+
+    // Claim should reject thermal printer because it's disabled and lacks A4
+    const claimed = await printingRepo.claimOrRenewAll(
+      AGENT_ID,
+      currentSimulatedTime,
+    );
+    expect(claimed.length).toBe(0);
+
+    // When primary HP printer recovers to ONLINE, order is immediately claimed!
+    db.exec(`
+      UPDATE printers
+      SET status = 'ONLINE',
+          status_reason = NULL,
+          updated_at_ms = ${currentSimulatedTime}
+      WHERE id = '${PRINTER_1_ID}';
+    `);
+
+    const claimedAfterRecovery = await printingRepo.claimOrRenewAll(
+      AGENT_ID,
+      currentSimulatedTime,
+    );
+    expect(claimedAfterRecovery.length).toBe(1);
+    expect(claimedAfterRecovery[0]?.orderId).toBe(orderId);
+    expect(claimedAfterRecovery[0]?.printerId).toBe(PRINTER_1_ID);
+  });
 });
