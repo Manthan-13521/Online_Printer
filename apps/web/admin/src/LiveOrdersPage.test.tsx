@@ -340,12 +340,11 @@ describe("Admin LiveOrdersPage — Compact Redesign", () => {
       await vi.advanceTimersByTimeAsync(0);
     });
 
-    // 1. Cash order assertions
-    expect(screen.getByText("💵 Cash · Paid ₹6")).toBeDefined();
+    // 1. Paid badge and Cash/Online badges assertions
+    expect(screen.getAllByText("Paid ₹6")).toHaveLength(3);
+    expect(screen.getByText("Cash")).toBeDefined();
+    expect(screen.getAllByText("Online")).toHaveLength(2);
     expect(screen.getByText("Cash Confirmed")).toBeDefined();
-
-    // 2. Online & Unknown order assertions
-    expect(screen.getAllByText("Paid ₹6")).toHaveLength(2);
 
     // Verify Payment Method was removed from details
     expect(screen.queryByText("Payment Method")).toBeNull();

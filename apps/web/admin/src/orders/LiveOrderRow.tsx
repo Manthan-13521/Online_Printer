@@ -69,23 +69,13 @@ export function LiveOrderRow({
                 ⚡ Priority
               </span>
             ) : null}
-            {order.paymentMethod === "CASH" ? (
-              <span
-                style={{
-                  fontWeight: 700,
-                  padding: "0.15rem 0.55rem",
-                  borderRadius: "4px",
-                  backgroundColor: "#dcfce7",
-                  color: "#166534",
-                  fontSize: "0.85rem",
-                }}
-              >
-                💵 Cash · Paid ₹
-                {(order.amountPaidPaise / 100) % 1 === 0
-                  ? order.amountPaidPaise / 100
-                  : (order.amountPaidPaise / 100).toFixed(2)}
-              </span>
-            ) : (
+            <div
+              style={{
+                display: "inline-flex",
+                flexDirection: "column",
+                alignItems: "flex-start",
+              }}
+            >
               <span
                 style={{
                   fontWeight: 700,
@@ -101,7 +91,20 @@ export function LiveOrderRow({
                   ? order.amountPaidPaise / 100
                   : (order.amountPaidPaise / 100).toFixed(2)}
               </span>
-            )}
+              <span
+                style={{
+                  fontWeight: 700,
+                  fontSize: "0.72rem",
+                  color: "#0369a1",
+                  backgroundColor: "#e0f2fe",
+                  padding: "0.06rem 0.45rem",
+                  borderRadius: "3px",
+                  marginTop: "0.15rem",
+                }}
+              >
+                {order.paymentMethod === "CASH" ? "Cash" : "Online"}
+              </span>
+            </div>
           </div>
           <h2>{order.customerName}</h2>
         </div>
@@ -199,8 +202,8 @@ export function LiveOrderRow({
           display: "flex",
           gap: "0.5rem",
           flexWrap: "wrap",
-          marginTop: "0.75rem",
-          paddingTop: "0.75rem",
+          marginTop: "0.65rem",
+          paddingTop: "0.65rem",
           borderTop: "1px solid var(--border-color, #e0e0e0)",
           alignItems: "center",
         }}

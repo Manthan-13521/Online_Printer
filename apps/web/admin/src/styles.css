@@ -747,11 +747,14 @@ legend {
 .live-order-list {
   display: grid;
   gap: 1rem;
-  max-width: 40rem;
+  max-width: 48rem;
 }
 .live-order {
-  max-width: 40rem;
+  max-width: 48rem;
   width: 100%;
+}
+.panel.live-order {
+  padding: 1.15rem 1.35rem;
 }
 .live-order-heading {
   display: flex;
@@ -772,7 +775,7 @@ legend {
 .live-order-details {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
-  gap: 0.8rem;
+  gap: 0.65rem;
   margin-bottom: 0;
 }
 .live-order-details div {
@@ -942,8 +945,8 @@ legend {
 .history-list {
   display: grid;
   gap: 1rem;
-  max-width: 40rem;
-  margin-block: 1.5rem;
+  max-width: 48rem;
+  margin-block: 1.25rem;
 }
 .history-details {
   display: grid;

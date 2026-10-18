@@ -198,56 +198,54 @@ export function OrderHistoryPage({
                       Manual
                     </span>
                   ) : null}
-                  {order.paymentMethod === "CASH" ? (
-                    <span
+                  {(order.amountPaidPaise ?? order.onlinePaidPaise) != null && (
+                    <div
                       style={{
-                        fontWeight: 700,
-                        padding: "0.15rem 0.55rem",
-                        borderRadius: "4px",
-                        backgroundColor: "#dcfce7",
-                        color: "#166534",
-                        fontSize: "0.85rem",
+                        display: "inline-flex",
+                        flexDirection: "column",
+                        alignItems: "flex-start",
                       }}
                     >
-                      💵 Cash · Paid ₹
-                      {((order.amountPaidPaise ?? order.onlinePaidPaise ?? 0) /
-                        100) %
-                        1 ===
-                      0
-                        ? (order.amountPaidPaise ??
-                            order.onlinePaidPaise ??
-                            0) / 100
-                        : (
-                            (order.amountPaidPaise ??
+                      <span
+                        style={{
+                          fontWeight: 700,
+                          padding: "0.15rem 0.55rem",
+                          borderRadius: "4px",
+                          backgroundColor: "#dcfce7",
+                          color: "#166534",
+                          fontSize: "0.85rem",
+                        }}
+                      >
+                        Paid ₹
+                        {((order.amountPaidPaise ??
+                          order.onlinePaidPaise ??
+                          0) /
+                          100) %
+                          1 ===
+                        0
+                          ? (order.amountPaidPaise ??
                               order.onlinePaidPaise ??
                               0) / 100
-                          ).toFixed(2)}
-                    </span>
-                  ) : (
-                    <span
-                      style={{
-                        fontWeight: 700,
-                        padding: "0.15rem 0.55rem",
-                        borderRadius: "4px",
-                        backgroundColor: "#dcfce7",
-                        color: "#166534",
-                        fontSize: "0.85rem",
-                      }}
-                    >
-                      Paid ₹
-                      {((order.amountPaidPaise ?? order.onlinePaidPaise ?? 0) /
-                        100) %
-                        1 ===
-                      0
-                        ? (order.amountPaidPaise ??
-                            order.onlinePaidPaise ??
-                            0) / 100
-                        : (
-                            (order.amountPaidPaise ??
-                              order.onlinePaidPaise ??
-                              0) / 100
-                          ).toFixed(2)}
-                    </span>
+                          : (
+                              (order.amountPaidPaise ??
+                                order.onlinePaidPaise ??
+                                0) / 100
+                            ).toFixed(2)}
+                      </span>
+                      <span
+                        style={{
+                          fontWeight: 700,
+                          fontSize: "0.72rem",
+                          color: "#0369a1",
+                          backgroundColor: "#e0f2fe",
+                          padding: "0.06rem 0.45rem",
+                          borderRadius: "3px",
+                          marginTop: "0.15rem",
+                        }}
+                      >
+                        {order.paymentMethod === "CASH" ? "Cash" : "Online"}
+                      </span>
+                    </div>
                   )}
                 </div>
                 <h2 style={{ margin: "0.25rem 0 0", fontSize: "1.2rem" }}>
@@ -293,8 +291,8 @@ export function OrderHistoryPage({
             <dl
               className="live-order-details"
               style={{
-                marginTop: "0.85rem",
-                gap: "0.85rem 1.25rem",
+                marginTop: "0.65rem",
+                gap: "0.65rem 1.25rem",
               }}
             >
               {order.customerPhone ? (
@@ -375,8 +373,8 @@ export function OrderHistoryPage({
                 justifyContent: "flex-end",
                 alignItems: "center",
                 gap: "0.75rem",
-                marginTop: "0.85rem",
-                paddingTop: "0.75rem",
+                marginTop: "0.65rem",
+                paddingTop: "0.65rem",
                 borderTop: "1px solid #f1f5f9",
                 flexWrap: "wrap",
               }}

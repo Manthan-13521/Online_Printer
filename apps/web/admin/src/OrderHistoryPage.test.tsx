@@ -88,7 +88,8 @@ describe("Admin OrderHistoryPage — Payment Method Display", () => {
       await vi.advanceTimersByTimeAsync(0);
     });
 
-    expect(screen.getByText("💵 Cash · Paid ₹7.50")).toBeDefined();
+    expect(screen.getByText("Paid ₹7.50")).toBeDefined();
+    expect(screen.getByText("Cash")).toBeDefined();
     expect(screen.getByText("Cash Confirmed")).toBeDefined();
     expect(screen.queryByText("Payment Method")).toBeNull();
     expect(screen.queryByText("Online Paid")).toBeNull();
@@ -120,6 +121,7 @@ describe("Admin OrderHistoryPage — Payment Method Display", () => {
     });
 
     expect(screen.getByText("Paid ₹12")).toBeDefined();
+    expect(screen.getByText("Online")).toBeDefined();
     expect(screen.queryByText("Payment Method")).toBeNull();
     expect(screen.queryByText("Online Paid")).toBeNull();
   });
