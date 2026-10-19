@@ -96,6 +96,10 @@ describe("handleDashboard", () => {
     const querySql = String(mockPrepare.mock.calls[0]?.[0] ?? "");
     expect(querySql).toContain("p.status = 'PAID'");
     expect(querySql).toContain("retained_payment_records");
+    expect(querySql).toContain("SELECT p.id AS order_id");
+    expect(querySql).not.toMatch(
+      /SELECT\s+p\.order_id\s+FROM\s+retained_payment_records/i,
+    );
     expect(querySql).toContain("o.payment_method = 'CASH'");
     expect(querySql).toContain("o.paid_at_ms IS NOT NULL");
   });

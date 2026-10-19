@@ -43,7 +43,7 @@ export async function handleDashboard(
                      WHERE p.status = 'PAID'
                        AND strftime('%Y-%m-%d', datetime(p.verified_at_ms / 1000 + 19800, 'unixepoch')) = ?
                      UNION
-                     SELECT p.order_id
+                     SELECT p.id AS order_id
                      FROM retained_payment_records p
                      WHERE p.status = 'PAID'
                        AND strftime('%Y-%m-%d', datetime(p.verified_at_ms / 1000 + 19800, 'unixepoch')) = ?
@@ -140,6 +140,7 @@ export async function handleDashboard(
       { "Cache-Control": "no-store" },
     );
   } catch (caught) {
+    console.error("[Dashboard Error]", caught);
     response =
       caught instanceof AuthError
         ? error(
