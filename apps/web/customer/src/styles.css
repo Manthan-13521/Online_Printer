@@ -1252,39 +1252,60 @@ label {
 
 /* Print Settings */
 .settings-file-selector {
-  margin-bottom: 1.25rem;
+  margin-bottom: 0.75rem;
+}
+.settings-file-selector label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #334155;
+  margin-bottom: 0.25rem;
+  display: block;
 }
 .print-settings-grid {
   display: grid;
-  gap: 1.25rem;
+  gap: 0.65rem;
   grid-template-columns: 1fr;
 }
 .print-setting-col {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.25rem;
+}
+.setting-label {
+  font-size: 0.82rem;
+  font-weight: 650;
+  color: #334155;
+  margin-bottom: 0.15rem;
+  display: block;
 }
 .row-layout {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 1rem;
+  gap: 0.75rem;
 }
 .visual-options.horizontal {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.5rem;
 }
 .visual-option-card {
-  flex: 1;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.75rem;
-  border: 1px solid #cbd5e1;
+  gap: 0.45rem;
+  padding: 0.45rem 0.55rem;
+  border: 1.5px solid #cbd5e1;
   border-radius: 8px;
   background: #ffffff;
   cursor: pointer;
   position: relative;
-  transition: all 0.2s;
+  transition: all 0.15s ease;
+  min-height: 44px;
+  box-sizing: border-box;
+  min-width: 0;
+}
+.visual-option-card:hover:not(.disabled) {
+  border-color: #94a3b8;
+  background: #f8fafc;
 }
 .visual-option-card input[type="radio"] {
   position: absolute;
@@ -1295,10 +1316,13 @@ label {
 .visual-option-card .radio-circle {
   width: 16px;
   height: 16px;
+  min-width: 16px;
   border: 1.5px solid #94a3b8;
   border-radius: 50%;
   display: inline-block;
   position: relative;
+  margin-inline-start: auto;
+  flex-shrink: 0;
 }
 .visual-option-card.selected {
   border-color: #16754a;
@@ -1312,37 +1336,82 @@ label {
   content: "";
   position: absolute;
   top: 3px;
-  left: 3.5px;
+  left: 3px;
   width: 6px;
   height: 6px;
   background: white;
   border-radius: 50%;
 }
 .visual-option-card .label {
-  font-size: 0.9rem;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  font-size: 0.85rem;
   font-weight: 600;
   color: #0f172a;
+  line-height: 1.2;
+}
+.visual-option-card .option-help-text {
+  font-size: 0.68rem;
+  font-weight: 400;
+  color: #64748b;
+  margin-top: 0.15rem;
+  line-height: 1.1;
+  word-break: break-word;
 }
 .visual-option-card.disabled {
-  opacity: 0.5;
+  opacity: 0.55;
   cursor: not-allowed;
+  background: #f8fafc;
+  border-color: #e2e8f0;
 }
 .card-icon {
-  font-size: 1.2rem;
+  font-size: 1.05rem;
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
+}
+.pages-icon::before {
+  content: "📄";
+}
+.custom-icon::before {
+  content: "🔢";
+}
+.single-side-icon::before {
+  content: "📄";
+}
+.double-side-icon::before {
+  content: "📑";
+}
+.paper-badge-icon {
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 0.12rem 0.32rem;
+  border-radius: 4px;
+  background: #e2e8f0;
+  color: #334155;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.paper-badge-icon.a4::before {
+  content: "A4";
+}
+.paper-badge-icon.a3::before {
+  content: "A3";
 }
 .bw-icon {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   background: linear-gradient(135deg, #1e293b 50%, #f1f5f9 50%);
-  border: 1px solid #cbd5e1;
+  border: 1.5px solid #cbd5e1;
+  flex-shrink: 0;
 }
 .color-icon {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   background: conic-gradient(
     #ef4444,
@@ -1352,6 +1421,20 @@ label {
     #a855f7,
     #ef4444
   );
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  flex-shrink: 0;
+}
+.copies-setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.35rem 0.65rem;
+  background: #f8fafc;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 8px;
+  min-height: 44px;
+  box-sizing: border-box;
 }
 .custom-pages-input {
   width: 100%;
@@ -1909,8 +1992,23 @@ label {
   }
 
   .visual-options.horizontal {
-    flex-direction: column;
-    gap: 0.4rem;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.35rem;
+  }
+
+  .visual-option-card {
+    min-height: 42px;
+    padding: 0.4rem 0.35rem;
+    gap: 0.3rem;
+  }
+
+  .visual-option-card .label {
+    font-size: 0.78rem;
+  }
+
+  .visual-option-card .option-help-text {
+    font-size: 0.62rem;
   }
 
   .file-actions-right {

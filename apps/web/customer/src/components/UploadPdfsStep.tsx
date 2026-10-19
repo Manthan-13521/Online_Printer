@@ -180,10 +180,13 @@ export function UploadPdfsStep({
             accept="application/pdf"
             multiple
             disabled={disabled || isInspectingFiles}
+            onClick={(event) => {
+              (event.target as HTMLInputElement).value = "";
+            }}
             onChange={(event) => {
-              if (!event.target.files?.length) return;
-              onChooseFiles(event.target.files);
-              event.target.value = "";
+              const fileList = event.target.files;
+              if (!fileList || fileList.length === 0) return;
+              onChooseFiles(fileList);
             }}
           />
         </label>

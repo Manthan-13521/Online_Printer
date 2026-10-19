@@ -91,6 +91,8 @@ describe("Admin OrderHistoryPage — Payment Method Display", () => {
     expect(screen.getByText("Paid ₹7.50")).toBeDefined();
     expect(screen.getByText("Cash")).toBeDefined();
     expect(screen.getByText("Cash Confirmed")).toBeDefined();
+    expect(screen.getByText("Completed")).toBeDefined();
+    expect(screen.queryByText("Created")).toBeNull();
     expect(screen.queryByText("Payment Method")).toBeNull();
     expect(screen.queryByText("Online Paid")).toBeNull();
   });

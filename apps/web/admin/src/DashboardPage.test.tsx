@@ -3,12 +3,15 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import { DashboardPage } from "./DashboardPage";
-const { getDashboard, updateSettings } = vi.hoisted(() => ({
-  getDashboard: vi.fn(),
-  updateSettings: vi.fn(),
-}));
+const { getDashboard, updateSettings, getManualOrders, getCashOrders } =
+  vi.hoisted(() => ({
+    getDashboard: vi.fn(),
+    updateSettings: vi.fn(),
+    getManualOrders: vi.fn(),
+    getCashOrders: vi.fn(),
+  }));
 vi.mock("./api", () => ({
-  adminApi: { getDashboard, updateSettings },
+  adminApi: { getDashboard, updateSettings, getManualOrders, getCashOrders },
   brandingUrl: (x: string) => x,
   friendlyAdminError: () => "Unavailable",
   AdminApiError: class extends Error {
@@ -452,4 +455,81 @@ it("confirms before pausing Online Printing and persists setting", async () => {
       onlinePrintingEnabled: false,
     }),
   );
+});
+
+it("renders Manual / Finishing Orders and Pending Cash Orders compact counters beside shop name and navigates on click", async () => {
+  const onNavigate = vi.fn();
+  getDashboard.mockResolvedValue({
+    ok: true,
+    data: {
+      settings: {
+        shopName: "PrintGo Central",
+        identificationSheetEnabled: true,
+        onlinePrintingEnabled: true,
+      },
+      agents: [],
+      defaultProductionPrinterId: null,
+      todaysEarningsPaise: 5100,
+      todaysOrders: 5,
+      inQueue: 1,
+      printingNow: 0,
+      statusCounts: {
+        waiting: 1,
+        printing: 0,
+        readyForPickup: 3,
+        needsAttention: 0,
+      },
+    },
+  });
+
+  getManualOrders.mockResolvedValue({
+    ok: true,
+    data: {
+      orders: [
+        { orderId: "man-1" },
+        { orderId: "man-2" },
+        { orderId: "man-3" },
+      ],
+      nextCursor: null,
+    },
+  });
+
+  getCashOrders.mockResolvedValue({
+    ok: true,
+    data: {
+      orders: [
+        { orderId: "cash-1", cashGraceUntilMs: Date.now() + 60000 },
+        { orderId: "cash-2", cashGraceUntilMs: Date.now() + 60000 },
+      ],
+    },
+  });
+
+  const user = userEvent.setup();
+  render(
+    <DashboardPage
+      onSessionExpired={() => undefined}
+      onNavigate={onNavigate}
+    />,
+  );
+
+  const manualCounter = await screen.findByRole("button", {
+    name: /manual or finishing orders: 3/i,
+  });
+  expect(manualCounter).toBeTruthy();
+  expect(screen.getByText("Manual / Finishing Orders")).toBeTruthy();
+  expect(screen.getByText("3")).toBeTruthy();
+
+  const cashCounter = screen.getByRole("button", {
+    name: /pending cash orders: 2/i,
+  });
+  expect(cashCounter).toBeTruthy();
+  expect(screen.getByText("Pending Cash Orders")).toBeTruthy();
+  expect(screen.getByText("2")).toBeTruthy();
+
+  // Clicking counter navigates to /admin/manual-orders
+  await user.click(manualCounter);
+  expect(onNavigate).toHaveBeenCalledWith("/admin/manual-orders");
+
+  await user.click(cashCounter);
+  expect(onNavigate).toHaveBeenCalledWith("/admin/manual-orders");
 });

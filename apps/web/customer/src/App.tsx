@@ -436,9 +436,26 @@ export function App() {
           setFileError("Choose PDF files only.");
           return;
         }
+        let fileToProcess = selectedFile;
+        if (fileToProcess.size <= 0) {
+          try {
+            // On iOS Safari / iCloud or cold cloud file selections, file.size can initially report 0.
+            // Reading arrayBuffer forces WebKit / browser file providers to resolve and download the stream.
+            const buffer = await fileToProcess.arrayBuffer();
+            if (buffer.byteLength > 0) {
+              fileToProcess = new File([buffer], selectedFile.name, {
+                type: selectedFile.type || "application/pdf",
+                lastModified: selectedFile.lastModified,
+              });
+            }
+          } catch {
+            // Fall through to size validation below
+          }
+        }
+
         if (
-          selectedFile.size <= 0 ||
-          selectedFile.size > config.maxPdfSizeBytes
+          fileToProcess.size <= 0 ||
+          fileToProcess.size > config.maxPdfSizeBytes
         ) {
           setFileError(
             `PDFs must be between 1 byte and ${humanFileSize(config.maxPdfSizeBytes)}.`,
@@ -446,12 +463,12 @@ export function App() {
           return;
         }
         try {
-          const pages = await inspectPdf(selectedFile);
+          const pages = await inspectPdf(fileToProcess);
           added.push({
             clientId: crypto.randomUUID(),
-            file: selectedFile,
-            name: selectedFile.name,
-            size: selectedFile.size,
+            file: fileToProcess,
+            name: fileToProcess.name,
+            size: fileToProcess.size,
             pageCount: pages,
             uploaded: false,
             uploadStatus: "SELECTED",
@@ -1204,6 +1221,17 @@ export function App() {
       (/^[A-Za-z0-9_-]{43}$/.test(window.location.hash.slice(1)) ||
         Boolean(sessionStorage.getItem(`printgo.tracking.${trackingJobCode}`)));
 
+    const handleResetToHome = () => {
+      setTrackingJobCode(null);
+      setFiles([]);
+      setSelectedFileIndex(0);
+      setQuote(null);
+      setDraftToken(null);
+      setPaymentSuccess(null);
+      setCashWaitingData(null);
+      window.history.pushState(null, "", "/");
+    };
+
     if (isPickupPattern || !hasPrivateToken) {
       return (
         <>
@@ -1217,26 +1245,12 @@ export function App() {
           >
             <PublicTrackingPage
               pickupCode={trackingJobCode}
-              onBack={() => {
-                setTrackingJobCode(null);
-                window.history.pushState(null, "", "/");
-              }}
+              onBack={handleResetToHome}
             />
           </Suspense>
         </>
       );
     }
-
-    const handleResetToHome = () => {
-      setTrackingJobCode(null);
-      setFiles([]);
-      setSelectedFileIndex(0);
-      setQuote(null);
-      setDraftToken(null);
-      setPaymentSuccess(null);
-      setCashWaitingData(null);
-      window.history.pushState(null, "", "/");
-    };
 
     return (
       <>

@@ -323,10 +323,6 @@ export function OrderHistoryPage({
                   </dd>
                 </div>
               ) : null}
-              <div>
-                <dt style={{ fontSize: "0.86rem" }}>Created</dt>
-                <dd style={{ fontSize: "1.0rem" }}>{time(order.createdAt)}</dd>
-              </div>
               {order.completedAt ? (
                 <div>
                   <dt style={{ fontSize: "0.86rem" }}>Completed</dt>

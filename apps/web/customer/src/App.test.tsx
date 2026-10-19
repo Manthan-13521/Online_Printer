@@ -1618,5 +1618,83 @@ describe("customer upload app", () => {
         }),
       );
     });
+
+    it("resolves cold cloud files reporting 0 bytes initially on first selection and uploads without error", async () => {
+      const user = userEvent.setup();
+      render(<App />);
+      await screen.findByText("ABC Xerox");
+
+      // Create a file whose .size property reports 0 (simulating iCloud / cold cloud stream placeholder)
+      // but whose arrayBuffer() resolves valid PDF bytes
+      const samplePdfContent = new TextEncoder().encode(
+        "%PDF-1.4 test content",
+      );
+      const zeroSizeFile = new File([], "cloud-doc.pdf", {
+        type: "application/pdf",
+      });
+      Object.defineProperty(zeroSizeFile, "size", {
+        value: 0,
+        configurable: true,
+      });
+      zeroSizeFile.arrayBuffer = vi
+        .fn()
+        .mockResolvedValue(samplePdfContent.buffer);
+
+      await user.upload(screen.getByLabelText("Choose Files"), zeroSizeFile);
+
+      // Verify inspectPdf was called and file was successfully added without size error
+      await waitFor(() => {
+        expect(screen.getByText("cloud-doc.pdf")).toBeTruthy();
+      });
+      expect(screen.queryByText(/PDFs must be between 1 byte and/)).toBeNull();
+    });
+
+    it("rejects truly empty 0-byte PDFs with a clear error message", async () => {
+      const user = userEvent.setup();
+      render(<App />);
+      await screen.findByText("ABC Xerox");
+
+      const emptyFile = new File([], "empty.pdf", {
+        type: "application/pdf",
+      });
+      Object.defineProperty(emptyFile, "size", {
+        value: 0,
+        configurable: true,
+      });
+      emptyFile.arrayBuffer = vi.fn().mockResolvedValue(new ArrayBuffer(0));
+
+      await user.upload(screen.getByLabelText("Choose Files"), emptyFile);
+
+      expect(
+        await screen.findByText(/PDFs must be between 1 byte and/),
+      ).toBeTruthy();
+    });
+
+    it("renders compact two-column print settings for pages, paper size, colour, sides, and copies", async () => {
+      const user = userEvent.setup();
+      render(<App />);
+      await screen.findByText("ABC Xerox");
+      await user.upload(
+        screen.getByLabelText("Choose Files"),
+        new File(["%PDF-test"], "doc.pdf", { type: "application/pdf" }),
+      );
+
+      // Verify all two-column option controls
+      expect(screen.getByRole("radio", { name: "All pages" })).toBeTruthy();
+      expect(screen.getByRole("radio", { name: "Custom range" })).toBeTruthy();
+      expect(screen.getByRole("radio", { name: "A4" })).toBeTruthy();
+      expect(screen.getByRole("radio", { name: /A3/ })).toBeTruthy();
+      expect(
+        screen.getByRole("radio", { name: /Black & white/i }),
+      ).toBeTruthy();
+      expect(screen.getByRole("radio", { name: /Colour/i })).toBeTruthy();
+      expect(screen.getByRole("radio", { name: /Single-sided/i })).toBeTruthy();
+      expect(screen.getByRole("radio", { name: /Double-sided/i })).toBeTruthy();
+      expect(screen.getByRole("spinbutton", { name: /copies/i })).toBeTruthy();
+
+      // Switch to custom range and verify input appears
+      await user.click(screen.getByLabelText("Custom range"));
+      expect(await screen.findByLabelText("Custom pages")).toBeTruthy();
+    });
   });
 });

@@ -1,5 +1,4 @@
 import type { CustomerConfigData } from "@printgo/api-contract";
-import type { PaperSize } from "@printgo/domain";
 import { MAX_PRINT_COPIES, MIN_PRINT_COPIES } from "@printgo/domain";
 import { useEffect, useState } from "react";
 import type { LocalOrderFile } from "./customer-types";
@@ -36,7 +35,7 @@ export function PrintSettingsStep({
   }, [selectedFile?.clientId, selectedFile?.copies]);
 
   return (
-    <section className="step">
+    <section className="step print-settings-step">
       <div className="step-header">
         <span className="step-number">3</span>
         <h2>Print Settings</h2>
@@ -44,6 +43,7 @@ export function PrintSettingsStep({
           Choose how you want your files to be printed.
         </p>
       </div>
+
       {selectedFile ? (
         <>
           <div className="settings-file-selector">
@@ -67,30 +67,43 @@ export function PrintSettingsStep({
           </div>
 
           <div className="print-settings-grid">
+            {/* 1. Pages: All Pages | Custom Range */}
             <div className="print-setting-col">
-              <label style={{ margin: 0, fontWeight: 600 }}>Pages</label>
+              <label className="setting-label">Pages</label>
               <div className="visual-options horizontal">
                 <label
                   className={`visual-option-card ${selectedFile.pageMode === "ALL" ? "selected" : ""}`}
                 >
                   <input
                     type="radio"
+                    name="pageMode"
+                    value="ALL"
                     checked={selectedFile.pageMode === "ALL"}
                     onChange={() => onPatchSelected({ pageMode: "ALL" })}
                   />
-                  <span className="radio-circle"></span>
+                  <span
+                    className="card-icon pages-icon"
+                    aria-hidden="true"
+                  ></span>
                   <span className="label">All pages</span>
+                  <span className="radio-circle"></span>
                 </label>
                 <label
                   className={`visual-option-card ${selectedFile.pageMode === "CUSTOM" ? "selected" : ""}`}
                 >
                   <input
                     type="radio"
+                    name="pageMode"
+                    value="CUSTOM"
                     checked={selectedFile.pageMode === "CUSTOM"}
                     onChange={() => onPatchSelected({ pageMode: "CUSTOM" })}
                   />
-                  <span className="radio-circle"></span>
+                  <span
+                    className="card-icon custom-icon"
+                    aria-hidden="true"
+                  ></span>
                   <span className="label">Custom range</span>
+                  <span className="radio-circle"></span>
                 </label>
               </div>
               {selectedFile.pageMode === "CUSTOM" && (
@@ -106,112 +119,58 @@ export function PrintSettingsStep({
               )}
             </div>
 
-            <div className="print-setting-col row-layout">
-              <div className="copies-control">
-                <label htmlFor="copies-input" style={{ margin: 0 }}>
-                  Copies
-                </label>
-                <div className="number-stepper">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      onPatchSelected({
-                        copies: Math.max(
-                          MIN_PRINT_COPIES,
-                          selectedFile.copies - 1,
-                        ),
-                      })
-                    }
-                  >
-                    -
-                  </button>
+            {/* 2. Paper Size: A4 | A3 */}
+            <div className="print-setting-col">
+              <label className="setting-label">Paper size</label>
+              <div className="visual-options horizontal">
+                <label
+                  className={`visual-option-card ${selectedFile.paperSize === "A4" ? "selected" : ""}`}
+                >
                   <input
-                    id="copies-input"
-                    type="number"
-                    min={MIN_PRINT_COPIES}
-                    max={MAX_PRINT_COPIES}
-                    value={copiesDraft}
-                    onChange={(event) => {
-                      const text = event.target.value;
-                      setCopiesDraft(text);
-                      if (text.trim() === "") return;
-                      const c = parseInt(text, 10);
-                      if (!isNaN(c) && c >= 1) {
-                        onPatchSelected({
-                          copies: Math.min(MAX_PRINT_COPIES, c),
-                        });
-                      }
-                    }}
-                    onBlur={() => {
-                      const c = parseInt(copiesDraft, 10);
-                      if (isNaN(c) || c < MIN_PRINT_COPIES) {
-                        setCopiesDraft(String(MIN_PRINT_COPIES));
-                        onPatchSelected({ copies: MIN_PRINT_COPIES });
-                      } else {
-                        const clamped = Math.min(MAX_PRINT_COPIES, c);
-                        setCopiesDraft(String(clamped));
-                        onPatchSelected({ copies: clamped });
-                      }
-                    }}
+                    type="radio"
+                    name="paperSize"
+                    value="A4"
+                    checked={selectedFile.paperSize === "A4"}
+                    onChange={() => onPatchSelected({ paperSize: "A4" })}
                   />
-                  <button
-                    type="button"
-                    onClick={() =>
-                      onPatchSelected({
-                        copies: Math.min(
-                          MAX_PRINT_COPIES,
-                          selectedFile.copies + 1,
-                        ),
-                      })
-                    }
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-              <div className="paper-size-control">
-                <label htmlFor="paper-size" style={{ margin: 0 }}>
-                  Paper size
-                </label>
-                <div className="select-wrapper">
-                  <span className="icon">📄</span>
-                  <select
-                    id="paper-size"
-                    value={selectedFile.paperSize}
-                    onChange={(event) =>
-                      onPatchSelected({
-                        paperSize: event.target.value as PaperSize,
-                      })
-                    }
-                  >
-                    <option value="A4">A4</option>
-                    <option
-                      value="A3"
-                      disabled={!printOptions.some((o) => o.paperSize === "A3")}
-                    >
-                      {printOptions.some((o) => o.paperSize === "A3")
-                        ? "A3"
-                        : "A3 (A3 paper unavailable)"}
-                    </option>
-                  </select>
-                </div>
-                {!printOptions.some((o) => o.paperSize === "A3") && (
                   <span
-                    style={{
-                      fontSize: "0.75rem",
-                      color: "#64748b",
-                      marginTop: "0.25rem",
-                      display: "block",
-                    }}
-                  >
-                    A3 paper unavailable
+                    className="card-icon paper-badge-icon a4"
+                    aria-hidden="true"
+                  ></span>
+                  <span className="label">A4</span>
+                  <span className="radio-circle"></span>
+                </label>
+                <label
+                  className={`visual-option-card ${selectedFile.paperSize === "A3" ? "selected" : ""} ${!printOptions.some((o) => o.paperSize === "A3") ? "disabled" : ""}`}
+                >
+                  <input
+                    type="radio"
+                    name="paperSize"
+                    value="A3"
+                    checked={selectedFile.paperSize === "A3"}
+                    disabled={!printOptions.some((o) => o.paperSize === "A3")}
+                    onChange={() => onPatchSelected({ paperSize: "A3" })}
+                  />
+                  <span
+                    className="card-icon paper-badge-icon a3"
+                    aria-hidden="true"
+                  ></span>
+                  <span className="label">
+                    A3
+                    {!printOptions.some((o) => o.paperSize === "A3") && (
+                      <span className="option-help-text">
+                        A3 paper unavailable
+                      </span>
+                    )}
                   </span>
-                )}
+                  <span className="radio-circle"></span>
+                </label>
               </div>
             </div>
 
+            {/* 3. Colour: Black & White | Colour */}
             <div className="print-setting-col">
-              <label style={{ margin: 0 }}>Colour</label>
+              <label className="setting-label">Colour</label>
               <div className="visual-options horizontal">
                 <label
                   className={`visual-option-card ${selectedFile.colorMode === "BW" ? "selected" : ""} ${!printOptions.some((o) => o.paperSize === selectedFile.paperSize && o.colorMode === "BW") ? "disabled" : ""}`}
@@ -259,14 +218,7 @@ export function PrintSettingsStep({
                         o.paperSize === selectedFile.paperSize &&
                         o.colorMode === "COLOR",
                     ) && (
-                      <span
-                        style={{
-                          display: "block",
-                          fontSize: "0.7rem",
-                          color: "#64748b",
-                          fontWeight: 400,
-                        }}
-                      >
+                      <span className="option-help-text">
                         No colour printer available
                       </span>
                     )}
@@ -276,8 +228,9 @@ export function PrintSettingsStep({
               </div>
             </div>
 
+            {/* 4. Sides: Single-sided | Double-sided */}
             <div className="print-setting-col">
-              <label style={{ margin: 0 }}>Sides</label>
+              <label className="setting-label">Sides</label>
               <div className="visual-options horizontal">
                 <label
                   className={`visual-option-card ${selectedFile.sides === "SINGLE" ? "selected" : ""} ${!printOptions.some((o) => o.paperSize === selectedFile.paperSize && o.colorMode === selectedFile.colorMode && o.sides === "SINGLE") ? "disabled" : ""}`}
@@ -297,7 +250,10 @@ export function PrintSettingsStep({
                     }
                     onChange={() => onPatchSelected({ sides: "SINGLE" })}
                   />
-                  <span className="card-icon single-side-icon">📄</span>
+                  <span
+                    className="card-icon single-side-icon"
+                    aria-hidden="true"
+                  ></span>
                   <span className="label">Single-sided</span>
                   <span className="radio-circle"></span>
                 </label>
@@ -319,7 +275,10 @@ export function PrintSettingsStep({
                     }
                     onChange={() => onPatchSelected({ sides: "DOUBLE" })}
                   />
-                  <span className="card-icon double-side-icon">📑</span>
+                  <span
+                    className="card-icon double-side-icon"
+                    aria-hidden="true"
+                  ></span>
                   <span className="label">
                     Double-sided
                     {!printOptions.some(
@@ -328,15 +287,7 @@ export function PrintSettingsStep({
                         o.colorMode === selectedFile.colorMode &&
                         o.sides === "DOUBLE",
                     ) && (
-                      <span
-                        style={{
-                          display: "block",
-                          fontSize: "0.72rem",
-                          color: "#64748b",
-                          fontWeight: 400,
-                          marginTop: "0.15rem",
-                        }}
-                      >
+                      <span className="option-help-text">
                         Duplex printing unavailable on current printers
                       </span>
                     )}
@@ -345,7 +296,81 @@ export function PrintSettingsStep({
                 </label>
               </div>
             </div>
+
+            {/* 5. Copies: Clear, compact stepper */}
+            <div className="print-setting-col">
+              <div className="copies-setting-row">
+                <label
+                  htmlFor="copies-input"
+                  className="setting-label"
+                  style={{ margin: 0 }}
+                >
+                  Copies
+                </label>
+                <div className="number-stepper">
+                  <button
+                    type="button"
+                    aria-label="-"
+                    onClick={() =>
+                      onPatchSelected({
+                        copies: Math.max(
+                          MIN_PRINT_COPIES,
+                          selectedFile.copies - 1,
+                        ),
+                      })
+                    }
+                  >
+                    -
+                  </button>
+                  <input
+                    id="copies-input"
+                    aria-label="Copies"
+                    type="number"
+                    min={MIN_PRINT_COPIES}
+                    max={MAX_PRINT_COPIES}
+                    value={copiesDraft}
+                    onChange={(event) => {
+                      const text = event.target.value;
+                      setCopiesDraft(text);
+                      if (text.trim() === "") return;
+                      const c = parseInt(text, 10);
+                      if (!isNaN(c) && c >= 1) {
+                        onPatchSelected({
+                          copies: Math.min(MAX_PRINT_COPIES, c),
+                        });
+                      }
+                    }}
+                    onBlur={() => {
+                      const c = parseInt(copiesDraft, 10);
+                      if (isNaN(c) || c < MIN_PRINT_COPIES) {
+                        setCopiesDraft(String(MIN_PRINT_COPIES));
+                        onPatchSelected({ copies: MIN_PRINT_COPIES });
+                      } else {
+                        const clamped = Math.min(MAX_PRINT_COPIES, c);
+                        setCopiesDraft(String(clamped));
+                        onPatchSelected({ copies: clamped });
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    aria-label="+"
+                    onClick={() =>
+                      onPatchSelected({
+                        copies: Math.min(
+                          MAX_PRINT_COPIES,
+                          selectedFile.copies + 1,
+                        ),
+                      })
+                    }
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
+
           {!optionAvailable && (
             <p className="error">
               {selectedFile?.sides === "DOUBLE" &&
@@ -359,6 +384,7 @@ export function PrintSettingsStep({
                 : "That print combination is not currently available."}
             </p>
           )}
+
           <button
             type="button"
             onClick={onApplySettingsToAll}

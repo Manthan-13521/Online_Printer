@@ -110,6 +110,23 @@ describe("customer tracking page", () => {
     expect(await screen.findByText("Ready for pickup")).toBeTruthy();
     expect(screen.getByText("Order code")).toBeTruthy();
     expect(screen.getByText("PG-ABC234")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /print another/i })).toBeTruthy();
+  });
+
+  it("renders Print Another button on the order ready page and triggers onBack", async () => {
+    const onBack = vi.fn();
+    sessionStorage.setItem("printgo.tracking.PG-ABC234", token);
+    vi.mocked(customerApi.tracking).mockResolvedValueOnce({
+      ...tracking,
+      orderStatus: "COMPLETED",
+      statusLabel: "Completed",
+      statusMessage: "Your print job is complete.",
+    });
+    render(<TrackingPage jobCode="PG-ABC234" onBack={onBack} />);
+    const btn = await screen.findByRole("button", { name: /print another/i });
+    expect(btn).toBeTruthy();
+    btn.click();
+    expect(onBack).toHaveBeenCalledTimes(1);
   });
 
   it("does not show ready while staff finishing is pending", async () => {

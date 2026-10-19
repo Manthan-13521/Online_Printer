@@ -36,6 +36,8 @@ export function DashboardPage({
       needsAttention: 0,
     },
   });
+  const [manualCount, setManualCount] = useState<number>(0);
+  const [pendingCashCount, setPendingCashCount] = useState<number>(0);
   const [togglingPrinting, setTogglingPrinting] = useState(false);
   const [togglingIdSheet, setTogglingIdSheet] = useState(false);
   const [togglingCash, setTogglingCash] = useState(false);
@@ -141,6 +143,37 @@ export function DashboardPage({
         printingNow: data.printingNow,
         statusCounts: data.statusCounts,
       });
+
+      if (typeof adminApi.getManualOrders === "function") {
+        try {
+          const manualRes = await adminApi.getManualOrders();
+          if (manualRes && manualRes.ok) {
+            setManualCount(manualRes.data.orders.length);
+          } else {
+            setManualCount(data.statusCounts?.readyForPickup ?? 0);
+          }
+        } catch {
+          setManualCount(data.statusCounts?.readyForPickup ?? 0);
+        }
+      } else {
+        setManualCount(data.statusCounts?.readyForPickup ?? 0);
+      }
+
+      if (typeof adminApi.getCashOrders === "function") {
+        try {
+          const cashRes = await adminApi.getCashOrders();
+          if (cashRes && cashRes.ok) {
+            const now = Date.now();
+            const activeCash = cashRes.data.orders.filter(
+              (o) => now < o.cashGraceUntilMs,
+            ).length;
+            setPendingCashCount(activeCash);
+          }
+        } catch {
+          // Keep current or 0
+        }
+      }
+
       return changed;
     } catch (err: unknown) {
       const msg = friendlyAdminError(err);
@@ -219,10 +252,7 @@ export function DashboardPage({
 
   return (
     <div className="dashboard-page">
-      <header
-        className="page-header"
-        style={{ marginBottom: "0.85rem", marginTop: "-0.25rem" }}
-      >
+      <header className="page-header dashboard-header">
         <h1
           style={{
             margin: 0,
@@ -234,6 +264,59 @@ export function DashboardPage({
         >
           {settings?.shopName ?? settings?.appName ?? "PrintGo"}
         </h1>
+
+        <div className="dashboard-status-counters">
+          <button
+            type="button"
+            className="compact-status-counter blue-counter"
+            onClick={() => onNavigate("/admin/manual-orders")}
+            title="View Manual / Finishing Orders"
+            aria-label={`Manual or Finishing Orders: ${manualCount}`}
+          >
+            <span
+              className="compact-counter-icon blue-counter-icon"
+              aria-hidden="true"
+            >
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <polyline points="6 9 6 2 18 2 18 9" />
+                <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+                <rect x="6" y="14" width="12" height="8" />
+              </svg>
+            </span>
+            <span className="compact-counter-label">
+              Manual / Finishing Orders
+            </span>
+            <span className="count-badge blue-count-badge">{manualCount}</span>
+          </button>
+
+          <button
+            type="button"
+            className="compact-status-counter green-counter"
+            onClick={() => onNavigate("/admin/manual-orders")}
+            title="View Pending Cash Orders"
+            aria-label={`Pending Cash Orders: ${pendingCashCount}`}
+          >
+            <span
+              className="compact-counter-icon green-counter-icon"
+              aria-hidden="true"
+            >
+              ₹
+            </span>
+            <span className="compact-counter-label">Pending Cash Orders</span>
+            <span className="count-badge green-count-badge">
+              {pendingCashCount}
+            </span>
+          </button>
+        </div>
       </header>
 
       {error ? (

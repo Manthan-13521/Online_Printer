@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   Check,
   ArrowLeft,
+  RotateCcw,
 } from "lucide-react";
 
 const STAGES = [
@@ -895,6 +896,33 @@ function FinishedScreen({
           }}
         >
           <ArrowLeft className="w-5 h-5" />
+        </button>
+      </div>
+
+      {/* Top Right Print Another Button */}
+      <div
+        style={{
+          position: "absolute",
+          top: 0,
+          right: 0,
+          paddingTop: "max(env(safe-area-inset-top, 16px), 16px)",
+          paddingRight: "16px",
+          zIndex: 60,
+        }}
+      >
+        <button
+          type="button"
+          onClick={handleBackAction}
+          aria-label="Print Another"
+          className="inline-flex items-center gap-1.5 px-3.5 py-2 md:px-4 md:py-2.5 rounded-full bg-white/20 hover:bg-white/30 active:bg-white/40 text-white text-xs md:text-sm font-semibold transition-all shadow-sm"
+          style={{
+            backdropFilter: "blur(4px)",
+            WebkitBackdropFilter: "blur(4px)",
+            touchAction: "manipulation",
+          }}
+        >
+          <RotateCcw className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0" />
+          <span>Print Another</span>
         </button>
       </div>
 
