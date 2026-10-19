@@ -442,6 +442,10 @@ export type AdminConfirmCashPaymentResponse =
 export interface CustomerOrderQuoteRequest {
   files: Array<CustomerPrintSettingsRequest & { fileId: string }>;
   isPriority?: boolean;
+  customerName?: string;
+  customerPhone?: string;
+  instructions?: string | null;
+  addonServiceIds?: string[];
 }
 
 export interface CustomerFileQuoteData extends CustomerOrderFileData {

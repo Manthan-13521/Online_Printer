@@ -8,6 +8,7 @@ export interface OrderReviewSummaryProps {
   files: LocalOrderFile[];
   customerName: string;
   customerPhone: string;
+  isRecalculating?: boolean;
   children?: React.ReactNode;
 }
 
@@ -16,6 +17,7 @@ export function OrderReviewSummary({
   files,
   customerName,
   customerPhone,
+  isRecalculating = false,
   children,
 }: OrderReviewSummaryProps) {
   return (
@@ -105,8 +107,30 @@ export function OrderReviewSummary({
       </div>
 
       <div className="total-box">
-        <div className="total-label">Total Amount</div>
-        <div className="total-value">
+        <div className="total-label">
+          Total Amount
+          {isRecalculating && (
+            <span
+              className="recalculating-hint"
+              style={{
+                fontSize: "0.82rem",
+                fontWeight: 500,
+                opacity: 0.85,
+                marginLeft: "0.5rem",
+                color: "#166534",
+              }}
+            >
+              (Updating total…)
+            </span>
+          )}
+        </div>
+        <div
+          className="total-value"
+          style={{
+            opacity: isRecalculating ? 0.6 : 1,
+            transition: "opacity 0.2s ease",
+          }}
+        >
           {formatInr(quote.totalAmountPaise ?? 0)}
         </div>
 

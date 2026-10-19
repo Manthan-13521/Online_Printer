@@ -469,7 +469,7 @@ export class D1PrintingRepository implements PrintingRepository {
         .bind(nowMs, nowMs),
       this.db
         .prepare(
-          `UPDATE orders SET status = 'ADMIN_ACTION_REQUIRED', updated_at_ms = ?
+          `UPDATE orders SET status = 'ADMIN_ACTION_REQUIRED', physical_device_id = NULL, updated_at_ms = ?
         WHERE claim_expires_at_ms <= ? AND status IN (${activeStatuses})
           AND EXISTS (
             SELECT 1 FROM print_attempts pa JOIN print_attempt_steps ps
@@ -633,7 +633,13 @@ export class D1PrintingRepository implements PrintingRepository {
           AND NOT EXISTS (
             SELECT 1 FROM orders busy
             WHERE busy.id <> orders.id
-              AND busy.status IN ('CLAIMED','SPOOLING','PRINTING','ADMIN_ACTION_REQUIRED','COMPLETION_UNKNOWN','NEEDS_ADMIN')
+              AND (
+                busy.status IN ('CLAIMED','SPOOLING','PRINTING')
+                OR (
+                  busy.status IN ('ADMIN_ACTION_REQUIRED','COMPLETION_UNKNOWN','NEEDS_ADMIN')
+                  AND busy.physical_device_id IS NOT NULL
+                )
+              )
               AND busy.physical_device_id = ?
           )
           AND EXISTS (
@@ -1004,8 +1010,17 @@ export class D1PrintingRepository implements PrintingRepository {
                       SELECT 1 FROM orders busy
                       JOIN printers busy_p ON busy_p.id = busy.printer_id
                       WHERE busy.id <> o.id
-                        AND busy.status IN ('CLAIMED','SPOOLING','PRINTING','ADMIN_ACTION_REQUIRED','COMPLETION_UNKNOWN','NEEDS_ADMIN')
-                        AND COALESCE(busy.physical_device_id, COALESCE(busy_p.physical_device_id, 'AGENT_LOCK_' || busy_p.agent_id)) = COALESCE(def.physical_device_id, 'AGENT_LOCK_' || def.agent_id)
+                        AND (
+                          (
+                            busy.status IN ('CLAIMED','SPOOLING','PRINTING')
+                            AND COALESCE(busy.physical_device_id, COALESCE(busy_p.physical_device_id, 'AGENT_LOCK_' || busy_p.agent_id)) = COALESCE(def.physical_device_id, 'AGENT_LOCK_' || def.agent_id)
+                          )
+                          OR (
+                            busy.status IN ('ADMIN_ACTION_REQUIRED','COMPLETION_UNKNOWN','NEEDS_ADMIN')
+                            AND busy.physical_device_id IS NOT NULL
+                            AND busy.physical_device_id = COALESCE(def.physical_device_id, 'AGENT_LOCK_' || def.agent_id)
+                          )
+                        )
                     )
                 )
               )
@@ -1063,8 +1078,17 @@ export class D1PrintingRepository implements PrintingRepository {
             SELECT 1 FROM orders busy
             JOIN printers busy_p ON busy_p.id = busy.printer_id
             WHERE busy.id <> o.id
-              AND busy.status IN ('CLAIMED','SPOOLING','PRINTING','ADMIN_ACTION_REQUIRED','COMPLETION_UNKNOWN','NEEDS_ADMIN')
-              AND COALESCE(busy.physical_device_id, COALESCE(busy_p.physical_device_id, 'AGENT_LOCK_' || busy_p.agent_id)) = COALESCE(p.physical_device_id, 'AGENT_LOCK_' || p.agent_id)
+              AND (
+                (
+                  busy.status IN ('CLAIMED','SPOOLING','PRINTING')
+                  AND COALESCE(busy.physical_device_id, COALESCE(busy_p.physical_device_id, 'AGENT_LOCK_' || busy_p.agent_id)) = COALESCE(p.physical_device_id, 'AGENT_LOCK_' || p.agent_id)
+                )
+                OR (
+                  busy.status IN ('ADMIN_ACTION_REQUIRED','COMPLETION_UNKNOWN','NEEDS_ADMIN')
+                  AND busy.physical_device_id IS NOT NULL
+                  AND busy.physical_device_id = COALESCE(p.physical_device_id, 'AGENT_LOCK_' || p.agent_id)
+                )
+              )
           )
           AND NOT EXISTS (
             SELECT 1 FROM (
@@ -1831,7 +1855,7 @@ export class D1PrintingRepository implements PrintingRepository {
       this.db
         .prepare(
           `UPDATE orders
-           SET status = 'ADMIN_ACTION_REQUIRED', error_category = ?, raw_error = ?,
+           SET status = 'ADMIN_ACTION_REQUIRED', physical_device_id = NULL, error_category = ?, raw_error = ?,
                blocked_reason = ?, fallback_count = ?, attempt_count = 3, next_retry_at_ms = NULL,
                updated_at_ms = ?
            WHERE id = ? AND claim_id = ?`,
@@ -2036,7 +2060,7 @@ export class D1PrintingRepository implements PrintingRepository {
           .prepare(
             `UPDATE orders
              SET status = 'COMPLETION_UNKNOWN', claimed_by_agent_id = NULL, claim_id = NULL,
-                 claim_expires_at_ms = NULL, error_category = 'COMPLETION_UNKNOWN',
+                 claim_expires_at_ms = NULL, physical_device_id = NULL, error_category = 'COMPLETION_UNKNOWN',
                  raw_error = ?, attempt_count = ?, last_attempt_at_ms = ?, updated_at_ms = ?
              WHERE id = ? AND claim_id = ?`,
           )
@@ -3388,7 +3412,7 @@ export class D1PrintingRepository implements PrintingRepository {
         `SELECT o.id, o.public_job_code
          FROM orders o
          WHERE o.status IN ('CLAIMED','SPOOLING','PRINTING')
-           AND o.updated_at_ms <= ?
+           AND (o.updated_at_ms <= ? OR (o.claim_expires_at_ms IS NOT NULL AND o.claim_expires_at_ms <= ?))
            AND EXISTS (
              SELECT 1 FROM print_attempts pa
              JOIN print_attempt_steps ps ON ps.print_attempt_id = pa.id
@@ -3396,7 +3420,7 @@ export class D1PrintingRepository implements PrintingRepository {
                AND ps.status IN ('SUBMISSION_STARTED','SUBMITTED')
            )`,
       )
-      .bind(input.nowMs - STALL_THRESHOLD_MS)
+      .bind(input.nowMs - STALL_THRESHOLD_MS, input.nowMs)
       .all<{ id: string; public_job_code: string }>();
 
     for (const stalled of stalledInFlight.results ?? []) {
@@ -3405,7 +3429,6 @@ export class D1PrintingRepository implements PrintingRepository {
           `UPDATE orders
            SET status = 'ADMIN_ACTION_REQUIRED',
                physical_device_id = NULL,
-               printer_id = NULL,
                recovered_at_ms = ?,
                recovery_reason = 'STALLED_IN_SUBMISSION_QUARANTINED',
                updated_at_ms = ?
@@ -3640,7 +3663,7 @@ export class D1PrintingRepository implements PrintingRepository {
       .prepare(
         `SELECT id, public_job_code, status FROM orders
          WHERE status IN ('ADMIN_ACTION_REQUIRED', 'COMPLETION_UNKNOWN', 'NEEDS_ADMIN')
-           AND (physical_device_id IS NOT NULL OR printer_id IS NOT NULL)`,
+           AND physical_device_id IS NOT NULL`,
       )
       .all<{ id: string; public_job_code: string; status: string }>();
 
@@ -3654,12 +3677,11 @@ export class D1PrintingRepository implements PrintingRepository {
         .prepare(
           `UPDATE orders
            SET physical_device_id = NULL,
-               printer_id = NULL,
                recovered_at_ms = ?,
                recovery_reason = 'PHYSICAL_LOCK_RELEASED_FOR_QUEUE',
                updated_at_ms = ?
            WHERE status IN ('ADMIN_ACTION_REQUIRED', 'COMPLETION_UNKNOWN', 'NEEDS_ADMIN')
-             AND (physical_device_id IS NOT NULL OR printer_id IS NOT NULL)`,
+             AND physical_device_id IS NOT NULL`,
         )
         .bind(input.nowMs, input.nowMs)
         .run();
@@ -3817,7 +3839,7 @@ export class D1PrintingRepository implements PrintingRepository {
            SET status = 'EXPIRED', finished_at_ms = ?
            WHERE agent_id = ? AND (printer_id = ? OR windows_printer_name = ?)
              AND command_type = 'CLEAR_SPOOLER'
-             AND status IN ('PENDING', 'CLAIMED', 'FAILED')`,
+             AND status IN ('PENDING', 'CLAIMED', 'FAILED', 'EXPIRED')`,
         )
         .bind(
           input.nowMs,

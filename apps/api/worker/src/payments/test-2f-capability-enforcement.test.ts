@@ -378,6 +378,8 @@ describe("TEST 2F: Server-Side Printer Capability Enforcement", () => {
       selectCashPayment: (token) => customerService.selectCashPayment(token),
       quote: (token, input) => customerService.quote(token, input),
       quoteOrder: (token, input) => customerService.quoteOrder(token, input),
+      previewQuoteOrder: (token, input) =>
+        customerService.previewQuoteOrder(token, input),
       createPayment: (token, input) =>
         paymentService.createCheckout(token, input.acknowledgedTotalPaise),
       verifyPayment: async (token, input) =>

@@ -12,6 +12,7 @@ import type {
   PublicOrderTrackingData,
   SelectCustomerCashPaymentData,
   UploadAuthorization,
+  OrderAddonServiceSnapshot,
 } from "@printgo/api-contract";
 import { createSessionToken, hashSessionToken } from "@printgo/auth";
 import {
@@ -531,12 +532,26 @@ export class CustomerService {
     }
   }
 
-  async quoteOrder(
+  private async computeOrderQuote(
     rawToken: string,
     input: CustomerOrderQuoteRequest,
-  ): Promise<CustomerQuoteData> {
+  ): Promise<{
+    tokenHash: string;
+    orderId: string;
+    quoted: CustomerFileQuoteData[];
+    printingAmountPaise: number;
+    effectiveServiceChargePaise: number;
+    totalAmountPaise: number;
+    isPriority: boolean;
+    priorityFeePaise: number;
+    discountAmountPaise: number;
+    calculatedDiscount: ReturnType<typeof calculateDiscount>;
+    identificationRequired: boolean;
+    expiresAtMs: number;
+    quote: CustomerQuoteData;
+  }> {
     await this.requireOnline();
-    const { tokenHash } = await this.requireSummary(rawToken);
+    const { tokenHash, draft } = await this.requireSummary(rawToken);
     const stored = await this.repository.listFiles(tokenHash);
     if (
       stored.length < 1 ||
@@ -604,13 +619,24 @@ export class CustomerService {
       (total, file) => total + file.serviceChargePaise,
       0,
     );
-    const orderId = stored[0]?.orderId;
-    const addonAmountPaise = orderId
-      ? await this.repository.getOrderAddonAmountPaise(orderId)
-      : 0;
-    const addonSnapshots = orderId
-      ? await this.repository.getOrderAddonSnapshots(orderId)
-      : [];
+    const orderId = draft.orderId;
+
+    let addonAmountPaise: number;
+    let addonSnapshots: OrderAddonServiceSnapshot[];
+
+    if (input.addonServiceIds !== undefined) {
+      addonSnapshots = await this.repository.getAddonServicesByIds(
+        input.addonServiceIds,
+      );
+      addonAmountPaise = addonSnapshots.reduce(
+        (sum, s) => sum + s.onlinePricePaise,
+        0,
+      );
+    } else {
+      addonAmountPaise =
+        await this.repository.getOrderAddonAmountPaise(orderId);
+      addonSnapshots = await this.repository.getOrderAddonSnapshots(orderId);
+    }
 
     const { priorityPrinting, identificationPolicy, discountRules } =
       await this.repository.getPricingRulesAndPolicy();
@@ -637,38 +663,10 @@ export class CustomerService {
     });
 
     const expiresAtMs = this.now() + UNPAID_RETENTION_MS;
-    if (
-      !(await this.repository.saveOrderQuote({
-        tokenHash,
-        files: quoted.map((file) => ({
-          fileId: file.fileId,
-          selectedPages: file.selectedPages,
-          selectedPageCount: file.selectedPageCount,
-          copies: file.copies,
-          paperSize: file.paperSize,
-          colorMode: file.colorMode,
-          sides: file.sides,
-          printingAmountPaise: file.printingAmountPaise,
-          serviceChargePaise: file.serviceChargePaise,
-        })),
-        printingAmountPaise,
-        serviceChargePaise: effectiveServiceChargePaise,
-        totalAmountPaise,
-        isPriority,
-        priorityFeePaise,
-        discountAmountPaise,
-        snapshotDiscountThresholdPaise:
-          calculatedDiscount.discountThresholdPaise,
-        snapshotDiscountPercent: calculatedDiscount.discountPercent,
-        identificationRequired,
-        nowMs: this.now(),
-        expiresAtMs,
-      }))
-    )
-      throw new CustomerError("QUOTE_STATE_INVALID");
     const first = quoted[0];
     if (!first) throw new CustomerError("QUOTE_STATE_INVALID");
-    return {
+
+    const quote: CustomerQuoteData = {
       normalizedSelectedPages: first.selectedPages,
       selectedPageCount: first.selectedPageCount,
       copies: first.copies,
@@ -697,6 +695,79 @@ export class CustomerService {
           : null,
       identificationRequired,
     };
+
+    return {
+      tokenHash,
+      orderId,
+      quoted,
+      printingAmountPaise,
+      effectiveServiceChargePaise,
+      totalAmountPaise,
+      isPriority,
+      priorityFeePaise,
+      discountAmountPaise,
+      calculatedDiscount,
+      identificationRequired,
+      expiresAtMs,
+      quote,
+    };
+  }
+
+  async previewQuoteOrder(
+    rawToken: string,
+    input: CustomerOrderQuoteRequest,
+  ): Promise<CustomerQuoteData> {
+    const computed = await this.computeOrderQuote(rawToken, input);
+    return computed.quote;
+  }
+
+  async quoteOrder(
+    rawToken: string,
+    input: CustomerOrderQuoteRequest,
+  ): Promise<CustomerQuoteData> {
+    const computed = await this.computeOrderQuote(rawToken, input);
+
+    if (input.addonServiceIds !== undefined) {
+      await this.repository.replaceOrderAddonServices(
+        computed.orderId,
+        input.addonServiceIds,
+      );
+    }
+
+    if (
+      !(await this.repository.saveOrderQuote({
+        tokenHash: computed.tokenHash,
+        files: computed.quoted.map((file) => ({
+          fileId: file.fileId,
+          selectedPages: file.selectedPages,
+          selectedPageCount: file.selectedPageCount,
+          copies: file.copies,
+          paperSize: file.paperSize,
+          colorMode: file.colorMode,
+          sides: file.sides,
+          printingAmountPaise: file.printingAmountPaise,
+          serviceChargePaise: file.serviceChargePaise,
+        })),
+        printingAmountPaise: computed.printingAmountPaise,
+        serviceChargePaise: computed.effectiveServiceChargePaise,
+        totalAmountPaise: computed.totalAmountPaise,
+        isPriority: computed.isPriority,
+        priorityFeePaise: computed.priorityFeePaise,
+        discountAmountPaise: computed.discountAmountPaise,
+        snapshotDiscountThresholdPaise:
+          computed.calculatedDiscount.discountThresholdPaise,
+        snapshotDiscountPercent: computed.calculatedDiscount.discountPercent,
+        identificationRequired: computed.identificationRequired,
+        nowMs: this.now(),
+        expiresAtMs: computed.expiresAtMs,
+        customerName: input.customerName,
+        customerPhone: input.customerPhone,
+        instructions: input.instructions,
+      }))
+    )
+      throw new CustomerError("QUOTE_STATE_INVALID");
+
+    return computed.quote;
   }
 
   async trackPublicOrder(pickupCode: string): Promise<PublicOrderTrackingData> {

@@ -107,6 +107,11 @@ export const customerApi = {
       "/api/customer/draft/print-settings",
       authorized(token, { method: "PUT", body: JSON.stringify(input) }),
     ),
+  previewQuoteOrder: (token: string, input: CustomerOrderQuoteRequest) =>
+    jsonRequest<CustomerQuoteData>(
+      "/api/customer/draft/preview-quote",
+      authorized(token, { method: "POST", body: JSON.stringify(input) }),
+    ),
   createPayment: (token: string, input: CreateCustomerPaymentRequest) =>
     jsonRequest<CreateCustomerPaymentData>(
       "/api/customer/payments/create",

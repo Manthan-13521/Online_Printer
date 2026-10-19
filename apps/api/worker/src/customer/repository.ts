@@ -177,6 +177,9 @@ export interface CustomerRepository {
     identificationRequired: boolean;
     nowMs: number;
     expiresAtMs: number;
+    customerName?: string | undefined;
+    customerPhone?: string | undefined;
+    instructions?: string | null | undefined;
   }): Promise<boolean>;
   getPricingRulesAndPolicy(): Promise<{
     priorityPrinting: { enabled: boolean; feePaise: number };
@@ -194,6 +197,13 @@ export interface CustomerRepository {
     orderId: string,
     serviceIds: readonly string[],
   ): Promise<void>;
+  replaceOrderAddonServices(
+    orderId: string,
+    serviceIds: readonly string[],
+  ): Promise<void>;
+  getAddonServicesByIds(
+    serviceIds: readonly string[],
+  ): Promise<OrderAddonServiceSnapshot[]>;
   getOrderAddonAmountPaise(orderId: string): Promise<number>;
   getOrderAddonSnapshots(orderId: string): Promise<OrderAddonServiceSnapshot[]>;
 }
@@ -1326,6 +1336,10 @@ export class D1CustomerRepository implements CustomerRepository {
           ),
       );
     }
+    const hasName = input.customerName !== undefined;
+    const hasPhone = input.customerPhone !== undefined;
+    const hasInst = input.instructions !== undefined;
+
     statements.push(
       this.db
         .prepare(
@@ -1335,6 +1349,9 @@ export class D1CustomerRepository implements CustomerRepository {
            is_priority = ?, priority_fee_paise = ?,
            discount_amount_paise = ?, snapshot_discount_threshold_paise = ?,
            snapshot_discount_percent = ?, identification_required = ?,
+           customer_name = CASE WHEN ? = 1 THEN ? ELSE customer_name END,
+           customer_phone = CASE WHEN ? = 1 THEN ? ELSE customer_phone END,
+           instructions = CASE WHEN ? = 1 THEN ? ELSE instructions END,
            status = 'PAYMENT_PENDING', draft_expires_at_ms = ?, updated_at_ms = ?
            WHERE draft_token_hash = ? AND cleanup_state = 'ACTIVE'
              AND status IN ('UPLOADED','PAYMENT_PENDING','PAYMENT_FAILED','PAYMENT_CANCELLED')
@@ -1359,6 +1376,12 @@ export class D1CustomerRepository implements CustomerRepository {
           input.snapshotDiscountThresholdPaise,
           input.snapshotDiscountPercent,
           input.identificationRequired ? 1 : 0,
+          hasName ? 1 : 0,
+          input.customerName ?? null,
+          hasPhone ? 1 : 0,
+          input.customerPhone ?? null,
+          hasInst ? 1 : 0,
+          input.instructions ?? null,
           input.expiresAtMs,
           input.nowMs,
           input.tokenHash,
@@ -1414,6 +1437,77 @@ export class D1CustomerRepository implements CustomerRepository {
           svc.handling_mode,
         ),
     );
+    await this.db.batch(statements);
+  }
+
+  async getAddonServicesByIds(
+    serviceIds: readonly string[],
+  ): Promise<OrderAddonServiceSnapshot[]> {
+    if (serviceIds.length === 0) return [];
+    const placeholders = serviceIds.map(() => "?").join(", ");
+    const services = await this.db
+      .prepare(
+        `SELECT id, name, pricing_type, fixed_price_paise, handling_mode, enabled
+         FROM addon_services WHERE id IN (${placeholders})`,
+      )
+      .bind(...serviceIds)
+      .all<{
+        id: string;
+        name: string;
+        pricing_type: string;
+        fixed_price_paise: number | null;
+        handling_mode: string;
+        enabled: number;
+      }>();
+    if (services.results.length !== serviceIds.length) {
+      throw new Error("ADDON_SERVICE_NOT_FOUND");
+    }
+    const disabled = services.results.find((s) => s.enabled === 0);
+    if (disabled) {
+      throw new Error("ADDON_SERVICE_DISABLED");
+    }
+    return services.results.map((svc) => ({
+      serviceId: svc.id,
+      serviceName: svc.name,
+      pricingType: svc.pricing_type as PricingType,
+      onlinePricePaise:
+        svc.pricing_type === "FIXED_PRICE" ? (svc.fixed_price_paise ?? 0) : 0,
+      handlingMode: svc.handling_mode as HandlingMode,
+    }));
+  }
+
+  async replaceOrderAddonServices(
+    orderId: string,
+    serviceIds: readonly string[],
+  ): Promise<void> {
+    const deleteStmt = this.db
+      .prepare(`DELETE FROM order_addon_services WHERE order_id = ?`)
+      .bind(orderId);
+    if (serviceIds.length === 0) {
+      await deleteStmt.run();
+      return;
+    }
+    const snapshots = await this.getAddonServicesByIds(serviceIds);
+    const statements = [
+      deleteStmt,
+      ...snapshots.map((s) =>
+        this.db
+          .prepare(
+            `INSERT INTO order_addon_services
+               (order_id, service_id, snapshot_name, snapshot_pricing_type,
+                snapshot_price_charged_online_paise, snapshot_handling_mode)
+             VALUES (?, ?, ?, ?, ?, ?)`,
+          )
+          .bind(
+            orderId,
+            s.serviceId,
+            s.serviceName,
+            s.pricingType,
+            s.onlinePricePaise,
+            s.handlingMode,
+          ),
+      ),
+    ];
     await this.db.batch(statements);
   }
 

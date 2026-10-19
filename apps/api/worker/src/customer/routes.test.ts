@@ -112,6 +112,7 @@ function actions(): CustomerActions {
       }),
     ),
     quoteOrder: vi.fn(() => Promise.reject(new Error("not used"))),
+    previewQuoteOrder: vi.fn(() => Promise.reject(new Error("not used"))),
     createPayment: vi.fn(() =>
       Promise.resolve({
         status: "CHECKOUT_READY" as const,

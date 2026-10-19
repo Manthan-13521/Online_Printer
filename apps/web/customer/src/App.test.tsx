@@ -27,6 +27,7 @@ vi.mock("./api", () => ({
     removeFile: vi.fn(),
     quote: vi.fn(),
     quoteOrder: vi.fn(),
+    previewQuoteOrder: vi.fn(),
     createPayment: vi.fn(),
     verifyPayment: vi.fn(),
     cancelPayment: vi.fn(),
@@ -141,6 +142,19 @@ beforeEach(() => {
     expiresAt: "later",
   });
   vi.mocked(customerApi.quoteOrder).mockResolvedValue({
+    normalizedSelectedPages: "1-10",
+    selectedPageCount: 10,
+    copies: 1,
+    paperSize: "A4",
+    colorMode: "BW",
+    sides: "SINGLE",
+    printingAmountPaise: 2000,
+    serviceChargePaise: 100,
+    totalAmountPaise: 2100,
+    currency: "INR",
+    expiresAt: "later",
+  });
+  vi.mocked(customerApi.previewQuoteOrder).mockResolvedValue({
     normalizedSelectedPages: "1-10",
     selectedPageCount: 10,
     copies: 1,
@@ -1299,6 +1313,310 @@ describe("customer upload app", () => {
           privateTrackingToken,
         );
       });
+    });
+  });
+
+  describe("live checkout editing & zero extra D1 writes", () => {
+    it("keeps customer details and upload inputs unlocked after review", async () => {
+      const user = userEvent.setup();
+      render(<App />);
+      await screen.findByText("ABC Xerox");
+      await user.type(screen.getByLabelText("Name"), "Rahul");
+      await user.type(screen.getByLabelText("Phone"), "9876543210");
+      await user.upload(
+        screen.getByLabelText("Choose Files"),
+        new File(["%PDF"], "notes.pdf", { type: "application/pdf" }),
+      );
+      await screen.findAllByText(/10 pages/);
+      fireEvent.submit(
+        screen.getByRole("button", { name: "Review Order" }).closest("form")!,
+      );
+
+      // Quote appears
+      expect(await screen.findByText("₹21.00")).toBeTruthy();
+
+      // Step 1 and Step 2 inputs remain unlocked!
+      const nameInput = screen.getByLabelText<HTMLInputElement>("Name");
+      const phoneInput = screen.getByLabelText<HTMLInputElement>("Phone");
+      const fileInput = screen.getByLabelText<HTMLInputElement>("Choose Files");
+
+      expect(nameInput.disabled).toBe(false);
+      expect(phoneInput.disabled).toBe(false);
+      expect(fileInput.disabled).toBe(false);
+    });
+
+    it("reflects live edits to customer name without clearing quote or calling quoteOrder", async () => {
+      const user = userEvent.setup();
+      render(<App />);
+      await screen.findByText("ABC Xerox");
+      await user.type(screen.getByLabelText("Name"), "Rahul");
+      await user.type(screen.getByLabelText("Phone"), "9876543210");
+      await user.upload(
+        screen.getByLabelText("Choose Files"),
+        new File(["%PDF"], "notes.pdf", { type: "application/pdf" }),
+      );
+      await screen.findAllByText(/10 pages/);
+      fireEvent.submit(
+        screen.getByRole("button", { name: "Review Order" }).closest("form")!,
+      );
+
+      expect(await screen.findByText("₹21.00")).toBeTruthy();
+      expect(customerApi.quoteOrder).toHaveBeenCalledTimes(1);
+
+      // Edit name
+      const nameInput = screen.getByLabelText("Name");
+      await user.clear(nameInput);
+      await user.type(nameInput, "Rahul Sharma");
+
+      // Review summary immediately reflects updated name
+      expect(await screen.findByText(/Rahul Sharma/)).toBeTruthy();
+      // Quote is NOT cleared!
+      expect(screen.getByText("₹21.00")).toBeTruthy();
+      // Zero extra D1 writes (quoteOrder was NOT called again)
+      expect(customerApi.quoteOrder).toHaveBeenCalledTimes(1);
+    });
+
+    it("automatically recalculates preview quote when copies change without extra D1 writes", async () => {
+      const user = userEvent.setup();
+      vi.mocked(customerApi.previewQuoteOrder).mockResolvedValueOnce({
+        normalizedSelectedPages: "1-10",
+        selectedPageCount: 10,
+        copies: 2,
+        paperSize: "A4",
+        colorMode: "BW",
+        sides: "SINGLE",
+        printingAmountPaise: 4000,
+        serviceChargePaise: 100,
+        totalAmountPaise: 4100,
+        currency: "INR",
+        expiresAt: "later",
+      });
+
+      render(<App />);
+      await screen.findByText("ABC Xerox");
+      await user.type(screen.getByLabelText("Name"), "Rahul");
+      await user.type(screen.getByLabelText("Phone"), "9876543210");
+      await user.upload(
+        screen.getByLabelText("Choose Files"),
+        new File(["%PDF"], "notes.pdf", { type: "application/pdf" }),
+      );
+      await screen.findAllByText(/10 pages/);
+      fireEvent.submit(
+        screen.getByRole("button", { name: "Review Order" }).closest("form")!,
+      );
+
+      expect(await screen.findByText("₹21.00")).toBeTruthy();
+      expect(customerApi.quoteOrder).toHaveBeenCalledTimes(1);
+
+      // Change copies
+      const copiesInput = screen.getByRole("spinbutton", { name: /copies/i });
+      fireEvent.change(copiesInput, { target: { value: "2" } });
+
+      // Debounced previewQuoteOrder fires (zero D1 writes)
+      await waitFor(() => {
+        expect(customerApi.previewQuoteOrder).toHaveBeenCalledWith(
+          "A".repeat(43),
+          expect.objectContaining({
+            files: [expect.objectContaining({ copies: 2 })],
+          }),
+        );
+      });
+
+      // Total updates to ₹41.00
+      expect(await screen.findByText("₹41.00")).toBeTruthy();
+      // Still only 1 D1 write from initial review!
+      expect(customerApi.quoteOrder).toHaveBeenCalledTimes(1);
+    });
+
+    it("automatically uploads newly added PDFs and updates the preview total", async () => {
+      const user = userEvent.setup();
+      vi.mocked(customerApi.previewQuoteOrder).mockResolvedValueOnce({
+        normalizedSelectedPages: "1-10",
+        selectedPageCount: 10,
+        copies: 1,
+        paperSize: "A4",
+        colorMode: "BW",
+        sides: "SINGLE",
+        printingAmountPaise: 4000,
+        serviceChargePaise: 200,
+        totalAmountPaise: 4200,
+        currency: "INR",
+        expiresAt: "later",
+        files: [
+          {
+            fileId: "10000000-0000-4000-8000-000000000001",
+            originalFilename: "notes.pdf",
+            sizeBytes: 1024,
+            sourcePageCount: 10,
+            uploadStatus: "UPLOADED",
+            printingAmountPaise: 2000,
+            serviceChargePaise: 100,
+            copies: 1,
+            paperSize: "A4",
+            colorMode: "BW",
+            sides: "SINGLE",
+            selectedPages: "1-10",
+            selectedPageCount: 10,
+          },
+          {
+            fileId: "20000000-0000-4000-8000-000000000002",
+            originalFilename: "diagrams.pdf",
+            sizeBytes: 1024,
+            sourcePageCount: 10,
+            uploadStatus: "UPLOADED",
+            printingAmountPaise: 2000,
+            serviceChargePaise: 100,
+            copies: 1,
+            paperSize: "A4",
+            colorMode: "BW",
+            sides: "SINGLE",
+            selectedPages: "1-10",
+            selectedPageCount: 10,
+          },
+        ],
+      });
+
+      render(<App />);
+      await screen.findByText("ABC Xerox");
+      await user.type(screen.getByLabelText("Name"), "Rahul");
+      await user.type(screen.getByLabelText("Phone"), "9876543210");
+      await user.upload(
+        screen.getByLabelText("Choose Files"),
+        new File(["%PDF"], "notes.pdf", { type: "application/pdf" }),
+      );
+      await screen.findAllByText(/10 pages/);
+      fireEvent.submit(
+        screen.getByRole("button", { name: "Review Order" }).closest("form")!,
+      );
+
+      expect(await screen.findByText("₹21.00")).toBeTruthy();
+
+      // Add a second PDF while in Review
+      await user.upload(
+        screen.getByLabelText("Choose Files"),
+        new File(["%PDF"], "diagrams.pdf", { type: "application/pdf" }),
+      );
+
+      // Verify second file was automatically uploaded
+      await waitFor(() => {
+        expect(customerApi.addFile).toHaveBeenCalledWith(
+          "A".repeat(43),
+          expect.objectContaining({ originalFilename: "diagrams.pdf" }),
+        );
+        expect(customerApi.complete).toHaveBeenCalledWith(
+          "A".repeat(43),
+          "20000000-0000-4000-8000-000000000002",
+        );
+      });
+
+      // Preview quote recalculates with both files
+      await waitFor(() => {
+        expect(customerApi.previewQuoteOrder).toHaveBeenCalled();
+      });
+      expect(await screen.findByText("₹42.00")).toBeTruthy();
+      expect(screen.getByText("Files (2)")).toBeTruthy();
+    });
+
+    it("persists the final edited configuration to D1 exactly once when payment is initiated", async () => {
+      const user = userEvent.setup();
+      vi.mocked(customerApi.quoteOrder)
+        .mockResolvedValueOnce({
+          normalizedSelectedPages: "1-10",
+          selectedPageCount: 10,
+          copies: 1,
+          paperSize: "A4",
+          colorMode: "BW",
+          sides: "SINGLE",
+          printingAmountPaise: 2000,
+          serviceChargePaise: 100,
+          totalAmountPaise: 2100,
+          currency: "INR",
+          expiresAt: "later",
+        })
+        .mockResolvedValueOnce({
+          normalizedSelectedPages: "1-10",
+          selectedPageCount: 10,
+          copies: 3,
+          paperSize: "A4",
+          colorMode: "BW",
+          sides: "SINGLE",
+          printingAmountPaise: 6000,
+          serviceChargePaise: 100,
+          totalAmountPaise: 6100,
+          currency: "INR",
+          expiresAt: "later",
+        });
+
+      vi.mocked(customerApi.createPayment).mockResolvedValueOnce({
+        status: "CHECKOUT_READY",
+        razorpayKeyId: "rzp_test_key",
+        razorpayOrderId: "order_test_123",
+        amountPaise: 6100,
+        currency: "INR",
+        shopName: "ABC Xerox",
+        customerName: "Rahul Sharma",
+        customerPhone: "9876543210",
+        description: "Printing",
+      });
+
+      render(<App />);
+      await screen.findByText("ABC Xerox");
+      await user.type(screen.getByLabelText("Name"), "Rahul");
+      await user.type(screen.getByLabelText("Phone"), "9876543210");
+      await user.upload(
+        screen.getByLabelText("Choose Files"),
+        new File(["%PDF"], "notes.pdf", { type: "application/pdf" }),
+      );
+      await screen.findAllByText(/10 pages/);
+      fireEvent.submit(
+        screen.getByRole("button", { name: "Review Order" }).closest("form")!,
+      );
+
+      expect(await screen.findByText("₹21.00")).toBeTruthy();
+      expect(customerApi.quoteOrder).toHaveBeenCalledTimes(1);
+
+      // User edits name and copies while in review
+      const nameInput = screen.getByLabelText("Name");
+      await user.clear(nameInput);
+      await user.type(nameInput, "Rahul Sharma");
+
+      const copiesInput = screen.getByRole("spinbutton", { name: /copies/i });
+      fireEvent.change(copiesInput, { target: { value: "3" } });
+
+      // Wait for debounced preview recalculation to complete and enable the button
+      await waitFor(() => {
+        expect(customerApi.previewQuoteOrder).toHaveBeenCalled();
+      });
+
+      // User clicks Pay button
+      const payButton = await screen.findByRole("button", {
+        name: /Pay/i,
+      });
+      await waitFor(() => {
+        expect((payButton as HTMLButtonElement).disabled).toBe(false);
+      });
+      await user.click(payButton);
+
+      // quoteOrder was called exactly ONCE more with the final persisted details!
+      await waitFor(() => {
+        expect(customerApi.quoteOrder).toHaveBeenCalledTimes(2);
+        expect(customerApi.quoteOrder).toHaveBeenLastCalledWith(
+          "A".repeat(43),
+          expect.objectContaining({
+            customerName: "Rahul Sharma",
+            customerPhone: "9876543210",
+            files: [expect.objectContaining({ copies: 3 })],
+          }),
+        );
+      });
+
+      // createPayment received the matching acknowledgedTotalPaise
+      expect(customerApi.createPayment).toHaveBeenCalledWith(
+        "A".repeat(43),
+        expect.objectContaining({
+          acknowledgedTotalPaise: 6100,
+        }),
+      );
     });
   });
 });

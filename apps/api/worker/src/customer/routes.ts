@@ -69,6 +69,10 @@ export interface CustomerActions {
     token: string,
     input: CustomerOrderQuoteRequest,
   ): ReturnType<CustomerService["quoteOrder"]>;
+  previewQuoteOrder(
+    token: string,
+    input: CustomerOrderQuoteRequest,
+  ): ReturnType<CustomerService["previewQuoteOrder"]>;
   createPayment(
     token: string,
     input: CreateCustomerPaymentRequest,
@@ -130,6 +134,8 @@ function actionsFromEnv(env: WorkerEnv): CustomerActions {
     selectCashPayment: (token) => service.selectCashPayment(token),
     quote: (token, input) => service.quote(token, input),
     quoteOrder: (token, input) => service.quoteOrder(token, input),
+    previewQuoteOrder: (token, input) =>
+      service.previewQuoteOrder(token, input),
     createPayment: (token, input) =>
       paymentService.createCheckout(token, input.acknowledgedTotalPaise),
     verifyPayment: async (token, input) => {
@@ -323,7 +329,14 @@ function validateOrderSettings(
   value: unknown,
 ): CustomerOrderQuoteRequest | null {
   if (!isPlainRecord(value) || !Array.isArray(value.files)) return null;
-  const allowed = new Set(["files", "isPriority"]);
+  const allowed = new Set([
+    "files",
+    "isPriority",
+    "customerName",
+    "customerPhone",
+    "instructions",
+    "addonServiceIds",
+  ]);
   if (Object.keys(value).some((key) => !allowed.has(key))) return null;
   if (value.isPriority !== undefined && typeof value.isPriority !== "boolean")
     return null;
@@ -336,9 +349,61 @@ function validateOrderSettings(
     if (!settings || !/^[0-9a-f-]{36}$/iu.test(entry.fileId)) return null;
     files.push({ ...settings, fileId });
   }
-  return value.isPriority !== undefined
-    ? { files, isPriority: value.isPriority }
-    : { files };
+
+  let customerName: string | undefined;
+  if (value.customerName !== undefined) {
+    if (
+      typeof value.customerName !== "string" ||
+      !validString(value.customerName, 120)
+    )
+      return null;
+    customerName = value.customerName.trim();
+  }
+
+  let customerPhone: string | undefined;
+  if (value.customerPhone !== undefined) {
+    if (
+      typeof value.customerPhone !== "string" ||
+      !validString(value.customerPhone, 30)
+    )
+      return null;
+    customerPhone = value.customerPhone.trim();
+  }
+
+  let instructions: string | null | undefined;
+  if (value.instructions !== undefined) {
+    if (
+      value.instructions !== null &&
+      (typeof value.instructions !== "string" ||
+        value.instructions.length > 500)
+    )
+      return null;
+    instructions =
+      typeof value.instructions === "string"
+        ? value.instructions.trim() || null
+        : null;
+  }
+
+  let addonServiceIds: string[] | undefined;
+  if (value.addonServiceIds !== undefined) {
+    if (!Array.isArray(value.addonServiceIds)) return null;
+    if (
+      value.addonServiceIds.some(
+        (id) => typeof id !== "string" || !/^[0-9a-f-]{36}$/iu.test(id),
+      )
+    )
+      return null;
+    addonServiceIds = value.addonServiceIds;
+  }
+
+  return {
+    files,
+    ...(value.isPriority !== undefined ? { isPriority: value.isPriority } : {}),
+    ...(customerName !== undefined ? { customerName } : {}),
+    ...(customerPhone !== undefined ? { customerPhone } : {}),
+    ...(instructions !== undefined ? { instructions } : {}),
+    ...(addonServiceIds !== undefined ? { addonServiceIds } : {}),
+  };
 }
 
 function validateCreatePayment(
@@ -680,12 +745,40 @@ export async function handleCustomerRequest(
       );
     }
     if (
-      request.method === "PUT" &&
-      pathname === "/api/customer/draft/print-settings"
+      request.method === "POST" &&
+      pathname === "/api/customer/draft/preview-quote"
     ) {
       const value = await readJson(request);
       const orderInput = validateOrderSettings(value);
+      return orderInput
+        ? ok(
+            await actions.previewQuoteOrder(token, orderInput),
+            200,
+            corsHeaders(env),
+          )
+        : error(
+            400,
+            "INVALID_PRINT_SETTINGS",
+            "Choose valid print settings.",
+            corsHeaders(env),
+          );
+    }
+    if (
+      request.method === "PUT" &&
+      pathname === "/api/customer/draft/print-settings"
+    ) {
+      const isPreview =
+        new URL(request.url).searchParams.get("preview") === "true";
+      const value = await readJson(request);
+      const orderInput = validateOrderSettings(value);
       const input = validateSettings(value);
+      if (isPreview && orderInput) {
+        return ok(
+          await actions.previewQuoteOrder(token, orderInput),
+          200,
+          corsHeaders(env),
+        );
+      }
       return orderInput
         ? ok(await actions.quoteOrder(token, orderInput), 200, corsHeaders(env))
         : input

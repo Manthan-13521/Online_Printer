@@ -170,6 +170,9 @@ export function App() {
     token: string;
     response?: RazorpaySuccessResponse;
   } | null>(null);
+  const [isRecalculating, setIsRecalculating] = useState(false);
+  const quoteRequestIdRef = useRef(0);
+  const lastQuotedSignatureRef = useRef("");
 
   const loadShopConfig = useCallback(() => {
     setLoading(true);
@@ -324,7 +327,6 @@ export function App() {
   );
 
   function patchSelected(update: Partial<LocalOrderFile>) {
-    setQuote(null);
     setFiles((current) =>
       current.map((item, index) => {
         if (index !== selectedFileIndex) return item;
@@ -347,8 +349,58 @@ export function App() {
     );
   }
 
+  async function uploadDraftFiles(token: string, newItems: LocalOrderFile[]) {
+    for (const item of newItems) {
+      if (!item.file) continue;
+      const clientId = item.clientId;
+      updateFile(clientId, {
+        uploadStatus: "VALIDATING",
+        uploadProgress: 0,
+        uploadError: null,
+      });
+      try {
+        const created = await customerApi.addFile(token, {
+          originalFilename: item.name,
+          expectedSizeBytes: item.size,
+          sourcePageCount: item.pageCount,
+        });
+        updateFile(clientId, {
+          fileId: created.fileId,
+          uploadStatus: "UPLOADING",
+        });
+
+        const controller = new AbortController();
+        abortControllers.current.set(clientId, controller);
+
+        await uploadDirectly(
+          item.file,
+          created.upload.uploadUrl,
+          created.upload.requiredHeaders,
+          (p) => updateFile(clientId, { uploadProgress: p }),
+          controller.signal,
+        );
+
+        abortControllers.current.delete(clientId);
+        updateFile(clientId, { uploadStatus: "FINALIZING" });
+
+        await customerApi.complete(token, created.fileId);
+        updateFile(clientId, {
+          uploaded: true,
+          uploadStatus: "UPLOADED",
+          uploadProgress: 100,
+        });
+      } catch (caught) {
+        if (caught instanceof Error && caught.message === "UPLOAD_ABORTED") {
+          continue;
+        }
+        const errMsg = customerErrorMessage(caught);
+        updateFile(clientId, { uploadStatus: "FAILED", uploadError: errMsg });
+        setStatus(`Upload failed for ${item.name}: ${errMsg}`);
+      }
+    }
+  }
+
   async function chooseFiles(selected: FileList | null) {
-    setQuote(null);
     setPaymentSuccess(null);
     setFileError(null);
     if (!selected || !config) return;
@@ -421,8 +473,12 @@ export function App() {
           return;
         }
       }
-      setFiles((current) => [...current, ...added]);
+      filesRef.current = [...filesRef.current, ...added];
+      setFiles(filesRef.current);
       setSelectedFileIndex(files.length);
+      if (draftToken && added.length > 0) {
+        void uploadDraftFiles(draftToken, added);
+      }
     } finally {
       setIsInspectingFiles(false);
     }
@@ -493,7 +549,6 @@ export function App() {
       // Continue if config lookup encountered a transient error
     }
     setStatus("Creating a secure upload…");
-    setQuote(null);
     let errorToReport: Error | null = null;
     try {
       let token = draftToken;
@@ -605,20 +660,31 @@ export function App() {
 
       if (!token) throw new Error("DRAFT_INVALID");
       setStatus("Calculating your review total…");
-      setQuote(
-        await customerApi.quoteOrder(token, {
-          files: filesRef.current.map((f) => ({
-            fileId: f.fileId!,
-            selectedPages:
-              f.pageMode === "ALL" ? `1-${f.pageCount}` : f.customPages,
-            copies: f.copies,
-            paperSize: f.paperSize,
-            colorMode: f.colorMode,
-            sides: f.sides,
-          })),
-          isPriority,
-        }),
-      );
+      const initialQuote = await customerApi.quoteOrder(token, {
+        files: filesRef.current.map((f) => ({
+          fileId: f.fileId!,
+          selectedPages:
+            f.pageMode === "ALL" ? `1-${f.pageCount}` : f.customPages,
+          copies: f.copies,
+          paperSize: f.paperSize,
+          colorMode: f.colorMode,
+          sides: f.sides,
+        })),
+        isPriority,
+        customerName: customerName.trim(),
+        customerPhone: customerPhone.trim(),
+        instructions: instructions.trim() || null,
+        addonServiceIds: selectedAddonIds,
+      });
+      setQuote(initialQuote);
+      const initialFilesSig = filesRef.current
+        .map(
+          (f) =>
+            `${f.fileId || f.clientId}:${f.copies}:${f.paperSize}:${f.colorMode}:${f.sides}:${f.pageMode}:${f.customPages}:${f.uploaded}:${f.uploadStatus}`,
+        )
+        .join(";");
+      const initialAddonsSig = [...selectedAddonIds].sort().join(",");
+      lastQuotedSignatureRef.current = `${initialFilesSig}|isPriority:${isPriority}|addons:${initialAddonsSig}`;
       setPaymentSuccess(null);
       setStatus(
         "Review ready. Confirm the total to continue to secure payment.",
@@ -655,14 +721,23 @@ export function App() {
       void customerApi.removeFile(draftToken, item.fileId).catch(() => {});
     }
 
-    setFiles((current) => current.filter((_, position) => position !== index));
+    const remainingFiles = filesRef.current.filter(
+      (_, position) => position !== index,
+    );
+    filesRef.current = remainingFiles;
+    setFiles(remainingFiles);
     setSelectedFileIndex((current) =>
       Math.max(
         0,
-        Math.min(current > index ? current - 1 : current, files.length - 2),
+        Math.min(
+          current > index ? current - 1 : current,
+          remainingFiles.length - 1,
+        ),
       ),
     );
-    setQuote(null);
+    if (remainingFiles.length === 0) {
+      setQuote(null);
+    }
     setStatus("PDF removed.");
   }
 
@@ -679,48 +754,98 @@ export function App() {
         sides: selectedFile.sides,
       })),
     );
-    setQuote(null);
     setStatus(
       "These settings now apply to every file. You can still override one file.",
     );
   }
 
-  async function togglePriority(nextPriority: boolean) {
+  function togglePriority(nextPriority: boolean) {
     setIsPriority(nextPriority);
-    if (
-      draftToken &&
-      files.length > 0 &&
-      files.every((f) => f.uploaded && f.fileId)
-    ) {
-      setBusy(true);
-      setStatus("Updating priority review…");
-      try {
-        setQuote(
-          await customerApi.quoteOrder(draftToken, {
-            files: files.map((item) => ({
-              fileId: item.fileId!,
-              selectedPages:
-                item.pageMode === "ALL"
-                  ? `1-${item.pageCount}`
-                  : item.customPages,
-              copies: item.copies,
-              paperSize: item.paperSize,
-              colorMode: item.colorMode,
-              sides: item.sides,
-            })),
-            isPriority: nextPriority,
-          }),
-        );
-        setStatus("Priority updated. Review your new total.");
-      } catch (caught) {
-        setStatus(customerErrorMessage(caught));
-      } finally {
-        setBusy(false);
-      }
-    } else {
-      setQuote(null);
-    }
   }
+
+  const quoteSignature = useMemo(() => {
+    if (!draftToken || !quote) return "";
+    const filesSig = files
+      .map(
+        (f) =>
+          `${f.fileId || f.clientId}:${f.copies}:${f.paperSize}:${f.colorMode}:${f.sides}:${f.pageMode}:${f.customPages}:${f.uploaded}:${f.uploadStatus}`,
+      )
+      .join(";");
+    const addonsSig = [...selectedAddonIds].sort().join(",");
+    return `${filesSig}|isPriority:${isPriority}|addons:${addonsSig}`;
+  }, [draftToken, quote, files, isPriority, selectedAddonIds]);
+
+  useEffect(() => {
+    if (!draftToken || !quote || files.length === 0 || !quoteSignature) {
+      return;
+    }
+    if (
+      files.some(
+        (f) => !f.uploaded || !f.fileId || f.uploadStatus !== "UPLOADED",
+      )
+    ) {
+      return;
+    }
+    if (quoteSignature === lastQuotedSignatureRef.current) {
+      return;
+    }
+    for (const item of files) {
+      const selectedPages =
+        item.pageMode === "ALL" ? `1-${item.pageCount}` : item.customPages;
+      try {
+        parsePageRange(selectedPages, item.pageCount);
+      } catch {
+        return;
+      }
+    }
+
+    setIsRecalculating(true);
+    const timer = setTimeout(() => {
+      quoteRequestIdRef.current += 1;
+      const currentReqId = quoteRequestIdRef.current;
+      customerApi
+        .previewQuoteOrder(draftToken, {
+          files: files.map((f) => ({
+            fileId: f.fileId!,
+            selectedPages:
+              f.pageMode === "ALL" ? `1-${f.pageCount}` : f.customPages,
+            copies: f.copies,
+            paperSize: f.paperSize,
+            colorMode: f.colorMode,
+            sides: f.sides,
+          })),
+          isPriority,
+          customerName: customerName.trim(),
+          customerPhone: customerPhone.trim(),
+          instructions: instructions.trim() || null,
+          addonServiceIds: selectedAddonIds,
+        })
+        .then((freshQuote) => {
+          if (quoteRequestIdRef.current === currentReqId) {
+            setQuote(freshQuote);
+            lastQuotedSignatureRef.current = quoteSignature;
+            setIsRecalculating(false);
+          }
+        })
+        .catch(() => {
+          if (quoteRequestIdRef.current === currentReqId) {
+            setIsRecalculating(false);
+          }
+        });
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [
+    draftToken,
+    quote,
+    quoteSignature,
+    files,
+    isPriority,
+    selectedAddonIds,
+    customerName,
+    customerPhone,
+    instructions,
+  ]);
 
   async function verifyCheckoutPayment(
     token: string,
@@ -870,7 +995,29 @@ export function App() {
   }
 
   async function pay() {
-    if (!quote || !draftToken || paymentBusy || paymentSuccess) return;
+    if (
+      !quote ||
+      !draftToken ||
+      paymentBusy ||
+      busy ||
+      isRecalculating ||
+      cashSelecting ||
+      paymentSuccess ||
+      files.some((f) => !f.uploaded || f.uploadStatus !== "UPLOADED")
+    )
+      return;
+    if (!customerName.trim()) {
+      setStatus("Please enter your name.");
+      return;
+    }
+    if (!isValidPhone(customerPhone)) {
+      setPhoneError(
+        "Enter a valid phone number (at least 6 digits, e.g. 9876543210 or +91 98765 43210).",
+      );
+      setStatus("Please enter a valid phone number before continuing.");
+      return;
+    }
+
     setPaymentBusy(true);
     setPaymentPhase("CHECKING_AVAILABILITY");
     setStatus("Checking printer availability…");
@@ -902,10 +1049,31 @@ export function App() {
         }
       }
 
+      // Persist final order settings, customer details, and addons to D1 (1 single final write)
+      setStatus("Finalizing order details…");
+      const finalQuote = await customerApi.quoteOrder(draftToken, {
+        files: filesRef.current.map((f) => ({
+          fileId: f.fileId!,
+          selectedPages:
+            f.pageMode === "ALL" ? `1-${f.pageCount}` : f.customPages,
+          copies: f.copies,
+          paperSize: f.paperSize,
+          colorMode: f.colorMode,
+          sides: f.sides,
+        })),
+        isPriority,
+        customerName: customerName.trim(),
+        customerPhone: customerPhone.trim(),
+        instructions: instructions.trim() || null,
+        addonServiceIds: selectedAddonIds,
+      });
+      setQuote(finalQuote);
+      lastQuotedSignatureRef.current = quoteSignature;
+
       setPaymentPhase("FINDING_PRINTER");
       setStatus("Finding the best printer…");
       const result = await customerApi.createPayment(draftToken, {
-        acknowledgedTotalPaise: quote.totalAmountPaise,
+        acknowledgedTotalPaise: finalQuote.totalAmountPaise,
       });
       if (result.status === "PRICE_CHANGED") {
         setQuote(result.quote);
@@ -932,10 +1100,24 @@ export function App() {
       !draftToken ||
       paymentBusy ||
       busy ||
+      isRecalculating ||
       cashSelecting ||
-      Boolean(paymentSuccess)
+      Boolean(paymentSuccess) ||
+      files.some((f) => !f.uploaded || f.uploadStatus !== "UPLOADED")
     )
       return;
+    if (!customerName.trim()) {
+      setStatus("Please enter your name.");
+      return;
+    }
+    if (!isValidPhone(customerPhone)) {
+      setPhoneError(
+        "Enter a valid phone number (at least 6 digits, e.g. 9876543210 or +91 98765 43210).",
+      );
+      setStatus("Please enter a valid phone number before continuing.");
+      return;
+    }
+
     setCashSelecting(true);
     setStatus("Selecting cash payment at counter…");
     try {
@@ -964,6 +1146,26 @@ export function App() {
           return;
         }
       }
+
+      // Persist final order settings, customer details, and addons to D1 (1 single final write)
+      const finalQuote = await customerApi.quoteOrder(draftToken, {
+        files: filesRef.current.map((f) => ({
+          fileId: f.fileId!,
+          selectedPages:
+            f.pageMode === "ALL" ? `1-${f.pageCount}` : f.customPages,
+          copies: f.copies,
+          paperSize: f.paperSize,
+          colorMode: f.colorMode,
+          sides: f.sides,
+        })),
+        isPriority,
+        customerName: customerName.trim(),
+        customerPhone: customerPhone.trim(),
+        instructions: instructions.trim() || null,
+        addonServiceIds: selectedAddonIds,
+      });
+      setQuote(finalQuote);
+      lastQuotedSignatureRef.current = quoteSignature;
 
       const data = await customerApi.selectCashPayment(draftToken);
       setCashWaitingData(data);
@@ -1270,7 +1472,7 @@ export function App() {
                 );
               }
             }}
-            disabled={busy || paymentBusy || Boolean(draftToken)}
+            disabled={busy || paymentBusy}
           />
         </div>
 
@@ -1283,7 +1485,7 @@ export function App() {
             onChooseFiles={(fileList) => void chooseFiles(fileList)}
             config={config}
             fileError={fileError}
-            disabled={busy || paymentBusy || Boolean(draftToken)}
+            disabled={busy || paymentBusy}
             isInspectingFiles={isInspectingFiles}
           />
         </div>
@@ -1435,6 +1637,7 @@ export function App() {
                 files={files}
                 customerName={customerName}
                 customerPhone={customerPhone}
+                isRecalculating={isRecalculating}
               >
                 {draftToken && (
                   <div
@@ -1520,8 +1723,13 @@ export function App() {
                           disabled={
                             paymentBusy ||
                             busy ||
+                            isRecalculating ||
                             cashSelecting ||
-                            Boolean(paymentSuccess)
+                            Boolean(paymentSuccess) ||
+                            files.some(
+                              (f) =>
+                                !f.uploaded || f.uploadStatus !== "UPLOADED",
+                            )
                           }
                           aria-busy={paymentBusy}
                           style={{
@@ -1583,8 +1791,13 @@ export function App() {
                           disabled={
                             paymentBusy ||
                             busy ||
+                            isRecalculating ||
                             cashSelecting ||
-                            Boolean(paymentSuccess)
+                            Boolean(paymentSuccess) ||
+                            files.some(
+                              (f) =>
+                                !f.uploaded || f.uploadStatus !== "UPLOADED",
+                            )
                           }
                           style={{
                             display: "flex",
@@ -1627,8 +1840,12 @@ export function App() {
                         disabled={
                           paymentBusy ||
                           busy ||
+                          isRecalculating ||
                           cashSelecting ||
-                          Boolean(paymentSuccess)
+                          Boolean(paymentSuccess) ||
+                          files.some(
+                            (f) => !f.uploaded || f.uploadStatus !== "UPLOADED",
+                          )
                         }
                         aria-busy={paymentBusy}
                         style={{

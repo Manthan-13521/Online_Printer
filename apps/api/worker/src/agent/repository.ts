@@ -1365,6 +1365,32 @@ export class D1AgentRepository implements AgentRepository {
       .bind(nowMs, agentId, nowMs)
       .run();
 
+    // 0b. If the latest CLEAR_SPOOLER command expired while the agent was offline,
+    // revive it with a fresh lease so the connected agent can safely reconcile the spooler!
+    const expiredClearSpooler = await this.db
+      .prepare(
+        `SELECT id FROM agent_control_commands
+         WHERE agent_id = ? AND command_type = 'CLEAR_SPOOLER' AND status = 'EXPIRED'
+           AND id = (
+             SELECT id FROM agent_control_commands
+             WHERE agent_id = ? AND command_type = 'CLEAR_SPOOLER'
+             ORDER BY created_at_ms DESC LIMIT 1
+           )`,
+      )
+      .bind(agentId, agentId)
+      .first<{ id: string }>();
+
+    if (expiredClearSpooler) {
+      await this.db
+        .prepare(
+          `UPDATE agent_control_commands
+           SET status = 'PENDING', expires_at_ms = ?, finished_at_ms = NULL
+           WHERE id = ? AND status = 'EXPIRED'`,
+        )
+        .bind(nowMs + 60_000, expiredClearSpooler.id)
+        .run();
+    }
+
     const pendingControl = await this.db
       .prepare(
         `SELECT id, printer_id, windows_printer_name, command_type, expires_at_ms
