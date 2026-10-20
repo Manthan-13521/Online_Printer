@@ -177,7 +177,9 @@ describe("PickupOrdersPage", () => {
     });
 
     expect(setPickupAutoPrint).toHaveBeenCalledWith(true);
-    expect((toggle as HTMLInputElement).checked).toBe(true);
+    await waitFor(() => {
+      expect((toggle as HTMLInputElement).checked).toBe(true);
+    });
   });
 
   it("shows Mark as Collected button for PRINTED orders and calls API", async () => {

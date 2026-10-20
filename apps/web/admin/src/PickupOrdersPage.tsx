@@ -45,16 +45,17 @@ export function PickupOrdersPage({
 
   const handleToggleAutoPrint = async () => {
     const nextState = !autoPrintEnabled;
+    setAutoPrintEnabled(nextState);
     setAutoPrintBusy(true);
     try {
       await adminApi.setPickupAutoPrint(nextState);
-      setAutoPrintEnabled(nextState);
       setActionNotice(
         nextState
           ? "Print Automatically enabled. Eligible pickup orders will print when the shop opens."
           : "Print Automatically disabled. Orders will await manual 'Print Now' approval.",
       );
     } catch (caught: unknown) {
+      setAutoPrintEnabled(!nextState);
       if (caught instanceof AdminApiError && caught.status === 401) {
         onSessionExpired("Your session has expired. Please sign in again.");
         return;
