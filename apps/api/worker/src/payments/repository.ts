@@ -35,6 +35,8 @@ export interface PayableDraftRecord {
   storageStatus: string;
   expiresAtMs: number;
   deleteAfterMs: number | null;
+  isPickup?: boolean;
+  pickupTargetTimeMs?: number | null;
   files?: PayableFileRecord[];
 }
 
@@ -76,6 +78,8 @@ export interface PaymentRecord {
   pickupCode?: string | null;
   isPriority?: boolean;
   identificationRequired?: boolean;
+  isPickup?: boolean;
+  pickupTargetTimeMs?: number | null;
 }
 
 export interface RetainedPaymentRecord {
@@ -112,6 +116,8 @@ interface DraftRow {
   storage_status: string;
   draft_expires_at_ms: number;
   delete_after_ms: number | null;
+  is_pickup?: number | null;
+  pickup_target_time_ms?: number | null;
 }
 
 interface PaymentRow {
@@ -128,6 +134,8 @@ interface PaymentRow {
   pickup_code?: string | null;
   is_priority?: number;
   identification_required?: number;
+  is_pickup?: number | null;
+  pickup_target_time_ms?: number | null;
 }
 
 function mapPayment(row: PaymentRow | null): PaymentRecord | null {
@@ -146,6 +154,8 @@ function mapPayment(row: PaymentRow | null): PaymentRecord | null {
         pickupCode: row.pickup_code ?? null,
         isPriority: row.is_priority === 1,
         identificationRequired: row.identification_required === 1,
+        isPickup: row.is_pickup === 1,
+        pickupTargetTimeMs: row.pickup_target_time_ms ?? null,
       }
     : null;
 }
@@ -245,7 +255,7 @@ export class D1PaymentRepository implements PaymentRepository {
           o.service_charge_paise, o.total_amount_paise, o.is_priority, o.currency,
           o.status AS order_status, o.public_job_code,
           u.expected_size_bytes, u.size_bytes, u.storage_status,
-          o.draft_expires_at_ms, u.delete_after_ms
+          o.draft_expires_at_ms, u.delete_after_ms, o.is_pickup, o.pickup_target_time_ms
         FROM orders o JOIN uploads u ON u.order_id = o.id
         WHERE o.draft_token_hash = ? AND o.cleanup_state = 'ACTIVE'`,
       )
@@ -302,6 +312,8 @@ export class D1PaymentRepository implements PaymentRepository {
       storageStatus: row.storage_status,
       expiresAtMs: row.draft_expires_at_ms,
       deleteAfterMs: row.delete_after_ms,
+      isPickup: row.is_pickup === 1,
+      pickupTargetTimeMs: row.pickup_target_time_ms ?? null,
       files: files.results.map((file) => ({
         id: file.id,
         position: file.position,
@@ -403,7 +415,8 @@ export class D1PaymentRepository implements PaymentRepository {
         `SELECT p.id, p.order_id, p.provider_order_id, p.provider_payment_id,
           p.amount_paise, o.total_amount_paise AS order_amount_paise,
           p.currency, p.status, o.public_job_code,
-          o.status AS order_status, o.pickup_code, o.is_priority, o.identification_required
+          o.status AS order_status, o.pickup_code, o.is_priority, o.identification_required,
+          o.is_pickup, o.pickup_target_time_ms
         FROM payments p JOIN orders o ON o.id = p.order_id
         WHERE p.provider = 'RAZORPAY' AND ${where} = ? ORDER BY p.created_at_ms DESC LIMIT 1`,
       )
@@ -418,7 +431,8 @@ export class D1PaymentRepository implements PaymentRepository {
         `SELECT p.id, p.order_id, p.provider_order_id, p.provider_payment_id,
           p.amount_paise, o.total_amount_paise AS order_amount_paise,
           p.currency, p.status, o.public_job_code,
-          o.status AS order_status, o.pickup_code, o.is_priority, o.identification_required
+          o.status AS order_status, o.pickup_code, o.is_priority, o.identification_required,
+          o.is_pickup, o.pickup_target_time_ms
         FROM payments p JOIN orders o ON o.id = p.order_id
         WHERE p.order_id = ? AND p.status IN ('CREATED', 'PENDING')
         ORDER BY p.created_at_ms DESC LIMIT 1`,

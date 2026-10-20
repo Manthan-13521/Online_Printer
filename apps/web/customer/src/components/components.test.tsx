@@ -647,5 +647,79 @@ describe("Customer Components & Helpers", () => {
       expect(screen.getByText("Total Amount")).toBeTruthy();
       expect(screen.getByText("Mock Payment Button")).toBeTruthy();
     });
+
+    it("renders scheduled pickup info when quote is marked as isPickup", () => {
+      render(
+        <OrderReviewSummary
+          quote={{
+            ...sampleQuote,
+            isPickup: true,
+            pickupFormatted: "tomorrow at 7:00 AM",
+          }}
+          files={[]}
+          customerName="Pooja Patel"
+          customerPhone="9876543210"
+        >
+          <button type="button">Mock Payment Button</button>
+        </OrderReviewSummary>,
+      );
+
+      expect(screen.getByText(/Pickup at Opening/)).toBeTruthy();
+      expect(screen.getByText(/tomorrow at 7:00 AM/)).toBeTruthy();
+    });
+  });
+
+  describe("PrintSettingsStep pickup option", () => {
+    const dummyFile: LocalOrderFile = {
+      clientId: "file-1",
+      file: null,
+      name: "Document.pdf",
+      size: 1024,
+      pageCount: 5,
+      uploaded: true,
+      uploadStatus: "UPLOADED",
+      uploadProgress: 100,
+      uploadError: null,
+      pageMode: "ALL",
+      customPages: "1-5",
+      copies: 1,
+      paperSize: "A4",
+      colorMode: "BW",
+      sides: "SINGLE",
+    };
+
+    it("renders pickup toggle card when pickupSchedule is enabled", () => {
+      const onTogglePickup = vi.fn();
+      render(
+        <PrintSettingsStep
+          files={[dummyFile]}
+          selectedFile={dummyFile}
+          selectedFileIndex={0}
+          onSelectFileIndex={vi.fn()}
+          printOptions={[{ paperSize: "A4", colorMode: "BW", sides: "SINGLE" }]}
+          optionAvailable={true}
+          onPatchSelected={vi.fn()}
+          onApplySettingsToAll={vi.fn()}
+          isPickup={true}
+          onTogglePickup={onTogglePickup}
+          pickupSchedule={{
+            enabled: true,
+            nextPickupTime: "2026-10-21T07:00:00.000Z",
+            nextPickupFormatted: "Tomorrow at 7:00 AM",
+            openingTime: "07:00",
+            closingTime: "15:00",
+            timezone: "Asia/Kolkata",
+          }}
+        />,
+      );
+
+      expect(screen.getByText("Pickup at Opening")).toBeTruthy();
+      expect(screen.getByText(/Tomorrow at 7:00 AM/)).toBeTruthy();
+
+      const toggleSwitch = screen.getByRole("switch");
+      expect(toggleSwitch).toHaveProperty("checked", true);
+      fireEvent.click(toggleSwitch);
+      expect(onTogglePickup).toHaveBeenCalledWith(false);
+    });
   });
 });

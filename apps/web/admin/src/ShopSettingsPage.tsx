@@ -364,6 +364,245 @@ export function ShopSettingsPage({
           </div>
         </section>
 
+        <section className="panel setting-card important-setting">
+          <div>
+            <h2>24/7 Order Acceptance</h2>
+            <p className="muted">
+              Accept and verify orders and payments even when physical printers
+              or the Windows Agent are temporarily offline. Orders will queue
+              safely and begin printing when the system connects.
+            </p>
+          </div>
+          <div
+            style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}
+          >
+            <span style={{ fontWeight: "bold", fontSize: "0.95rem" }}>
+              {settings.acceptOfflineOrdersEnabled ? "On" : "Off"}
+            </span>
+            <label className="toggle-switch">
+              <input
+                aria-label="24/7 Order Acceptance"
+                checked={Boolean(settings.acceptOfflineOrdersEnabled)}
+                onChange={(event) => {
+                  patch({ acceptOfflineOrdersEnabled: event.target.checked });
+                }}
+                role="switch"
+                type="checkbox"
+              />
+              <span className="toggle-slider" />
+            </label>
+          </div>
+        </section>
+
+        <section className="panel form-section">
+          <h2>Shop Operating Hours & Schedule</h2>
+          <p className="field-help">
+            Used to determine when the shop is open and calculate accurate
+            pickup times for customers.
+          </p>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+              gap: "1rem",
+              marginTop: "1rem",
+            }}
+          >
+            <div>
+              <label htmlFor="shop-opening-time">Opening Time</label>
+              <input
+                id="shop-opening-time"
+                type="time"
+                value={settings.openingTime ?? "07:00"}
+                onChange={(e) => patch({ openingTime: e.target.value })}
+              />
+            </div>
+            <div>
+              <label htmlFor="shop-closing-time">Closing Time</label>
+              <input
+                id="shop-closing-time"
+                type="time"
+                value={settings.closingTime ?? "21:00"}
+                onChange={(e) => patch({ closingTime: e.target.value })}
+              />
+            </div>
+            <div>
+              <label htmlFor="shop-timezone">Timezone</label>
+              <select
+                id="shop-timezone"
+                value={settings.timezone ?? "Asia/Kolkata"}
+                onChange={(e) => patch({ timezone: e.target.value })}
+              >
+                <option value="Asia/Kolkata">Asia/Kolkata (IST)</option>
+                <option value="UTC">UTC</option>
+                <option value="Asia/Dubai">Asia/Dubai (GST)</option>
+                <option value="Europe/London">Europe/London (GMT/BST)</option>
+                <option value="America/New_York">America/New_York (EST)</option>
+              </select>
+            </div>
+          </div>
+
+          <div style={{ marginTop: "1.25rem" }}>
+            <label
+              style={{
+                display: "block",
+                marginBottom: "0.5rem",
+                fontWeight: 600,
+              }}
+            >
+              Operating Days
+            </label>
+            <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+              {[
+                { val: 1, name: "Mon" },
+                { val: 2, name: "Tue" },
+                { val: 3, name: "Wed" },
+                { val: 4, name: "Thu" },
+                { val: 5, name: "Fri" },
+                { val: 6, name: "Sat" },
+                { val: 0, name: "Sun" },
+              ].map(({ val, name }) => {
+                const currentDays = settings.operatingDays ?? [
+                  1, 2, 3, 4, 5, 6,
+                ];
+                const isSelected = currentDays.includes(val);
+                return (
+                  <label
+                    key={val}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.35rem",
+                      padding: "0.4rem 0.75rem",
+                      borderRadius: "6px",
+                      background: isSelected ? "#e0f2fe" : "#f1f5f9",
+                      color: isSelected ? "#0369a1" : "#475569",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      border: isSelected
+                        ? "1px solid #7dd3fc"
+                        : "1px solid #e2e8f0",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={(e) => {
+                        const next = e.target.checked
+                          ? [...currentDays, val].sort((a, b) => a - b)
+                          : currentDays.filter((d) => d !== val);
+                        if (next.length > 0) {
+                          patch({ operatingDays: next });
+                        }
+                      }}
+                    />
+                    {name}
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+
+        <section className="panel form-section">
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              marginBottom: "0.5rem",
+            }}
+          >
+            <div>
+              <h2 style={{ margin: 0 }}>Pickup at Opening</h2>
+              <p className="field-help" style={{ margin: "0.25rem 0 0" }}>
+                Allow customers to place orders when the shop is closed, with
+                pickup scheduled for the next opening.
+              </p>
+            </div>
+            <div
+              style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}
+            >
+              <span style={{ fontWeight: "bold", fontSize: "0.95rem" }}>
+                {settings.pickupAtOpeningEnabled ? "On" : "Off"}
+              </span>
+              <label className="toggle-switch">
+                <input
+                  aria-label="Enable Pickup at Opening"
+                  checked={Boolean(settings.pickupAtOpeningEnabled)}
+                  onChange={(event) =>
+                    patch({ pickupAtOpeningEnabled: event.target.checked })
+                  }
+                  role="switch"
+                  type="checkbox"
+                />
+                <span className="toggle-slider" />
+              </label>
+            </div>
+          </div>
+
+          <fieldset
+            disabled={!settings.pickupAtOpeningEnabled}
+            style={{ marginTop: "1rem" }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "0.75rem 0",
+                borderTop: "1px solid #e2e8f0",
+              }}
+            >
+              <div>
+                <strong>Default: Print Automatically</strong>
+                <p className="field-help" style={{ margin: "0.2rem 0 0" }}>
+                  When ON, eligible pickup orders start printing automatically
+                  when the Agent is online at opening. When OFF, print manually
+                  from Pickup Orders.
+                </p>
+              </div>
+              <label className="toggle-switch">
+                <input
+                  aria-label="Print Automatically by default"
+                  checked={Boolean(settings.pickupAutoPrintEnabled)}
+                  onChange={(e) =>
+                    patch({ pickupAutoPrintEnabled: e.target.checked })
+                  }
+                  role="switch"
+                  type="checkbox"
+                />
+                <span className="toggle-slider" />
+              </label>
+            </div>
+
+            <div style={{ marginTop: "1rem" }}>
+              <label htmlFor="pickup-retention-days">
+                Abandoned Pickup Retention
+              </label>
+              <select
+                id="pickup-retention-days"
+                value={settings.pickupAbandonedRetentionDays ?? 7}
+                onChange={(e) =>
+                  patch({
+                    pickupAbandonedRetentionDays: Number(e.target.value),
+                  })
+                }
+              >
+                <option value={3}>3 days</option>
+                <option value={7}>7 days (recommended)</option>
+                <option value={14}>14 days</option>
+                <option value={30}>30 days</option>
+              </select>
+              <p className="field-help">
+                Documents are safely preserved until customer collection. If
+                uncollected after this period, files are automatically purged to
+                reclaim storage.
+              </p>
+            </div>
+          </fieldset>
+        </section>
+
         <section className="panel form-section">
           <h2>PDF upload limit</h2>
           <label htmlFor="pdf-limit">Maximum PDF size</label>

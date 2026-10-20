@@ -25,6 +25,9 @@ export const ORDER_STATUSES = [
 
 export type OrderStatus = (typeof ORDER_STATUSES)[number];
 
+export const ORDER_TYPES = ["CUSTOMER", "SAVED_PRINT"] as const;
+export type OrderType = (typeof ORDER_TYPES)[number];
+
 export const PAYMENT_STATUSES = [
   "CREATED",
   "PENDING",

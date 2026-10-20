@@ -38,6 +38,12 @@ const ManualOrdersPage = lazy(() =>
 const OrderHistoryPage = lazy(() =>
   import("./OrderHistoryPage").then((m) => ({ default: m.OrderHistoryPage })),
 );
+const PickupOrdersPage = lazy(() =>
+  import("./PickupOrdersPage").then((m) => ({ default: m.PickupOrdersPage })),
+);
+const SavedPrintsPage = lazy(() =>
+  import("./SavedPrintsPage").then((m) => ({ default: m.SavedPrintsPage })),
+);
 const StoragePrivacySection = lazy(() =>
   import("./StoragePrivacySection").then((m) => ({
     default: m.StoragePrivacySection,
@@ -53,6 +59,12 @@ export interface NavItem {
 export const mainNavigation: NavItem[] = [
   { label: "Dashboard", path: "/admin", icon: "dashboard" },
   { label: "Live Orders", path: "/admin/live-orders", icon: "live-orders" },
+  {
+    label: "Pickup Orders",
+    path: "/admin/pickup-orders",
+    icon: "pickup-orders",
+  },
+  { label: "Saved Prints", path: "/admin/saved-prints", icon: "saved-prints" },
   {
     label: "Cash & Manual Orders",
     path: "/admin/manual-orders",
@@ -119,6 +131,42 @@ function NavIcon({ name }: { name: string }) {
           <line x1="16" y1="13" x2="8" y2="13" />
           <line x1="16" y1="17" x2="8" y2="17" />
           <polyline points="10 9 9 9 8 9" />
+        </svg>
+      );
+    case "pickup-orders":
+      return (
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+          <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+          <line x1="12" y1="22.08" x2="12" y2="12" />
+        </svg>
+      );
+    case "saved-prints":
+      return (
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+          <polyline points="17 21 17 13 7 13 7 21" />
+          <polyline points="7 3 7 8 15 8" />
         </svg>
       );
     case "cash-manual":
@@ -654,6 +702,10 @@ function PageContent({
     return <ShopSettingsPage onSessionExpired={onSignedOut} />;
   if (item.path === "/admin/live-orders")
     return <LiveOrdersPage onSessionExpired={onSignedOut} />;
+  if (item.path === "/admin/pickup-orders")
+    return <PickupOrdersPage onSessionExpired={onSignedOut} />;
+  if (item.path === "/admin/saved-prints")
+    return <SavedPrintsPage onSessionExpired={onSignedOut} />;
   if (item.path === "/admin/order-history")
     return <OrderHistoryPage onSessionExpired={onSignedOut} />;
   if (item.path === "/admin")

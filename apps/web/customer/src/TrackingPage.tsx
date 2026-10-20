@@ -223,6 +223,25 @@ export function TrackingPage({
         >
           <h1>{data.statusLabel}</h1>
           <p>{data.statusMessage}</p>
+          {data.isPickup && data.pickupFormatted && (
+            <div
+              style={{
+                margin: "0.5rem auto 1rem",
+                padding: "0.4rem 0.8rem",
+                background: "#f0f9ff",
+                border: "1px solid #bae6fd",
+                borderRadius: "8px",
+                color: "#0369a1",
+                fontWeight: 600,
+                fontSize: "0.9rem",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "0.4rem",
+              }}
+            >
+              <span>🌅</span> Pickup: {data.pickupFormatted}
+            </div>
+          )}
           <p>Order {data.pickupCode ?? data.jobCode}</p>
           <div style={{ marginTop: "1.5rem" }}>
             {onBack ? (
@@ -262,6 +281,25 @@ export function TrackingPage({
     >
       <h2>{data.statusLabel}</h2>
       <p>{data.statusMessage}</p>
+      {data.isPickup && data.pickupFormatted && (
+        <div
+          style={{
+            margin: "0.5rem 0 0.75rem",
+            padding: "0.4rem 0.8rem",
+            background: "#f0f9ff",
+            border: "1px solid #bae6fd",
+            borderRadius: "8px",
+            color: "#0369a1",
+            fontWeight: 600,
+            fontSize: "0.9rem",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "0.4rem",
+          }}
+        >
+          <span>🌅</span> Pickup: {data.pickupFormatted}
+        </div>
+      )}
       {state === "network" && (
         <p role="alert">
           Status could not be refreshed. Showing the last known update.

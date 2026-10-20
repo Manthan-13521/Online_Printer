@@ -271,6 +271,13 @@ export interface ValidatedShopSettings {
   lastCleanupResult?: string | null;
   orderRetentionHours?: number;
   cashOrdersEnabled?: boolean;
+  openingTime?: string;
+  closingTime?: string;
+  operatingDays?: number[];
+  pickupAtOpeningEnabled?: boolean;
+  pickupAutoPrintEnabled?: boolean;
+  acceptOfflineOrdersEnabled?: boolean;
+  pickupAbandonedRetentionDays?: number;
 }
 
 function optionalPlainText(
@@ -478,6 +485,61 @@ export function validateShopSettingsInput(
       });
     }
   }
+  if (record.openingTime !== undefined) {
+    if (
+      typeof record.openingTime !== "string" ||
+      !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(record.openingTime)
+    ) {
+      issues.push({
+        path: ["openingTime"],
+        code: "INVALID_OPENING_TIME",
+        message: "Enter a valid 24-hour opening time (HH:mm).",
+      });
+    }
+  }
+  if (record.closingTime !== undefined) {
+    if (
+      typeof record.closingTime !== "string" ||
+      !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(record.closingTime)
+    ) {
+      issues.push({
+        path: ["closingTime"],
+        code: "INVALID_CLOSING_TIME",
+        message: "Enter a valid 24-hour closing time (HH:mm).",
+      });
+    }
+  }
+  if (record.operatingDays !== undefined) {
+    if (
+      !Array.isArray(record.operatingDays) ||
+      record.operatingDays.length === 0 ||
+      record.operatingDays.some(
+        (d) => typeof d !== "number" || !Number.isInteger(d) || d < 0 || d > 6,
+      )
+    ) {
+      issues.push({
+        path: ["operatingDays"],
+        code: "INVALID_OPERATING_DAYS",
+        message:
+          "Select at least one valid operating day (0=Sun, 1=Mon... 6=Sat).",
+      });
+    }
+  }
+  if (record.pickupAbandonedRetentionDays !== undefined) {
+    if (
+      typeof record.pickupAbandonedRetentionDays !== "number" ||
+      !Number.isInteger(record.pickupAbandonedRetentionDays) ||
+      record.pickupAbandonedRetentionDays < 1 ||
+      record.pickupAbandonedRetentionDays > 30
+    ) {
+      issues.push({
+        path: ["pickupAbandonedRetentionDays"],
+        code: "INVALID_PICKUP_ABANDONED_RETENTION_DAYS",
+        message:
+          "Pickup abandoned retention days must be an integer between 1 and 30.",
+      });
+    }
+  }
   return issues.length > 0
     ? { ok: false, issues }
     : {
@@ -545,6 +607,30 @@ export function validateShopSettingsInput(
           onlinePrintingEnabled: record.onlinePrintingEnabled as boolean,
           ...(typeof record.cashOrdersEnabled === "boolean"
             ? { cashOrdersEnabled: record.cashOrdersEnabled }
+            : {}),
+          ...(typeof record.openingTime === "string"
+            ? { openingTime: record.openingTime }
+            : {}),
+          ...(typeof record.closingTime === "string"
+            ? { closingTime: record.closingTime }
+            : {}),
+          ...(Array.isArray(record.operatingDays)
+            ? { operatingDays: record.operatingDays as number[] }
+            : {}),
+          ...(typeof record.pickupAtOpeningEnabled === "boolean"
+            ? { pickupAtOpeningEnabled: record.pickupAtOpeningEnabled }
+            : {}),
+          ...(typeof record.pickupAutoPrintEnabled === "boolean"
+            ? { pickupAutoPrintEnabled: record.pickupAutoPrintEnabled }
+            : {}),
+          ...(typeof record.acceptOfflineOrdersEnabled === "boolean"
+            ? { acceptOfflineOrdersEnabled: record.acceptOfflineOrdersEnabled }
+            : {}),
+          ...(typeof record.pickupAbandonedRetentionDays === "number"
+            ? {
+                pickupAbandonedRetentionDays:
+                  record.pickupAbandonedRetentionDays,
+              }
             : {}),
           maxPdfSizeBytes: record.maxPdfSizeBytes as number,
           identificationSheetEnabled:
@@ -1390,6 +1476,119 @@ export function validateAgentPreflightFailureInput(
       claimId: record.claimId.trim().slice(0, 100),
       failureCode: record.failureCode.trim().slice(0, 50),
       failureDetail,
+    },
+  };
+}
+
+export function validateSavedPrintName(
+  name: unknown,
+): ValidationResult<string> {
+  if (typeof name !== "string") {
+    return {
+      ok: false,
+      issues: [
+        {
+          path: ["name"],
+          code: "INVALID_NAME",
+          message: "Name must be a string.",
+        },
+      ],
+    };
+  }
+  const trimmed = name.trim();
+  if (trimmed.length === 0 || trimmed.length > 100) {
+    return {
+      ok: false,
+      issues: [
+        {
+          path: ["name"],
+          code: "INVALID_LENGTH",
+          message: "Document name must be between 1 and 100 characters.",
+        },
+      ],
+    };
+  }
+  return { ok: true, value: trimmed };
+}
+
+export function validatePrintSavedPrintInput(value: unknown): ValidationResult<{
+  copies: number;
+  pageRange: string;
+  paperSize: "A4" | "A3";
+  colorMode: "BW" | "COLOR";
+  sides: "SINGLE" | "DOUBLE";
+  printerId?: string;
+}> {
+  if (typeof value !== "object" || value === null) {
+    return {
+      ok: false,
+      issues: [
+        { path: [], code: "INVALID_BODY", message: "Invalid request body." },
+      ],
+    };
+  }
+  const record = value as Record<string, unknown>;
+  const issues: ValidationIssue[] = [];
+
+  const copies = typeof record.copies === "number" ? record.copies : 1;
+  if (!Number.isInteger(copies) || copies < 1 || copies > 100) {
+    issues.push({
+      path: ["copies"],
+      code: "INVALID_COPIES",
+      message: "Copies must be between 1 and 100.",
+    });
+  }
+
+  const pageRange =
+    typeof record.pageRange === "string" && record.pageRange.trim().length > 0
+      ? record.pageRange.trim()
+      : "ALL";
+
+  const paperSize = record.paperSize;
+  if (paperSize !== "A4" && paperSize !== "A3") {
+    issues.push({
+      path: ["paperSize"],
+      code: "INVALID_PAPER_SIZE",
+      message: "Paper size must be A4 or A3.",
+    });
+  }
+
+  const colorMode = record.colorMode;
+  if (colorMode !== "BW" && colorMode !== "COLOR") {
+    issues.push({
+      path: ["colorMode"],
+      code: "INVALID_COLOR_MODE",
+      message: "Color mode must be BW or COLOR.",
+    });
+  }
+
+  const sides = record.sides;
+  if (sides !== "SINGLE" && sides !== "DOUBLE") {
+    issues.push({
+      path: ["sides"],
+      code: "INVALID_SIDES",
+      message: "Sides must be SINGLE or DOUBLE.",
+    });
+  }
+
+  const printerId =
+    typeof record.printerId === "string" && record.printerId.trim().length > 0
+      ? record.printerId.trim()
+      : undefined;
+
+  if (issues.length > 0) {
+    return { ok: false, issues };
+  }
+
+  return {
+    ok: true,
+    value: {
+      copies,
+      pageRange,
+      paperSize: paperSize as "A4" | "A3",
+      colorMode: colorMode as "BW" | "COLOR",
+      sides: sides as "SINGLE" | "DOUBLE",
+      ...(printerId ? { printerId } : {}),
     },
   };
 }

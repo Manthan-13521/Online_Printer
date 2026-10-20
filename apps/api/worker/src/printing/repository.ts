@@ -1,6 +1,9 @@
 import type {
   AdminClearSpoolerResponseData,
   AdminLiveOrder,
+  AdminPickupOrder,
+  AdminPickupOrderFile,
+  AdminPickupOrdersData,
   AdminQueueRecoverResponseData,
   AgentPrintJobStep,
   IdentificationSheetAddonService,
@@ -16,6 +19,7 @@ import {
   isPrinterWideFailure,
   resolveEffectiveFeatures,
   type ColorMode,
+  type OrderStatus,
   type PaperSize,
   type PrinterCapabilityFeatures,
   type SidesMode,
@@ -414,6 +418,18 @@ export interface PrintingRepository {
     adminId: string;
     nowMs: number;
   }): Promise<{ orderId: string; status: "QUEUED"; message: string }>;
+  listPickupOrders(nowMs?: number): Promise<AdminPickupOrdersData>;
+  setAutoPrint(enabled: boolean): Promise<void>;
+  requestPickupManualPrint(
+    orderId: string,
+    adminId: string,
+    nowMs: number,
+  ): Promise<void>;
+  markPickupCollected(
+    orderId: string,
+    adminId: string,
+    nowMs: number,
+  ): Promise<void>;
 }
 
 export class D1PrintingRepository implements PrintingRepository {
@@ -935,7 +951,7 @@ export class D1PrintingRepository implements PrintingRepository {
           ORDER BY next_file.position LIMIT 1
         ), (SELECT last_file.id FROM order_files last_file
             WHERE last_file.order_id = o.id ORDER BY last_file.position DESC LIMIT 1))
-        JOIN payments pay ON pay.order_id = o.id AND pay.status = 'PAID'
+        LEFT JOIN payments pay ON pay.order_id = o.id AND pay.status = 'PAID'
           AND pay.provider_payment_id IS NOT NULL AND pay.verified_at_ms IS NOT NULL
         JOIN agents a ON a.id = ? AND a.is_active = 1 AND a.last_heartbeat_at_ms >= ?
         JOIN printers p ON p.agent_id = a.id AND p.enabled = 1 AND p.status = 'ONLINE'
@@ -1028,6 +1044,11 @@ export class D1PrintingRepository implements PrintingRepository {
           )
         WHERE ((o.status = 'QUEUED')
                OR (o.status IN ('RETRY_PENDING', 'PRINT_BLOCKED') AND (o.next_retry_at_ms IS NULL OR o.next_retry_at_ms <= ?)))
+          AND (
+            (o.order_type = 'CUSTOMER' AND pay.id IS NOT NULL)
+            OR (o.order_type = 'SAVED_PRINT' AND o.admin_authorized_by IS NOT NULL)
+          )
+          AND (o.is_pickup = 0 OR (o.is_pickup = 1 AND (i.pickup_auto_print_enabled = 1 OR o.pickup_manual_print_requested = 1)))
           AND o.public_job_code IS NOT NULL
           AND o.cleanup_state = 'ACTIVE' AND f.upload_status = 'UPLOADED'
           AND f.size_bytes IS NOT NULL
@@ -2271,6 +2292,12 @@ export class D1PrintingRepository implements PrintingRepository {
       .first<{ 1: number }>();
     const hasPostPrint = postPrintCheck !== null;
 
+    const orderRow = await this.db
+      .prepare(`SELECT is_pickup FROM orders WHERE id = ?`)
+      .bind(input.orderId)
+      .first<{ is_pickup: number }>();
+    const isPickup = (orderRow?.is_pickup ?? 0) === 1;
+
     if (hasPostPrint) {
       // POST_PRINT: go to AWAITING_FINISHING; admin must Mark Finished to complete
       await this.db.batch([
@@ -2296,6 +2323,47 @@ export class D1PrintingRepository implements PrintingRepository {
             `INSERT OR IGNORE INTO order_events (id, order_id, event_type, from_status,
               to_status, actor_type, actor_id, idempotency_key, created_at_ms)
             VALUES (?, ?, 'ORDER_PRINTED', ?, 'AWAITING_FINISHING', 'AGENT', ?, ?, ?)`,
+          )
+          .bind(
+            crypto.randomUUID(),
+            input.orderId,
+            current.order_status,
+            input.agentId,
+            `print-attempt:${current.attempt_id}:printed`,
+            input.nowMs,
+          ),
+      ]);
+    } else if (isPickup) {
+      // PICKUP: transition to PRINTED and await customer collection in Pickup Orders
+      await this.db.batch([
+        this.db
+          .prepare(
+            "UPDATE print_attempts SET status = 'SUCCEEDED', finished_at_ms = COALESCE(finished_at_ms, ?), updated_at_ms = ? WHERE id = ? AND status <> 'SUCCEEDED'",
+          )
+          .bind(input.nowMs, input.nowMs, current.attempt_id),
+        this.db
+          .prepare(
+            `UPDATE orders SET status = 'PRINTED', printed_at_ms = COALESCE(printed_at_ms, ?),
+             claimed_by_agent_id = NULL, claim_id = NULL, claim_expires_at_ms = NULL,
+             error_category = NULL, raw_error = NULL, next_retry_at_ms = NULL, updated_at_ms = ?
+             WHERE id = ? AND claim_id = ? AND status IN ('CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED')
+               AND EXISTS (SELECT 1 FROM order_files WHERE order_id = orders.id)
+               AND NOT EXISTS (SELECT 1 FROM order_files
+                 WHERE order_id = orders.id AND print_status <> 'PRINTED')`,
+          )
+          .bind(input.nowMs, input.nowMs, input.orderId, input.claimId),
+        this.db
+          .prepare(
+            `UPDATE order_files SET print_status = 'PRINTED',
+             printed_at_ms = COALESCE(printed_at_ms, ?), updated_at_ms = ?
+             WHERE order_id = ? AND print_status <> 'PRINTED'`,
+          )
+          .bind(input.nowMs, input.nowMs, input.orderId),
+        this.db
+          .prepare(
+            `INSERT OR IGNORE INTO order_events (id, order_id, event_type, from_status,
+              to_status, actor_type, actor_id, idempotency_key, created_at_ms)
+            VALUES (?, ?, 'ORDER_PRINTED', ?, 'PRINTED', 'AGENT', ?, ?, ?)`,
           )
           .bind(
             crypto.randomUUID(),
@@ -2426,6 +2494,7 @@ export class D1PrintingRepository implements PrintingRepository {
             WHERE status IN ('QUEUED','CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED',
               'PRINT_FAILED','ADMIN_ACTION_REQUIRED','RETRY_PENDING','NEEDS_ADMIN','COMPLETION_UNKNOWN')
               AND cleanup_state = 'ACTIVE'
+              AND is_pickup = 0
               AND (
                 public_job_code IS NOT NULL
                 OR paid_at_ms IS NOT NULL
@@ -2450,6 +2519,7 @@ export class D1PrintingRepository implements PrintingRepository {
             FROM orders
             WHERE status = 'PRINTED' AND updated_at_ms >= ?
               AND cleanup_state = 'ACTIVE'
+              AND is_pickup = 0
               AND (
                 public_job_code IS NOT NULL
                 OR paid_at_ms IS NOT NULL
@@ -3989,5 +4059,244 @@ export class D1PrintingRepository implements PrintingRepository {
       status: "QUEUED",
       message: `Order ${order.public_job_code ?? order.id} converted to single-sided (1-sided) and returned to queue.`,
     };
+  }
+
+  async listPickupOrders(): Promise<AdminPickupOrdersData> {
+    const inst = await this.db
+      .prepare(
+        `SELECT pickup_auto_print_enabled, timezone FROM installation WHERE id = 1`,
+      )
+      .first<{ pickup_auto_print_enabled: number; timezone?: string | null }>();
+    const autoPrintEnabled = (inst?.pickup_auto_print_enabled ?? 0) === 1;
+    const timezone = inst?.timezone || "Asia/Kolkata";
+
+    const ordersResult = await this.db
+      .prepare(
+        `SELECT o.id, o.public_job_code, o.pickup_code, o.customer_name, o.customer_phone,
+                o.original_filename, o.total_amount_paise, o.currency, o.status,
+                o.is_pickup, o.pickup_target_time_ms, o.pickup_manual_print_requested,
+                o.pickup_collected_at_ms, o.created_at_ms, o.paid_at_ms, o.printed_at_ms,
+                o.instructions, o.payment_method,
+                (SELECT COUNT(*) FROM order_files f WHERE f.order_id = o.id) file_count
+         FROM orders o
+         WHERE o.is_pickup = 1 AND o.cleanup_state = 'ACTIVE'
+           AND o.status IN ('QUEUED','CLAIMED','SPOOLING','PRINTING','PRINT_BLOCKED','PRINT_FAILED',
+                            'RETRY_PENDING','ADMIN_ACTION_REQUIRED','NEEDS_ADMIN','COMPLETION_UNKNOWN','PRINTED')
+         ORDER BY
+           CASE WHEN o.status = 'PRINTED' THEN 1 ELSE 0 END ASC,
+           o.pickup_target_time_ms ASC,
+           o.created_at_ms ASC`,
+      )
+      .all<{
+        id: string;
+        public_job_code: string | null;
+        pickup_code: string | null;
+        customer_name: string;
+        customer_phone: string;
+        original_filename: string;
+        total_amount_paise: number;
+        currency: string;
+        status: string;
+        is_pickup: number;
+        pickup_target_time_ms: number | null;
+        pickup_manual_print_requested: number;
+        pickup_collected_at_ms: number | null;
+        created_at_ms: number;
+        paid_at_ms: number | null;
+        printed_at_ms: number | null;
+        instructions: string | null;
+        payment_method: string | null;
+        file_count: number;
+      }>();
+
+    const orderIds = (ordersResult.results ?? []).map((o) => o.id);
+    const filesByOrder = new Map<string, AdminPickupOrderFile[]>();
+
+    if (orderIds.length > 0) {
+      const placeholders = orderIds.map(() => "?").join(",");
+      const filesResult = await this.db
+        .prepare(
+          `SELECT id, order_id, position, original_filename, size_bytes, source_page_count,
+                  copies, color_mode, paper_size, sides, selected_pages, print_status
+           FROM order_files
+           WHERE order_id IN (${placeholders})
+           ORDER BY order_id, position ASC`,
+        )
+        .bind(...orderIds)
+        .all<{
+          id: string;
+          order_id: string;
+          position: number;
+          original_filename: string;
+          size_bytes: number | null;
+          source_page_count: number;
+          copies: number;
+          color_mode: ColorMode;
+          paper_size: PaperSize;
+          sides: SidesMode;
+          selected_pages: string;
+          print_status: string;
+        }>();
+
+      for (const row of filesResult.results ?? []) {
+        const list = filesByOrder.get(row.order_id) ?? [];
+        list.push({
+          id: row.id,
+          position: row.position,
+          originalFilename: row.original_filename,
+          sizeBytes: row.size_bytes,
+          pageCount: row.source_page_count,
+          copies: row.copies,
+          colorMode: row.color_mode,
+          paperSize: row.paper_size,
+          sides: row.sides,
+          selectedPages: row.selected_pages,
+          printStatus: row.print_status,
+        });
+        filesByOrder.set(row.order_id, list);
+      }
+    }
+
+    const orders: AdminPickupOrder[] = (ordersResult.results ?? []).map(
+      (row) => {
+        let pickupFormatted: string | null = null;
+        let pickupTargetTime: string | null = null;
+        if (row.pickup_target_time_ms) {
+          pickupTargetTime = new Date(row.pickup_target_time_ms).toISOString();
+          try {
+            const datePartDtf = new Intl.DateTimeFormat("en-IN", {
+              timeZone: timezone,
+              day: "numeric",
+              month: "short",
+            });
+            const timePartDtf = new Intl.DateTimeFormat("en-IN", {
+              timeZone: timezone,
+              hour: "numeric",
+              minute: "numeric",
+              hour12: true,
+            });
+            const dPart = datePartDtf.format(
+              new Date(row.pickup_target_time_ms),
+            );
+            const tPart = timePartDtf.format(
+              new Date(row.pickup_target_time_ms),
+            );
+            pickupFormatted = `${dPart}, from ${tPart}`;
+          } catch {
+            pickupFormatted = pickupTargetTime;
+          }
+        }
+
+        return {
+          orderId: row.id,
+          jobCode: row.public_job_code,
+          pickupCode: row.pickup_code,
+          customerName: row.customer_name,
+          customerPhone: row.customer_phone,
+          originalFilename: row.original_filename,
+          fileCount: row.file_count,
+          totalAmountPaise: row.total_amount_paise,
+          paymentMethod: row.payment_method === "CASH" ? "CASH" : "ONLINE",
+          paymentStatus: row.paid_at_ms !== null ? "PAID" : "PENDING",
+          status: row.status as OrderStatus,
+          isPickup: true,
+          pickupTargetTime,
+          pickupFormatted,
+          pickupManualPrintRequested: row.pickup_manual_print_requested === 1,
+          pickupCollectedAt: row.pickup_collected_at_ms
+            ? new Date(row.pickup_collected_at_ms).toISOString()
+            : null,
+          createdAt: new Date(row.created_at_ms).toISOString(),
+          paidAt: row.paid_at_ms
+            ? new Date(row.paid_at_ms).toISOString()
+            : null,
+          printedAt: row.printed_at_ms
+            ? new Date(row.printed_at_ms).toISOString()
+            : null,
+          instructions: row.instructions,
+          files: filesByOrder.get(row.id) ?? [],
+        };
+      },
+    );
+
+    return {
+      orders,
+      autoPrintEnabled,
+      nextCursor: null,
+    };
+  }
+
+  async setAutoPrint(enabled: boolean): Promise<void> {
+    await this.db
+      .prepare(
+        `UPDATE installation SET pickup_auto_print_enabled = ? WHERE id = 1`,
+      )
+      .bind(enabled ? 1 : 0)
+      .run();
+  }
+
+  async requestPickupManualPrint(
+    orderId: string,
+    adminId: string,
+    nowMs: number,
+  ): Promise<void> {
+    const result = await this.db
+      .prepare(
+        `UPDATE orders
+         SET pickup_manual_print_requested = 1,
+             status = CASE WHEN status IN ('PRINT_FAILED','PRINT_BLOCKED','RETRY_PENDING') THEN 'QUEUED' ELSE status END,
+             error_category = NULL, raw_error = NULL, next_retry_at_ms = NULL, updated_at_ms = ?
+         WHERE id = ? AND is_pickup = 1 AND cleanup_state = 'ACTIVE'`,
+      )
+      .bind(nowMs, orderId)
+      .run();
+
+    if (result.meta.changes === 1) {
+      await this.db
+        .prepare(
+          `INSERT INTO order_events
+           (id, order_id, event_type, from_status, to_status, actor_type, actor_id, created_at_ms)
+           SELECT ?, id, 'ORDER_PICKUP_MANUAL_PRINT_REQUESTED', status, status, 'ADMIN', ?, ?
+           FROM orders WHERE id = ?`,
+        )
+        .bind(crypto.randomUUID(), adminId, nowMs, orderId)
+        .run();
+    }
+  }
+
+  async markPickupCollected(
+    orderId: string,
+    adminId: string,
+    nowMs: number,
+  ): Promise<void> {
+    const retentionMs = await this.getOrderRetentionMs();
+    const result = await this.db.batch([
+      this.db
+        .prepare(
+          `UPDATE orders
+           SET status = 'COMPLETED', completed_at_ms = ?, pickup_collected_at_ms = ?,
+               purge_at_ms = ?, updated_at_ms = ?
+           WHERE id = ? AND is_pickup = 1 AND status = 'PRINTED'`,
+        )
+        .bind(nowMs, nowMs, nowMs + retentionMs, nowMs, orderId),
+      this.db
+        .prepare(
+          `UPDATE uploads
+           SET retention_reason = 'COMPLETED', delete_after_ms = ?, updated_at_ms = ?
+           WHERE order_id = ? AND storage_status = 'UPLOADED'`,
+        )
+        .bind(nowMs + retentionMs, nowMs, orderId),
+      this.db
+        .prepare(
+          `INSERT INTO order_events
+           (id, order_id, event_type, from_status, to_status, actor_type, actor_id, created_at_ms)
+           VALUES (?, ?, 'ORDER_PICKUP_COLLECTED', 'PRINTED', 'COMPLETED', 'ADMIN', ?, ?)`,
+        )
+        .bind(crypto.randomUUID(), orderId, adminId, nowMs),
+    ]);
+
+    if (result[0]?.meta.changes !== 1) {
+      throw new Error("ORDER_NOT_IN_PRINTED_STATE");
+    }
   }
 }

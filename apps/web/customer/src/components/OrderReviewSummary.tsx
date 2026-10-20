@@ -104,6 +104,23 @@ export function OrderReviewSummary({
             <span>-{formatInr(quote.discountAmountPaise)}</span>
           </div>
         ) : null}
+        {quote.isPickup && (
+          <div
+            className="summary-row pickup-row"
+            style={{
+              background: "#f0f9ff",
+              padding: "0.5rem 0.6rem",
+              borderRadius: "6px",
+              color: "#0369a1",
+              fontWeight: 600,
+              display: "flex",
+              justifyContent: "space-between",
+            }}
+          >
+            <span>🌅 Pickup at Opening</span>
+            <span>{quote.pickupFormatted || "At next opening"}</span>
+          </div>
+        )}
       </div>
 
       <div className="total-box">

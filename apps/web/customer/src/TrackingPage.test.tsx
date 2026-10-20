@@ -208,4 +208,16 @@ describe("customer tracking page", () => {
     // Network retry button should NOT appear for permanently invalid links
     expect(screen.queryByRole("button", { name: "Retry Status" })).toBeNull();
   });
+
+  it("displays scheduled pickup time badge when order is marked as pickup", async () => {
+    sessionStorage.setItem("printgo.tracking.PG-ABC234", token);
+    vi.mocked(customerApi.tracking).mockResolvedValueOnce({
+      ...tracking,
+      isPickup: true,
+      pickupFormatted: "tomorrow at 7:00 AM",
+    });
+    render(<TrackingPage jobCode="PG-ABC234" />);
+    expect(await screen.findByText(/Pickup:/)).toBeTruthy();
+    expect(screen.getByText(/tomorrow at 7:00 AM/)).toBeTruthy();
+  });
 });

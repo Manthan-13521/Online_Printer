@@ -8,8 +8,11 @@ import type {
 } from "@printgo/api-contract";
 import {
   AGENT_HEARTBEAT_TIMEOUT_MS,
+  calculateNextPickupTarget,
   checkOrderCapabilitiesSupport,
+  isShopCurrentlyOpen,
   resolveEffectiveFeatures,
+  type ShopOperatingSchedule,
 } from "@printgo/domain";
 import type { PricingConfiguration } from "@printgo/pricing";
 
@@ -23,6 +26,8 @@ export interface CustomerDraftRecord {
   status: string;
   storageStatus: string;
   expiresAtMs: number;
+  isPickup?: boolean | undefined;
+  pickupTargetTimeMs?: number | null | undefined;
 }
 
 export interface CustomerFileRecord {
@@ -59,6 +64,8 @@ export interface CustomerDraftSummary {
   paymentMethod?: "ONLINE" | "CASH";
   cashExpiresAtMs?: number | null;
   cashGraceUntilMs?: number | null;
+  isPickup?: boolean;
+  pickupTargetTimeMs?: number | null;
 }
 
 export interface CustomerRepository {
@@ -97,6 +104,8 @@ export interface CustomerRepository {
     sides: "SINGLE" | "DOUBLE";
     nowMs: number;
     expiresAtMs: number;
+    isPickup?: boolean;
+    pickupTargetTimeMs?: number | null;
   }): Promise<void>;
   findDraft(tokenHash: string): Promise<CustomerDraftRecord | null>;
   findDraftSummary(tokenHash: string): Promise<CustomerDraftSummary | null>;
@@ -180,6 +189,8 @@ export interface CustomerRepository {
     customerName?: string | undefined;
     customerPhone?: string | undefined;
     instructions?: string | null | undefined;
+    isPickup?: boolean | undefined;
+    pickupTargetTimeMs?: number | null | undefined;
   }): Promise<boolean>;
   getPricingRulesAndPolicy(): Promise<{
     priorityPrinting: { enabled: boolean; feePaise: number };
@@ -218,6 +229,8 @@ interface DraftRow {
   status: string;
   storage_status: string;
   draft_expires_at_ms: number;
+  is_pickup?: number | null;
+  pickup_target_time_ms?: number | null;
 }
 
 interface FileRow {
@@ -295,7 +308,9 @@ export class D1CustomerRepository implements CustomerRepository {
         `SELECT logo_key, app_name, shop_name, contact_phone, address, customer_notice,
                 online_printing_enabled, max_pdf_size_bytes, max_order_upload_bytes,
                 priority_printing_enabled, priority_fee_paise,
-                id_requirement_mode, id_threshold_paise, cash_orders_enabled
+                id_requirement_mode, id_threshold_paise, cash_orders_enabled,
+                opening_time, closing_time, operating_days_json, timezone,
+                pickup_at_opening_enabled, accept_offline_orders_enabled
          FROM installation WHERE id = 1`,
       ),
       this.db.prepare(
@@ -344,9 +359,54 @@ export class D1CustomerRepository implements CustomerRepository {
           id_requirement_mode?: "OFF" | "ALWAYS" | "ABOVE_THRESHOLD";
           id_threshold_paise?: number;
           cash_orders_enabled?: number;
+          opening_time?: string;
+          closing_time?: string;
+          operating_days_json?: string;
+          timezone?: string;
+          pickup_at_opening_enabled?: number;
+          accept_offline_orders_enabled?: number;
         }
       | undefined;
     if (!installation) return null;
+
+    let operatingDays: number[] = [1, 2, 3, 4, 5, 6];
+    try {
+      if (installation.operating_days_json) {
+        const parsed: unknown = JSON.parse(installation.operating_days_json);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          operatingDays = parsed.map((item) => Number(item));
+        }
+      }
+    } catch {
+      // fallback
+    }
+
+    const shopSchedule: ShopOperatingSchedule = {
+      openingTime: installation.opening_time ?? "07:00",
+      closingTime: installation.closing_time ?? "21:00",
+      operatingDays,
+      timezone: installation.timezone ?? "Asia/Kolkata",
+    };
+
+    let pickupSchedule: CustomerConfigData["pickupSchedule"] = null;
+    if (installation.pickup_at_opening_enabled === 1) {
+      const isShopOpen = isShopCurrentlyOpen(nowMs, shopSchedule);
+      if (!isShopOpen) {
+        try {
+          const nextTarget = calculateNextPickupTarget(nowMs, shopSchedule);
+          pickupSchedule = {
+            enabled: true,
+            nextPickupTime: nextTarget.targetDateIso,
+            nextPickupFormatted: nextTarget.formattedPickupTime,
+            openingTime: shopSchedule.openingTime,
+            closingTime: shopSchedule.closingTime,
+            timezone: shopSchedule.timezone,
+          };
+        } catch {
+          pickupSchedule = null;
+        }
+      }
+    }
 
     const allRates = (
       (ratesResult?.results ?? []) as Array<{
@@ -387,15 +447,25 @@ export class D1CustomerRepository implements CustomerRepository {
           activeAgentIds.has(p.agent_id),
       );
 
-      const printerFeatureList = onlinePrinters
+      const onlineFeatureList = onlinePrinters
         .map((p) => resolveEffectiveFeatures(p))
         .filter((f): f is NonNullable<typeof f> => f !== null);
 
-      if (printerFeatureList.length === 0) {
+      const printersToInspect =
+        onlineFeatureList.length > 0
+          ? onlineFeatureList
+          : installation.accept_offline_orders_enabled === 1 ||
+              installation.pickup_at_opening_enabled === 1
+            ? registeredPrinters
+                .map((p) => resolveEffectiveFeatures(p))
+                .filter((f): f is NonNullable<typeof f> => f !== null)
+            : [];
+
+      if (printersToInspect.length === 0) {
         availablePrintOptions = [];
       } else {
         availablePrintOptions = allRates.filter((rate) =>
-          printerFeatureList.some(
+          printersToInspect.some(
             (features) =>
               checkOrderCapabilitiesSupport(features, {
                 paperSize: rate.paperSize,
@@ -432,6 +502,9 @@ export class D1CustomerRepository implements CustomerRepository {
       maxOrderUploadBytes: installation.max_order_upload_bytes,
       maxOrderFiles: 10,
       availablePrintOptions,
+      pickupSchedule,
+      acceptOfflineOrders:
+        (installation.accept_offline_orders_enabled ?? 0) === 1,
       addonServices: (
         (addonsResult?.results ?? []) as Array<{
           id: string;
@@ -700,8 +773,8 @@ export class D1CustomerRepository implements CustomerRepository {
           `INSERT INTO orders
         (id, customer_name, customer_phone, original_filename, source_page_count,
          color_mode, paper_size, sides, instructions, status, created_at_ms,
-         updated_at_ms, draft_token_hash, draft_expires_at_ms)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'UPLOADING', ?, ?, ?, ?)`,
+         updated_at_ms, draft_token_hash, draft_expires_at_ms, is_pickup, pickup_target_time_ms)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'UPLOADING', ?, ?, ?, ?, ?, ?)`,
         )
         .bind(
           input.orderId,
@@ -717,6 +790,8 @@ export class D1CustomerRepository implements CustomerRepository {
           input.nowMs,
           input.tokenHash,
           input.expiresAtMs,
+          input.isPickup ? 1 : 0,
+          input.pickupTargetTimeMs ?? null,
         ),
       this.db
         .prepare(
@@ -765,7 +840,7 @@ export class D1CustomerRepository implements CustomerRepository {
       .prepare(
         `SELECT o.id AS order_id, u.id AS upload_id,
       u.r2_object_key, u.expected_size_bytes, u.size_bytes, o.source_page_count,
-      o.status, u.storage_status, o.draft_expires_at_ms
+      o.status, u.storage_status, o.draft_expires_at_ms, o.is_pickup, o.pickup_target_time_ms
       FROM orders o JOIN uploads u ON u.order_id = o.id
       WHERE o.draft_token_hash = ?`,
       )
@@ -782,6 +857,8 @@ export class D1CustomerRepository implements CustomerRepository {
           status: row.status,
           storageStatus: row.storage_status,
           expiresAtMs: row.draft_expires_at_ms,
+          isPickup: row.is_pickup === 1,
+          pickupTargetTimeMs: row.pickup_target_time_ms,
         }
       : null;
   }
@@ -793,7 +870,8 @@ export class D1CustomerRepository implements CustomerRepository {
       .prepare(
         `SELECT id, customer_name, customer_phone, instructions, status,
                 draft_expires_at_ms, public_job_code, pickup_code,
-                payment_method, cash_expires_at_ms, cash_grace_until_ms
+                payment_method, cash_expires_at_ms, cash_grace_until_ms,
+                is_pickup, pickup_target_time_ms
          FROM orders WHERE draft_token_hash = ? AND cleanup_state = 'ACTIVE'`,
       )
       .bind(tokenHash)
@@ -809,6 +887,8 @@ export class D1CustomerRepository implements CustomerRepository {
         payment_method: "ONLINE" | "CASH" | null;
         cash_expires_at_ms: number | null;
         cash_grace_until_ms: number | null;
+        is_pickup: number | null;
+        pickup_target_time_ms: number | null;
       }>();
     return row
       ? {
@@ -823,6 +903,8 @@ export class D1CustomerRepository implements CustomerRepository {
           paymentMethod: row.payment_method ?? "ONLINE",
           cashExpiresAtMs: row.cash_expires_at_ms,
           cashGraceUntilMs: row.cash_grace_until_ms,
+          isPickup: row.is_pickup === 1,
+          pickupTargetTimeMs: row.pickup_target_time_ms,
         }
       : null;
   }
@@ -1339,6 +1421,7 @@ export class D1CustomerRepository implements CustomerRepository {
     const hasName = input.customerName !== undefined;
     const hasPhone = input.customerPhone !== undefined;
     const hasInst = input.instructions !== undefined;
+    const hasPickup = input.isPickup !== undefined;
 
     statements.push(
       this.db
@@ -1352,6 +1435,8 @@ export class D1CustomerRepository implements CustomerRepository {
            customer_name = CASE WHEN ? = 1 THEN ? ELSE customer_name END,
            customer_phone = CASE WHEN ? = 1 THEN ? ELSE customer_phone END,
            instructions = CASE WHEN ? = 1 THEN ? ELSE instructions END,
+           is_pickup = CASE WHEN ? = 1 THEN ? ELSE is_pickup END,
+           pickup_target_time_ms = CASE WHEN ? = 1 THEN ? ELSE pickup_target_time_ms END,
            status = 'PAYMENT_PENDING', draft_expires_at_ms = ?, updated_at_ms = ?
            WHERE draft_token_hash = ? AND cleanup_state = 'ACTIVE'
              AND status IN ('UPLOADED','PAYMENT_PENDING','PAYMENT_FAILED','PAYMENT_CANCELLED')
@@ -1382,6 +1467,10 @@ export class D1CustomerRepository implements CustomerRepository {
           input.customerPhone ?? null,
           hasInst ? 1 : 0,
           input.instructions ?? null,
+          hasPickup ? 1 : 0,
+          input.isPickup ? 1 : 0,
+          hasPickup ? 1 : 0,
+          input.pickupTargetTimeMs ?? null,
           input.expiresAtMs,
           input.nowMs,
           input.tokenHash,

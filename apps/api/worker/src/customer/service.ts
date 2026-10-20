@@ -180,6 +180,19 @@ export class CustomerService {
     const orderId = crypto.randomUUID();
     const uploadId = crypto.randomUUID();
     const objectKey = `uploads/${orderId}/${uploadId}.pdf`;
+
+    const isPickup = Boolean(input.isPickup);
+    let pickupTargetTimeMs: number | null = null;
+    if (
+      isPickup &&
+      config.pickupSchedule?.enabled &&
+      config.pickupSchedule.nextPickupTime
+    ) {
+      pickupTargetTimeMs = new Date(
+        config.pickupSchedule.nextPickupTime,
+      ).getTime();
+    }
+
     await this.repository.createDraft({
       ...input,
       ...option,
@@ -189,6 +202,8 @@ export class CustomerService {
       objectKey,
       nowMs,
       expiresAtMs,
+      isPickup,
+      pickupTargetTimeMs,
     });
     if (input.addonServiceIds && input.addonServiceIds.length > 0) {
       try {
@@ -409,7 +424,7 @@ export class CustomerService {
       throw new CustomerError("CASH_ORDERS_DISABLED");
     }
     const tokenHash = await hashSessionToken(rawToken);
-    await this.requireSummary(rawToken);
+    const { draft } = await this.requireSummary(rawToken);
     const files = await this.repository.listFiles(tokenHash);
 
     // Enforce identical server-side capability checks as online payment
@@ -419,11 +434,14 @@ export class CustomerService {
         const key = `${file.paperSize}:${file.colorMode}:${file.sides}`;
         if (checked.has(key)) continue;
         checked.add(key);
-        const readinessResult = await this.readiness.check({
-          paperSize: file.paperSize,
-          colorMode: file.colorMode,
-          sides: file.sides,
-        });
+        const readinessResult = await this.readiness.check(
+          {
+            paperSize: file.paperSize,
+            colorMode: file.colorMode,
+            sides: file.sides,
+          },
+          { isPickup: draft.isPickup },
+        );
         if (!readinessResult.ready) {
           throw new CustomerError(
             "PRINTER_NOT_READY",
@@ -549,8 +567,10 @@ export class CustomerService {
     identificationRequired: boolean;
     expiresAtMs: number;
     quote: CustomerQuoteData;
+    isPickup?: boolean | undefined;
+    pickupTargetTimeMs?: number | null | undefined;
   }> {
-    await this.requireOnline();
+    const config = await this.requireOnline();
     const { tokenHash, draft } = await this.requireSummary(rawToken);
     const stored = await this.repository.listFiles(tokenHash);
     if (
@@ -666,6 +686,24 @@ export class CustomerService {
     const first = quoted[0];
     if (!first) throw new CustomerError("QUOTE_STATE_INVALID");
 
+    const isPickup: boolean | undefined = input.isPickup;
+    let pickupAvailableAt: string | null = null;
+    let pickupFormatted: string | null = null;
+    let pickupTargetTimeMs: number | null = null;
+
+    if (isPickup) {
+      if (
+        config.pickupSchedule?.enabled &&
+        config.pickupSchedule.nextPickupTime
+      ) {
+        pickupAvailableAt = config.pickupSchedule.nextPickupTime;
+        pickupFormatted = config.pickupSchedule.nextPickupFormatted;
+        pickupTargetTimeMs = new Date(
+          config.pickupSchedule.nextPickupTime,
+        ).getTime();
+      }
+    }
+
     const quote: CustomerQuoteData = {
       normalizedSelectedPages: first.selectedPages,
       selectedPageCount: first.selectedPageCount,
@@ -694,6 +732,9 @@ export class CustomerService {
             }
           : null,
       identificationRequired,
+      isPickup,
+      pickupAvailableAt,
+      pickupFormatted,
     };
 
     return {
@@ -710,6 +751,8 @@ export class CustomerService {
       identificationRequired,
       expiresAtMs,
       quote,
+      isPickup,
+      pickupTargetTimeMs,
     };
   }
 
@@ -763,6 +806,8 @@ export class CustomerService {
         customerName: input.customerName,
         customerPhone: input.customerPhone,
         instructions: input.instructions,
+        isPickup: computed.isPickup,
+        pickupTargetTimeMs: computed.pickupTargetTimeMs,
       }))
     )
       throw new CustomerError("QUOTE_STATE_INVALID");

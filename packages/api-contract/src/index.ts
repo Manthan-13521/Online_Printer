@@ -3,6 +3,7 @@ import type {
   ColorMode,
   CustomerOrderStatus,
   IdentificationSheetPlacement,
+  OrderStatus,
   PaperSize,
   PrinterCapabilityFeatures,
   SidesMode,
@@ -99,6 +100,13 @@ export interface ShopSettings {
   nextPickupCode?: string;
   orderRetentionHours?: number;
   cashOrdersEnabled?: boolean;
+  openingTime?: string;
+  closingTime?: string;
+  operatingDays?: number[];
+  pickupAtOpeningEnabled?: boolean;
+  pickupAutoPrintEnabled?: boolean;
+  acceptOfflineOrdersEnabled?: boolean;
+  pickupAbandonedRetentionDays?: number;
 }
 
 export interface AdminSettingsData {
@@ -262,6 +270,17 @@ export interface CustomerConfigData {
     minSubtotalPaise: number;
     discountPercent: number;
   }>;
+  /** Scheduled pickup at opening configuration if enabled. */
+  pickupSchedule?: {
+    enabled: boolean;
+    nextPickupTime: string;
+    nextPickupFormatted: string;
+    openingTime: string;
+    closingTime: string;
+    timezone: string;
+  } | null;
+  /** Whether customers can order while printers/agents are offline. */
+  acceptOfflineOrders?: boolean;
 }
 
 export type CustomerConfigResponse = ApiResponse<CustomerConfigData>;
@@ -297,6 +316,9 @@ export interface AdminManualOrder {
   pickupCode?: string | null;
   isPriority?: boolean;
   identificationRequired?: boolean;
+  isPickup?: boolean | undefined;
+  pickupAvailableAt?: string | null;
+  pickupFormatted?: string | null;
 }
 
 export type AdminManualOrdersResponse = ApiResponse<{
@@ -320,8 +342,9 @@ export interface CreateCustomerDraftRequest {
   originalFilename: string;
   expectedSizeBytes: number;
   sourcePageCount: number;
-  addonServiceIds?: string[];
-  isPriority?: boolean;
+  addonServiceIds?: string[] | undefined;
+  isPriority?: boolean | undefined;
+  isPickup?: boolean | undefined;
 }
 
 export interface UploadAuthorization {
@@ -398,6 +421,9 @@ export interface CustomerDraftData {
   paymentMethod?: "ONLINE" | "CASH";
   cashExpiresAtMs?: number | null;
   cashGraceUntilMs?: number | null;
+  isPickup?: boolean | undefined;
+  pickupAvailableAt?: string | null;
+  pickupFormatted?: string | null;
 }
 
 export interface SelectCustomerCashPaymentData {
@@ -446,6 +472,7 @@ export interface CustomerOrderQuoteRequest {
   customerPhone?: string;
   instructions?: string | null;
   addonServiceIds?: string[];
+  isPickup?: boolean | undefined;
 }
 
 export interface CustomerFileQuoteData extends CustomerOrderFileData {
@@ -476,6 +503,9 @@ export interface CustomerQuoteData {
     discountPercent: number;
   } | null;
   identificationRequired?: boolean;
+  isPickup?: boolean | undefined;
+  pickupAvailableAt?: string | null;
+  pickupFormatted?: string | null;
 }
 
 export type CustomerQuoteResponse = ApiResponse<CustomerQuoteData>;
@@ -527,6 +557,9 @@ export interface CustomerPaymentSuccessData {
   trackingExpiresAt: string;
   isPriority?: boolean;
   identificationRequired?: boolean;
+  isPickup?: boolean | undefined;
+  pickupAvailableAt?: string | null;
+  pickupFormatted?: string | null;
 }
 
 export type VerifyCustomerPaymentResponse =
@@ -568,6 +601,9 @@ export interface CustomerTrackingData {
   fileRetentionStatus: CustomerFileRetentionStatus;
   timeline: CustomerSafeTimelineEvent[];
   trackingExpiresAt: string;
+  isPickup?: boolean | undefined;
+  pickupAvailableAt?: string | null;
+  pickupFormatted?: string | null;
 }
 
 export type CustomerTrackingResponse = ApiResponse<CustomerTrackingData>;
@@ -1202,3 +1238,85 @@ export type AdminResetPickupCodeResponse = ApiResponse<{
   message: string;
   nextPickupCode: string;
 }>;
+
+export interface AdminPickupOrderFile {
+  id: string;
+  position: number;
+  originalFilename: string;
+  sizeBytes: number | null;
+  pageCount: number;
+  copies: number;
+  colorMode: ColorMode;
+  paperSize: PaperSize;
+  sides: SidesMode;
+  selectedPages: string;
+  printStatus: string;
+}
+
+export interface AdminPickupOrder {
+  orderId: string;
+  jobCode: string | null;
+  pickupCode: string | null;
+  customerName: string;
+  customerPhone: string;
+  originalFilename: string;
+  fileCount: number;
+  totalAmountPaise: number;
+  paymentMethod: "ONLINE" | "CASH" | "ADMIN";
+  paymentStatus: "PAID" | "PENDING";
+  status: OrderStatus;
+  isPickup: boolean;
+  pickupTargetTime: string | null;
+  pickupFormatted: string | null;
+  pickupManualPrintRequested: boolean;
+  pickupCollectedAt: string | null;
+  createdAt: string;
+  paidAt: string | null;
+  printedAt: string | null;
+  instructions: string | null;
+  files: AdminPickupOrderFile[];
+}
+
+export interface AdminPickupOrdersData {
+  orders: AdminPickupOrder[];
+  autoPrintEnabled: boolean;
+  nextCursor: string | null;
+}
+
+export type AdminPickupOrdersResponse = ApiResponse<AdminPickupOrdersData>;
+
+export interface AdminSetAutoPrintRequest {
+  autoPrintEnabled: boolean;
+}
+
+export interface SavedPrintDocument {
+  id: string;
+  name: string;
+  originalFilename: string;
+  fileSizeBytes: number;
+  pageCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminSavedPrintsData {
+  documents: SavedPrintDocument[];
+}
+
+export type AdminSavedPrintsResponse = ApiResponse<AdminSavedPrintsData>;
+
+export interface PrintSavedPrintRequest {
+  copies: number;
+  pageRange: string;
+  paperSize: PaperSize;
+  colorMode: ColorMode;
+  sides: SidesMode;
+  printerId?: string;
+}
+
+export interface PrintSavedPrintData {
+  orderId: string;
+  jobCode: string;
+}
+
+export type PrintSavedPrintResponse = ApiResponse<PrintSavedPrintData>;

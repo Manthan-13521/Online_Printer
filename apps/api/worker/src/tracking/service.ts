@@ -164,6 +164,14 @@ export class TrackingService {
         await this.tracking.listSafeTimeline(order.orderId),
       ),
       trackingExpiresAt: new Date(order.trackingExpiresAtMs).toISOString(),
+      ...(order.isPickup
+        ? {
+            isPickup: true,
+            pickupAvailableAt: order.pickupTargetTimeMs
+              ? new Date(order.pickupTargetTimeMs).toISOString()
+              : null,
+          }
+        : {}),
     };
   }
 }

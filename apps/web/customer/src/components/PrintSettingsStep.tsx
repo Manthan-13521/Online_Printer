@@ -12,6 +12,9 @@ export interface PrintSettingsStepProps {
   optionAvailable: boolean;
   onPatchSelected: (update: Partial<LocalOrderFile>) => void;
   onApplySettingsToAll: () => void;
+  isPickup?: boolean | undefined;
+  onTogglePickup?: ((enabled: boolean) => void) | undefined;
+  pickupSchedule?: CustomerConfigData["pickupSchedule"] | undefined;
 }
 
 export function PrintSettingsStep({
@@ -23,6 +26,9 @@ export function PrintSettingsStep({
   optionAvailable,
   onPatchSelected,
   onApplySettingsToAll,
+  isPickup,
+  onTogglePickup,
+  pickupSchedule,
 }: PrintSettingsStepProps) {
   const [copiesDraft, setCopiesDraft] = useState(
     selectedFile ? String(selectedFile.copies) : "1",
@@ -383,6 +389,74 @@ export function PrintSettingsStep({
                 ? "Double-sided printing is not supported for this paper and color option. Please switch to Single-sided."
                 : "That print combination is not currently available."}
             </p>
+          )}
+
+          {pickupSchedule?.enabled && (
+            <div
+              className="pickup-schedule-card"
+              style={{
+                margin: "1.25rem 0 1rem",
+                padding: "1rem",
+                background: "#f0f9ff",
+                border: "1.5px solid #bae6fd",
+                borderRadius: "10px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: "1rem",
+              }}
+            >
+              <div>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.4rem",
+                    fontWeight: 700,
+                    color: "#0369a1",
+                    fontSize: "0.95rem",
+                  }}
+                >
+                  <span>🌅</span> Pickup at Opening
+                </div>
+                <div
+                  style={{
+                    fontSize: "0.9rem",
+                    color: "#0c4a6e",
+                    marginTop: "0.25rem",
+                    fontWeight: 600,
+                  }}
+                >
+                  Ready from:{" "}
+                  {pickupSchedule.nextPickupFormatted ??
+                    pickupSchedule.nextPickupTime}
+                </div>
+                <p
+                  style={{
+                    margin: "0.2rem 0 0",
+                    fontSize: "0.8rem",
+                    color: "#64748b",
+                  }}
+                >
+                  Shop is currently closed. Order will be prepared for pickup
+                  when the shop opens.
+                </p>
+              </div>
+
+              <label
+                className="toggle-switch"
+                style={{ margin: 0, flexShrink: 0 }}
+              >
+                <input
+                  type="checkbox"
+                  role="switch"
+                  aria-label="Pickup at Opening"
+                  checked={Boolean(isPickup)}
+                  onChange={(e) => onTogglePickup?.(e.target.checked)}
+                />
+                <span className="toggle-slider" />
+              </label>
+            </div>
           )}
 
           <button

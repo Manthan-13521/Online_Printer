@@ -22,7 +22,7 @@ export type PaymentReadinessFailureReason =
 export type PaymentReadinessResult =
   | {
       ready: true;
-      source: "LIVE_AGENT" | "DEVELOPMENT_BYPASS";
+      source: "LIVE_AGENT" | "DEVELOPMENT_BYPASS" | "OFFLINE_ACCEPTANCE";
       printerId?: string;
     }
   | {
@@ -37,8 +37,15 @@ export interface PrintRequirements {
   sides: SidesMode;
 }
 
+export interface PaymentReadinessOptions {
+  isPickup?: boolean | undefined;
+}
+
 export interface PaymentReadiness {
-  check(requirements?: PrintRequirements): Promise<PaymentReadinessResult>;
+  check(
+    requirements?: PrintRequirements,
+    options?: PaymentReadinessOptions,
+  ): Promise<PaymentReadinessResult>;
 }
 
 export class D1PaymentReadiness implements PaymentReadiness {
@@ -53,6 +60,7 @@ export class D1PaymentReadiness implements PaymentReadiness {
 
   async check(
     requirements?: PrintRequirements,
+    options?: PaymentReadinessOptions,
   ): Promise<PaymentReadinessResult> {
     if (
       this.env.APP_ENV === "development" &&
@@ -63,11 +71,15 @@ export class D1PaymentReadiness implements PaymentReadiness {
 
     const installation = await this.db
       .prepare(
-        `SELECT online_printing_enabled, default_production_printer_id FROM installation WHERE id = 1`,
+        `SELECT online_printing_enabled, default_production_printer_id,
+                accept_offline_orders_enabled, pickup_at_opening_enabled
+         FROM installation WHERE id = 1`,
       )
       .first<{
         online_printing_enabled: number;
         default_production_printer_id?: string | null;
+        accept_offline_orders_enabled?: number | null;
+        pickup_at_opening_enabled?: number | null;
       }>();
 
     if (!installation || installation.online_printing_enabled !== 1) {
@@ -77,6 +89,11 @@ export class D1PaymentReadiness implements PaymentReadiness {
         message: "Online printing is currently disabled by the shop.",
       };
     }
+
+    const allowOffline =
+      installation.accept_offline_orders_enabled === 1 ||
+      (options?.isPickup === true &&
+        installation.pickup_at_opening_enabled === 1);
 
     const nowMs = this.now();
     const minHeartbeatMs = nowMs - AGENT_HEARTBEAT_TIMEOUT_MS;
@@ -93,6 +110,7 @@ export class D1PaymentReadiness implements PaymentReadiness {
 
     const onlineAgentIds = agents.results.map((a) => a.id);
 
+    // If no agents are currently online
     if (onlineAgentIds.length === 0) {
       if (
         this.env.APP_ENV === "development" &&
@@ -100,6 +118,11 @@ export class D1PaymentReadiness implements PaymentReadiness {
       ) {
         return { ready: true, source: "DEVELOPMENT_BYPASS" };
       }
+
+      if (allowOffline) {
+        return this.checkOfflineAcceptance(requirements);
+      }
+
       return {
         ready: false,
         reason: "AGENT_OFFLINE",
@@ -135,6 +158,9 @@ export class D1PaymentReadiness implements PaymentReadiness {
       }>();
 
     if (printersResult.results.length === 0) {
+      if (allowOffline) {
+        return this.checkOfflineAcceptance(requirements);
+      }
       return {
         ready: false,
         reason: "NO_CONFIGURED_PRINTER",
@@ -157,6 +183,9 @@ export class D1PaymentReadiness implements PaymentReadiness {
     );
 
     if (onlinePrinters.length === 0) {
+      if (allowOffline) {
+        return this.checkOfflineAcceptance(requirements);
+      }
       return {
         ready: false,
         reason: "PRINTER_UNAVAILABLE",
@@ -173,6 +202,9 @@ export class D1PaymentReadiness implements PaymentReadiness {
         : undefined;
 
     if (defaultPrinterId && !defaultPrinter) {
+      if (allowOffline) {
+        return this.checkOfflineAcceptance(requirements);
+      }
       return {
         ready: false,
         reason: "PRINTER_UNAVAILABLE",
@@ -195,6 +227,9 @@ export class D1PaymentReadiness implements PaymentReadiness {
             p.fallback_printer_id !== defaultPrinter.id,
         );
         if (!fallback) {
+          if (allowOffline) {
+            return this.checkOfflineAcceptance(requirements);
+          }
           return {
             ready: false,
             reason: "PRINTER_UNAVAILABLE",
@@ -225,6 +260,10 @@ export class D1PaymentReadiness implements PaymentReadiness {
           return { ready: true, source: "LIVE_AGENT", printerId: fallback.id };
         }
 
+        if (allowOffline) {
+          return this.checkOfflineAcceptance(requirements);
+        }
+
         if (check.missingFeature === "color") {
           return {
             ready: false,
@@ -247,6 +286,9 @@ export class D1PaymentReadiness implements PaymentReadiness {
           message: `${requirements.paperSize} paper printing is currently unavailable.`,
         };
       } else {
+        if (allowOffline) {
+          return this.checkOfflineAcceptance(requirements);
+        }
         return {
           ready: false,
           reason: "PRINTER_UNAVAILABLE",
@@ -291,8 +333,7 @@ export class D1PaymentReadiness implements PaymentReadiness {
         };
       }
 
-      // Default printer lacks the requested capability (e.g. default is mono, order is color)
-      // Phase 3 Smart Routing: search other online printers for one that can fulfill it
+      // Default printer lacks requested capability -> search other online printers
       const capableSecondary = onlinePrinters.find((p) => {
         if (p.id === targetPrinter.id) return false;
         const feat = resolveEffectiveFeatures(p);
@@ -306,6 +347,10 @@ export class D1PaymentReadiness implements PaymentReadiness {
           source: "LIVE_AGENT",
           printerId: capableSecondary.id,
         };
+      }
+
+      if (allowOffline) {
+        return this.checkOfflineAcceptance(requirements);
       }
 
       if (defaultCheck.missingFeature === "color") {
@@ -358,11 +403,102 @@ export class D1PaymentReadiness implements PaymentReadiness {
       };
     }
 
+    if (allowOffline) {
+      return this.checkOfflineAcceptance(requirements);
+    }
+
     return {
       ready: false,
       reason: "PRINTER_UNAVAILABLE",
       message:
         "The shop printer is currently offline, blocked, or in an error state.",
+    };
+  }
+
+  private async checkOfflineAcceptance(
+    requirements?: PrintRequirements,
+  ): Promise<PaymentReadinessResult> {
+    const allPrintersResult = await this.db
+      .prepare(
+        `SELECT id, agent_id, display_name, windows_printer_name, status, status_reason,
+                is_paused, auto_fallback_enabled, fallback_printer_id, priority,
+                capabilities_json, verified_capabilities_json, enabled_services_json
+         FROM printers
+         WHERE enabled = 1 AND is_production_eligible = 1 AND is_virtual = 0
+         ORDER BY priority DESC, id ASC`,
+      )
+      .all<{
+        id: string;
+        agent_id: string;
+        display_name: string;
+        windows_printer_name: string;
+        status: string;
+        status_reason: string | null;
+        is_paused?: number | null;
+        auto_fallback_enabled?: number | null;
+        fallback_printer_id?: string | null;
+        priority?: number | null;
+        capabilities_json: string | null;
+        verified_capabilities_json: string | null;
+        enabled_services_json: string | null;
+      }>();
+
+    if (allPrintersResult.results.length === 0) {
+      return {
+        ready: false,
+        reason: "NO_CONFIGURED_PRINTER",
+        message: "No production printer is registered in the shop.",
+      };
+    }
+
+    if (!requirements) {
+      return { ready: true, source: "OFFLINE_ACCEPTANCE" };
+    }
+
+    const capablePrinter = allPrintersResult.results.find((p) => {
+      const feat = resolveEffectiveFeatures(p);
+      if (!feat) return false;
+      return checkOrderCapabilitiesSupport(feat, requirements).supported;
+    });
+
+    if (capablePrinter) {
+      return {
+        ready: true,
+        source: "OFFLINE_ACCEPTANCE",
+        printerId: capablePrinter.id,
+      };
+    }
+
+    // Determine why it's not supported by inspecting the primary printer's features
+    const primaryFeatures = resolveEffectiveFeatures(
+      allPrintersResult.results[0]!,
+    );
+    if (primaryFeatures) {
+      const check = checkOrderCapabilitiesSupport(
+        primaryFeatures,
+        requirements,
+      );
+      if (check.missingFeature === "color") {
+        return {
+          ready: false,
+          reason: "COLOR_MODE_UNSUPPORTED",
+          message: "Colour printing is not supported by shop printers.",
+        };
+      }
+      if (check.missingFeature === "duplex") {
+        return {
+          ready: false,
+          reason: "SIDES_MODE_UNSUPPORTED",
+          message: "Double-sided printing is not supported by shop printers.",
+        };
+      }
+    }
+
+    const paperSizeStr = String(requirements.paperSize);
+    return {
+      ready: false,
+      reason: "PAPER_SIZE_UNSUPPORTED",
+      message: `${paperSizeStr} paper printing is not supported by shop printers.`,
     };
   }
 }

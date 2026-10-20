@@ -157,6 +157,7 @@ export function App() {
   const [cashSelecting, setCashSelecting] = useState(false);
   const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>([]);
   const [isPriority, setIsPriority] = useState(false);
+  const [isPickup, setIsPickup] = useState(false);
   const [trackBoxCode, setTrackBoxCode] = useState("");
   const [showPricing, setShowPricing] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
@@ -182,6 +183,11 @@ export function App() {
       .then((loaded) => {
         setConfig(loaded);
         setConfigError(null);
+        if (!loaded.onlinePrintingEnabled && loaded.pickupSchedule?.enabled) {
+          setIsPickup(true);
+        } else {
+          setIsPickup(false);
+        }
       })
       .catch((caught: unknown) => {
         const msg =
@@ -692,6 +698,7 @@ export function App() {
         customerPhone: customerPhone.trim(),
         instructions: instructions.trim() || null,
         addonServiceIds: selectedAddonIds,
+        ...(isPickup ? { isPickup: true } : {}),
       });
       setQuote(initialQuote);
       const initialFilesSig = filesRef.current
@@ -701,7 +708,7 @@ export function App() {
         )
         .join(";");
       const initialAddonsSig = [...selectedAddonIds].sort().join(",");
-      lastQuotedSignatureRef.current = `${initialFilesSig}|isPriority:${isPriority}|addons:${initialAddonsSig}`;
+      lastQuotedSignatureRef.current = `${initialFilesSig}|isPriority:${isPriority}|addons:${initialAddonsSig}|isPickup:${isPickup}`;
       setPaymentSuccess(null);
       setStatus(
         "Review ready. Confirm the total to continue to secure payment.",
@@ -789,8 +796,8 @@ export function App() {
       )
       .join(";");
     const addonsSig = [...selectedAddonIds].sort().join(",");
-    return `${filesSig}|isPriority:${isPriority}|addons:${addonsSig}`;
-  }, [draftToken, quote, files, isPriority, selectedAddonIds]);
+    return `${filesSig}|isPriority:${isPriority}|addons:${addonsSig}|isPickup:${isPickup}`;
+  }, [draftToken, quote, files, isPriority, selectedAddonIds, isPickup]);
 
   useEffect(() => {
     if (!draftToken || !quote || files.length === 0 || !quoteSignature) {
@@ -836,6 +843,7 @@ export function App() {
           customerPhone: customerPhone.trim(),
           instructions: instructions.trim() || null,
           addonServiceIds: selectedAddonIds,
+          ...(isPickup ? { isPickup: true } : {}),
         })
         .then((freshQuote) => {
           if (quoteRequestIdRef.current === currentReqId) {
@@ -1083,6 +1091,7 @@ export function App() {
         customerPhone: customerPhone.trim(),
         instructions: instructions.trim() || null,
         addonServiceIds: selectedAddonIds,
+        ...(isPickup ? { isPickup: true } : {}),
       });
       setQuote(finalQuote);
       lastQuotedSignatureRef.current = quoteSignature;
@@ -1180,6 +1189,7 @@ export function App() {
         customerPhone: customerPhone.trim(),
         instructions: instructions.trim() || null,
         addonServiceIds: selectedAddonIds,
+        ...(isPickup ? { isPickup: true } : {}),
       });
       setQuote(finalQuote);
       lastQuotedSignatureRef.current = quoteSignature;
@@ -1341,7 +1351,8 @@ export function App() {
     );
   }
 
-  const isShopClosed = !config.onlinePrintingEnabled;
+  const isShopClosed =
+    !config.onlinePrintingEnabled && !config.pickupSchedule?.enabled;
   const isPrintersUnavailable =
     config.onlinePrintingEnabled &&
     (!config.availablePrintOptions ||
@@ -1448,6 +1459,30 @@ export function App() {
           </div>
         </div>
       ) : null}
+      {config.acceptOfflineOrders && (
+        <div
+          className="offline-notice-banner"
+          style={{
+            maxWidth: "680px",
+            margin: "0 auto 1.5rem",
+            padding: "0.85rem 1.25rem",
+            background: "#fffbeb",
+            border: "1px solid #fde68a",
+            borderRadius: "10px",
+            display: "flex",
+            alignItems: "center",
+            gap: "0.75rem",
+            color: "#92400e",
+          }}
+        >
+          <span style={{ fontSize: "1.3rem" }}>🌙</span>
+          <div style={{ fontSize: "0.9rem", lineHeight: 1.4 }}>
+            <strong>24/7 Order Acceptance:</strong> Place and pay for your order
+            now. Documents will be queued safely and printed when the printer
+            connects.
+          </div>
+        </div>
+      )}
       <form
         className="order-layout"
         onSubmit={(event) => void prepareReview(event)}
@@ -1514,6 +1549,9 @@ export function App() {
             optionAvailable={optionAvailable}
             onPatchSelected={patchSelected}
             onApplySettingsToAll={applySettingsToAll}
+            isPickup={isPickup}
+            onTogglePickup={setIsPickup}
+            pickupSchedule={config.pickupSchedule}
           />
         </div>
 

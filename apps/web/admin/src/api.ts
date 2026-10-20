@@ -45,6 +45,11 @@ import type {
   AdminResetPickupCodeResponse,
   AdminCashOrdersListResponse,
   AdminConfirmCashPaymentResponse,
+  AdminPickupOrdersResponse,
+  AdminSavedPrintsResponse,
+  SavedPrintDocument,
+  PrintSavedPrintRequest,
+  PrintSavedPrintData,
 } from "@printgo/api-contract";
 
 const API_BASE_URL =
@@ -147,6 +152,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export function brandingUrl(url: string): string {
+  return `${API_BASE_URL}${url}`;
+}
+
+export function resolveAdminApiUrl(url: string): string {
   return `${API_BASE_URL}${url}`;
 }
 
@@ -566,5 +575,82 @@ export const adminApi = {
         body: JSON.stringify({ fallbackPrinterId, autoFallbackEnabled }),
       },
     );
+  },
+  // ── Pickup Orders ────────────────────────────────────────────────
+  getPickupOrders(): Promise<AdminPickupOrdersResponse> {
+    return request("/api/admin/pickup-orders");
+  },
+  setPickupAutoPrint(
+    autoPrintEnabled: boolean,
+  ): Promise<ApiResponse<{ autoPrintEnabled: boolean }>> {
+    return request("/api/admin/pickup-orders/auto-print", {
+      method: "POST",
+      body: JSON.stringify({ autoPrintEnabled }),
+    });
+  },
+  printPickupOrder(
+    orderId: string,
+  ): Promise<ApiResponse<{ orderId: string; status: string }>> {
+    return request(
+      `/api/admin/pickup-orders/${encodeURIComponent(orderId)}/print`,
+      {
+        method: "POST",
+      },
+    );
+  },
+  markPickupCollected(
+    orderId: string,
+  ): Promise<ApiResponse<{ orderId: string; status: string }>> {
+    return request(
+      `/api/admin/pickup-orders/${encodeURIComponent(orderId)}/mark-collected`,
+      {
+        method: "POST",
+      },
+    );
+  },
+  retryPickupOrder(
+    orderId: string,
+  ): Promise<ApiResponse<{ orderId: string; status: string }>> {
+    return request(
+      `/api/admin/pickup-orders/${encodeURIComponent(orderId)}/retry`,
+      {
+        method: "POST",
+      },
+    );
+  },
+  // ── Saved Prints ─────────────────────────────────────────────────
+  getSavedPrints(): Promise<AdminSavedPrintsResponse> {
+    return request("/api/admin/saved-prints");
+  },
+  uploadSavedPrint(
+    formData: FormData,
+  ): Promise<ApiResponse<SavedPrintDocument>> {
+    return request("/api/admin/saved-prints/upload", {
+      method: "POST",
+      body: formData,
+    });
+  },
+  renameSavedPrint(
+    id: string,
+    name: string,
+  ): Promise<ApiResponse<SavedPrintDocument>> {
+    return request(`/api/admin/saved-prints/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ name }),
+    });
+  },
+  deleteSavedPrint(id: string): Promise<ApiResponse<{ deleted: true }>> {
+    return request(`/api/admin/saved-prints/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
+  },
+  printSavedPrint(
+    id: string,
+    input: PrintSavedPrintRequest,
+  ): Promise<ApiResponse<PrintSavedPrintData>> {
+    return request(`/api/admin/saved-prints/${encodeURIComponent(id)}/print`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
   },
 };

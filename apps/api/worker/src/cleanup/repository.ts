@@ -772,4 +772,39 @@ export class D1CleanupRepository {
       deletedCleanupRuns: delRuns?.meta.changes ?? 0,
     };
   }
+
+  async purgeAbandonedPickupOrders(nowMs: number): Promise<number> {
+    const inst = await this.db
+      .prepare(
+        `SELECT pickup_abandoned_retention_days FROM installation WHERE id = 1`,
+      )
+      .first<{ pickup_abandoned_retention_days: number }>();
+    const retentionDays = inst?.pickup_abandoned_retention_days ?? 7;
+    const cutoffMs = nowMs - retentionDays * 24 * 60 * 60 * 1000;
+
+    const result = await this.db.batch([
+      this.db
+        .prepare(
+          `UPDATE orders
+           SET status = 'COMPLETED', completed_at_ms = ?, purge_at_ms = ?, updated_at_ms = ?
+           WHERE is_pickup = 1 AND status = 'PRINTED'
+             AND printed_at_ms IS NOT NULL
+             AND printed_at_ms <= ?
+             AND cleanup_state = 'ACTIVE'`,
+        )
+        .bind(nowMs, nowMs, nowMs, cutoffMs),
+      this.db
+        .prepare(
+          `UPDATE uploads
+           SET retention_reason = 'COMPLETED', delete_after_ms = ?, updated_at_ms = ?
+           WHERE order_id IN (
+             SELECT id FROM orders WHERE is_pickup = 1 AND status = 'COMPLETED'
+               AND printed_at_ms IS NOT NULL AND printed_at_ms <= ?
+           ) AND storage_status = 'UPLOADED'`,
+        )
+        .bind(nowMs, nowMs, cutoffMs),
+    ]);
+
+    return result[0]?.meta.changes ?? 0;
+  }
 }

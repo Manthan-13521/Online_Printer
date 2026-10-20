@@ -77,6 +77,13 @@ interface SettingsRow {
   next_pickup_code_index?: number;
   order_retention_hours?: number;
   cash_orders_enabled?: number;
+  opening_time?: string;
+  closing_time?: string;
+  operating_days_json?: string;
+  pickup_at_opening_enabled?: number;
+  pickup_auto_print_enabled?: number;
+  accept_offline_orders_enabled?: number;
+  pickup_abandoned_retention_days?: number;
 }
 
 interface PrintRateRow {
@@ -137,7 +144,10 @@ export class D1ConfigurationRepository implements ConfigurationRepository {
                 last_cleanup_at_ms, next_daily_cleanup_at_ms, last_cleanup_result,
                 priority_printing_enabled, priority_fee_paise,
                 id_requirement_mode, id_threshold_paise, next_pickup_code_index,
-                order_retention_hours, cash_orders_enabled
+                order_retention_hours, cash_orders_enabled,
+                opening_time, closing_time, operating_days_json,
+                pickup_at_opening_enabled, pickup_auto_print_enabled,
+                accept_offline_orders_enabled, pickup_abandoned_retention_days
          FROM installation WHERE id = 1`,
       )
       .first<SettingsRow>();
@@ -177,6 +187,26 @@ export class D1ConfigurationRepository implements ConfigurationRepository {
           idThresholdPaise: row.id_threshold_paise ?? 0,
           nextPickupCode: indexToPickupCode(row.next_pickup_code_index ?? 0),
           orderRetentionHours: row.order_retention_hours ?? 2,
+          openingTime: row.opening_time ?? "07:00",
+          closingTime: row.closing_time ?? "21:00",
+          operatingDays: (() => {
+            try {
+              if (row.operating_days_json) {
+                const parsed: unknown = JSON.parse(row.operating_days_json);
+                if (Array.isArray(parsed)) {
+                  return parsed.map((item) => Number(item));
+                }
+              }
+              return [1, 2, 3, 4, 5, 6];
+            } catch {
+              return [1, 2, 3, 4, 5, 6];
+            }
+          })(),
+          pickupAtOpeningEnabled: row.pickup_at_opening_enabled === 1,
+          pickupAutoPrintEnabled: row.pickup_auto_print_enabled === 1,
+          acceptOfflineOrdersEnabled: row.accept_offline_orders_enabled === 1,
+          pickupAbandonedRetentionDays:
+            row.pickup_abandoned_retention_days ?? 7,
         }
       : null;
   }
@@ -205,6 +235,13 @@ export class D1ConfigurationRepository implements ConfigurationRepository {
                id_threshold_paise = COALESCE(?, id_threshold_paise),
                order_retention_hours = COALESCE(?, order_retention_hours),
                cash_orders_enabled = COALESCE(?, cash_orders_enabled),
+               opening_time = COALESCE(?, opening_time),
+               closing_time = COALESCE(?, closing_time),
+               operating_days_json = COALESCE(?, operating_days_json),
+               pickup_at_opening_enabled = COALESCE(?, pickup_at_opening_enabled),
+               pickup_auto_print_enabled = COALESCE(?, pickup_auto_print_enabled),
+               accept_offline_orders_enabled = COALESCE(?, accept_offline_orders_enabled),
+               pickup_abandoned_retention_days = COALESCE(?, pickup_abandoned_retention_days),
                updated_at_ms = ?
            WHERE id = 1`,
         )
@@ -248,6 +285,33 @@ export class D1ConfigurationRepository implements ConfigurationRepository {
             ? input.settings.cashOrdersEnabled
               ? 1
               : 0
+            : null,
+          input.settings.openingTime !== undefined
+            ? input.settings.openingTime
+            : null,
+          input.settings.closingTime !== undefined
+            ? input.settings.closingTime
+            : null,
+          input.settings.operatingDays !== undefined
+            ? JSON.stringify(input.settings.operatingDays)
+            : null,
+          input.settings.pickupAtOpeningEnabled !== undefined
+            ? input.settings.pickupAtOpeningEnabled
+              ? 1
+              : 0
+            : null,
+          input.settings.pickupAutoPrintEnabled !== undefined
+            ? input.settings.pickupAutoPrintEnabled
+              ? 1
+              : 0
+            : null,
+          input.settings.acceptOfflineOrdersEnabled !== undefined
+            ? input.settings.acceptOfflineOrdersEnabled
+              ? 1
+              : 0
+            : null,
+          input.settings.pickupAbandonedRetentionDays !== undefined
+            ? input.settings.pickupAbandonedRetentionDays
             : null,
           input.nowMs,
         ),

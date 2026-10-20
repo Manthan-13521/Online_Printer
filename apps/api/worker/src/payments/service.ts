@@ -302,11 +302,14 @@ export class PaymentService {
       const key = `${file.paperSize}:${file.colorMode}:${file.sides}`;
       if (checked.has(key)) continue;
       checked.add(key);
-      const readiness = await this.readiness.check({
-        paperSize: file.paperSize,
-        colorMode: file.colorMode,
-        sides: file.sides,
-      });
+      const readiness = await this.readiness.check(
+        {
+          paperSize: file.paperSize,
+          colorMode: file.colorMode,
+          sides: file.sides,
+        },
+        { isPickup: draft.isPickup },
+      );
       if (!readiness.ready) {
         throw new PaymentError(
           "PRINTER_NOT_READY",
@@ -603,6 +606,14 @@ export class PaymentService {
         : {}),
       ...(payment.identificationRequired !== undefined
         ? { identificationRequired: payment.identificationRequired }
+        : {}),
+      ...(payment.isPickup
+        ? {
+            isPickup: true,
+            pickupAvailableAt: payment.pickupTargetTimeMs
+              ? new Date(payment.pickupTargetTimeMs).toISOString()
+              : null,
+          }
         : {}),
     };
   }

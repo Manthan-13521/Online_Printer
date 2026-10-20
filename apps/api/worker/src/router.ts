@@ -9,7 +9,11 @@ import { handleCustomerRequest } from "./customer/routes";
 import type { WorkerEnv } from "./env";
 import { handleRazorpayWebhook } from "./payments/webhook";
 import { handleAgentPrintingRequest } from "./printing/routes";
-import { handleAdminLiveOrdersRequest } from "./printing/admin-routes";
+import {
+  handleAdminLiveOrdersRequest,
+  handleAdminPickupOrdersRequest,
+} from "./printing/admin-routes";
+import { handleAdminSavedPrintsRequest } from "./saved-prints/routes";
 import { handleAdminRetentionRequest } from "./retention/admin-routes";
 import { handleAdminCleanupRequest } from "./cleanup/admin-routes";
 import {
@@ -68,6 +72,14 @@ export async function routeRequest(
 
   if (url.pathname.startsWith("/api/admin/discount-rules")) {
     return handleAdminDiscountRulesRequest(request, env);
+  }
+
+  if (url.pathname.startsWith("/api/admin/pickup-orders")) {
+    return handleAdminPickupOrdersRequest(request, env);
+  }
+
+  if (url.pathname.startsWith("/api/admin/saved-prints")) {
+    return handleAdminSavedPrintsRequest(request, env);
   }
 
   if (

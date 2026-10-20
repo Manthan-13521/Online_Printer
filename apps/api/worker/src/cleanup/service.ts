@@ -128,6 +128,7 @@ export class CleanupService {
     await this.repository.recoverOrphanedClaims?.(nowMs);
     await this.repository.purgeExpiredPayments?.(nowMs);
     await this.repository.purgeOldDiagnosticLogs?.(nowMs);
+    await this.repository.purgeAbandonedPickupOrders?.(nowMs);
     await this.processRun(runId, scope, 10);
     const run = await this.repository.getRun(runId);
     if (!run) throw new CleanupRequestError("CLEANUP_RUN_NOT_FOUND");
@@ -242,6 +243,7 @@ export class CleanupService {
     await this.repository.recoverOrphanedClaims?.(nowMs);
     await this.repository.purgeExpiredPayments?.(nowMs);
     await this.repository.purgeOldDiagnosticLogs?.(nowMs);
+    await this.repository.purgeAbandonedPickupOrders?.(nowMs);
     await this.createScheduledRun("EXPIRED_UNPAID");
     await this.createScheduledRun("COMPLETED_DUE");
     await this.scheduleDailyRun();

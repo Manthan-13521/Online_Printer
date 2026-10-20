@@ -91,6 +91,7 @@ const migrations = [
   "0032_reconcile_corrupted_webhook_payment.sql",
   "0033_reconcile_daily_earnings_online_and_cash.sql",
   "0034_d1_live_orders_index.sql",
+  "0035_pickup_orders_and_saved_prints.sql",
 ].map((name) =>
   readFileSync(
     new URL(`../../../../../database/migrations/${name}`, import.meta.url),

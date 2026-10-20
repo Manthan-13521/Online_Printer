@@ -211,6 +211,7 @@ function validateDraft(value: unknown): CreateCustomerDraftRequest | null {
     "expectedSizeBytes",
     "sourcePageCount",
     "addonServiceIds",
+    "isPickup",
   ]);
   if (Object.keys(value).some((key) => !allowed.has(key))) return null;
   if (
@@ -234,7 +235,8 @@ function validateDraft(value: unknown): CreateCustomerDraftRequest | null {
         value.addonServiceIds.every(
           (id) => typeof id === "string" && id.length > 0 && id.length <= 50,
         ))
-    )
+    ) ||
+    !(value.isPickup === undefined || typeof value.isPickup === "boolean")
   )
     return null;
   return {
@@ -247,6 +249,9 @@ function validateDraft(value: unknown): CreateCustomerDraftRequest | null {
       value.instructions === null ? null : value.instructions.trim() || null,
     ...(Array.isArray(value.addonServiceIds)
       ? { addonServiceIds: value.addonServiceIds as string[] }
+      : {}),
+    ...(typeof value.isPickup === "boolean"
+      ? { isPickup: value.isPickup }
       : {}),
   };
 }
@@ -336,9 +341,12 @@ function validateOrderSettings(
     "customerPhone",
     "instructions",
     "addonServiceIds",
+    "isPickup",
   ]);
   if (Object.keys(value).some((key) => !allowed.has(key))) return null;
   if (value.isPriority !== undefined && typeof value.isPriority !== "boolean")
+    return null;
+  if (value.isPickup !== undefined && typeof value.isPickup !== "boolean")
     return null;
   if (value.files.length < 1 || value.files.length > 10) return null;
   const files: CustomerOrderQuoteRequest["files"] = [];
@@ -403,6 +411,9 @@ function validateOrderSettings(
     ...(customerPhone !== undefined ? { customerPhone } : {}),
     ...(instructions !== undefined ? { instructions } : {}),
     ...(addonServiceIds !== undefined ? { addonServiceIds } : {}),
+    ...(typeof value.isPickup === "boolean"
+      ? { isPickup: value.isPickup }
+      : {}),
   };
 }
 

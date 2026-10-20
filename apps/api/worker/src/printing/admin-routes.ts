@@ -4,7 +4,7 @@ import { D1AdminAuthRepository } from "../auth/repository";
 import { AdminAuthService, AuthError } from "../auth/service";
 import type { WorkerEnv } from "../env";
 import { error, ok } from "../http";
-import { probeAgentPrinter } from "../agent/wake";
+import { probeAgentPrinter, wakeAgent } from "../agent/wake";
 import { D1OrderHistoryRepository } from "../history/repository";
 import { D1PrintingRepository } from "./repository";
 import { createPrintingService } from "./routes";
@@ -277,3 +277,151 @@ export async function handleAdminOrdersRequest(
 
 // Backward-compatible alias for existing imports
 export const handleAdminLiveOrdersRequest = handleAdminOrdersRequest;
+
+export async function handleAdminPickupOrdersRequest(
+  request: Request,
+  env: WorkerEnv,
+  repository: D1PrintingRepository = new D1PrintingRepository(env.DB),
+  authService: AdminAuthService = new AdminAuthService(
+    new D1AdminAuthRepository(env.DB),
+  ),
+): Promise<Response> {
+  const originGuard = guardAdminOrigin(request, env.ADMIN_ALLOWED_ORIGIN);
+  if (originGuard) return originGuard;
+
+  let session;
+  try {
+    session = await authService.requireSession(
+      readAdminCookie(request, env.APP_ENV === "production"),
+    );
+  } catch (caught) {
+    const response =
+      caught instanceof AuthError
+        ? error(
+            401,
+            caught.code,
+            "Your session has expired. Please sign in again.",
+            {
+              "set-cookie": clearAdminCookie(env.APP_ENV === "production"),
+            },
+          )
+        : error(500, "AUTH_ERROR", "Authentication check failed.");
+    return withAdminCors(response, env.ADMIN_ALLOWED_ORIGIN);
+  }
+
+  const url = new URL(request.url);
+  const pathname = url.pathname;
+
+  try {
+    if (request.method === "GET" && pathname === "/api/admin/pickup-orders") {
+      const data = await repository.listPickupOrders();
+      return withAdminCors(ok(data), env.ADMIN_ALLOWED_ORIGIN);
+    }
+
+    if (
+      request.method === "POST" &&
+      pathname === "/api/admin/pickup-orders/auto-print"
+    ) {
+      const body = (await readAdminJson(request, MAX_JSON_BYTES)) as {
+        autoPrintEnabled?: boolean;
+      } | null;
+      if (typeof body?.autoPrintEnabled !== "boolean") {
+        return withAdminCors(
+          error(400, "INVALID_INPUT", "autoPrintEnabled must be a boolean."),
+          env.ADMIN_ALLOWED_ORIGIN,
+        );
+      }
+      await repository.setAutoPrint(body.autoPrintEnabled);
+      if (body.autoPrintEnabled) {
+        await wakeAgent(env);
+      }
+      return withAdminCors(
+        ok({ autoPrintEnabled: body.autoPrintEnabled }),
+        env.ADMIN_ALLOWED_ORIGIN,
+      );
+    }
+
+    const printMatch =
+      /^\/api\/admin\/pickup-orders\/([0-9a-f-]{36})\/print$/u.exec(pathname);
+    if (request.method === "POST" && printMatch) {
+      const orderId = printMatch[1]!;
+      await repository.requestPickupManualPrint(
+        orderId,
+        session.admin.id,
+        Date.now(),
+      );
+      await wakeAgent(env);
+      return withAdminCors(
+        ok({
+          orderId,
+          status: "QUEUED",
+          message: "Print initiated for pickup order.",
+        }),
+        env.ADMIN_ALLOWED_ORIGIN,
+      );
+    }
+
+    const collectedMatch =
+      /^\/api\/admin\/pickup-orders\/([0-9a-f-]{36})\/mark-collected$/u.exec(
+        pathname,
+      );
+    if (request.method === "POST" && collectedMatch) {
+      const orderId = collectedMatch[1]!;
+      await repository.markPickupCollected(
+        orderId,
+        session.admin.id,
+        Date.now(),
+      );
+      return withAdminCors(
+        ok({
+          orderId,
+          status: "COMPLETED",
+          message: "Order marked as collected.",
+        }),
+        env.ADMIN_ALLOWED_ORIGIN,
+      );
+    }
+
+    const retryMatch =
+      /^\/api\/admin\/pickup-orders\/([0-9a-f-]{36})\/retry$/u.exec(pathname);
+    if (request.method === "POST" && retryMatch) {
+      const orderId = retryMatch[1]!;
+      const result = await repository.retryOrder({
+        orderId,
+        adminId: session.admin.id,
+        nowMs: Date.now(),
+      });
+      await repository.requestPickupManualPrint(
+        orderId,
+        session.admin.id,
+        Date.now(),
+      );
+      await wakeAgent(env);
+      return withAdminCors(ok(result), env.ADMIN_ALLOWED_ORIGIN);
+    }
+
+    return withAdminCors(
+      error(404, "NOT_FOUND", "Pickup order route not found."),
+      env.ADMIN_ALLOWED_ORIGIN,
+    );
+  } catch (err: unknown) {
+    if (err instanceof Error && err.message === "ORDER_NOT_IN_PRINTED_STATE") {
+      return withAdminCors(
+        error(
+          409,
+          "ORDER_NOT_PRINTED",
+          "Only printed orders can be marked as collected.",
+        ),
+        env.ADMIN_ALLOWED_ORIGIN,
+      );
+    }
+    return withAdminCors(
+      error(
+        500,
+        "PICKUP_ORDER_ERROR",
+        "Failed to process pickup order action.",
+      ),
+      env.ADMIN_ALLOWED_ORIGIN,
+    );
+  }
+}
