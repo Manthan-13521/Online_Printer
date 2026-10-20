@@ -46,6 +46,7 @@ import type { PaymentReadiness } from "../payments/readiness";
 export type CustomerErrorCode =
   | "ONLINE_PRINTING_DISABLED"
   | "CASH_ORDERS_DISABLED"
+  | "PICKUP_CASH_NOT_ALLOWED"
   | "PRINTER_NOT_READY"
   | "PRINT_OPTIONS_UNAVAILABLE"
   | "DRAFT_INVALID"
@@ -425,6 +426,12 @@ export class CustomerService {
     }
     const tokenHash = await hashSessionToken(rawToken);
     const { draft } = await this.requireSummary(rawToken);
+    if (draft.isPickup) {
+      throw new CustomerError(
+        "PICKUP_CASH_NOT_ALLOWED",
+        "Scheduled pickup orders must be paid online to guarantee printing before pickup.",
+      );
+    }
     const files = await this.repository.listFiles(tokenHash);
 
     // Enforce identical server-side capability checks as online payment

@@ -96,6 +96,7 @@ export function SavedPrintsPage({
 
     const formData = new FormData();
     formData.append("name", uploadName.trim());
+    formData.append("file", uploadFile);
     formData.append("pdf", uploadFile);
 
     try {

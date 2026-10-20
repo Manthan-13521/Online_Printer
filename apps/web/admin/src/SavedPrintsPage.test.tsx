@@ -198,4 +198,57 @@ describe("SavedPrintsPage", () => {
 
     expect(deleteSavedPrint).toHaveBeenCalledWith("doc-1");
   });
+
+  it("allows uploading a new document with file and pdf fields in FormData", async () => {
+    getSavedPrints.mockResolvedValueOnce({
+      ok: true,
+      data: { documents: [] },
+    });
+    uploadSavedPrint.mockResolvedValueOnce({
+      ok: true,
+      data: sampleDoc,
+    });
+    getSavedPrints.mockResolvedValueOnce({
+      ok: true,
+      data: { documents: [sampleDoc] },
+    });
+
+    render(<SavedPrintsPage onSessionExpired={onSessionExpired} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Upload Document")).toBeDefined();
+    });
+
+    const uploadBtn = screen.getByRole("button", { name: /Upload Document/ });
+    act(() => {
+      fireEvent.click(uploadBtn);
+    });
+
+    expect(screen.getByText("Document Display Name")).toBeDefined();
+
+    const nameInput = screen.getByLabelText("Document Display Name");
+    fireEvent.change(nameInput, {
+      target: { value: "Rental Agreement Template" },
+    });
+
+    const fileInput = screen.getByLabelText(/PDF File/);
+    const fakeFile = new File(["%PDF-1.4 test"], "rental.pdf", {
+      type: "application/pdf",
+    });
+    fireEvent.change(fileInput, { target: { files: [fakeFile] } });
+
+    const form = screen.getByRole("dialog").querySelector("form")!;
+    act(() => {
+      fireEvent.submit(form);
+    });
+
+    await waitFor(() => {
+      expect(uploadSavedPrint).toHaveBeenCalledTimes(1);
+    });
+
+    const calledFormData = uploadSavedPrint.mock.calls[0]![0] as FormData;
+    expect(calledFormData.get("name")).toBe("Rental Agreement Template");
+    expect(calledFormData.get("file")).toBeInstanceOf(File);
+    expect(calledFormData.get("pdf")).toBeInstanceOf(File);
+  });
 });

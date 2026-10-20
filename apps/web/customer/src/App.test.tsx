@@ -726,6 +726,63 @@ describe("customer upload app", () => {
     expect(screen.getByText("PG-CSH001")).toBeTruthy();
   });
 
+  it("defaults to Pickup at Opening when shop is closed, and disallows cash payment even if cashOrdersEnabled is true", async () => {
+    const user = userEvent.setup();
+    vi.mocked(customerApi.config).mockResolvedValue({
+      ...enabledConfig,
+      cashOrdersEnabled: true,
+      pickupSchedule: {
+        enabled: true,
+        nextPickupTime: "2026-10-21T07:00:00.000Z",
+        nextPickupFormatted: "Tomorrow, from 7:00 AM",
+        openingTime: "07:00",
+        closingTime: "21:00",
+        timezone: "Asia/Kolkata",
+      },
+    });
+
+    render(<App />);
+    await screen.findByText("ABC Xerox");
+
+    await user.type(screen.getByLabelText("Name"), "Priya");
+    await user.type(screen.getByLabelText("Phone"), "9876543210");
+    await user.upload(
+      screen.getByLabelText("Choose Files"),
+      new File(["%PDF"], "pickup_doc.pdf", { type: "application/pdf" }),
+    );
+
+    // Verify Pickup at Opening toggle is rendered in Step 3 and checked by default
+    const pickupSwitch = await screen.findByRole("switch", {
+      name: "Pickup at Opening",
+    });
+    expect((pickupSwitch as HTMLInputElement).checked).toBe(true);
+
+    fireEvent.submit(
+      screen.getByRole("button", { name: "Review Order" }).closest("form")!,
+    );
+
+    // Verify Pay Online button is rendered with pickup subtitle
+    const payOnlineButton = await screen.findByRole("button", {
+      name: /Pay ₹21/i,
+    });
+    expect(payOnlineButton).toBeTruthy();
+    expect(
+      screen.getByText("Scheduled for pickup at shop opening"),
+    ).toBeTruthy();
+
+    // Verify cash button is NOT rendered
+    expect(
+      screen.queryByRole("button", { name: /Pay Cash at Counter/i }),
+    ).toBeNull();
+
+    // Verify pickup notice is displayed
+    expect(
+      screen.getByText(
+        /Scheduled pickup orders must be paid online to ensure your documents are printed before opening\./i,
+      ),
+    ).toBeTruthy();
+  });
+
   it("defaults to Single-sided (Simplex) for newly uploaded PDF even when duplex is supported", async () => {
     const user = userEvent.setup();
     const configWithDuplex = {

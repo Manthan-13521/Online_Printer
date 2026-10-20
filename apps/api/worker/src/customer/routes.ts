@@ -544,6 +544,7 @@ function mapCustomerError(caught: unknown, env: WorkerEnv): Response {
   const statuses: Record<string, number> = {
     ONLINE_PRINTING_DISABLED: 503,
     CASH_ORDERS_DISABLED: 403,
+    PICKUP_CASH_NOT_ALLOWED: 400,
     PRINTER_NOT_READY: 503,
     DRAFT_INVALID: 401,
     DRAFT_EXPIRED: 410,

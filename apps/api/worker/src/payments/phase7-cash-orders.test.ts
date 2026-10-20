@@ -936,4 +936,24 @@ describe("PRINTGO — PHASE 7 ACCEPTANCE TEST SUITE: CASH ORDERS & SMART PAYMENT
       .get(orderId) as { public_job_code: string };
     expect(order.public_job_code).toBe(result.publicJobCode);
   });
+
+  it("strictly rejects selectCashPayment with PICKUP_CASH_NOT_ALLOWED when order is marked for pickup", async () => {
+    const settings = await configRepo.getSettings();
+    await configRepo.updateSettings({
+      settings: { ...settings!, cashOrdersEnabled: true },
+      previousOnlinePrintingEnabled: true,
+      adminId: "admin-1",
+      nowMs: currentSimulatedTime,
+    });
+
+    const { orderId, rawToken } = await createDraftWithFile(
+      "10000000-0000-4000-8000-000000000999",
+      "pickup_raw_token_test",
+    );
+    db.prepare("UPDATE orders SET is_pickup = 1 WHERE id = ?").run(orderId);
+
+    await expect(customerService.selectCashPayment(rawToken)).rejects.toThrow(
+      "Scheduled pickup orders must be paid online to guarantee printing before pickup.",
+    );
+  });
 });

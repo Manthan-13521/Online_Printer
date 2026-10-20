@@ -3,7 +3,12 @@ import {
   validatePrintSavedPrintInput,
 } from "@printgo/validation";
 import { MAX_SAVED_PRINT_BYTES } from "@printgo/domain";
-import { guardAdminOrigin, readAdminJson, withAdminCors } from "../admin/http";
+import {
+  guardAdminOrigin,
+  readAdminJson,
+  resolveAdminCorsOrigin,
+  withAdminCors,
+} from "../admin/http";
 import { clearAdminCookie, readAdminCookie } from "../auth/cookies";
 import { D1AdminAuthRepository } from "../auth/repository";
 import { AdminAuthService, AuthError } from "../auth/service";
@@ -14,6 +19,30 @@ import { D1SavedPrintsRepository } from "./repository";
 
 const MAX_JSON_BYTES = 16 * 1024;
 
+export function estimatePdfPageCount(
+  pdfBytes: ArrayBuffer | ArrayBufferLike,
+): number {
+  try {
+    const text = new TextDecoder("latin1").decode(new Uint8Array(pdfBytes));
+    // 1. Look for /Type /Pages ... /Count N or /Count N ... /Type /Pages
+    const pagesCountMatch =
+      text.match(/\/Type\s*\/Pages[\s\S]*?\/Count\s+(\d+)/) ||
+      text.match(/\/Count\s+(\d+)[\s\S]*?\/Type\s*\/Pages/);
+    if (pagesCountMatch && pagesCountMatch[1]) {
+      const parsed = parseInt(pagesCountMatch[1], 10);
+      if (parsed > 0 && parsed < 10000) return parsed;
+    }
+    // 2. Count /Type /Page\b (excluding /Type /Pages)
+    const pageMatches = text.match(/\/Type\s*\/Page\b/g);
+    if (pageMatches && pageMatches.length > 0) {
+      return pageMatches.length;
+    }
+  } catch {
+    // fallback to 1 page
+  }
+  return 1;
+}
+
 export async function handleAdminSavedPrintsRequest(
   request: Request,
   env: WorkerEnv,
@@ -22,6 +51,7 @@ export async function handleAdminSavedPrintsRequest(
     new D1AdminAuthRepository(env.DB),
   ),
 ): Promise<Response> {
+  const corsOrigin = resolveAdminCorsOrigin(request, env.ADMIN_ALLOWED_ORIGIN);
   const originGuard = guardAdminOrigin(request, env.ADMIN_ALLOWED_ORIGIN);
   if (originGuard) return originGuard;
 
@@ -42,7 +72,7 @@ export async function handleAdminSavedPrintsRequest(
             },
           )
         : error(500, "AUTH_ERROR", "Authentication check failed.");
-    return withAdminCors(response, env.ADMIN_ALLOWED_ORIGIN);
+    return withAdminCors(response, corsOrigin);
   }
 
   const url = new URL(request.url);
@@ -52,7 +82,7 @@ export async function handleAdminSavedPrintsRequest(
     // 1. List all saved print documents
     if (request.method === "GET" && pathname === "/api/admin/saved-prints") {
       const documents = await repository.listDocuments();
-      return withAdminCors(ok({ documents }), env.ADMIN_ALLOWED_ORIGIN);
+      return withAdminCors(ok({ documents }), corsOrigin);
     }
 
     // 2. Upload a new saved print PDF
@@ -69,10 +99,13 @@ export async function handleAdminSavedPrintsRequest(
       if (contentType.includes("multipart/form-data")) {
         const formData = await request.formData();
         const rawName = formData.get("name");
-        const rawFile = formData.get("file");
+        const rawFile = (formData.get("file") ??
+          formData.get("pdf")) as unknown;
         const rawPageCount = formData.get("pageCount");
 
-        if (typeof rawName === "string") name = rawName;
+        if (typeof rawName === "string" && rawName.trim().length > 0) {
+          name = rawName.trim();
+        }
         if (
           typeof rawPageCount === "string" ||
           typeof rawPageCount === "number"
@@ -82,6 +115,11 @@ export async function handleAdminSavedPrintsRequest(
 
         if (rawFile instanceof File) {
           originalFilename = rawFile.name || "document.pdf";
+          if (!name) {
+            name =
+              originalFilename.replace(/\.pdf$/i, "").trim() ||
+              "Untitled Document";
+          }
           if (rawFile.size > MAX_SAVED_PRINT_BYTES) {
             return withAdminCors(
               error(
@@ -89,10 +127,13 @@ export async function handleAdminSavedPrintsRequest(
                 "FILE_TOO_LARGE",
                 "Document exceeds maximum allowed size of 10 MB.",
               ),
-              env.ADMIN_ALLOWED_ORIGIN,
+              corsOrigin,
             );
           }
           pdfBytes = await rawFile.arrayBuffer();
+          if (!rawPageCount && pdfBytes) {
+            pageCount = estimatePdfPageCount(pdfBytes);
+          }
         }
       } else {
         // Direct body upload
@@ -104,19 +145,24 @@ export async function handleAdminSavedPrintsRequest(
               "FILE_TOO_LARGE",
               "Document exceeds maximum allowed size of 10 MB.",
             ),
-            env.ADMIN_ALLOWED_ORIGIN,
+            corsOrigin,
           );
         }
         name = url.searchParams.get("name") || "Untitled Document";
         originalFilename = url.searchParams.get("filename") || "document.pdf";
-        pageCount = parseInt(url.searchParams.get("pages") || "1", 10) || 1;
+        const urlPages = url.searchParams.get("pages");
         pdfBytes = bodyBytes;
+        if (urlPages) {
+          pageCount = Math.max(1, parseInt(urlPages, 10) || 1);
+        } else if (pdfBytes) {
+          pageCount = estimatePdfPageCount(pdfBytes);
+        }
       }
 
       if (!pdfBytes || pdfBytes.byteLength === 0) {
         return withAdminCors(
           error(400, "INVALID_FILE", "Please choose a valid PDF document."),
-          env.ADMIN_ALLOWED_ORIGIN,
+          corsOrigin,
         );
       }
 
@@ -129,7 +175,7 @@ export async function handleAdminSavedPrintsRequest(
             "INVALID_PDF",
             "The selected file is not a valid PDF document.",
           ),
-          env.ADMIN_ALLOWED_ORIGIN,
+          corsOrigin,
         );
       }
 
@@ -141,7 +187,7 @@ export async function handleAdminSavedPrintsRequest(
             "INVALID_NAME",
             validatedName.issues[0]?.message ?? "Invalid document name.",
           ),
-          env.ADMIN_ALLOWED_ORIGIN,
+          corsOrigin,
         );
       }
 
@@ -162,7 +208,7 @@ export async function handleAdminSavedPrintsRequest(
         nowMs: Date.now(),
       });
 
-      return withAdminCors(ok(doc, 201), env.ADMIN_ALLOWED_ORIGIN);
+      return withAdminCors(ok(doc, 201), corsOrigin);
     }
 
     // 3. Rename a saved print document
@@ -182,7 +228,7 @@ export async function handleAdminSavedPrintsRequest(
             "INVALID_NAME",
             validatedName.issues[0]?.message ?? "Invalid document name.",
           ),
-          env.ADMIN_ALLOWED_ORIGIN,
+          corsOrigin,
         );
       }
 
@@ -194,11 +240,11 @@ export async function handleAdminSavedPrintsRequest(
       if (!updated) {
         return withAdminCors(
           error(404, "NOT_FOUND", "Saved print document not found."),
-          env.ADMIN_ALLOWED_ORIGIN,
+          corsOrigin,
         );
       }
 
-      return withAdminCors(ok(updated), env.ADMIN_ALLOWED_ORIGIN);
+      return withAdminCors(ok(updated), corsOrigin);
     }
 
     // 4. Delete a saved print document
@@ -208,14 +254,14 @@ export async function handleAdminSavedPrintsRequest(
       if (!objectKey) {
         return withAdminCors(
           error(404, "NOT_FOUND", "Saved print document not found."),
-          env.ADMIN_ALLOWED_ORIGIN,
+          corsOrigin,
         );
       }
 
       await env.PDF_BUCKET.delete(objectKey);
       return withAdminCors(
         ok({ message: "Saved print document deleted." }),
-        env.ADMIN_ALLOWED_ORIGIN,
+        corsOrigin,
       );
     }
 
@@ -228,7 +274,7 @@ export async function handleAdminSavedPrintsRequest(
       if (!doc) {
         return withAdminCors(
           error(404, "NOT_FOUND", "Saved print document not found."),
-          env.ADMIN_ALLOWED_ORIGIN,
+          corsOrigin,
         );
       }
 
@@ -236,7 +282,7 @@ export async function handleAdminSavedPrintsRequest(
       if (!obj) {
         return withAdminCors(
           error(404, "FILE_NOT_FOUND", "Document file not found in storage."),
-          env.ADMIN_ALLOWED_ORIGIN,
+          corsOrigin,
         );
       }
 
@@ -245,7 +291,9 @@ export async function handleAdminSavedPrintsRequest(
         headers: {
           "Content-Type": "application/pdf",
           "Content-Disposition": `inline; filename="${encodeURIComponent(doc.originalFilename)}"`,
-          "Access-Control-Allow-Origin": env.ADMIN_ALLOWED_ORIGIN,
+          "Access-Control-Allow-Origin": corsOrigin,
+          "Access-Control-Allow-Credentials": "true",
+          Vary: "Origin",
           "Cache-Control": "private, max-age=3600",
         },
       });
@@ -265,7 +313,7 @@ export async function handleAdminSavedPrintsRequest(
             "INVALID_INPUT",
             validatedInput.issues[0]?.message ?? "Invalid print configuration.",
           ),
-          env.ADMIN_ALLOWED_ORIGIN,
+          corsOrigin,
         );
       }
 
@@ -283,23 +331,23 @@ export async function handleAdminSavedPrintsRequest(
 
       await wakeAgent(env);
 
-      return withAdminCors(ok(result, 201), env.ADMIN_ALLOWED_ORIGIN);
+      return withAdminCors(ok(result, 201), corsOrigin);
     }
 
     return withAdminCors(
       error(404, "NOT_FOUND", "Saved print route not found."),
-      env.ADMIN_ALLOWED_ORIGIN,
+      corsOrigin,
     );
   } catch (err: unknown) {
     if (err instanceof Error && err.message === "SAVED_PRINT_NOT_FOUND") {
       return withAdminCors(
         error(404, "NOT_FOUND", "Saved print document not found."),
-        env.ADMIN_ALLOWED_ORIGIN,
+        corsOrigin,
       );
     }
     return withAdminCors(
       error(500, "SAVED_PRINT_ERROR", "Failed to process saved print request."),
-      env.ADMIN_ALLOWED_ORIGIN,
+      corsOrigin,
     );
   }
 }

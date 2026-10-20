@@ -90,7 +90,8 @@ export function guardAdminOrigin(
       headers: {
         ...adminCorsHeaders(origin),
         "access-control-allow-headers": "Content-Type, Authorization",
-        "access-control-allow-methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "access-control-allow-methods":
+          "GET, POST, PUT, PATCH, DELETE, OPTIONS",
         "access-control-max-age": "600",
       },
     });

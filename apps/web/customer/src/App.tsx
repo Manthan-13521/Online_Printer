@@ -183,7 +183,7 @@ export function App() {
       .then((loaded) => {
         setConfig(loaded);
         setConfigError(null);
-        if (!loaded.onlinePrintingEnabled && loaded.pickupSchedule?.enabled) {
+        if (loaded.pickupSchedule?.enabled) {
           setIsPickup(true);
         } else {
           setIsPickup(false);
@@ -1132,6 +1132,12 @@ export function App() {
       files.some((f) => !f.uploaded || f.uploadStatus !== "UPLOADED")
     )
       return;
+    if (isPickup) {
+      setStatus(
+        "Scheduled pickup orders must be paid online to guarantee printing before pickup.",
+      );
+      return;
+    }
     if (!customerName.trim()) {
       setStatus("Please enter your name.");
       return;
@@ -1239,6 +1245,7 @@ export function App() {
       setDraftToken(null);
       setPaymentSuccess(null);
       setCashWaitingData(null);
+      setIsPickup(Boolean(config?.pickupSchedule?.enabled));
       window.history.pushState(null, "", "/");
     };
 
@@ -1766,7 +1773,7 @@ export function App() {
                             : "Check Payment Status"}
                         </button>
                       </div>
-                    ) : config?.cashOrdersEnabled ? (
+                    ) : config?.cashOrdersEnabled && !isPickup ? (
                       <>
                         <button
                           type="button"
@@ -1885,53 +1892,97 @@ export function App() {
                         </button>
                       </>
                     ) : (
-                      <button
-                        type="button"
-                        className={`pay-button ${paymentBusy ? "loading" : ""}`}
-                        onClick={() => void pay()}
-                        disabled={
-                          paymentBusy ||
-                          busy ||
-                          isRecalculating ||
-                          cashSelecting ||
-                          Boolean(paymentSuccess) ||
-                          files.some(
-                            (f) => !f.uploaded || f.uploadStatus !== "UPLOADED",
-                          )
-                        }
-                        aria-busy={paymentBusy}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          gap: paymentBusy ? "0.65rem" : "0",
-                          cursor: paymentBusy ? "wait" : "pointer",
-                        }}
-                      >
-                        {paymentBusy ? (
-                          <>
-                            <FloatingLoadingIndicator
-                              size="sm"
-                              variant="green"
-                            />
-                            <span
+                      <>
+                        <button
+                          type="button"
+                          className={`pay-button ${paymentBusy ? "loading" : ""}`}
+                          onClick={() => void pay()}
+                          disabled={
+                            paymentBusy ||
+                            busy ||
+                            isRecalculating ||
+                            cashSelecting ||
+                            Boolean(paymentSuccess) ||
+                            files.some(
+                              (f) =>
+                                !f.uploaded || f.uploadStatus !== "UPLOADED",
+                            )
+                          }
+                          aria-busy={paymentBusy}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            gap: paymentBusy ? "0.65rem" : "0",
+                            cursor: paymentBusy ? "wait" : "pointer",
+                          }}
+                        >
+                          {paymentBusy ? (
+                            <>
+                              <FloatingLoadingIndicator
+                                size="sm"
+                                variant="green"
+                              />
+                              <span
+                                style={{
+                                  fontSize: "1rem",
+                                  fontWeight: 700,
+                                  color: "#123b4a",
+                                }}
+                              >
+                                {paymentPhase === "CHECKING_AVAILABILITY"
+                                  ? "Checking printer availability…"
+                                  : paymentPhase === "PREPARING_PAYMENT"
+                                    ? "Preparing secure payment…"
+                                    : "Finding the best printer…"}
+                              </span>
+                            </>
+                          ) : isPickup ? (
+                            <div
                               style={{
-                                fontSize: "1rem",
-                                fontWeight: 700,
-                                color: "#123b4a",
+                                display: "flex",
+                                flexDirection: "column",
+                                alignItems: "center",
+                                justifyContent: "center",
                               }}
                             >
-                              {paymentPhase === "CHECKING_AVAILABILITY"
-                                ? "Checking printer availability…"
-                                : paymentPhase === "PREPARING_PAYMENT"
-                                  ? "Preparing secure payment…"
-                                  : "Finding the best printer…"}
-                            </span>
-                          </>
-                        ) : (
-                          `🔒 Pay ${formatInr(quote.totalAmountPaise)}`
+                              <span
+                                style={{
+                                  fontSize: "1rem",
+                                  fontWeight: 700,
+                                }}
+                              >
+                                🔒 Pay {formatInr(quote.totalAmountPaise)}
+                              </span>
+                              <span
+                                style={{
+                                  fontSize: "0.75rem",
+                                  fontWeight: 400,
+                                  opacity: 0.9,
+                                  marginTop: "0.15rem",
+                                }}
+                              >
+                                Scheduled for pickup at shop opening
+                              </span>
+                            </div>
+                          ) : (
+                            `🔒 Pay ${formatInr(quote.totalAmountPaise)}`
+                          )}
+                        </button>
+                        {isPickup && (
+                          <p
+                            style={{
+                              fontSize: "0.8rem",
+                              color: "#64748B",
+                              margin: "0.5rem 0 0",
+                              textAlign: "center",
+                            }}
+                          >
+                            Scheduled pickup orders must be paid online to
+                            ensure your documents are printed before opening.
+                          </p>
                         )}
-                      </button>
+                      </>
                     )}
                   </div>
                 )}
