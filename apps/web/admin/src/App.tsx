@@ -60,7 +60,7 @@ export const mainNavigation: NavItem[] = [
   { label: "Dashboard", path: "/admin", icon: "dashboard" },
   { label: "Live Orders", path: "/admin/live-orders", icon: "live-orders" },
   {
-    label: "Pickup Orders",
+    label: "Tomorrow Pickup Orders",
     path: "/admin/pickup-orders",
     icon: "pickup-orders",
   },

@@ -664,7 +664,7 @@ describe("Customer Components & Helpers", () => {
         </OrderReviewSummary>,
       );
 
-      expect(screen.getByText(/Pickup at Opening/)).toBeTruthy();
+      expect(screen.getByText(/Tomorrow Pickup/)).toBeTruthy();
       expect(screen.getByText(/tomorrow at 7:00 AM/)).toBeTruthy();
     });
   });
@@ -713,7 +713,7 @@ describe("Customer Components & Helpers", () => {
         />,
       );
 
-      expect(screen.getByText("Pickup at Opening")).toBeTruthy();
+      expect(screen.getByText("Tomorrow Pickup Order")).toBeTruthy();
       expect(screen.getByText(/Tomorrow at 7:00 AM/)).toBeTruthy();
 
       const toggleSwitch = screen.getByRole("switch");

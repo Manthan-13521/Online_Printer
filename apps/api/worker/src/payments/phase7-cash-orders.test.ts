@@ -953,7 +953,7 @@ describe("PRINTGO — PHASE 7 ACCEPTANCE TEST SUITE: CASH ORDERS & SMART PAYMENT
     db.prepare("UPDATE orders SET is_pickup = 1 WHERE id = ?").run(orderId);
 
     await expect(customerService.selectCashPayment(rawToken)).rejects.toThrow(
-      "Scheduled pickup orders must be paid online to guarantee printing before pickup.",
+      "Scheduled tomorrow pickup orders must be paid online to guarantee printing before pickup.",
     );
   });
 });

@@ -199,11 +199,10 @@ export function PickupOrdersPage({
               fontWeight: 800,
             }}
           >
-            Pickup Orders
+            Tomorrow Pickup Orders
           </h1>
           <p className="muted" style={{ margin: 0, fontSize: "0.95rem" }}>
-            Orders placed while the shop was closed, scheduled for collection at
-            opening.
+            Orders scheduled for collection at shop opening.
           </p>
         </div>
 
@@ -304,14 +303,14 @@ export function PickupOrdersPage({
         >
           <div style={{ fontSize: "2.5rem", marginBottom: "0.5rem" }}>📦</div>
           <h3 style={{ margin: "0 0 0.5rem 0", color: "#1e293b" }}>
-            No Pickup Orders
+            No Tomorrow Pickup Orders
           </h3>
           <p
             className="muted"
             style={{ margin: 0, maxWidth: "400px", marginInline: "auto" }}
           >
-            Scheduled orders placed by customers while the shop is closed will
-            appear here.
+            Scheduled orders placed by customers for shop opening will appear
+            here.
           </p>
         </div>
       ) : (

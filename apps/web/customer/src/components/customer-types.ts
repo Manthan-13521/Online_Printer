@@ -44,7 +44,7 @@ export function customerErrorMessage(caught: unknown): string {
   if (code === "CASH_ORDERS_DISABLED")
     return "Cash orders are currently disabled by the shop.";
   if (code === "PICKUP_CASH_NOT_ALLOWED")
-    return "Scheduled pickup orders must be paid online to guarantee printing before pickup.";
+    return "Scheduled tomorrow pickup orders must be paid online to guarantee printing before pickup.";
   if (code === "PRINTER_NOT_READY")
     return "The shop printer is currently not ready to print.";
   if (code === "DRAFT_EXPIRED")
@@ -91,7 +91,7 @@ export function paymentErrorMessage(caught: unknown): string {
   if (code === "PRINTER_NOT_READY")
     return "Online payment is temporarily unavailable because the shop printer is not ready.";
   if (code === "PICKUP_CASH_NOT_ALLOWED")
-    return "Scheduled pickup orders must be paid online to guarantee printing before pickup.";
+    return "Scheduled tomorrow pickup orders must be paid online to guarantee printing before pickup.";
   if (code === "PAYMENT_NOT_CAPTURED")
     return "Payment is still being confirmed. No print job has been created yet.";
   if (code === "PAYMENT_SIGNATURE_INVALID")

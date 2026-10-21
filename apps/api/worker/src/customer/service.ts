@@ -429,7 +429,7 @@ export class CustomerService {
     if (draft.isPickup) {
       throw new CustomerError(
         "PICKUP_CASH_NOT_ALLOWED",
-        "Scheduled pickup orders must be paid online to guarantee printing before pickup.",
+        "Scheduled tomorrow pickup orders must be paid online to guarantee printing before pickup.",
       );
     }
     const files = await this.repository.listFiles(tokenHash);

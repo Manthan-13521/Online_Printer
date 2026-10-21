@@ -273,6 +273,7 @@ export interface CustomerConfigData {
   /** Scheduled pickup at opening configuration if enabled. */
   pickupSchedule?: {
     enabled: boolean;
+    isShopOpen?: boolean;
     nextPickupTime: string;
     nextPickupFormatted: string;
     openingTime: string;

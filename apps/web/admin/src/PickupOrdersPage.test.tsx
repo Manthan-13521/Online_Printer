@@ -106,7 +106,7 @@ describe("PickupOrdersPage", () => {
     render(<PickupOrdersPage onSessionExpired={onSessionExpired} />);
 
     await waitFor(() => {
-      expect(screen.getByText("No Pickup Orders")).toBeDefined();
+      expect(screen.getByText("No Tomorrow Pickup Orders")).toBeDefined();
     });
     expect(screen.getByText("Print automatically")).toBeDefined();
   });

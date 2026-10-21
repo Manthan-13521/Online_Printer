@@ -417,7 +417,7 @@ export function PrintSettingsStep({
                     fontSize: "0.95rem",
                   }}
                 >
-                  <span>🌅</span> Pickup at Opening
+                  <span>🌅</span> Tomorrow Pickup Order
                 </div>
                 <div
                   style={{
@@ -438,8 +438,9 @@ export function PrintSettingsStep({
                     color: "#64748b",
                   }}
                 >
-                  Shop is currently closed. Order will be prepared for pickup
-                  when the shop opens.
+                  {pickupSchedule.isShopOpen
+                    ? "Shop is currently open. Enable this if you want to collect tomorrow at opening instead of today."
+                    : "Shop is currently closed. Order will be prepared for pickup when the shop opens."}
                 </p>
               </div>
 
@@ -450,7 +451,7 @@ export function PrintSettingsStep({
                 <input
                   type="checkbox"
                   role="switch"
-                  aria-label="Pickup at Opening"
+                  aria-label="Tomorrow Pickup Order"
                   checked={Boolean(isPickup)}
                   onChange={(e) => onTogglePickup?.(e.target.checked)}
                 />

@@ -117,7 +117,7 @@ export function OrderReviewSummary({
               justifyContent: "space-between",
             }}
           >
-            <span>🌅 Pickup at Opening</span>
+            <span>🌅 Tomorrow Pickup Order</span>
             <span>{quote.pickupFormatted || "At next opening"}</span>
           </div>
         )}

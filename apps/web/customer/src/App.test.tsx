@@ -726,13 +726,14 @@ describe("customer upload app", () => {
     expect(screen.getByText("PG-CSH001")).toBeTruthy();
   });
 
-  it("defaults to Pickup at Opening when shop is closed, and disallows cash payment even if cashOrdersEnabled is true", async () => {
+  it("defaults to Tomorrow Pickup Order when shop is closed, and disallows cash payment even if cashOrdersEnabled is true", async () => {
     const user = userEvent.setup();
     vi.mocked(customerApi.config).mockResolvedValue({
       ...enabledConfig,
       cashOrdersEnabled: true,
       pickupSchedule: {
         enabled: true,
+        isShopOpen: false,
         nextPickupTime: "2026-10-21T07:00:00.000Z",
         nextPickupFormatted: "Tomorrow, from 7:00 AM",
         openingTime: "07:00",
@@ -751,9 +752,9 @@ describe("customer upload app", () => {
       new File(["%PDF"], "pickup_doc.pdf", { type: "application/pdf" }),
     );
 
-    // Verify Pickup at Opening toggle is rendered in Step 3 and checked by default
+    // Verify Tomorrow Pickup Order toggle is rendered in Step 3 and checked by default
     const pickupSwitch = await screen.findByRole("switch", {
-      name: "Pickup at Opening",
+      name: "Tomorrow Pickup Order",
     });
     expect((pickupSwitch as HTMLInputElement).checked).toBe(true);
 
@@ -767,7 +768,7 @@ describe("customer upload app", () => {
     });
     expect(payOnlineButton).toBeTruthy();
     expect(
-      screen.getByText("Scheduled for pickup at shop opening"),
+      screen.getByText("Scheduled for tomorrow pickup at shop opening"),
     ).toBeTruthy();
 
     // Verify cash button is NOT rendered
@@ -778,9 +779,64 @@ describe("customer upload app", () => {
     // Verify pickup notice is displayed
     expect(
       screen.getByText(
-        /Scheduled pickup orders must be paid online to ensure your documents are printed before opening\./i,
+        /Scheduled tomorrow pickup orders must be paid online to ensure your documents are printed before opening\./i,
       ),
     ).toBeTruthy();
+  });
+
+  it("shows Tomorrow Pickup Order option unchecked by default when shop is open, and can be toggled on", async () => {
+    const user = userEvent.setup();
+    vi.mocked(customerApi.config).mockResolvedValue({
+      ...enabledConfig,
+      cashOrdersEnabled: true,
+      pickupSchedule: {
+        enabled: true,
+        isShopOpen: true,
+        nextPickupTime: "2026-10-22T07:00:00.000Z",
+        nextPickupFormatted: "22 Oct, from 7:00 AM",
+        openingTime: "07:00",
+        closingTime: "21:00",
+        timezone: "Asia/Kolkata",
+      },
+    });
+
+    render(<App />);
+    await screen.findByText("ABC Xerox");
+
+    await user.type(screen.getByLabelText("Name"), "Aman");
+    await user.type(screen.getByLabelText("Phone"), "9876543210");
+    await user.upload(
+      screen.getByLabelText("Choose Files"),
+      new File(["%PDF"], "tomorrow_doc.pdf", { type: "application/pdf" }),
+    );
+
+    // Verify Tomorrow Pickup Order toggle is rendered in Step 3 and UNCHECKED by default
+    const pickupSwitch = await screen.findByRole("switch", {
+      name: "Tomorrow Pickup Order",
+    });
+    expect((pickupSwitch as HTMLInputElement).checked).toBe(false);
+
+    // Toggle it on
+    await user.click(pickupSwitch);
+    expect((pickupSwitch as HTMLInputElement).checked).toBe(true);
+
+    fireEvent.submit(
+      screen.getByRole("button", { name: "Review Order" }).closest("form")!,
+    );
+
+    // Verify Pay Online button has tomorrow pickup subtitle
+    const payOnlineButton = await screen.findByRole("button", {
+      name: /Pay ₹21/i,
+    });
+    expect(payOnlineButton).toBeTruthy();
+    expect(
+      screen.getByText("Scheduled for tomorrow pickup at shop opening"),
+    ).toBeTruthy();
+
+    // Verify cash button is NOT rendered when pickup is chosen
+    expect(
+      screen.queryByRole("button", { name: /Pay Cash at Counter/i }),
+    ).toBeNull();
   });
 
   it("defaults to Single-sided (Simplex) for newly uploaded PDF even when duplex is supported", async () => {

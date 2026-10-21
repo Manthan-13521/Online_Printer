@@ -184,7 +184,11 @@ export function App() {
         setConfig(loaded);
         setConfigError(null);
         if (loaded.pickupSchedule?.enabled) {
-          setIsPickup(true);
+          if (!loaded.pickupSchedule.isShopOpen) {
+            setIsPickup(true);
+          } else {
+            setIsPickup(false);
+          }
         } else {
           setIsPickup(false);
         }
@@ -1245,7 +1249,12 @@ export function App() {
       setDraftToken(null);
       setPaymentSuccess(null);
       setCashWaitingData(null);
-      setIsPickup(Boolean(config?.pickupSchedule?.enabled));
+      setIsPickup(
+        Boolean(
+          config?.pickupSchedule?.enabled &&
+          !config?.pickupSchedule?.isShopOpen,
+        ),
+      );
       window.history.pushState(null, "", "/");
     };
 
@@ -1962,7 +1971,7 @@ export function App() {
                                   marginTop: "0.15rem",
                                 }}
                               >
-                                Scheduled for pickup at shop opening
+                                Scheduled for tomorrow pickup at shop opening
                               </span>
                             </div>
                           ) : (
@@ -1978,8 +1987,8 @@ export function App() {
                               textAlign: "center",
                             }}
                           >
-                            Scheduled pickup orders must be paid online to
-                            ensure your documents are printed before opening.
+                            Scheduled tomorrow pickup orders must be paid online
+                            to ensure your documents are printed before opening.
                           </p>
                         )}
                       </>

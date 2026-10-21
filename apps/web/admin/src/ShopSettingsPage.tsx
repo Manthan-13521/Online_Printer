@@ -514,10 +514,10 @@ export function ShopSettingsPage({
             }}
           >
             <div>
-              <h2 style={{ margin: 0 }}>Pickup at Opening</h2>
+              <h2 style={{ margin: 0 }}>Tomorrow Pickup Orders</h2>
               <p className="field-help" style={{ margin: "0.25rem 0 0" }}>
-                Allow customers to place orders when the shop is closed, with
-                pickup scheduled for the next opening.
+                Allow customers to place tomorrow pickup orders (scheduled for
+                the next shop opening, available when shop is open or closed).
               </p>
             </div>
             <div
@@ -528,7 +528,7 @@ export function ShopSettingsPage({
               </span>
               <label className="toggle-switch">
                 <input
-                  aria-label="Enable Pickup at Opening"
+                  aria-label="Enable Tomorrow Pickup Orders"
                   checked={Boolean(settings.pickupAtOpeningEnabled)}
                   onChange={(event) =>
                     patch({ pickupAtOpeningEnabled: event.target.checked })
@@ -559,7 +559,7 @@ export function ShopSettingsPage({
                 <p className="field-help" style={{ margin: "0.2rem 0 0" }}>
                   When ON, eligible pickup orders start printing automatically
                   when the Agent is online at opening. When OFF, print manually
-                  from Pickup Orders.
+                  from Tomorrow Pickup Orders.
                 </p>
               </div>
               <label className="toggle-switch">

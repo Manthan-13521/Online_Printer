@@ -391,20 +391,19 @@ export class D1CustomerRepository implements CustomerRepository {
     let pickupSchedule: CustomerConfigData["pickupSchedule"] = null;
     if (installation.pickup_at_opening_enabled === 1) {
       const isShopOpen = isShopCurrentlyOpen(nowMs, shopSchedule);
-      if (!isShopOpen) {
-        try {
-          const nextTarget = calculateNextPickupTarget(nowMs, shopSchedule);
-          pickupSchedule = {
-            enabled: true,
-            nextPickupTime: nextTarget.targetDateIso,
-            nextPickupFormatted: nextTarget.formattedPickupTime,
-            openingTime: shopSchedule.openingTime,
-            closingTime: shopSchedule.closingTime,
-            timezone: shopSchedule.timezone,
-          };
-        } catch {
-          pickupSchedule = null;
-        }
+      try {
+        const nextTarget = calculateNextPickupTarget(nowMs, shopSchedule);
+        pickupSchedule = {
+          enabled: true,
+          isShopOpen,
+          nextPickupTime: nextTarget.targetDateIso,
+          nextPickupFormatted: nextTarget.formattedPickupTime,
+          openingTime: shopSchedule.openingTime,
+          closingTime: shopSchedule.closingTime,
+          timezone: shopSchedule.timezone,
+        };
+      } catch {
+        pickupSchedule = null;
       }
     }
 
