@@ -392,8 +392,11 @@ describe("Admin LiveOrdersPage — Compact Redesign", () => {
     });
     expect(markPrintedBtn).toBeDefined();
 
-    await act(async () => {
+    act(() => {
       fireEvent.click(markPrintedBtn);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
     });
 
     expect(manualCompleteOrder).toHaveBeenCalledWith("ord-failed-1");

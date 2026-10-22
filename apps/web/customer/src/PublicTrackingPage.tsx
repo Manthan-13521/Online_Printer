@@ -162,11 +162,14 @@ export function PublicTrackingPage({
 
   if (!data) return null;
 
-  const pickupTimeDisplay = shopOpeningTime
-    ? `tomorrow after ${shopOpeningTime}`
-    : "tomorrow";
+  const pickupTimeDisplay = data?.pickupFormatted
+    ? data.pickupFormatted.replace(", from ", " at ")
+    : shopOpeningTime
+      ? `tomorrow after ${shopOpeningTime}`
+      : "tomorrow";
 
   const renderPickupCallout = () => {
+    if (!data?.isPickup) return null;
     return (
       <div
         className="pickup-callout-card"
@@ -353,6 +356,7 @@ export function PublicTrackingPage({
       currentStageIndex={stageIndex}
       orderDetails={{
         pickupCode: data.pickupCode,
+        isPickup: Boolean(data.isPickup),
       }}
       onBack={handleBack}
     >

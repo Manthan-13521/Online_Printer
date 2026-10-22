@@ -68,6 +68,7 @@ export interface OrderDetails {
   pickupStore?: string;
   pickupLocation?: string;
   pickupCode?: string;
+  isPickup?: boolean;
 }
 
 export interface TrackJourneyProps {

@@ -1231,6 +1231,9 @@ export interface PublicOrderTrackingData {
   identificationRequired: boolean;
   createdAt: string;
   completedAt?: string | null;
+  isPickup?: boolean;
+  pickupAvailableAt?: string | null;
+  pickupFormatted?: string | null;
 }
 
 export type PublicOrderTrackingResponse = ApiResponse<PublicOrderTrackingData>;

@@ -91,4 +91,33 @@ describe("public tracking page", () => {
     expect(handleBack).toHaveBeenCalled();
     expect(screen.getByRole("link", { name: "Print a Document" })).toBeTruthy();
   });
+
+  it("does not render pickup callout for standard non-pickup orders", async () => {
+    vi.mocked(customerApi.trackPublic).mockResolvedValueOnce({
+      ...tracking,
+      isPickup: false,
+    });
+    render(
+      <PublicTrackingPage pickupCode="PA-001" shopOpeningTime="9:00 AM" />,
+    );
+    expect(
+      await screen.findByRole("heading", { level: 2, name: "Finishing" }),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Your order will be ready till/i)).toBeNull();
+  });
+
+  it("renders pickup callout when order is explicitly a pickup order", async () => {
+    vi.mocked(customerApi.trackPublic).mockResolvedValueOnce({
+      ...tracking,
+      isPickup: true,
+      pickupFormatted: "tomorrow after 9:00 AM",
+    });
+    render(
+      <PublicTrackingPage pickupCode="PA-001" shopOpeningTime="9:00 AM" />,
+    );
+    expect(
+      await screen.findByRole("heading", { level: 2, name: "Finishing" }),
+    ).toBeTruthy();
+    expect(screen.getByText(/Your order will be ready till/i)).toBeTruthy();
+  });
 });

@@ -430,6 +430,7 @@ export function TrackingPage({
         pages: data.printSummary.selectedPages,
         colorMode: data.printSummary.colorMode === "BW" ? "B&W" : "Color",
         paperSize: data.printSummary.paperSize,
+        isPickup: Boolean(data.isPickup),
       }}
       onBack={onBack}
     >

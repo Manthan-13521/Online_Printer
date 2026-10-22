@@ -594,6 +594,7 @@ export class D1CustomerRepository implements CustomerRepository {
       .prepare(
         `SELECT o.id, o.pickup_code, o.status, o.is_priority, o.identification_required,
                 o.created_at_ms, o.completed_at_ms, o.purge_at_ms, o.cleanup_state,
+                o.is_pickup, o.pickup_target_time_ms,
                 COUNT(f.id) AS total_files,
                 COUNT(CASE WHEN f.print_status = 'PRINTED' THEN 1 END) AS completed_files
          FROM orders o
@@ -615,6 +616,8 @@ export class D1CustomerRepository implements CustomerRepository {
         completed_at_ms: number | null;
         total_files: number;
         completed_files: number;
+        is_pickup?: number | null;
+        pickup_target_time_ms?: number | null;
       }>();
 
     if (!row) return null;
@@ -685,6 +688,31 @@ export class D1CustomerRepository implements CustomerRepository {
         ? totalFiles
         : Math.min(row.completed_files ?? 0, totalFiles);
 
+    const isPickup = (row.is_pickup ?? 0) === 1;
+    let pickupFormatted: string | null = null;
+    let pickupAvailableAt: string | null = null;
+    if (isPickup && row.pickup_target_time_ms) {
+      pickupAvailableAt = new Date(row.pickup_target_time_ms).toISOString();
+      try {
+        const datePartDtf = new Intl.DateTimeFormat("en-IN", {
+          timeZone: "Asia/Kolkata",
+          day: "numeric",
+          month: "short",
+        });
+        const timePartDtf = new Intl.DateTimeFormat("en-IN", {
+          timeZone: "Asia/Kolkata",
+          hour: "numeric",
+          minute: "numeric",
+          hour12: true,
+        });
+        const dPart = datePartDtf.format(new Date(row.pickup_target_time_ms));
+        const tPart = timePartDtf.format(new Date(row.pickup_target_time_ms));
+        pickupFormatted = `${dPart}, from ${tPart}`;
+      } catch {
+        pickupFormatted = pickupAvailableAt;
+      }
+    }
+
     return {
       pickupCode: row.pickup_code,
       status,
@@ -698,6 +726,9 @@ export class D1CustomerRepository implements CustomerRepository {
       completedAt: row.completed_at_ms
         ? new Date(row.completed_at_ms).toISOString()
         : null,
+      isPickup,
+      pickupAvailableAt,
+      pickupFormatted,
     };
   }
 
