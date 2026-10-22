@@ -524,7 +524,6 @@ export class D1AgentRepository implements AgentRepository {
         const statusChanged = existing.status !== effectiveStatus;
         const reasonChanged =
           existing.status_reason !== (p.statusReason ?? null);
-        const nameChanged = existing.display_name !== p.displayName;
         const eligibleChanged =
           existing.is_production_eligible !== (p.isProductionEligible ? 1 : 0);
         const virtualChanged = existing.is_virtual !== (p.isVirtual ? 1 : 0);
@@ -551,7 +550,6 @@ export class D1AgentRepository implements AgentRepository {
           capsChanged ||
           statusChanged ||
           reasonChanged ||
-          nameChanged ||
           eligibleChanged ||
           virtualChanged ||
           hardwareChanged
@@ -560,7 +558,7 @@ export class D1AgentRepository implements AgentRepository {
             this.db
               .prepare(
                 `UPDATE printers
-                 SET display_name = ?, status = ?, status_reason = ?,
+                 SET status = ?, status_reason = ?,
                      capabilities_json = ?, verified_capabilities_json = ?,
                      is_production_eligible = ?, is_virtual = ?, port_name = ?, driver_name = ?,
                      enabled = CASE WHEN ? = 1 THEN 0 ELSE enabled END,
@@ -568,9 +566,8 @@ export class D1AgentRepository implements AgentRepository {
                  WHERE id = ?`,
               )
               .bind(
-                p.displayName,
                 effectiveStatus,
-                p.statusReason,
+                p.statusReason ?? null,
                 capsJson,
                 nextVerifiedCapsJson,
                 p.isProductionEligible ? 1 : 0,

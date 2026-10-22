@@ -209,6 +209,59 @@ describe("D1AgentRepository safety invariants", () => {
     });
   });
 
+  it("preserves admin-configured friendly displayName when agent reports default hardware name in heartbeat", async () => {
+    database
+      .prepare(
+        `INSERT INTO agents (id, display_name, credential_hash, is_active, paired_at_ms, created_at_ms, updated_at_ms)
+         VALUES (?, 'Front PC', 'hash', 1, 1000, 1000, 1000)`,
+      )
+      .run("20000000-0000-4000-8000-000000000099");
+    database
+      .prepare(
+        `INSERT INTO printers
+         (id, agent_id, display_name, windows_printer_name, enabled, status,
+          last_status_at_ms, created_at_ms, updated_at_ms)
+         VALUES (?, ?, 'My Friendly Laser Printer', 'HPF80DACE6151A(HP Laser MFP 131 133 135-138)', 1, 'ONLINE', 1000, 1000, 1000)`,
+      )
+      .run(
+        "30000000-0000-4000-8000-000000000099",
+        "20000000-0000-4000-8000-000000000099",
+      );
+
+    await repository.updateHeartbeat({
+      agentId: "20000000-0000-4000-8000-000000000099",
+      nowMs: 3_000,
+      printers: [
+        {
+          windowsPrinterName: "HPF80DACE6151A(HP Laser MFP 131 133 135-138)",
+          displayName: "HPF80DACE6151A(HP Laser MFP 131 133 135-138)",
+          status: "ONLINE",
+          statusReason: null,
+          isDefault: true,
+          capabilities: { colour: false, duplex: true, paperSizes: ["A4"] },
+          isProductionEligible: true,
+          isVirtual: false,
+          portName: null,
+          driverName: null,
+        },
+      ],
+    });
+
+    const row = database
+      .prepare(
+        "SELECT display_name, windows_printer_name FROM printers WHERE id = ?",
+      )
+      .get("30000000-0000-4000-8000-000000000099") as {
+      display_name: string;
+      windows_printer_name: string;
+    };
+
+    expect(row.display_name).toBe("My Friendly Laser Printer");
+    expect(row.windows_printer_name).toBe(
+      "HPF80DACE6151A(HP Laser MFP 131 133 135-138)",
+    );
+  });
+
   it.each(["PENDING", "CLAIMED", "SUBMITTED"])(
     "presents stale %s diagnostics as terminal without losing spool identity",
     (status) => {
