@@ -182,6 +182,34 @@ describe("Customer Components & Helpers", () => {
       );
       expect(container.firstChild).toBeNull();
     });
+
+    it("switches to shop and privacy tab and displays details", () => {
+      const configWithShop = {
+        ...mockConfig,
+        shopName: "Central Print Hub",
+        address: "123 Market St",
+        contactPhone: "9876543210",
+        customerNotice: "Special student discount available",
+      } as unknown as CustomerConfigData;
+
+      render(
+        <PricingModal
+          isOpen={true}
+          config={configWithShop}
+          onClose={vi.fn()}
+        />,
+      );
+
+      fireEvent.click(screen.getByRole("tab", { name: /shop & privacy/i }));
+
+      expect(screen.getByText("Central Print Hub")).toBeTruthy();
+      expect(screen.getByText(/123 Market St/)).toBeTruthy();
+      expect(screen.getByText("9876543210")).toBeTruthy();
+      expect(
+        screen.getByText("Special student discount available"),
+      ).toBeTruthy();
+      expect(screen.getByText(/Zero-Retention Privacy Policy/i)).toBeTruthy();
+    });
   });
 
   describe("ShopInfoModal", () => {

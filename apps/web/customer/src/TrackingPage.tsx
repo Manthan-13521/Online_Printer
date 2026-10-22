@@ -246,15 +246,15 @@ export function TrackingPage({
         className="pickup-callout-card"
         style={{
           position: "relative",
-          margin: "0.75rem auto 1rem",
-          padding: "0.85rem 1.15rem",
+          margin: "0.5rem auto",
+          padding: "0.65rem 0.95rem",
           background: "#fffdf5",
           border: "1.5px solid #fde68a",
           borderRadius: "12px",
           color: "#78350f",
           boxShadow: "0 2px 8px rgba(180, 83, 9, 0.08)",
           textAlign: "left",
-          maxWidth: "500px",
+          maxWidth: "480px",
         }}
       >
         <div
@@ -318,20 +318,6 @@ export function TrackingPage({
             </div>
           </div>
         </div>
-        <div
-          className="callout-pointer-tail"
-          style={{
-            position: "absolute",
-            bottom: "-8px",
-            left: "50%",
-            transform: "translateX(-50%)",
-            width: 0,
-            height: 0,
-            borderLeft: "8px solid transparent",
-            borderRight: "8px solid transparent",
-            borderTop: "8px solid #fde68a",
-          }}
-        />
       </div>
     );
   };
@@ -342,13 +328,13 @@ export function TrackingPage({
         className="pickup-code-badge-card"
         style={{
           position: "relative",
-          margin: "1rem auto 1.25rem",
-          padding: "1.1rem 1.4rem",
+          margin: "0.45rem auto 0.65rem",
+          padding: "0.45rem 0.85rem",
           background: "linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%)",
-          border: "2px solid #86efac",
-          borderRadius: "16px",
-          boxShadow: "0 4px 14px rgba(22, 101, 52, 0.08)",
-          maxWidth: "360px",
+          border: "1.5px solid #86efac",
+          borderRadius: "12px",
+          boxShadow: "0 2px 8px rgba(22, 101, 52, 0.08)",
+          maxWidth: "260px",
           textAlign: "center",
         }}
       >
@@ -363,44 +349,27 @@ export function TrackingPage({
           }}
         >
           <div
-            style={{
-              fontSize: "0.75rem",
-              fontWeight: 800,
-              letterSpacing: "0.12em",
-              textTransform: "uppercase",
-              color: "#166534",
-              display: "flex",
-              alignItems: "center",
-              gap: "0.35rem",
-              marginBottom: "0.25rem",
-            }}
-          >
-            <span>🏷️</span>
-            <span>Pickup Code</span>
-          </div>
-          <div
             className="pickup-code-display-value"
             style={{
-              fontSize: "2.75rem",
-              lineHeight: 1.1,
-              fontWeight: 900,
-              letterSpacing: "0.08em",
+              fontSize: "1.75rem",
+              lineHeight: 1.15,
+              fontWeight: 800,
+              letterSpacing: "0.06em",
               fontFamily:
                 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
               color: "#0f172a",
-              margin: "0.25rem 0",
-              textShadow: "0 1px 2px rgba(0, 0, 0, 0.06)",
+              margin: "0.1rem 0",
             }}
           >
             {code}
           </div>
           <div
             style={{
-              fontSize: "0.8rem",
+              fontSize: "0.75rem",
               fontWeight: 600,
               color: "#15803d",
               textAlign: "center",
-              marginTop: "0.25rem",
+              marginTop: "0.15rem",
             }}
           >
             Show this code at the shop counter
@@ -422,12 +391,12 @@ export function TrackingPage({
         >
           <h1>{data.statusLabel}</h1>
           <p>{data.statusMessage}</p>
-          {renderPickupCallout()}
           {data.pickupCode ? (
             renderPickupCodeBadge(data.pickupCode)
           ) : (
             <p>Order {data.jobCode}</p>
           )}
+          {renderPickupCallout()}
           <div style={{ marginTop: "1.5rem" }}>
             {onBack ? (
               <button
@@ -466,8 +435,8 @@ export function TrackingPage({
     >
       <h2>{data.statusLabel}</h2>
       <p>{data.statusMessage}</p>
-      {renderPickupCallout()}
       {data.pickupCode && renderPickupCodeBadge(data.pickupCode)}
+      {renderPickupCallout()}
       {state === "network" && (
         <p role="alert">
           Status could not be refreshed. Showing the last known update.

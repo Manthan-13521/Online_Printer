@@ -1273,6 +1273,11 @@ export function App() {
           >
             {shopHeader}
           </div>
+          <PricingModal
+            isOpen={showPricing}
+            config={config}
+            onClose={() => setShowPricing(false)}
+          />
           <Suspense
             fallback={
               <div className="page-shell">
@@ -1305,6 +1310,11 @@ export function App() {
         >
           {shopHeader}
         </div>
+        <PricingModal
+          isOpen={showPricing}
+          config={config}
+          onClose={() => setShowPricing(false)}
+        />
         <Suspense
           fallback={
             <div className="page-shell">
@@ -1327,6 +1337,11 @@ export function App() {
     return (
       <main className="page-shell">
         {shopHeader}
+        <PricingModal
+          isOpen={showPricing}
+          config={config}
+          onClose={() => setShowPricing(false)}
+        />
         <Suspense
           fallback={
             <div className="page-shell">

@@ -392,7 +392,7 @@ describe("Admin LiveOrdersPage — Compact Redesign", () => {
     });
     expect(markPrintedBtn).toBeDefined();
 
-    act(() => {
+    await act(async () => {
       fireEvent.click(markPrintedBtn);
     });
 

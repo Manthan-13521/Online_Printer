@@ -82,13 +82,15 @@ import rawCss from "./trackJourney.css?raw";
 const journeyCss = `${rawCss}
   .track-journey-root .journey-context {
     width: min(48rem, calc(100% - 2rem));
-    margin: 1rem auto 0;
-    padding: 1rem 1.25rem;
+    margin: 0.35rem auto 0;
+    padding: 0.65rem 0.95rem;
     background: #fff;
     border: 1px solid var(--color-printgo-border);
-    border-radius: 1rem;
+    border-radius: 0.875rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
   }
-  .track-journey-root .journey-context h2 { font-size: 1.25rem; font-weight: 600; }
+  .track-journey-root .journey-context h2 { font-size: 1.15rem; font-weight: 700; margin: 0 0 0.2rem; }
+  .track-journey-root .journey-context p { margin: 0.2rem 0; font-size: 0.9rem; }
   @keyframes jumpDash { to { stroke-dashoffset: var(--dash-target); } }
   @media (prefers-reduced-motion: reduce) {
     .track-journey-root * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
@@ -197,7 +199,7 @@ export default function TrackJourney({
       )}
 
       <main className="flex-1 w-full max-w-5xl mx-auto relative z-10 overflow-hidden">
-        <div className="w-full h-[800px] lg:h-[950px] relative mt-6 lg:mt-10 mb-12">
+        <div className="w-full h-[800px] lg:h-[950px] relative mt-1 lg:mt-4 mb-12">
           <div className="absolute inset-0 z-0">
             <svg
               className="w-full h-full"

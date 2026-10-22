@@ -624,6 +624,41 @@ a {
   border-top: 1px solid #f1f5f9;
 }
 
+.pricing-modal-tabs {
+  display: flex;
+  gap: 0.5rem;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 0.5rem;
+}
+.pricing-modal-tab {
+  background: none;
+  border: 1px solid transparent;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #64748b;
+  padding: 0.4rem 0.75rem;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.pricing-modal-tab:hover {
+  color: #0f172a;
+  background: #f1f5f9;
+}
+.pricing-modal-tab.active {
+  color: #166534;
+  background: #dcfce7;
+  border-color: #86efac;
+}
+
+.tracking-page-container .hero {
+  padding: 0.4rem 0 0.4rem 0;
+}
+.tracking-page-container .hero-top-container {
+  gap: 0.65rem;
+  margin-bottom: 0.4rem;
+}
+
 /* ── Add-on Services Customer Selection ───────────────────────────────────── */
 .addon-selection-group {
   display: flex;
@@ -1863,6 +1898,7 @@ label {
   transition: width 0.2s ease-out;
 }
 
+.sr-only,
 .sr-only-progress {
   position: absolute;
   width: 1px;
