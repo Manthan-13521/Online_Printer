@@ -102,17 +102,12 @@ export function LiveOrdersPage({
       const res = await adminApi.manualCompleteOrder(order.orderId);
       if (res.ok) {
         setOrders(
-          (prev) =>
-            prev?.map((o) =>
-              o.orderId === order.orderId
-                ? { ...o, status: res.data.status }
-                : o,
-            ) ?? [],
+          (prev) => prev?.filter((o) => o.orderId !== order.orderId) ?? [],
         );
         setActionNotice(
           res.data.status === "COMPLETED"
-            ? `Job ${code} marked as completed.`
-            : `Job ${code} is awaiting finishing in Manual Orders.`,
+            ? `Order ${code} marked as printed and completed.`
+            : `Order ${code} marked as printed (moved to Manual Orders for finishing).`,
         );
       }
     } catch (caught: unknown) {

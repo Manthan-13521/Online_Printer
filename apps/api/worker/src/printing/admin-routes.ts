@@ -4,7 +4,7 @@ import { D1AdminAuthRepository } from "../auth/repository";
 import { AdminAuthService, AuthError } from "../auth/service";
 import type { WorkerEnv } from "../env";
 import { error, ok } from "../http";
-import { probeAgentPrinter, wakeAgent } from "../agent/wake";
+import { notifyAdmin, probeAgentPrinter, wakeAgent } from "../agent/wake";
 import { D1OrderHistoryRepository } from "../history/repository";
 import { D1PrintingRepository } from "./repository";
 import { createPrintingService } from "./routes";
@@ -136,6 +136,11 @@ export async function handleAdminOrdersRequest(
         session.admin.id,
         reason || `Verified physically printed by admin: ${session.admin.id}`,
       );
+      void notifyAdmin(env, {
+        type: "ADMIN_ORDER_UPDATE",
+        orderId,
+        status: result.status,
+      });
       return withAdminCors(ok(result, 200), env.ADMIN_ALLOWED_ORIGIN);
     }
 

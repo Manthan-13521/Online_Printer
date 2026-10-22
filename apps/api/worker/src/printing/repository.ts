@@ -2700,6 +2700,12 @@ export class D1PrintingRepository implements PrintingRepository {
         "PRINT_FAILED",
         "ADMIN_ACTION_REQUIRED",
         "PRINTED",
+        "PRINTING",
+        "SPOOLING",
+        "CLAIMED",
+        "PRINT_BLOCKED",
+        "QUEUED",
+        "MANUAL_PRINT",
       ].includes(order.status)
     )
       throw new Error("ORDER_CANNOT_BE_COMPLETED");
@@ -2722,10 +2728,9 @@ export class D1PrintingRepository implements PrintingRepository {
          claim_id = NULL, claim_expires_at_ms = NULL, updated_at_ms = ?
          WHERE id = ? AND cleanup_state = 'ACTIVE'
            AND status IN ('NEEDS_ADMIN','COMPLETION_UNKNOWN','RETRY_PENDING',
-             'PRINT_FAILED','ADMIN_ACTION_REQUIRED','PRINTED')
-           AND EXISTS (SELECT 1 FROM order_files WHERE order_id = orders.id)
-           AND NOT EXISTS (SELECT 1 FROM print_attempt_steps
-             WHERE order_id = orders.id AND status IN ('SUBMISSION_STARTED','SUBMITTED'))`,
+             'PRINT_FAILED','ADMIN_ACTION_REQUIRED','PRINTED','PRINTING',
+             'SPOOLING','CLAIMED','PRINT_BLOCKED','QUEUED','MANUAL_PRINT')
+           AND EXISTS (SELECT 1 FROM order_files WHERE order_id = orders.id)`,
         )
         .bind(
           nextStatus,
@@ -2735,6 +2740,18 @@ export class D1PrintingRepository implements PrintingRepository {
           input.nowMs,
           input.orderId,
         ),
+      this.db
+        .prepare(
+          `UPDATE print_attempt_steps SET status = 'SUCCEEDED', finished_at_ms = COALESCE(finished_at_ms, ?), updated_at_ms = ?
+         WHERE order_id = ? AND status IN ('SUBMISSION_STARTED', 'SUBMITTED', 'PENDING')`,
+        )
+        .bind(input.nowMs, input.nowMs, input.orderId),
+      this.db
+        .prepare(
+          `UPDATE print_attempts SET status = 'SUCCEEDED', finished_at_ms = COALESCE(finished_at_ms, ?), updated_at_ms = ?
+         WHERE order_id = ? AND status IN ('PRINTING', 'SUBMITTING', 'CREATED')`,
+        )
+        .bind(input.nowMs, input.nowMs, input.orderId),
       this.db
         .prepare(
           `UPDATE order_files SET print_status = 'PRINTED',

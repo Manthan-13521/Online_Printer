@@ -849,6 +849,69 @@ describe("paid-print D1 safety", () => {
     expect(onlineLive?.cashConfirmedAt).toBeNull();
   });
 
+  it("successfully manualCompletes an order in PRINTING with active SUBMISSION_STARTED print_attempt_steps", async () => {
+    seed(db);
+    const now = 1000;
+    const attId = "80000000-0000-4000-8000-000000000001";
+    const stepId = "80000000-0000-4000-8000-000000000002";
+
+    // Set order to PRINTING with an active claim
+    db.prepare(
+      `UPDATE orders SET status = 'PRINTING', claimed_by_agent_id = ?, claim_id = 'claim-1',
+       claimed_at_ms = ?, claim_expires_at_ms = ?, updated_at_ms = ? WHERE id = ?`,
+    ).run(ids.agent1, now, now + 60000, now, ids.order);
+
+    // Create an in-flight print attempt and step in SUBMISSION_STARTED
+    db.prepare(
+      `INSERT INTO print_attempts (id, order_id, agent_id, printer_id, attempt_number, status, created_at_ms, updated_at_ms)
+       VALUES (?, ?, ?, ?, 1, 'PRINTING', ?, ?)`,
+    ).run(attId, ids.order, ids.agent1, ids.printer1, now, now);
+
+    db.prepare(
+      `INSERT INTO print_attempt_steps (id, print_attempt_id, order_id, sequence_number, step_type, status, submission_started_at_ms, created_at_ms, updated_at_ms)
+       VALUES (?, ?, ?, 1, 'CUSTOMER_DOCUMENT', 'SUBMISSION_STARTED', ?, ?, ?)`,
+    ).run(stepId, attId, ids.order, now, now, now);
+
+    // Admin manually completes the order (e.g. clicked Mark as Printed)
+    const result = await repository.manualComplete({
+      orderId: ids.order,
+      adminId: "admin_1",
+      reason: "Confirmed printed on paper by staff",
+      nowMs: now + 5000,
+    });
+
+    expect(result).toEqual({ orderId: ids.order, status: "COMPLETED" });
+
+    // Order should be COMPLETED, with claim cleared
+    const orderRow = db
+      .prepare(
+        "SELECT status, claimed_by_agent_id, claim_id, claim_expires_at_ms, completed_at_ms FROM orders WHERE id = ?",
+      )
+      .get(ids.order) as {
+      status: string;
+      claimed_by_agent_id: string | null;
+      claim_id: string | null;
+      claim_expires_at_ms: number | null;
+      completed_at_ms: number | null;
+    };
+    expect(orderRow.status).toBe("COMPLETED");
+    expect(orderRow.claimed_by_agent_id).toBeNull();
+    expect(orderRow.claim_id).toBeNull();
+    expect(orderRow.claim_expires_at_ms).toBeNull();
+    expect(orderRow.completed_at_ms).toBe(now + 5000);
+
+    // In-flight print attempt and step should be resolved to SUCCEEDED
+    const stepRow = db
+      .prepare("SELECT status FROM print_attempt_steps WHERE id = ?")
+      .get(stepId) as { status: string };
+    expect(stepRow.status).toBe("SUCCEEDED");
+
+    const attRow = db
+      .prepare("SELECT status FROM print_attempts WHERE id = ?")
+      .get(attId) as { status: string };
+    expect(attRow.status).toBe("SUCCEEDED");
+  });
+
   it("rejects retryOrder on unpaid or PAYMENT_PENDING orders", async () => {
     seed(db);
     const unpaidOrderId = "70000000-0000-4000-8000-000000000002";

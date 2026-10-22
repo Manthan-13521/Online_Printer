@@ -349,4 +349,60 @@ describe("Admin LiveOrdersPage — Compact Redesign", () => {
     // Verify Payment Method was removed from details
     expect(screen.queryByText("Payment Method")).toBeNull();
   });
+
+  it("removes order card immediately and displays success notice when Mark as Printed succeeds", async () => {
+    const failedOrder: AdminLiveOrder = {
+      ...sampleOrder,
+      orderId: "ord-failed-1",
+      jobCode: "JOB-9999",
+      pickupCode: "PA-030",
+      status: "PRINT_FAILED",
+      customerName: "Sam Test",
+    };
+
+    getLiveOrders.mockResolvedValue({
+      ok: true,
+      data: {
+        orders: [failedOrder],
+        stallDetails: null,
+      },
+    });
+
+    manualCompleteOrder.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        orderId: "ord-failed-1",
+        status: "COMPLETED",
+      },
+    });
+
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    render(<LiveOrdersPage onSessionExpired={vi.fn()} />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(screen.getAllByText("PA-030").length).toBeGreaterThan(0);
+    expect(screen.getByText("Sam Test")).toBeDefined();
+
+    const markPrintedBtn = screen.getByRole("button", {
+      name: /mark as printed/i,
+    });
+    expect(markPrintedBtn).toBeDefined();
+
+    act(() => {
+      fireEvent.click(markPrintedBtn);
+    });
+
+    expect(manualCompleteOrder).toHaveBeenCalledWith("ord-failed-1");
+    // Order card should be immediately removed from the live orders list
+    expect(screen.queryByText("Sam Test")).toBeNull();
+    // Success message should appear without any errors
+    expect(
+      screen.getByText(/Order PA-030 marked as printed and completed/i),
+    ).toBeDefined();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
 });

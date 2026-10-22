@@ -129,11 +129,11 @@ export default function TrackJourney({
 
   const hasOrderDetails = Boolean(
     orderDetails.orderNumber ||
-      orderDetails.fileName ||
-      orderDetails.pages ||
-      orderDetails.estimatedReady ||
-      orderDetails.pickupStore ||
-      orderDetails.pickupLocation,
+    orderDetails.fileName ||
+    orderDetails.pages ||
+    orderDetails.estimatedReady ||
+    orderDetails.pickupStore ||
+    orderDetails.pickupLocation,
   );
 
   return (
