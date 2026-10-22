@@ -1,6 +1,5 @@
 import type React from "react";
 import type { CustomerConfigData } from "@printgo/api-contract";
-import { resolveCustomerApiUrl } from "../api";
 
 export interface ShopHeaderProps {
   config: CustomerConfigData | null;
@@ -36,17 +35,28 @@ export function ShopHeader({
 
         <div className="hero-brand-pricing-row">
           <div className="hero-branding">
-            {config?.logoUrl ? (
-              <img
-                src={resolveCustomerApiUrl(config.logoUrl)}
-                alt="Shop logo"
-                style={{ maxWidth: 144, maxHeight: 72, objectFit: "contain" }}
-              />
-            ) : (
-              <h1 className="logo-text">
-                {config?.shopName ?? "Online printing"}
-              </h1>
-            )}
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "0.15rem",
+              }}
+            >
+              <h1 className="logo-text hero-catchy-title">⚡ Instant Print</h1>
+              {config?.shopName && (
+                <span
+                  className="hero-shop-name"
+                  style={{
+                    fontSize: "0.825rem",
+                    fontWeight: 600,
+                    color: "#64748b",
+                    letterSpacing: "0.01em",
+                  }}
+                >
+                  {config.shopName}
+                </span>
+              )}
+            </div>
           </div>
 
           <div className="hero-actions">
@@ -57,23 +67,6 @@ export function ShopHeader({
             >
               ⓘ Pricing & Info
             </button>
-          </div>
-        </div>
-      </div>
-
-      <div className="hero-content">
-        <div className="hero-text">
-          <h1 className="hero-title">Upload & Print Instantly</h1>
-          <p className="hero-subtitle">
-            Upload your PDF files and get high-quality prints without any manual
-            interference.
-          </p>
-        </div>
-        <div className="hero-decoration">
-          <div className="decoration-text">
-            Your files,
-            <br />
-            our print magic!
           </div>
         </div>
       </div>

@@ -745,14 +745,14 @@ body {
 .hero {
   background: transparent;
   border-bottom: none;
-  padding-bottom: 2rem;
+  padding-bottom: 0.5rem;
   margin: 0;
 }
 .hero-top-container {
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
-  margin-bottom: 2rem;
+  margin-bottom: 1.25rem;
   width: 100%;
 }
 .hero-brand-pricing-row {
@@ -777,6 +777,15 @@ body {
   color: #0f172a;
   margin: 0;
   font-weight: 800;
+}
+.hero-catchy-title {
+  font-size: 1.45rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #0f172a;
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
 }
 .track-printing-form {
   width: 100%;

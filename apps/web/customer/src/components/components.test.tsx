@@ -92,7 +92,7 @@ describe("Customer Components & Helpers", () => {
       logoUrl: null,
     } as unknown as CustomerConfigData;
 
-    it("renders shop name, track input and triggers handlers", () => {
+    it("renders catchy title, track input and triggers handlers", () => {
       const handleTrackChange = vi.fn();
       const handleTrackSubmit = vi.fn((e: React.FormEvent) => {
         e.preventDefault();
@@ -109,8 +109,8 @@ describe("Customer Components & Helpers", () => {
         />,
       );
 
+      expect(screen.getByText("⚡ Instant Print")).toBeTruthy();
       expect(screen.getByText("QuickPrint Central")).toBeTruthy();
-      expect(screen.getByText("Upload & Print Instantly")).toBeTruthy();
 
       fireEvent.click(screen.getByRole("button", { name: /pricing & info/i }));
       expect(handleOpenPricing).toHaveBeenCalled();

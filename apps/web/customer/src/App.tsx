@@ -1477,26 +1477,99 @@ export function App() {
       ) : null}
       {config.acceptOfflineOrders && (
         <div
-          className="offline-notice-banner"
+          className="offline-notice-banner preorder-banner"
           style={{
             maxWidth: "680px",
             margin: "0 auto 1.5rem",
-            padding: "0.85rem 1.25rem",
-            background: "#fffbeb",
+            padding: "0.75rem 1.15rem",
+            background: "#fffdf5",
             border: "1px solid #fde68a",
-            borderRadius: "10px",
+            borderRadius: "14px",
             display: "flex",
             alignItems: "center",
-            gap: "0.75rem",
-            color: "#92400e",
+            gap: "0.85rem",
+            boxShadow: "0 1px 3px rgba(180, 83, 9, 0.06)",
           }}
         >
-          <span style={{ fontSize: "1.3rem" }}>🌙</span>
-          <div style={{ fontSize: "0.9rem", lineHeight: 1.4 }}>
-            <strong>24/7 Order Acceptance:</strong> Place and pay for your order
-            now. Documents will be queued safely and printed when the printer
-            connects.
+          <div
+            style={{
+              width: "42px",
+              height: "42px",
+              borderRadius: "50%",
+              background: "#fef08a",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+            }}
+          >
+            <svg
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              aria-hidden="true"
+            >
+              <rect
+                x="3"
+                y="5"
+                width="18"
+                height="16"
+                rx="3"
+                fill="#ffffff"
+                stroke="#cbd5e1"
+                strokeWidth="1"
+              />
+              <path
+                d="M3 8C3 6.34315 4.34315 5 6 5H18C19.6569 5 21 6.34315 21 8V9H3V8Z"
+                fill="#dc2626"
+              />
+              <rect x="7" y="3" width="2" height="3.5" rx="1" fill="#475569" />
+              <rect x="15" y="3" width="2" height="3.5" rx="1" fill="#475569" />
+              <circle cx="8" cy="13" r="1.1" fill="#64748b" />
+              <circle cx="12" cy="13" r="1.1" fill="#64748b" />
+              <circle cx="16" cy="13" r="1.1" fill="#64748b" />
+              <circle cx="8" cy="17" r="1.1" fill="#64748b" />
+              <circle cx="12" cy="17" r="1.1" fill="#64748b" />
+            </svg>
           </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div
+              style={{
+                fontWeight: 800,
+                fontSize: "1.05rem",
+                color: "#451a03",
+                lineHeight: 1.25,
+              }}
+            >
+              Pre-order for tomorrow
+            </div>
+            <div
+              style={{
+                fontSize: "0.85rem",
+                color: "#78350f",
+                marginTop: "0.15rem",
+                lineHeight: 1.3,
+              }}
+            >
+              Order now, collect tomorrow morning.
+            </div>
+          </div>
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="#78350f"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            style={{ marginLeft: "auto", flexShrink: 0 }}
+            aria-hidden="true"
+          >
+            <path d="m9 18 6-6-6-6" />
+          </svg>
         </div>
       )}
       <form
