@@ -34,7 +34,9 @@ afterEach(cleanup);
 describe("public tracking page", () => {
   it("keeps finishing distinct from ready", async () => {
     render(<PublicTrackingPage pickupCode="PA-001" />);
-    expect(await screen.findByText("PrintGo V2")).toBeTruthy();
+    expect(
+      await screen.findByRole("heading", { level: 2, name: "Finishing" }),
+    ).toBeTruthy();
     expect(screen.getByText("The shop is finishing your order.")).toBeTruthy();
     expect(screen.getByText("Pickup code PA-001")).toBeTruthy();
     expect(screen.queryByText("Ready for pickup")).toBeNull();

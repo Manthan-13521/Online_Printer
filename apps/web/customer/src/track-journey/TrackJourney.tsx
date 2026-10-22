@@ -127,66 +127,68 @@ export default function TrackJourney({
     return "pending";
   };
 
+  const hasOrderDetails = Boolean(
+    orderDetails.orderNumber ||
+      orderDetails.fileName ||
+      orderDetails.pages ||
+      orderDetails.estimatedReady ||
+      orderDetails.pickupStore ||
+      orderDetails.pickupLocation,
+  );
+
   return (
     <div className="track-journey-root min-h-screen w-full bg-printgo-bg text-printgo-primary flex flex-col font-sans relative overflow-x-hidden selection:bg-printgo-green selection:text-white">
       <style>{journeyCss}</style>
 
-      <header className="w-full px-5 py-4 md:px-10 md:py-6 flex flex-col lg:flex-row justify-between items-start border-b border-printgo-border gap-4 lg:gap-0 bg-printgo-bg z-20 relative shrink-0">
-        <div className="flex flex-col">
-          <h1 className="font-serif text-2xl lg:text-3xl font-medium tracking-tight text-printgo-primary">
-            PrintGo V2
-          </h1>
-          <p className="text-printgo-secondary text-[11px] lg:text-sm mt-1">
-            Live Print Journey
-          </p>
-        </div>
-
-        <div className="flex flex-col lg:flex-row lg:items-end text-xs lg:text-sm gap-2 lg:gap-12 w-full lg:w-auto">
-          <div className="flex flex-col items-start lg:items-end">
-            {orderDetails.orderNumber && (
-              <span className="font-bold text-printgo-primary">
-                Order {orderDetails.orderNumber}
-              </span>
+      {hasOrderDetails && (
+        <header className="w-full px-5 py-3 md:px-10 md:py-4 flex justify-end items-center border-b border-printgo-border bg-printgo-bg z-20 relative shrink-0">
+          <div className="flex flex-col lg:flex-row lg:items-end text-xs lg:text-sm gap-2 lg:gap-12 w-full lg:w-auto">
+            <div className="flex flex-col items-start lg:items-end">
+              {orderDetails.orderNumber && (
+                <span className="font-bold text-printgo-primary">
+                  Order {orderDetails.orderNumber}
+                </span>
+              )}
+              {orderDetails.fileName && (
+                <span className="font-mono text-[10px] text-printgo-secondary">
+                  {orderDetails.fileName}
+                </span>
+              )}
+            </div>
+            {(orderDetails.pages || orderDetails.estimatedReady) && (
+              <div className="flex flex-col items-start lg:items-end text-printgo-secondary">
+                {orderDetails.pages && (
+                  <span>
+                    Pages {orderDetails.pages}{" "}
+                    {orderDetails.colorMode && `· ${orderDetails.colorMode}`}{" "}
+                    {orderDetails.paperSize && `· ${orderDetails.paperSize}`}
+                  </span>
+                )}
+                {orderDetails.estimatedReady && (
+                  <span>
+                    Estimated ready:{" "}
+                    <span className="font-bold text-printgo-primary">
+                      {orderDetails.estimatedReady}
+                    </span>
+                  </span>
+                )}
+              </div>
             )}
-            {orderDetails.fileName && (
-              <span className="font-mono text-[10px] text-printgo-secondary">
-                {orderDetails.fileName}
-              </span>
+            {(orderDetails.pickupStore || orderDetails.pickupLocation) && (
+              <div className="flex flex-col items-start lg:items-end text-printgo-secondary">
+                {orderDetails.pickupStore && (
+                  <span className="font-bold text-printgo-primary">
+                    Pickup: {orderDetails.pickupStore}
+                  </span>
+                )}
+                {orderDetails.pickupLocation && (
+                  <span>{orderDetails.pickupLocation}</span>
+                )}
+              </div>
             )}
           </div>
-          {(orderDetails.pages || orderDetails.estimatedReady) && (
-            <div className="flex flex-col items-start lg:items-end text-printgo-secondary">
-              {orderDetails.pages && (
-                <span>
-                  Pages {orderDetails.pages}{" "}
-                  {orderDetails.colorMode && `· ${orderDetails.colorMode}`}{" "}
-                  {orderDetails.paperSize && `· ${orderDetails.paperSize}`}
-                </span>
-              )}
-              {orderDetails.estimatedReady && (
-                <span>
-                  Estimated ready:{" "}
-                  <span className="font-bold text-printgo-primary">
-                    {orderDetails.estimatedReady}
-                  </span>
-                </span>
-              )}
-            </div>
-          )}
-          {(orderDetails.pickupStore || orderDetails.pickupLocation) && (
-            <div className="flex flex-col items-start lg:items-end text-printgo-secondary">
-              {orderDetails.pickupStore && (
-                <span className="font-bold text-printgo-primary">
-                  Pickup: {orderDetails.pickupStore}
-                </span>
-              )}
-              {orderDetails.pickupLocation && (
-                <span>{orderDetails.pickupLocation}</span>
-              )}
-            </div>
-          )}
-        </div>
-      </header>
+        </header>
+      )}
 
       {children && (
         <section className="journey-context" aria-live="polite">

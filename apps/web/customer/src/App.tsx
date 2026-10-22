@@ -1260,8 +1260,19 @@ export function App() {
 
     if (isPickupPattern || !hasPrivateToken) {
       return (
-        <>
-          {shopHeader}
+        <div
+          className="tracking-page-container"
+          style={{ backgroundColor: "#f7f4ec", minHeight: "100vh" }}
+        >
+          <div
+            style={{
+              maxWidth: "1000px",
+              margin: "0 auto",
+              padding: "0 1.25rem",
+            }}
+          >
+            {shopHeader}
+          </div>
           <Suspense
             fallback={
               <div className="page-shell">
@@ -1272,15 +1283,28 @@ export function App() {
             <PublicTrackingPage
               pickupCode={trackingJobCode}
               onBack={handleResetToHome}
+              shopPhone={config?.contactPhone ?? undefined}
+              shopOpeningTime={config?.pickupSchedule?.openingTime}
             />
           </Suspense>
-        </>
+        </div>
       );
     }
 
     return (
-      <>
-        {shopHeader}
+      <div
+        className="tracking-page-container"
+        style={{ backgroundColor: "#f7f4ec", minHeight: "100vh" }}
+      >
+        <div
+          style={{
+            maxWidth: "1000px",
+            margin: "0 auto",
+            padding: "0 1.25rem",
+          }}
+        >
+          {shopHeader}
+        </div>
         <Suspense
           fallback={
             <div className="page-shell">
@@ -1295,7 +1319,7 @@ export function App() {
             shopOpeningTime={config?.pickupSchedule?.openingTime}
           />
         </Suspense>
-      </>
+      </div>
     );
   }
 

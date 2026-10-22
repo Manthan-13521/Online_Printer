@@ -336,6 +336,80 @@ export function TrackingPage({
     );
   };
 
+  const renderPickupCodeBadge = (code: string) => {
+    return (
+      <div
+        className="pickup-code-badge-card"
+        style={{
+          position: "relative",
+          margin: "1rem auto 1.25rem",
+          padding: "1.1rem 1.4rem",
+          background: "linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%)",
+          border: "2px solid #86efac",
+          borderRadius: "16px",
+          boxShadow: "0 4px 14px rgba(22, 101, 52, 0.08)",
+          maxWidth: "360px",
+          textAlign: "center",
+        }}
+      >
+        <span className="sr-only">Pickup code {code}</span>
+        <div
+          aria-hidden="true"
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <div
+            style={{
+              fontSize: "0.75rem",
+              fontWeight: 800,
+              letterSpacing: "0.12em",
+              textTransform: "uppercase",
+              color: "#166534",
+              display: "flex",
+              alignItems: "center",
+              gap: "0.35rem",
+              marginBottom: "0.25rem",
+            }}
+          >
+            <span>🏷️</span>
+            <span>Pickup Code</span>
+          </div>
+          <div
+            className="pickup-code-display-value"
+            style={{
+              fontSize: "2.75rem",
+              lineHeight: 1.1,
+              fontWeight: 900,
+              letterSpacing: "0.08em",
+              fontFamily:
+                'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+              color: "#0f172a",
+              margin: "0.25rem 0",
+              textShadow: "0 1px 2px rgba(0, 0, 0, 0.06)",
+            }}
+          >
+            {code}
+          </div>
+          <div
+            style={{
+              fontSize: "0.8rem",
+              fontWeight: 600,
+              color: "#15803d",
+              textAlign: "center",
+              marginTop: "0.25rem",
+            }}
+          >
+            Show this code at the shop counter
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const stageIndex = getFigmaStageIndex(data.orderStatus);
 
   if (stageIndex < 0) {
@@ -349,7 +423,11 @@ export function TrackingPage({
           <h1>{data.statusLabel}</h1>
           <p>{data.statusMessage}</p>
           {renderPickupCallout()}
-          <p>Order {data.pickupCode ?? data.jobCode}</p>
+          {data.pickupCode ? (
+            renderPickupCodeBadge(data.pickupCode)
+          ) : (
+            <p>Order {data.jobCode}</p>
+          )}
           <div style={{ marginTop: "1.5rem" }}>
             {onBack ? (
               <button
@@ -389,6 +467,7 @@ export function TrackingPage({
       <h2>{data.statusLabel}</h2>
       <p>{data.statusMessage}</p>
       {renderPickupCallout()}
+      {data.pickupCode && renderPickupCodeBadge(data.pickupCode)}
       {state === "network" && (
         <p role="alert">
           Status could not be refreshed. Showing the last known update.
