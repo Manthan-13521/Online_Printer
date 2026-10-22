@@ -1288,7 +1288,12 @@ export function App() {
             </div>
           }
         >
-          <TrackingPage jobCode={trackingJobCode} onBack={handleResetToHome} />
+          <TrackingPage
+            jobCode={trackingJobCode}
+            onBack={handleResetToHome}
+            shopPhone={config?.contactPhone ?? undefined}
+            shopOpeningTime={config?.pickupSchedule?.openingTime}
+          />
         </Suspense>
       </>
     );

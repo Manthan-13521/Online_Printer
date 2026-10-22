@@ -20,19 +20,41 @@ function isTerminalStatus(status: string): boolean {
   );
 }
 
+export interface TrackingPageProps {
+  jobCode: string;
+  onBack?: (() => void) | undefined;
+  shopPhone?: string | undefined;
+  shopOpeningTime?: string | undefined;
+}
+
 export function TrackingPage({
   jobCode,
   onBack,
-}: {
-  jobCode: string;
-  onBack?: (() => void) | undefined;
-}) {
+  shopPhone,
+  shopOpeningTime,
+}: TrackingPageProps) {
   const [data, setData] = useState<CustomerTrackingData | null>(null);
   const [state, setState] = useState<"loading" | "invalid" | "network">(
     "loading",
   );
   const [retryTick, setRetryTick] = useState(0);
   const terminalReachedRef = useRef(false);
+  const [contactPhone, setContactPhone] = useState<string | null>(
+    shopPhone ?? null,
+  );
+
+  useEffect(() => {
+    if (!contactPhone && typeof customerApi.config === "function") {
+      customerApi
+        .config()
+        .then((cfg) => {
+          if (cfg?.contactPhone) {
+            setContactPhone(cfg.contactPhone);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [contactPhone]);
 
   useEffect(() => {
     let active = true;
@@ -211,6 +233,109 @@ export function TrackingPage({
     );
   }
 
+  const pickupTimeDisplay = data?.pickupFormatted
+    ? data.pickupFormatted.replace(", from ", " at ")
+    : shopOpeningTime
+      ? `tomorrow after ${shopOpeningTime}`
+      : "tomorrow";
+
+  const renderPickupCallout = () => {
+    if (!data?.isPickup) return null;
+    return (
+      <div
+        className="pickup-callout-card"
+        style={{
+          position: "relative",
+          margin: "0.75rem auto 1rem",
+          padding: "0.85rem 1.15rem",
+          background: "#fffdf5",
+          border: "1.5px solid #fde68a",
+          borderRadius: "12px",
+          color: "#78350f",
+          boxShadow: "0 2px 8px rgba(180, 83, 9, 0.08)",
+          textAlign: "left",
+          maxWidth: "500px",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            gap: "0.6rem",
+          }}
+        >
+          <span style={{ fontSize: "1.25rem", lineHeight: 1 }}>🌅</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div
+              style={{
+                fontWeight: 700,
+                fontSize: "0.95rem",
+                color: "#78350f",
+                lineHeight: 1.35,
+              }}
+            >
+              <span>Pickup: </span>Your order will be ready till{" "}
+              <span style={{ fontWeight: 800, color: "#451a03" }}>
+                {pickupTimeDisplay}
+              </span>
+            </div>
+            <div
+              style={{
+                fontSize: "0.825rem",
+                color: "#92400e",
+                marginTop: "0.35rem",
+                lineHeight: 1.4,
+                display: "flex",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: "0.4rem",
+              }}
+            >
+              <span>If you want to receive today, contact the shop:</span>
+              {contactPhone ? (
+                <a
+                  href={`tel:${contactPhone}`}
+                  className="phone-call-btn"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "0.3rem",
+                    fontWeight: 700,
+                    color: "#166534",
+                    background: "#dcfce7",
+                    padding: "0.2rem 0.55rem",
+                    borderRadius: "6px",
+                    textDecoration: "none",
+                    fontSize: "0.8rem",
+                    border: "1px solid #86efac",
+                  }}
+                >
+                  <span>📞</span> Call {contactPhone}
+                </a>
+              ) : (
+                <span style={{ fontWeight: 600 }}>at the counter</span>
+              )}
+            </div>
+          </div>
+        </div>
+        <div
+          className="callout-pointer-tail"
+          style={{
+            position: "absolute",
+            bottom: "-8px",
+            left: "50%",
+            transform: "translateX(-50%)",
+            width: 0,
+            height: 0,
+            borderLeft: "8px solid transparent",
+            borderRight: "8px solid transparent",
+            borderTop: "8px solid #fde68a",
+          }}
+        />
+      </div>
+    );
+  };
+
   const stageIndex = getFigmaStageIndex(data.orderStatus);
 
   if (stageIndex < 0) {
@@ -223,25 +348,7 @@ export function TrackingPage({
         >
           <h1>{data.statusLabel}</h1>
           <p>{data.statusMessage}</p>
-          {data.isPickup && data.pickupFormatted && (
-            <div
-              style={{
-                margin: "0.5rem auto 1rem",
-                padding: "0.4rem 0.8rem",
-                background: "#f0f9ff",
-                border: "1px solid #bae6fd",
-                borderRadius: "8px",
-                color: "#0369a1",
-                fontWeight: 600,
-                fontSize: "0.9rem",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "0.4rem",
-              }}
-            >
-              <span>🌅</span> Pickup: {data.pickupFormatted}
-            </div>
-          )}
+          {renderPickupCallout()}
           <p>Order {data.pickupCode ?? data.jobCode}</p>
           <div style={{ marginTop: "1.5rem" }}>
             {onBack ? (
@@ -281,25 +388,7 @@ export function TrackingPage({
     >
       <h2>{data.statusLabel}</h2>
       <p>{data.statusMessage}</p>
-      {data.isPickup && data.pickupFormatted && (
-        <div
-          style={{
-            margin: "0.5rem 0 0.75rem",
-            padding: "0.4rem 0.8rem",
-            background: "#f0f9ff",
-            border: "1px solid #bae6fd",
-            borderRadius: "8px",
-            color: "#0369a1",
-            fontWeight: 600,
-            fontSize: "0.9rem",
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "0.4rem",
-          }}
-        >
-          <span>🌅</span> Pickup: {data.pickupFormatted}
-        </div>
-      )}
+      {renderPickupCallout()}
       {state === "network" && (
         <p role="alert">
           Status could not be refreshed. Showing the last known update.

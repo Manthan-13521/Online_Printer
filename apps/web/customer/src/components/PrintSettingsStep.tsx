@@ -17,6 +17,32 @@ export interface PrintSettingsStepProps {
   pickupSchedule?: CustomerConfigData["pickupSchedule"] | undefined;
 }
 
+function formatOpeningTime12h(
+  openingTime?: string | null,
+  formattedStr?: string | null,
+): string {
+  if (openingTime) {
+    const parts = openingTime.split(":");
+    const hStr = parts[0];
+    const mStr = parts[1];
+    if (hStr !== undefined) {
+      const h = parseInt(hStr, 10);
+      const m = parseInt(mStr ?? "0", 10);
+      if (!isNaN(h)) {
+        const ampm = h >= 12 ? "PM" : "AM";
+        const h12 = h % 12 || 12;
+        const mFormatted = m > 0 ? `:${String(m).padStart(2, "0")}` : ":00";
+        return `${h12}${mFormatted} ${ampm}`;
+      }
+    }
+  }
+  if (formattedStr) {
+    const match = formattedStr.match(/\b\d{1,2}(?::\d{2})?\s*(?:AM|PM)\b/i);
+    if (match) return match[0];
+  }
+  return "opening";
+}
+
 export function PrintSettingsStep({
   files,
   selectedFile,
@@ -427,9 +453,13 @@ export function PrintSettingsStep({
                     fontWeight: 600,
                   }}
                 >
-                  Ready from:{" "}
-                  {pickupSchedule.nextPickupFormatted ??
-                    pickupSchedule.nextPickupTime}
+                  Pickup at:{" "}
+                  {pickupSchedule.nextPickupFormatted
+                    ? pickupSchedule.nextPickupFormatted.replace(
+                        ", from ",
+                        ", ",
+                      )
+                    : (pickupSchedule.nextPickupTime ?? "")}
                 </div>
                 <p
                   style={{
@@ -439,8 +469,14 @@ export function PrintSettingsStep({
                   }}
                 >
                   {pickupSchedule.isShopOpen
-                    ? "Shop is currently open. Enable this if you want to collect tomorrow at opening instead of today."
-                    : "Shop is currently closed. Order will be prepared for pickup when the shop opens."}
+                    ? `Enable if you want to take order tomorrow after ${formatOpeningTime12h(
+                        pickupSchedule.openingTime,
+                        pickupSchedule.nextPickupFormatted,
+                      )}`
+                    : `Shop is currently closed. Order will be ready tomorrow after ${formatOpeningTime12h(
+                        pickupSchedule.openingTime,
+                        pickupSchedule.nextPickupFormatted,
+                      )}`}
                 </p>
               </div>
 
