@@ -201,6 +201,11 @@ function validString(value: unknown, maximum: number): value is string {
   );
 }
 
+function countWords(value: string): number {
+  const trimmed = value.trim();
+  return trimmed ? trimmed.split(/\s+/).length : 0;
+}
+
 function validateDraft(value: unknown): CreateCustomerDraftRequest | null {
   if (!isPlainRecord(value)) return null;
   const allowed = new Set([
@@ -226,7 +231,8 @@ function validateDraft(value: unknown): CreateCustomerDraftRequest | null {
     !(
       value.instructions === null ||
       (typeof value.instructions === "string" &&
-        value.instructions.length <= 1000)
+        value.instructions.length <= 1000 &&
+        countWords(value.instructions) <= 60)
     ) ||
     !(
       value.addonServiceIds === undefined ||
@@ -383,7 +389,8 @@ function validateOrderSettings(
     if (
       value.instructions !== null &&
       (typeof value.instructions !== "string" ||
-        value.instructions.length > 500)
+        value.instructions.length > 500 ||
+        countWords(value.instructions) > 60)
     )
       return null;
     instructions =

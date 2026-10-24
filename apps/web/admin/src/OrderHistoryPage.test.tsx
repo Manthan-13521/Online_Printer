@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AdminOrderHistoryEntry } from "@printgo/api-contract";
@@ -223,6 +223,7 @@ describe("Admin OrderHistoryPage — Payment Method Display", () => {
       pickupCode: "PA-031",
       customerName: "Manthan Jaiswal",
       isPriority: true,
+      instructions: "Print clearly and staple corner",
       printSummary: {
         paperSize: "A4",
         colorMode: "BW",
@@ -256,7 +257,11 @@ describe("Admin OrderHistoryPage — Payment Method Display", () => {
     expect(screen.getByText("Priority")).toBeDefined();
     expect(screen.getAllByText("⚡").length).toBeGreaterThan(0);
 
-    // 3. Order Details button at bottom left
+    // 3. Attempts is removed, Check Description is rendered in yellow
+    expect(screen.queryByText("Attempts")).toBeNull();
+    expect(screen.getByText("📝 Check Description")).toBeDefined();
+
+    // 4. Order Details button at bottom left
     const detailsBtn = screen.getByRole("button", { name: /Order Details/i });
     expect(detailsBtn).toBeDefined();
 
@@ -265,10 +270,14 @@ describe("Admin OrderHistoryPage — Payment Method Display", () => {
       detailsBtn.click();
     });
 
-    expect(screen.getByRole("dialog")).toBeDefined();
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toBeDefined();
+    expect(within(dialog).getByText("Pickup PA-031")).toBeDefined();
     expect(screen.getByText("Paper Size")).toBeDefined();
     expect(screen.getAllByText("A4").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Single-sided").length).toBeGreaterThan(0);
+    expect(screen.getByText("📝 Customer Description")).toBeDefined();
+    expect(screen.getByText("Print clearly and staple corner")).toBeDefined();
 
     // Close modal
     const closeBtn = screen.getByRole("button", { name: "Close" });

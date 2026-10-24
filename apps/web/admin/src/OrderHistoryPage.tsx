@@ -371,10 +371,16 @@ export function OrderHistoryPage({
                   </dd>
                 </div>
               ) : null}
-              {order.attemptCount && order.attemptCount > 0 ? (
+              {order.instructions ? (
                 <div>
-                  <dt style={{ fontSize: "0.86rem" }}>Attempts</dt>
-                  <dd style={{ fontSize: "1.0rem" }}>{order.attemptCount}</dd>
+                  <dt style={{ fontSize: "0.86rem", color: "#854d0e" }}>
+                    Note
+                  </dt>
+                  <dd>
+                    <span className="check-description-badge">
+                      <span>📝 Check Description</span>
+                    </span>
+                  </dd>
                 </div>
               ) : null}
             </dl>
@@ -402,12 +408,36 @@ export function OrderHistoryPage({
                   gap: "0.35rem",
                   fontWeight: 600,
                   fontSize: "0.85rem",
+                  ...(order.instructions
+                    ? {
+                        borderColor: "#facc15",
+                        backgroundColor: "#fefce8",
+                        color: "#854d0e",
+                      }
+                    : {}),
                 }}
               >
                 <span>Order Details</span>
                 {order.isPriority ? (
                   <span style={{ color: "#d97706", fontSize: "0.9rem" }}>
                     ⚡
+                  </span>
+                ) : null}
+                {order.instructions ? (
+                  <span
+                    style={{
+                      display: "inline-block",
+                      backgroundColor: "#fef08a",
+                      color: "#854d0e",
+                      fontSize: "0.7rem",
+                      fontWeight: 800,
+                      padding: "0.08rem 0.35rem",
+                      borderRadius: "3px",
+                      border: "1px solid #eab308",
+                      marginLeft: "0.2rem",
+                    }}
+                  >
+                    Note
                   </span>
                 ) : null}
               </button>
@@ -493,17 +523,26 @@ export function OrderHistoryPage({
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
-                marginBottom: "1rem",
+                marginBottom: "1.25rem",
                 gap: "0.75rem",
                 flexWrap: "wrap",
+                paddingBottom: "0.85rem",
+                borderBottom: "1px solid #e2e8f0",
               }}
             >
               <h2
                 id="order-details-dialog-title"
                 style={{
                   color: "#166534",
-                  margin: 0,
+                  backgroundColor: "#dcfce7",
+                  border: "2px solid #86efac",
+                  padding: "0.35rem 0.85rem",
+                  borderRadius: "6px",
+                  fontWeight: 800,
                   fontSize: "1.25rem",
+                  margin: 0,
+                  letterSpacing: "0.03em",
+                  boxShadow: "0 1px 3px rgba(22, 101, 52, 0.12)",
                 }}
               >
                 {detailsModalOrder.pickupCode
@@ -638,6 +677,44 @@ export function OrderHistoryPage({
                 </strong>
               </div>
             </div>
+
+            {detailsModalOrder.instructions ? (
+              <div
+                style={{
+                  backgroundColor: "#fefce8",
+                  padding: "0.9rem 1rem",
+                  borderRadius: "8px",
+                  border: "1.5px solid #fde047",
+                  marginBottom: "1.25rem",
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: "0.78rem",
+                    color: "#854d0e",
+                    textTransform: "uppercase",
+                    fontWeight: 800,
+                    letterSpacing: "0.04em",
+                    display: "block",
+                    marginBottom: "0.35rem",
+                  }}
+                >
+                  📝 Customer Description
+                </span>
+                <p
+                  style={{
+                    margin: 0,
+                    fontSize: "0.95rem",
+                    color: "#1e293b",
+                    lineHeight: 1.5,
+                    whiteSpace: "pre-wrap",
+                    wordBreak: "break-word",
+                  }}
+                >
+                  {detailsModalOrder.instructions}
+                </p>
+              </div>
+            ) : null}
 
             <div
               className="dialog-actions"

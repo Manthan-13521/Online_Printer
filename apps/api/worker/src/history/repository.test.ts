@@ -302,10 +302,10 @@ describe("D1OrderHistoryRepository", () => {
     db.prepare(
       `INSERT INTO orders (id, customer_name, customer_phone, original_filename,
          source_page_count, color_mode, paper_size, sides, copies, selected_pages,
-         status, public_job_code, pickup_code, printing_amount_paise, total_amount_paise,
+         instructions, status, public_job_code, pickup_code, printing_amount_paise, total_amount_paise,
          created_at_ms, updated_at_ms, paid_at_ms, payment_method)
        VALUES (?, 'Specs Customer', '+919876543210', 'report.pdf', 5, 'COLOR', 'A4', 'DOUBLE', 3, '1-5',
-               'COMPLETED', 'PG-SPEC1', 'PA-050', 1500, 1500, ?, ?, ?, 'ONLINE')`,
+               'Please staple on the top-left', 'COMPLETED', 'PG-SPEC1', 'PA-050', 1500, 1500, ?, ?, ?, 'ONLINE')`,
     ).run(orderId, now, now, now);
 
     db.prepare(
@@ -324,5 +324,6 @@ describe("D1OrderHistoryRepository", () => {
       copies: 3,
       selectedPages: "1-5",
     });
+    expect(order?.instructions).toBe("Please staple on the top-left");
   });
 });

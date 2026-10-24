@@ -14,6 +14,7 @@ interface HistoryRow {
   sides: string | null;
   copies: number | null;
   selected_pages: string | null;
+  instructions: string | null;
   addon_summary_json: string;
   online_paid_paise: number;
   amount_paid_paise: number;
@@ -73,6 +74,7 @@ export class D1OrderHistoryRepository {
          SELECT o.id, o.customer_name, o.customer_phone, o.created_at_ms, o.completed_at_ms, o.pickup_code,
            o.is_priority,
            o.paper_size, o.color_mode, o.sides, o.copies, o.selected_pages,
+           o.instructions,
            CASE WHEN o.status = 'MANUAL_PRINT' OR EXISTS (
              SELECT 1 FROM order_addon_services s WHERE s.order_id = o.id
                AND s.snapshot_handling_mode = 'MANUAL_PRINT') OR EXISTS (
@@ -141,6 +143,7 @@ export class D1OrderHistoryRepository {
             : new Date(row.completed_at_ms).toISOString(),
         isPriority: row.is_priority === 1,
         isManual: row.is_manual === 1,
+        instructions: row.instructions ?? null,
         ...(row.paper_size
           ? {
               printSummary: {

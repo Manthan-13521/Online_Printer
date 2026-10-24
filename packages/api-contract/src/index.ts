@@ -840,6 +840,7 @@ export interface AdminLiveOrder {
   paidAt: string;
   updatedAt: string;
   pickupCode?: string | null;
+  instructions?: string | null;
   isPriority?: boolean;
   identificationRequired?: boolean;
   errorCategory?: string | null;
@@ -907,6 +908,7 @@ export interface AdminOrderHistoryEntry {
   isPriority: boolean;
   isManual: boolean;
   printSummary?: CustomerTrackingPrintSummary;
+  instructions?: string | null;
   addonServices: {
     name: string;
     onlinePricePaise: number;

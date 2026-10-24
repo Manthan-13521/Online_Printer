@@ -467,6 +467,39 @@ describe("Customer Components & Helpers", () => {
       fireEvent.click(checkbox);
       expect(handleToggleAddon).toHaveBeenCalledWith("add-1", true);
     });
+
+    it("clamps instructions input to maximum 60 words", () => {
+      const handleInstructions = vi.fn();
+      render(
+        <CustomerDetailsStep
+          customerName="Rahul Sharma"
+          onCustomerNameChange={vi.fn()}
+          customerPhone="9876543210"
+          onCustomerPhoneChange={vi.fn()}
+          phoneError={null}
+          onPhoneBlur={vi.fn()}
+          instructions=""
+          onInstructionsChange={handleInstructions}
+          addonServices={[]}
+          selectedAddonIds={[]}
+          onToggleAddon={vi.fn()}
+          disabled={false}
+        />,
+      );
+
+      const instInput = screen.getByLabelText("Instructions");
+      const sixtyFiveWords = Array.from(
+        { length: 65 },
+        (_, i) => `word${i}`,
+      ).join(" ");
+      fireEvent.change(instInput, { target: { value: sixtyFiveWords } });
+
+      const expectedSixty = Array.from(
+        { length: 60 },
+        (_, i) => `word${i}`,
+      ).join(" ");
+      expect(handleInstructions).toHaveBeenCalledWith(expectedSixty);
+    });
   });
 
   describe("PrintSettingsStep", () => {
