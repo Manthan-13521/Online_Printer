@@ -1025,11 +1025,23 @@ function FinishedScreen({
 
         {/* Down of the pickup code card in goldish yellow when priority is selected */}
         {isPriority && (
-          <div className="mt-4 md:mt-6 flex items-center justify-center gap-2 text-[14px] md:text-[16px] font-normal tracking-wide text-[#FACC15] drop-shadow-sm">
-            <span className="text-[#F59E0B] text-base md:text-lg shrink-0">
+          <div
+            className="mt-4 md:mt-6 flex items-center justify-center gap-2 text-[14.5px] md:text-[16px] font-normal tracking-wide drop-shadow-sm premium-customer-gold"
+            style={{ color: "#FACC15" }}
+          >
+            <span
+              className="text-base md:text-lg shrink-0"
+              style={{ color: "#F59E0B" }}
+            >
               ⚡
             </span>
-            <span className="leading-tight">
+            <span
+              className="leading-tight premium-customer-gold"
+              style={{
+                color: "#FACC15",
+                fontWeight: 400,
+              }}
+            >
               Thanks for being our premium customer
             </span>
           </div>

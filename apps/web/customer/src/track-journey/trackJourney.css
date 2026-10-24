@@ -1398,3 +1398,8 @@
     transform: scale(2);
   }
 }
+
+.premium-customer-gold {
+  color: #facc15 !important;
+  font-weight: 400 !important;
+}
