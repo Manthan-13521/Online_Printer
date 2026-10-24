@@ -16,6 +16,7 @@ import {
   OrderReviewSummary,
   PricingModal,
   PrintSettingsStep,
+  PriorityPrintingCard,
   ShopHeader,
   ShopInfoModal,
   ShopUnavailableState,
@@ -753,6 +754,65 @@ describe("Customer Components & Helpers", () => {
       const cardTitle = screen.getByText("Tomorrow Pickup Order");
       fireEvent.click(cardTitle);
       expect(onTogglePickup).toHaveBeenCalledWith(false);
+    });
+  });
+
+  describe("PriorityPrintingCard", () => {
+    it("renders unchecked default state with fee and description", () => {
+      const onToggle = vi.fn();
+      render(
+        <PriorityPrintingCard
+          feePaise={1000}
+          isPriority={false}
+          onToggle={onToggle}
+        />,
+      );
+
+      expect(screen.getByText("Priority Printing")).toBeTruthy();
+      expect(screen.getByText("(+₹10.00)")).toBeTruthy();
+      expect(
+        screen.getByText("Fast-track your job in the print queue."),
+      ).toBeTruthy();
+
+      const checkbox = screen.getByRole("checkbox");
+      expect(checkbox).toHaveProperty("checked", false);
+    });
+
+    it("toggles priority on card click and keyboard press", () => {
+      const onToggle = vi.fn();
+      const { rerender } = render(
+        <PriorityPrintingCard
+          feePaise={1000}
+          isPriority={false}
+          onToggle={onToggle}
+        />,
+      );
+
+      const card = document.querySelector(".priority-selector")!;
+      fireEvent.click(card);
+      expect(onToggle).toHaveBeenCalledWith(true);
+
+      // Space key
+      fireEvent.keyDown(card, { key: " " });
+      expect(onToggle).toHaveBeenCalledWith(true);
+
+      // Enter key
+      fireEvent.keyDown(card, { key: "Enter" });
+      expect(onToggle).toHaveBeenCalledWith(true);
+
+      // Rerender active state
+      rerender(
+        <PriorityPrintingCard
+          feePaise={1000}
+          isPriority={true}
+          onToggle={onToggle}
+        />,
+      );
+
+      expect(document.querySelector(".priority-selector.active")).toBeTruthy();
+      expect(document.querySelector(".priority-circuit-svg")).toBeTruthy();
+      expect(document.querySelector(".priority-check-tick")).toBeTruthy();
+      expect(screen.getByRole("checkbox")).toHaveProperty("checked", true);
     });
   });
 });

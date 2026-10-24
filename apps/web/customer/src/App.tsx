@@ -5,6 +5,7 @@ import {
   OrderReviewSummary,
   PricingModal,
   PrintSettingsStep,
+  PriorityPrintingCard,
   ShopHeader,
   ShopInfoModal,
   ShopUnavailableState,
@@ -1779,27 +1780,12 @@ export function App() {
             )}
 
             {config?.priorityPrinting?.enabled ? (
-              <div
-                className={`priority-selector ${isPriority ? "active" : ""}`}
-              >
-                <div className="priority-content">
-                  <span className="priority-icon">⚡</span>
-                  <div className="priority-text">
-                    <label>
-                      Priority Printing (+
-                      {formatInr(config.priorityPrinting.feePaise)})
-                    </label>
-                    <p>Fast-track your job in the print queue.</p>
-                  </div>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={isPriority}
-                  disabled={busy || paymentBusy}
-                  onChange={(e) => void togglePriority(e.target.checked)}
-                  className="priority-checkbox"
-                />
-              </div>
+              <PriorityPrintingCard
+                feePaise={config.priorityPrinting.feePaise}
+                isPriority={isPriority}
+                disabled={busy || paymentBusy}
+                onToggle={(next) => void togglePriority(next)}
+              />
             ) : null}
 
             {quote && (

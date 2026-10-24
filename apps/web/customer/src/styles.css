@@ -1547,47 +1547,391 @@ label {
   background: #f0fdf4;
 }
 
-/* Review & Payment */
+/* Review & Payment - Priority Printing High-Voltage Electric UI */
+@keyframes hapticJitter {
+  0% {
+    transform: translate(0, 0) scale(1.012);
+  }
+  15% {
+    transform: translate(-3px, 2px) scale(1.018);
+  }
+  30% {
+    transform: translate(3px, -2px) scale(1.014);
+  }
+  45% {
+    transform: translate(-2px, -1px) scale(1.008);
+  }
+  60% {
+    transform: translate(2px, 2px) scale(1.004);
+  }
+  75% {
+    transform: translate(-1px, 1px) scale(1.002);
+  }
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+}
+
+@keyframes thunderPopIn {
+  0% {
+    transform: scale(1) rotate(0deg);
+  }
+  40% {
+    transform: scale(2.2) rotate(-10deg);
+    filter: drop-shadow(0 0 24px #fbbf24)
+      drop-shadow(0 0 45px rgba(251, 191, 36, 1)) drop-shadow(0 0 70px #ffffff);
+  }
+  70% {
+    transform: scale(1.75) rotate(5deg);
+  }
+  100% {
+    transform: scale(1.85) rotate(0deg);
+  }
+}
+
+@keyframes thunderHumPulse {
+  0%,
+  100% {
+    transform: scale(1.85) rotate(0deg);
+    filter: drop-shadow(0 0 10px #f59e0b)
+      drop-shadow(0 0 24px rgba(245, 158, 11, 0.95))
+      drop-shadow(0 0 45px rgba(254, 240, 138, 0.8));
+  }
+  25% {
+    transform: scale(1.94) rotate(-3deg) translate(-1px, 0.5px);
+    filter: drop-shadow(0 0 16px #fbbf24)
+      drop-shadow(0 0 35px rgba(251, 191, 36, 1))
+      drop-shadow(0 0 55px rgba(255, 255, 255, 0.9));
+  }
+  50% {
+    transform: scale(1.8) rotate(2deg) translate(0.5px, -0.5px);
+    filter: drop-shadow(0 0 12px #f59e0b)
+      drop-shadow(0 0 26px rgba(245, 158, 11, 0.85));
+  }
+  75% {
+    transform: scale(1.92) rotate(-1deg) translate(-0.5px, -0.5px);
+    filter: drop-shadow(0 0 18px #fde047)
+      drop-shadow(0 0 38px rgba(253, 224, 71, 1))
+      drop-shadow(0 0 60px rgba(255, 255, 255, 0.85));
+  }
+}
+
+@keyframes shockwaveExpand {
+  0% {
+    transform: translate(-50%, -50%) scale(0.1);
+    opacity: 1;
+    border-width: 4px;
+  }
+  60% {
+    opacity: 0.85;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(4.8);
+    opacity: 0;
+    border-width: 1px;
+  }
+}
+
+@keyframes circuitLoop {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes sparkleTwinkle {
+  0%,
+  100% {
+    transform: scale(0.8) rotate(0deg);
+    opacity: 0.65;
+  }
+  50% {
+    transform: scale(1.25) rotate(15deg);
+    opacity: 1;
+    filter: drop-shadow(0 0 5px #fde047);
+  }
+}
+
 .priority-selector {
-  background: #fffbeb;
-  border: 1px solid #fde68a;
-  border-radius: 8px;
-  padding: 1rem;
+  position: relative;
+  background: #fffdf0;
+  border: 1.5px solid #fde68a;
+  border-radius: 16px;
+  padding: 1.1rem 1.25rem;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   margin-bottom: 1.5rem;
   cursor: pointer;
+  user-select: none;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(245, 158, 11, 0.05);
+  transition:
+    border-color 0.3s ease,
+    box-shadow 0.3s ease,
+    background 0.3s ease;
 }
-.priority-selector.active {
-  background: #fef3c7;
+
+.priority-selector:hover {
   border-color: #f59e0b;
 }
+
+.priority-selector.card-jitter {
+  animation: hapticJitter 0.35s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+.priority-selector.active {
+  background: #fffdf0;
+  border-color: #f59e0b !important;
+  box-shadow:
+    0 10px 35px -5px rgba(245, 158, 11, 0.3),
+    0 0 0 1px rgba(245, 158, 11, 0.4),
+    inset 0 0 45px rgba(254, 240, 138, 0.45);
+}
+
+.priority-ambient-glow {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to right,
+    rgba(254, 240, 138, 0.4),
+    rgba(254, 243, 199, 0.45),
+    rgba(254, 240, 138, 0.25)
+  );
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.priority-selector.active .priority-ambient-glow {
+  opacity: 1;
+}
+
+.priority-canvas-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 20;
+}
+
+.priority-shockwave-container {
+  position: absolute;
+  left: 36px;
+  top: 50%;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  z-index: 15;
+}
+
+.shockwave-ring {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: 9999px;
+  border: 3px solid #fbbf24;
+  pointer-events: none;
+  box-shadow:
+    0 0 25px #f59e0b,
+    inset 0 0 20px #fef08a;
+  animation: shockwaveExpand 0.65s cubic-bezier(0.1, 0.8, 0.3, 1) forwards;
+}
+
+.priority-circuit-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  border-radius: 16px;
+  overflow: visible;
+  z-index: 10;
+}
+
+.circuit-stroke-glow {
+  stroke-dasharray: 140 460;
+  stroke-dashoffset: 600;
+  animation: circuitLoop 1.8s linear infinite;
+  filter: drop-shadow(0 0 8px #f59e0b)
+    drop-shadow(0 0 18px rgba(245, 158, 11, 0.85));
+}
+
+.circuit-stroke-core {
+  stroke-dasharray: 55 545;
+  stroke-dashoffset: 600;
+  animation: circuitLoop 1.8s linear infinite;
+  filter: drop-shadow(0 0 4px #ffffff) drop-shadow(0 0 12px #fde047);
+}
+
 .priority-content {
+  position: relative;
+  z-index: 10;
   display: flex;
-  gap: 0.75rem;
+  align-items: center;
+  gap: 1rem;
 }
-.priority-icon {
-  font-size: 1.25rem;
-  line-height: 1.2;
+
+.priority-icon-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
 }
+
+.priority-icon-aura {
+  position: absolute;
+  inset: 0;
+  background: rgba(251, 191, 36, 0.45);
+  border-radius: 50%;
+  filter: blur(8px);
+  transform: scale(0.8);
+  opacity: 0;
+  transition: all 0.3s ease;
+}
+
+.priority-selector.active .priority-icon-aura {
+  opacity: 1;
+  transform: scale(2.2);
+}
+
+.priority-bolt-svg {
+  width: 26px;
+  height: 26px;
+  color: #eaa013;
+  transform-origin: center;
+  transition: transform 0.3s ease;
+}
+
+.thunder-burst-in {
+  animation: thunderPopIn 0.42s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.thunder-active {
+  animation: thunderHumPulse 0.3s steps(3, end) infinite;
+}
+
+.priority-text {
+  display: flex;
+  flex-direction: column;
+}
+
 .priority-text label {
   font-weight: 700;
-  color: #0f172a;
-  margin-bottom: 0.2rem;
+  font-size: 1.05rem;
+  color: #0d1527;
+  margin-bottom: 0.15rem;
   cursor: pointer;
+  line-height: 1.25;
 }
+
+.priority-text label .priority-fee {
+  font-weight: 800;
+  color: #0d1527;
+  margin-left: 0.25rem;
+}
+
 .priority-text p {
   margin: 0;
-  font-size: 0.8rem;
+  font-size: 0.85rem;
+  font-weight: 500;
   color: #64748b;
+  line-height: 1.3;
 }
-.priority-checkbox {
-  width: 1.25rem;
-  height: 1.25rem;
-  accent-color: #d97706;
+
+.priority-checkbox-container {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-right: 0.25rem;
+  flex-shrink: 0;
+}
+
+.priority-checkbox-visual {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  border: 2px solid #cbd5e1;
+  background: rgba(255, 255, 255, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.priority-selector.active .priority-checkbox-visual {
+  border-color: #d97706;
+  background-color: #f59e0b;
+  box-shadow: 0 0 14px rgba(245, 158, 11, 0.65);
+}
+
+.priority-check-tick {
+  width: 16px;
+  height: 16px;
+  color: #ffffff;
+  stroke-width: 3;
+  animation: checkPop 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes checkPop {
+  0% {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.checkbox-sparkle {
+  position: absolute;
+  color: #f59e0b;
+  font-size: 11px;
+  pointer-events: none;
+  animation: sparkleTwinkle 1.2s ease-in-out infinite;
+  user-select: none;
+}
+
+.sparkle-tl {
+  top: -10px;
+  left: -8px;
+  animation-delay: 0s;
+}
+
+.sparkle-tr {
+  top: -10px;
+  right: -8px;
+  animation-delay: 0.3s;
+}
+
+.sparkle-bl {
+  bottom: -10px;
+  left: -8px;
+  animation-delay: 0.6s;
+}
+
+.sparkle-br {
+  bottom: -10px;
+  right: -8px;
+  animation-delay: 0.9s;
+}
+
+.priority-checkbox-input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
   margin: 0;
-  margin-top: 0.1rem;
+  pointer-events: none;
 }
 .review-summary {
   display: flex;
