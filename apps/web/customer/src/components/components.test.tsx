@@ -29,6 +29,7 @@ import {
   paymentErrorMessage,
   type LocalOrderFile,
 } from "./index";
+import TrackJourney from "../track-journey/TrackJourney";
 
 describe("Customer Components & Helpers", () => {
   beforeEach(() => {
@@ -946,6 +947,48 @@ describe("Customer Components & Helpers", () => {
       const trackBtn = screen.getByRole("button", { name: "Track" });
       fireEvent.click(trackBtn);
       expect(onTrackSubmit).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("TrackJourney Ready / FinishedScreen", () => {
+    it("renders priority theme with customer thanks message and no gold border", () => {
+      render(
+        <TrackJourney
+          currentStageIndex={6}
+          orderDetails={{
+            pickupCode: "PA-999",
+            isPriority: true,
+          }}
+        />,
+      );
+
+      expect(screen.getByText("Ready for pickup")).toBeTruthy();
+      expect(
+        screen.getByText("Your order is printed, finished, and waiting."),
+      ).toBeTruthy();
+      expect(screen.getByText("PA-999")).toBeTruthy();
+      expect(screen.getByText("Pickup code")).toBeTruthy();
+      expect(
+        screen.getByText("Thanks for being our premium customer"),
+      ).toBeTruthy();
+    });
+
+    it("renders standard clean theme without premium customer message when not priority", () => {
+      render(
+        <TrackJourney
+          currentStageIndex={6}
+          orderDetails={{
+            pickupCode: "PA-002",
+            isPriority: false,
+          }}
+        />,
+      );
+
+      expect(screen.getByText("Ready for pickup")).toBeTruthy();
+      expect(screen.getByText("PA-002")).toBeTruthy();
+      expect(
+        screen.queryByText("Thanks for being our premium customer"),
+      ).toBeNull();
     });
   });
 });

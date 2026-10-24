@@ -442,6 +442,12 @@ export function TrackingPage({
         colorMode: data.printSummary.colorMode === "BW" ? "B&W" : "Color",
         paperSize: data.printSummary.paperSize,
         isPickup: Boolean(data.isPickup),
+        isPriority: Boolean(
+          data.isPriority ||
+          data.statusLabel?.toLowerCase().includes("priority"),
+        ),
+        statusLabel: data.statusLabel,
+        statusMessage: data.statusMessage,
       }}
       onBack={onBack}
     >

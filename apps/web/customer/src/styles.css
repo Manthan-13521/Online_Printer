@@ -2818,3 +2818,29 @@ label {
   color: #475569;
   font-weight: 600;
 }
+
+/* Thunder Icon Active Animation (Pop + High-Voltage Hum for Ready for Pickup & Priority) */
+.thunder-icon-active {
+  transform-origin: 50% 50%;
+  animation:
+    thunderPopIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards,
+    thunderContinuousHum 0.15s ease-in-out infinite alternate 0.5s;
+}
+
+@keyframes thunderContinuousHum {
+  0% {
+    transform: scale(1.15) rotate(-4deg);
+    filter: drop-shadow(0 0 7px #f59e0b) drop-shadow(0 0 12px #fde047);
+  }
+  100% {
+    transform: scale(1.24) rotate(0deg);
+    filter: drop-shadow(0 0 14px #ea580c) drop-shadow(0 0 22px #f59e0b);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thunder-icon-active {
+    animation: none !important;
+    filter: drop-shadow(0 0 8px #f59e0b);
+  }
+}

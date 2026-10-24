@@ -69,6 +69,9 @@ export interface OrderDetails {
   pickupLocation?: string;
   pickupCode?: string;
   isPickup?: boolean;
+  isPriority?: boolean;
+  statusLabel?: string;
+  statusMessage?: string;
 }
 
 export interface TrackJourneyProps {
@@ -91,9 +94,24 @@ const journeyCss = `${rawCss}
     box-shadow: none;
   }
   @keyframes jumpDash { to { stroke-dashoffset: var(--dash-target); } }
+  .thunder-icon-active {
+    transform-origin: 50% 50%;
+    animation: thunderPopIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards,
+               thunderContinuousHum 0.15s ease-in-out infinite alternate 0.5s;
+  }
+  @keyframes thunderPopIn {
+    0% { transform: scale(0.6) rotate(15deg); opacity: 0; }
+    55% { transform: scale(1.45) rotate(-14deg); filter: drop-shadow(0 0 14px #F59E0B) drop-shadow(0 0 24px #FDE047); opacity: 1; }
+    100% { transform: scale(1.15) rotate(-4deg); filter: drop-shadow(0 0 8px #F59E0B) drop-shadow(0 0 16px #D97706); opacity: 1; }
+  }
+  @keyframes thunderContinuousHum {
+    0% { transform: scale(1.15) rotate(-4deg); filter: drop-shadow(0 0 7px #F59E0B) drop-shadow(0 0 12px #FDE047); }
+    100% { transform: scale(1.24) rotate(0deg); filter: drop-shadow(0 0 14px #EA580C) drop-shadow(0 0 22px #F59E0B); }
+  }
   @media (prefers-reduced-motion: reduce) {
     .track-journey-root * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
     .track-journey-root animateMotion, .track-journey-root animate { display: none; }
+    .thunder-icon-active { animation: none !important; filter: drop-shadow(0 0 8px #f59e0b); }
   }`;
 
 export default function TrackJourney({
@@ -865,6 +883,7 @@ function FinishedScreen({
 }) {
   const reduceMotion = useReducedMotion() === true;
   const activeCode = orderDetails.pickupCode ?? orderDetails.orderNumber ?? "";
+  const isPriority = Boolean(orderDetails.isPriority);
 
   const handleBackAction = () => {
     if (onBack) {
@@ -876,7 +895,13 @@ function FinishedScreen({
   };
 
   return (
-    <div className="fixed inset-0 bg-printgo-green text-printgo-paper flex flex-col items-center justify-center font-sans p-4 md:p-6 text-center overflow-hidden z-50">
+    <div
+      className="fixed inset-0 bg-printgo-green text-printgo-paper flex flex-col items-center justify-center font-sans p-4 md:p-6 text-center overflow-hidden z-50 select-none"
+      style={{
+        background:
+          "radial-gradient(circle at 50% 28%, #187949 0%, #13663c 45%, #0e4e2e 100%)",
+      }}
+    >
       {/* Top Left Back Button */}
       <div
         style={{
@@ -942,17 +967,42 @@ function FinishedScreen({
         transition={{ duration: 0.8, ease: "easeOut" }}
         className="flex flex-col items-center justify-center relative z-10 w-full max-w-[85%] md:max-w-md mx-auto my-auto"
       >
-        <div className="bg-white text-printgo-green rounded-full p-2.5 md:p-4 mb-2 md:mb-6 shadow-xl">
-          <Check className="w-6 h-6 md:w-12 md:h-12" strokeWidth={4} />
+        <div className="bg-white text-[#146b41] rounded-full p-2.5 md:p-4 mb-2 md:mb-5 shadow-xl flex items-center justify-center w-14 h-14 md:w-16 md:h-16">
+          <Check className="w-7 h-7 md:w-8 md:h-8" strokeWidth={3.5} />
         </div>
 
-        <h1 className="font-serif text-3xl md:text-5xl lg:text-6xl font-medium tracking-tight mb-1.5 md:mb-2 leading-tight text-printgo-dark">
-          Ready for pickup
-        </h1>
-        <p className="text-white text-xs md:text-lg mb-5 md:mb-10">
+        <div className="flex items-center justify-center gap-2 mb-1.5 md:mb-2">
+          {isPriority && (
+            <svg
+              className="w-6 h-6 md:w-7 md:h-7 thunder-icon-active shrink-0"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path
+                d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"
+                fill="#F59E0B"
+                stroke="#B45309"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          )}
+          <h1
+            className="font-serif text-3xl md:text-5xl lg:text-6xl font-medium tracking-tight leading-tight text-printgo-dark"
+            style={{
+              fontFamily: 'Georgia, "Times New Roman", serif',
+            }}
+          >
+            Ready for pickup
+          </h1>
+        </div>
+
+        <p className="text-white text-xs md:text-lg mb-5 md:mb-10 font-medium text-white/[0.92]">
           Your order is printed, finished, and waiting.
         </p>
 
+        {/* Frosted Translucent Card: NO gold border! Clean white/translucent border with matching emerald/glass bg */}
         <div className="border-[2px] border-white/30 bg-white/10 rounded-[1.25rem] md:rounded-[1.5rem] p-5 md:p-10 w-full shadow-2xl backdrop-blur-md">
           <p className="text-white text-[10px] md:text-sm uppercase tracking-widest font-bold mb-2 md:mb-4">
             {orderDetails.pickupCode ? "Pickup code" : "Order code"}
@@ -962,6 +1012,7 @@ function FinishedScreen({
             style={{
               fontSize: "clamp(1.5rem, 8vw, 4.5rem)",
               overflowWrap: "anywhere",
+              fontFeatureSettings: "'zero' 0",
             }}
           >
             {activeCode}
@@ -970,6 +1021,17 @@ function FinishedScreen({
           <p className="text-white/80 text-xs md:text-sm font-medium tracking-wide">
             Take a screenshot or remember this code for pickup
           </p>
+
+          {/* Premium Customer line at down of card when priority is selected */}
+          {isPriority && (
+            <>
+              <div className="h-px bg-white/20 w-full my-3 md:my-4" />
+              <div className="flex items-center justify-center gap-1.5 text-amber-300 font-semibold text-xs md:text-sm tracking-wide">
+                <span className="text-amber-400">⚡</span>
+                <span>Thanks for being our premium customer</span>
+              </div>
+            </>
+          )}
         </div>
       </motion.div>
     </div>

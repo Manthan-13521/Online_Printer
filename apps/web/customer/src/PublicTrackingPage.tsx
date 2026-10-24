@@ -368,6 +368,12 @@ export function PublicTrackingPage({
       orderDetails={{
         pickupCode: data.pickupCode,
         isPickup: Boolean(data.isPickup),
+        isPriority: Boolean(
+          data.isPriority ||
+          data.statusLabel?.toLowerCase().includes("priority"),
+        ),
+        statusLabel: data.statusLabel,
+        statusMessage: data.statusMessage,
       }}
       onBack={handleBack}
     >
