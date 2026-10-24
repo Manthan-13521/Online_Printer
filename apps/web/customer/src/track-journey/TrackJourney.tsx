@@ -7,7 +7,7 @@ import {
   CheckCircle2,
   Check,
   ArrowLeft,
-  RotateCcw,
+  RefreshCw,
 } from "lucide-react";
 
 const STAGES = [
@@ -917,11 +917,7 @@ function FinishedScreen({
           type="button"
           onClick={handleBackAction}
           aria-label="Back"
-          className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-white/20 active:bg-white/40 text-white transition-opacity shadow-sm"
-          style={{
-            backdropFilter: "blur(4px)",
-            WebkitBackdropFilter: "blur(4px)",
-          }}
+          className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 active:bg-white/30 border border-white/25 backdrop-blur-md text-white transition-all shadow-sm active:scale-95 cursor-pointer"
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
@@ -941,16 +937,14 @@ function FinishedScreen({
         <button
           type="button"
           onClick={handleBackAction}
-          aria-label="Print Another"
-          className="inline-flex items-center gap-1.5 px-3.5 py-2 md:px-4 md:py-2.5 rounded-full bg-white/20 hover:bg-white/30 active:bg-white/40 text-white text-xs md:text-sm font-semibold transition-all shadow-sm"
+          aria-label="Print another"
+          className="inline-flex items-center gap-2 px-4 py-2 md:px-5 md:py-2.5 rounded-full bg-white/10 hover:bg-white/20 active:bg-white/30 border border-white/30 backdrop-blur-md text-white text-xs md:text-sm font-semibold transition-all shadow-sm active:scale-95 cursor-pointer"
           style={{
-            backdropFilter: "blur(4px)",
-            WebkitBackdropFilter: "blur(4px)",
             touchAction: "manipulation",
           }}
         >
-          <RotateCcw className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0" />
-          <span>Print Another</span>
+          <RefreshCw className="w-3.5 h-3.5 md:w-4 md:h-4 stroke-[2.4] shrink-0" />
+          <span>Print another</span>
         </button>
       </div>
 
