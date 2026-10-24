@@ -748,6 +748,11 @@ describe("Customer Components & Helpers", () => {
       expect(toggleSwitch).toHaveProperty("checked", true);
       fireEvent.click(toggleSwitch);
       expect(onTogglePickup).toHaveBeenCalledWith(false);
+
+      // Verify clicking on card text toggles pickup as well
+      const cardTitle = screen.getByText("Tomorrow Pickup Order");
+      fireEvent.click(cardTitle);
+      expect(onTogglePickup).toHaveBeenCalledWith(false);
     });
   });
 });

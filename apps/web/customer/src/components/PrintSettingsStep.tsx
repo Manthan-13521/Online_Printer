@@ -419,17 +419,26 @@ export function PrintSettingsStep({
 
           {pickupSchedule?.enabled && (
             <div
-              className="pickup-schedule-card"
+              className={`pickup-schedule-card ${isPickup ? "active" : ""}`}
+              onClick={(e) => {
+                if (!(e.target as HTMLElement).closest(".toggle-switch")) {
+                  onTogglePickup?.(!isPickup);
+                }
+              }}
               style={{
                 margin: "1.25rem 0 1rem",
                 padding: "1rem",
-                background: "#f0f9ff",
-                border: "1.5px solid #bae6fd",
+                background: isPickup ? "#f0fdf4" : "#f0f9ff",
+                border: isPickup
+                  ? "1.5px solid #86efac"
+                  : "1.5px solid #bae6fd",
                 borderRadius: "10px",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
                 gap: "1rem",
+                cursor: "pointer",
+                transition: "all 0.2s ease",
               }}
             >
               <div>
@@ -439,7 +448,7 @@ export function PrintSettingsStep({
                     alignItems: "center",
                     gap: "0.4rem",
                     fontWeight: 700,
-                    color: "#0369a1",
+                    color: isPickup ? "#166534" : "#0369a1",
                     fontSize: "0.95rem",
                   }}
                 >
@@ -448,7 +457,7 @@ export function PrintSettingsStep({
                 <div
                   style={{
                     fontSize: "0.9rem",
-                    color: "#0c4a6e",
+                    color: isPickup ? "#14532d" : "#0c4a6e",
                     marginTop: "0.25rem",
                     fontWeight: 600,
                   }}
@@ -465,7 +474,7 @@ export function PrintSettingsStep({
                   style={{
                     margin: "0.2rem 0 0",
                     fontSize: "0.8rem",
-                    color: "#64748b",
+                    color: isPickup ? "#15803d" : "#64748b",
                   }}
                 >
                   {pickupSchedule.isShopOpen
@@ -483,6 +492,7 @@ export function PrintSettingsStep({
               <label
                 className="toggle-switch"
                 style={{ margin: 0, flexShrink: 0 }}
+                title="Toggle Tomorrow Pickup Order"
               >
                 <input
                   type="checkbox"

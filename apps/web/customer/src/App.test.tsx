@@ -839,6 +839,24 @@ describe("customer upload app", () => {
     ).toBeNull();
   });
 
+  it("renders preorder banner with 'Pre-order for tomorrow' and 'Print instantly or pre-order for tomorrow' without chevron", async () => {
+    vi.mocked(customerApi.config).mockResolvedValue({
+      ...enabledConfig,
+      acceptOfflineOrders: true,
+    });
+
+    render(<App />);
+    expect(await screen.findByText("Pre-order for tomorrow")).toBeTruthy();
+    expect(
+      screen.getByText("Print instantly or pre-order for tomorrow."),
+    ).toBeTruthy();
+    expect(
+      document
+        .querySelector(".preorder-banner")
+        ?.querySelector("svg path[d*='m9 18']"),
+    ).toBeNull();
+  });
+
   it("defaults to Single-sided (Simplex) for newly uploaded PDF even when duplex is supported", async () => {
     const user = userEvent.setup();
     const configWithDuplex = {

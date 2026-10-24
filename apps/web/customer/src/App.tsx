@@ -1597,23 +1597,9 @@ export function App() {
                 lineHeight: 1.3,
               }}
             >
-              Order now, collect tomorrow morning.
+              Print instantly or pre-order for tomorrow.
             </div>
           </div>
-          <svg
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="#78350f"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            style={{ marginLeft: "auto", flexShrink: 0 }}
-            aria-hidden="true"
-          >
-            <path d="m9 18 6-6-6-6" />
-          </svg>
         </div>
       )}
       <form

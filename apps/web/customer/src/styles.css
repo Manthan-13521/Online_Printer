@@ -2132,3 +2132,96 @@ label {
     height: 20px;
   }
 }
+
+/* Modern Accessible Toggle Switch for Customer App */
+.toggle-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 50px;
+  height: 28px;
+  flex-shrink: 0;
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+  margin: 0;
+  pointer-events: none;
+}
+
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #cbd5e1;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 28px;
+  border: 1.5px solid #94a3b8;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+.toggle-slider::before {
+  position: absolute;
+  content: "";
+  height: 20px;
+  width: 20px;
+  left: 3px;
+  bottom: 2.5px;
+  background-color: #ffffff;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 50%;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.toggle-switch input:checked + .toggle-slider {
+  background-color: #10b981;
+  border-color: #059669;
+}
+
+.toggle-switch input:checked + .toggle-slider::before {
+  transform: translateX(22px);
+}
+
+.toggle-switch:hover .toggle-slider {
+  border-color: #64748b;
+}
+
+.toggle-switch input:checked:hover + .toggle-slider {
+  border-color: #047857;
+}
+
+.toggle-switch input:focus-visible + .toggle-slider {
+  outline: 2px solid #0284c7;
+  outline-offset: 3px;
+}
+
+.toggle-switch input:disabled + .toggle-slider {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pickup-schedule-card {
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.pickup-schedule-card:hover {
+  border-color: #0284c7;
+  box-shadow: 0 2px 8px rgba(2, 132, 199, 0.08);
+}
+
+.pickup-schedule-card.active {
+  background-color: #f0fdf4 !important;
+  border-color: #86efac !important;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.12);
+}
