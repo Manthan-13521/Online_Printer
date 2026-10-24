@@ -938,13 +938,14 @@ function FinishedScreen({
           type="button"
           onClick={handleBackAction}
           aria-label="Print another"
-          className="inline-flex items-center gap-2 px-4 py-2 md:px-5 md:py-2.5 rounded-full bg-white/10 hover:bg-white/20 active:bg-white/30 border border-white/30 backdrop-blur-md text-white text-xs md:text-sm font-semibold transition-all shadow-sm active:scale-95 cursor-pointer"
+          className="inline-flex flex-row items-center gap-2 px-3.5 py-1.5 md:px-4 md:py-2 rounded-full bg-white/10 hover:bg-white/20 active:bg-white/30 border border-white/30 backdrop-blur-md text-white text-xs md:text-sm font-semibold transition-all shadow-sm active:scale-95 cursor-pointer whitespace-nowrap shrink-0"
           style={{
             touchAction: "manipulation",
+            whiteSpace: "nowrap",
           }}
         >
           <RefreshCw className="w-3.5 h-3.5 md:w-4 md:h-4 stroke-[2.4] shrink-0" />
-          <span>Print another</span>
+          <span className="whitespace-nowrap leading-none">Print another</span>
         </button>
       </div>
 
@@ -1022,13 +1023,15 @@ function FinishedScreen({
           </p>
         </div>
 
-        {/* Down of the pickup code card in gold when priority is selected */}
+        {/* Down of the pickup code card in light gold when priority is selected */}
         {isPriority && (
-          <div className="mt-4 md:mt-5 flex items-center justify-center">
-            <div className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-amber-400/15 border border-amber-300/40 backdrop-blur-sm text-amber-300 shadow-sm text-xs md:text-sm font-semibold tracking-wide">
-              <span className="text-amber-400">⚡</span>
-              <span>Thanks for being our premium customer</span>
-            </div>
+          <div className="mt-4 md:mt-6 flex items-center justify-center gap-2 text-[14px] md:text-[16px] font-bold tracking-wide text-[#FDE047] drop-shadow-sm">
+            <span className="text-[#FBBF24] text-base md:text-lg shrink-0">
+              ⚡
+            </span>
+            <span className="leading-tight">
+              Thanks for being our premium customer
+            </span>
           </div>
         )}
       </motion.div>
