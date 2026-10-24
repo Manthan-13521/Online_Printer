@@ -1863,3 +1863,41 @@ legend {
     justify-content: flex-start;
   }
 }
+
+.priority-thunder-gold-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: 800;
+  font-size: 0.82rem;
+  letter-spacing: 0.03em;
+  padding: 0.18rem 0.55rem;
+  border-radius: 4px;
+  background: linear-gradient(135deg, #fef08a 0%, #fde047 40%, #f59e0b 100%);
+  color: #78350f;
+  border: 1.5px solid #d97706;
+  box-shadow:
+    0 0 10px rgba(245, 158, 11, 0.4),
+    inset 0 0 4px rgba(254, 240, 138, 0.6);
+  text-transform: uppercase;
+  line-height: 1.2;
+}
+
+.priority-thunder-gold-badge .thunder-bolt {
+  display: inline-block;
+  font-size: 0.95rem;
+  filter: drop-shadow(0 0 4px #f59e0b);
+  line-height: 1;
+  animation: thunderBoltHum 2s ease-in-out infinite alternate;
+}
+
+@keyframes thunderBoltHum {
+  0% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 3px #f59e0b);
+  }
+  100% {
+    transform: scale(1.15);
+    filter: drop-shadow(0 0 6px #ea580c);
+  }
+}

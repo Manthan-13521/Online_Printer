@@ -23,6 +23,8 @@ export function OrderHistoryPage({
   const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null);
   const [orderToDelete, setOrderToDelete] =
     useState<AdminOrderHistoryEntry | null>(null);
+  const [detailsModalOrder, setDetailsModalOrder] =
+    useState<AdminOrderHistoryEntry | null>(null);
   const [orderNotice, setOrderNotice] = useState<Record<string, string>>({});
   const PAGE_SIZE = 10;
 
@@ -171,17 +173,9 @@ export function OrderHistoryPage({
                         : `Order #${order.orderId.slice(0, 8)}`}
                   </strong>
                   {order.isPriority ? (
-                    <span
-                      style={{
-                        fontWeight: 700,
-                        padding: "0.1rem 0.5rem",
-                        borderRadius: "4px",
-                        backgroundColor: "#fef3c7",
-                        color: "#92400e",
-                        fontSize: "0.85rem",
-                      }}
-                    >
-                      ⚡ Priority
+                    <span className="priority-thunder-gold-badge">
+                      <span className="thunder-bolt">⚡</span>
+                      <span>Priority</span>
                     </span>
                   ) : null}
                   {order.isManual ? (
@@ -252,6 +246,28 @@ export function OrderHistoryPage({
                   {order.customerName ||
                     (order.purged ? "Anonymous" : "Customer")}
                 </h2>
+                {order.printSummary ? (
+                  <p
+                    style={{
+                      margin: "0.25rem 0 0",
+                      fontSize: "0.92rem",
+                      color: "#475569",
+                      fontWeight: 500,
+                    }}
+                  >
+                    {order.printSummary.paperSize} ·{" "}
+                    {order.printSummary.colorMode === "COLOR"
+                      ? "Colour"
+                      : "B&W"}{" "}
+                    ·{" "}
+                    {order.printSummary.sides === "DOUBLE"
+                      ? "Duplex"
+                      : "Single-sided"}{" "}
+                    · {order.printSummary.copies}{" "}
+                    {order.printSummary.copies === 1 ? "copy" : "copies"} ·
+                    pages {order.printSummary.selectedPages}
+                  </p>
+                ) : null}
               </div>
               <strong
                 className="status-pill"
@@ -375,6 +391,27 @@ export function OrderHistoryPage({
                 flexWrap: "wrap",
               }}
             >
+              <button
+                type="button"
+                className="secondary-button compact"
+                onClick={() => setDetailsModalOrder(order)}
+                style={{
+                  marginRight: orderNotice[order.orderId] ? "0.5rem" : "auto",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "0.35rem",
+                  fontWeight: 600,
+                  fontSize: "0.85rem",
+                }}
+              >
+                <span>Order Details</span>
+                {order.isPriority ? (
+                  <span style={{ color: "#d97706", fontSize: "0.9rem" }}>
+                    ⚡
+                  </span>
+                ) : null}
+              </button>
+
               {orderNotice[order.orderId] ? (
                 <span
                   style={{
@@ -436,6 +473,190 @@ export function OrderHistoryPage({
         hasNextPage={Boolean(cursor)}
         itemLabel="orders"
       />
+
+      {detailsModalOrder ? (
+        <div
+          className="dialog-backdrop"
+          onClick={() => setDetailsModalOrder(null)}
+          role="presentation"
+        >
+          <div
+            className="dialog-card"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="order-details-dialog-title"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: "520px" }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: "1rem",
+                gap: "0.75rem",
+                flexWrap: "wrap",
+              }}
+            >
+              <h2
+                id="order-details-dialog-title"
+                style={{
+                  color: "#166534",
+                  margin: 0,
+                  fontSize: "1.25rem",
+                }}
+              >
+                {detailsModalOrder.pickupCode
+                  ? `Pickup ${detailsModalOrder.pickupCode}`
+                  : `Order #${detailsModalOrder.orderId.slice(0, 8)}`}
+              </h2>
+              {detailsModalOrder.isPriority ? (
+                <span className="priority-thunder-gold-badge">
+                  <span className="thunder-bolt">⚡</span>
+                  <span>Priority</span>
+                </span>
+              ) : null}
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+                gap: "0.75rem 1rem",
+                backgroundColor: "#f8fafc",
+                padding: "0.85rem",
+                borderRadius: "8px",
+                border: "1px solid #e2e8f0",
+                marginBottom: "1.25rem",
+              }}
+            >
+              <div>
+                <span
+                  style={{
+                    fontSize: "0.75rem",
+                    color: "#64748b",
+                    textTransform: "uppercase",
+                    fontWeight: 700,
+                    display: "block",
+                  }}
+                >
+                  Paper Size
+                </span>
+                <strong style={{ fontSize: "1rem", color: "#1e293b" }}>
+                  {detailsModalOrder.printSummary?.paperSize ?? "A4"}
+                </strong>
+              </div>
+              <div>
+                <span
+                  style={{
+                    fontSize: "0.75rem",
+                    color: "#64748b",
+                    textTransform: "uppercase",
+                    fontWeight: 700,
+                    display: "block",
+                  }}
+                >
+                  Color Mode
+                </span>
+                <strong style={{ fontSize: "1rem", color: "#1e293b" }}>
+                  {detailsModalOrder.printSummary?.colorMode === "COLOR"
+                    ? "Colour"
+                    : "B&W"}
+                </strong>
+              </div>
+              <div>
+                <span
+                  style={{
+                    fontSize: "0.75rem",
+                    color: "#64748b",
+                    textTransform: "uppercase",
+                    fontWeight: 700,
+                    display: "block",
+                  }}
+                >
+                  Pages
+                </span>
+                <strong style={{ fontSize: "1rem", color: "#1e293b" }}>
+                  {detailsModalOrder.printSummary?.selectedPages === "ALL"
+                    ? "All pages"
+                    : detailsModalOrder.printSummary?.selectedPages
+                      ? `pages ${detailsModalOrder.printSummary.selectedPages}`
+                      : "ALL"}
+                </strong>
+              </div>
+              <div>
+                <span
+                  style={{
+                    fontSize: "0.75rem",
+                    color: "#64748b",
+                    textTransform: "uppercase",
+                    fontWeight: 700,
+                    display: "block",
+                  }}
+                >
+                  Sides
+                </span>
+                <strong style={{ fontSize: "1rem", color: "#1e293b" }}>
+                  {detailsModalOrder.printSummary?.sides === "DOUBLE"
+                    ? "Duplex (Double-sided)"
+                    : "Single-sided"}
+                </strong>
+              </div>
+              <div>
+                <span
+                  style={{
+                    fontSize: "0.75rem",
+                    color: "#64748b",
+                    textTransform: "uppercase",
+                    fontWeight: 700,
+                    display: "block",
+                  }}
+                >
+                  Copies
+                </span>
+                <strong style={{ fontSize: "1rem", color: "#1e293b" }}>
+                  {detailsModalOrder.printSummary?.copies ?? 1}{" "}
+                  {(detailsModalOrder.printSummary?.copies ?? 1) === 1
+                    ? "copy"
+                    : "copies"}
+                </strong>
+              </div>
+              <div>
+                <span
+                  style={{
+                    fontSize: "0.75rem",
+                    color: "#64748b",
+                    textTransform: "uppercase",
+                    fontWeight: 700,
+                    display: "block",
+                  }}
+                >
+                  Priority
+                </span>
+                <strong style={{ fontSize: "1rem", color: "#1e293b" }}>
+                  {detailsModalOrder.isPriority ? "Priority Queue" : "Normal"}
+                </strong>
+              </div>
+            </div>
+
+            <div
+              className="dialog-actions"
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+              }}
+            >
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => setDetailsModalOrder(null)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {orderToDelete ? (
         <div

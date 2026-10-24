@@ -56,17 +56,9 @@ export function LiveOrderRow({
               {order.pickupCode ?? order.jobCode}
             </strong>
             {order.isPriority ? (
-              <span
-                style={{
-                  fontWeight: 700,
-                  padding: "0.1rem 0.5rem",
-                  borderRadius: "4px",
-                  backgroundColor: "#fef3c7",
-                  color: "#92400e",
-                  fontSize: "0.85rem",
-                }}
-              >
-                ⚡ Priority
+              <span className="priority-thunder-gold-badge">
+                <span className="thunder-bolt">⚡</span>
+                <span>Priority</span>
               </span>
             ) : null}
             <div
@@ -144,6 +136,14 @@ export function LiveOrderRow({
       </div>
       <p>{summary(order)}</p>
       <dl className="live-order-details">
+        <div>
+          <dt>Phone</dt>
+          <dd>{order.customerPhone}</dd>
+        </div>
+        <div>
+          <dt>Printer</dt>
+          <dd>{order.printerName ?? "Not assigned"}</dd>
+        </div>
         {order.attemptCount && order.attemptCount > 0 ? (
           <div>
             <dt>Attempts</dt>
@@ -156,40 +156,12 @@ export function LiveOrderRow({
             <dd>{order.rawError ?? order.errorCategory}</dd>
           </div>
         ) : null}
-        {order.pickupCode ? (
-          <div>
-            <dt>Pickup Code</dt>
-            <dd>
-              <strong>{order.pickupCode}</strong>
-            </dd>
-          </div>
-        ) : null}
-        <div>
-          <dt>Priority</dt>
-          <dd>{order.isPriority ? "Priority Queue" : "Normal"}</dd>
-        </div>
-        <div>
-          <dt>Phone</dt>
-          <dd>{order.customerPhone}</dd>
-        </div>
         {order.cashConfirmedAt ? (
           <div>
             <dt>Cash Confirmed</dt>
             <dd>{formatTimeOnly(order.cashConfirmedAt)}</dd>
           </div>
         ) : null}
-        <div>
-          <dt>Agent</dt>
-          <dd>{order.agentName ?? "Not assigned"}</dd>
-        </div>
-        <div>
-          <dt>Printer</dt>
-          <dd>{order.printerName ?? "Not assigned"}</dd>
-        </div>
-        <div>
-          <dt>Updated</dt>
-          <dd>{formatTimeOnly(order.updatedAt)}</dd>
-        </div>
       </dl>
       {order.issue ? (
         <p className="order-issue">

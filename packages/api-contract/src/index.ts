@@ -906,6 +906,7 @@ export interface AdminOrderHistoryEntry {
   completedAt: string | null;
   isPriority: boolean;
   isManual: boolean;
+  printSummary?: CustomerTrackingPrintSummary;
   addonServices: {
     name: string;
     onlinePricePaise: number;

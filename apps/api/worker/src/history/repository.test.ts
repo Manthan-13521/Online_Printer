@@ -294,4 +294,35 @@ describe("D1OrderHistoryRepository", () => {
     expect(unknownOrder).toBeDefined();
     expect(unknownOrder?.paymentMethod).toBe("UNKNOWN"); // Never defaults to ONLINE!
   });
+
+  it("extracts and formats printSummary for order specs display", async () => {
+    const now = Date.now();
+    const orderId = padUuid(501);
+
+    db.prepare(
+      `INSERT INTO orders (id, customer_name, customer_phone, original_filename,
+         source_page_count, color_mode, paper_size, sides, copies, selected_pages,
+         status, public_job_code, pickup_code, printing_amount_paise, total_amount_paise,
+         created_at_ms, updated_at_ms, paid_at_ms, payment_method)
+       VALUES (?, 'Specs Customer', '+919876543210', 'report.pdf', 5, 'COLOR', 'A4', 'DOUBLE', 3, '1-5',
+               'COMPLETED', 'PG-SPEC1', 'PA-050', 1500, 1500, ?, ?, ?, 'ONLINE')`,
+    ).run(orderId, now, now, now);
+
+    db.prepare(
+      `INSERT INTO payments (id, order_id, provider, provider_order_id, provider_payment_id,
+         amount_paise, currency, status, verified_at_ms, created_at_ms, updated_at_ms)
+       VALUES (?, ?, 'RAZORPAY', 'rp_ord_spec', 'rp_pay_spec', 1500, 'INR', 'PAID', ?, ?, ?)`,
+    ).run(padUuid(511), orderId, now, now, now);
+
+    const result = await repository.list(null);
+    const order = result.orders.find((o) => o.orderId === orderId);
+    expect(order).toBeDefined();
+    expect(order?.printSummary).toEqual({
+      paperSize: "A4",
+      colorMode: "COLOR",
+      sides: "DOUBLE",
+      copies: 3,
+      selectedPages: "1-5",
+    });
+  });
 });

@@ -215,4 +215,66 @@ describe("Admin OrderHistoryPage — Payment Method Display", () => {
 
     expect(deleteOrder).toHaveBeenCalledWith(baseEntry.orderId);
   });
+
+  it("renders print summary specifications, thunderstorm priority badge, and opens Order Details modal", async () => {
+    const priorityOrder: AdminOrderHistoryEntry = {
+      ...baseEntry,
+      orderId: "ord-priority-specs",
+      pickupCode: "PA-031",
+      customerName: "Manthan Jaiswal",
+      isPriority: true,
+      printSummary: {
+        paperSize: "A4",
+        colorMode: "BW",
+        sides: "SINGLE",
+        copies: 1,
+        selectedPages: "1",
+      },
+    };
+
+    getOrderHistory.mockResolvedValue({
+      ok: true,
+      data: {
+        orders: [priorityOrder],
+        nextCursor: null,
+      },
+    });
+
+    render(<OrderHistoryPage onSessionExpired={vi.fn()} />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    // 1. Customer name and specs line between name and phone
+    expect(screen.getByText("Manthan Jaiswal")).toBeDefined();
+    expect(
+      screen.getByText("A4 · B&W · Single-sided · 1 copy · pages 1"),
+    ).toBeDefined();
+
+    // 2. Thunderstorm gold priority badge
+    expect(screen.getByText("Priority")).toBeDefined();
+    expect(screen.getAllByText("⚡").length).toBeGreaterThan(0);
+
+    // 3. Order Details button at bottom left
+    const detailsBtn = screen.getByRole("button", { name: /Order Details/i });
+    expect(detailsBtn).toBeDefined();
+
+    // Click Order Details -> opens modal
+    act(() => {
+      detailsBtn.click();
+    });
+
+    expect(screen.getByRole("dialog")).toBeDefined();
+    expect(screen.getByText("Paper Size")).toBeDefined();
+    expect(screen.getAllByText("A4").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Single-sided").length).toBeGreaterThan(0);
+
+    // Close modal
+    const closeBtn = screen.getByRole("button", { name: "Close" });
+    act(() => {
+      closeBtn.click();
+    });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
 });
