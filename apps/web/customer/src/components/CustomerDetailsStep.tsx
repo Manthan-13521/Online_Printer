@@ -15,11 +15,6 @@ export interface CustomerDetailsStepProps {
   disabled: boolean;
 }
 
-function countWords(text: string): number {
-  const trimmed = text.trim();
-  return trimmed ? trimmed.split(/\s+/).length : 0;
-}
-
 export function CustomerDetailsStep({
   customerName,
   onCustomerNameChange,
@@ -139,33 +134,17 @@ export function CustomerDetailsStep({
       <div className="input-with-icon textarea">
         <span className="icon">📝</span>
         <textarea
-          placeholder="Any special instructions or description for your print job (max 60 words)..."
-          maxLength={500}
+          placeholder="Any special instructions or description for your print job (max 250 characters)..."
+          maxLength={250}
           aria-label="Instructions"
           id="customer-inst"
           value={instructions}
-          onChange={(event) => {
-            const val = event.target.value;
-            const words = val.trim() ? val.trim().split(/\s+/) : [];
-            if (words.length > 60) {
-              onInstructionsChange(words.slice(0, 60).join(" "));
-            } else {
-              onInstructionsChange(val);
-            }
-          }}
+          onChange={(event) =>
+            onInstructionsChange(event.target.value.slice(0, 250))
+          }
         />
       </div>
-      <div
-        className="char-count"
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-        }}
-      >
-        <span>Max 60 words</span>
-        <span>{countWords(instructions)}/60 words</span>
-      </div>
+      <div className="char-count">{instructions.length}/250</div>
     </section>
   );
 }

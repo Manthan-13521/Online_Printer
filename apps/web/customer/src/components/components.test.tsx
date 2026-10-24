@@ -468,7 +468,7 @@ describe("Customer Components & Helpers", () => {
       expect(handleToggleAddon).toHaveBeenCalledWith("add-1", true);
     });
 
-    it("clamps instructions input to maximum 60 words", () => {
+    it("clamps instructions input to maximum 250 characters", () => {
       const handleInstructions = vi.fn();
       render(
         <CustomerDetailsStep
@@ -488,17 +488,10 @@ describe("Customer Components & Helpers", () => {
       );
 
       const instInput = screen.getByLabelText("Instructions");
-      const sixtyFiveWords = Array.from(
-        { length: 65 },
-        (_, i) => `word${i}`,
-      ).join(" ");
-      fireEvent.change(instInput, { target: { value: sixtyFiveWords } });
+      const longText = "a".repeat(280);
+      fireEvent.change(instInput, { target: { value: longText } });
 
-      const expectedSixty = Array.from(
-        { length: 60 },
-        (_, i) => `word${i}`,
-      ).join(" ");
-      expect(handleInstructions).toHaveBeenCalledWith(expectedSixty);
+      expect(handleInstructions).toHaveBeenCalledWith("a".repeat(250));
     });
   });
 

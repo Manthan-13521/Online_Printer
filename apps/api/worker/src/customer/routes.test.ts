@@ -372,11 +372,9 @@ describe("customer routes", () => {
     expect(await existingResponse.text()).toBe(await missingResponse.text());
   });
 
-  it("rejects draft when instructions exceed 60 words", async () => {
+  it("rejects draft when instructions exceed 250 characters", async () => {
     const api = actions();
-    const sixtyOneWords = Array.from({ length: 61 }, (_, i) => `word${i}`).join(
-      " ",
-    );
+    const twoHundredFiftyOneChars = "a".repeat(251);
     const response = await handleCustomerRequest(
       request("/api/customer/drafts", "POST", {
         customerName: "Aman",
@@ -384,7 +382,7 @@ describe("customer routes", () => {
         originalFilename: "test.pdf",
         expectedSizeBytes: 1024,
         sourcePageCount: 1,
-        instructions: sixtyOneWords,
+        instructions: twoHundredFiftyOneChars,
       }),
       env,
       api,
