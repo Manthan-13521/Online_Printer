@@ -1023,11 +1023,11 @@ function FinishedScreen({
           </p>
         </div>
 
-        {/* Down of the pickup code card in goldish yellow when priority is selected */}
+        {/* Down of the pickup code card in gold when priority is selected */}
         {isPriority && (
           <div
             className="mt-4 md:mt-6 flex items-center justify-center gap-2 text-[14.5px] md:text-[16px] font-normal tracking-wide drop-shadow-sm premium-customer-gold"
-            style={{ color: "#FACC15" }}
+            style={{ color: "#FFD700" }}
           >
             <span
               className="text-base md:text-lg shrink-0"
@@ -1038,7 +1038,7 @@ function FinishedScreen({
             <span
               className="leading-tight premium-customer-gold"
               style={{
-                color: "#FACC15",
+                color: "#FFD700",
                 fontWeight: 400,
               }}
             >
