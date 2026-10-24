@@ -36,6 +36,7 @@ export interface CustomerTrackingRecord {
   deleteAfterMs: number | null;
   piiPurgedAtMs: number | null;
   trackingExpiresAtMs: number;
+  isPriority?: boolean;
   isPickup?: boolean;
   pickupTargetTimeMs?: number | null;
 }
@@ -78,6 +79,7 @@ interface TrackingRow {
   tracking_expires_at_ms: number;
   is_pickup?: number | null;
   pickup_target_time_ms?: number | null;
+  is_priority?: number | null;
 }
 
 interface EventRow {
@@ -170,7 +172,8 @@ export class D1TrackingRepository implements TrackingRepository {
           o.created_at_ms, o.updated_at_ms, o.paid_at_ms, o.selected_pages,
           o.copies, o.paper_size, o.color_mode, o.sides, o.instructions,
           o.pii_purged_at_ms, o.tracking_expires_at_ms, p.amount_paise, p.currency,
-          u.storage_status, u.delete_after_ms, o.is_pickup, o.pickup_target_time_ms
+          u.storage_status, u.delete_after_ms, o.is_pickup, o.pickup_target_time_ms,
+          o.is_priority
         FROM orders o
         JOIN uploads u ON u.order_id = o.id
         JOIN payments p ON p.order_id = o.id AND p.status = 'PAID'
@@ -206,6 +209,7 @@ export class D1TrackingRepository implements TrackingRepository {
           trackingExpiresAtMs: row.tracking_expires_at_ms,
           isPickup: row.is_pickup === 1,
           pickupTargetTimeMs: row.pickup_target_time_ms ?? null,
+          isPriority: row.is_priority === 1,
         }
       : null;
   }

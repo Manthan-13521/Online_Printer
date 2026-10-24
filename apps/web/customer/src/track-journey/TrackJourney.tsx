@@ -82,16 +82,14 @@ import rawCss from "./trackJourney.css?raw";
 
 const journeyCss = `${rawCss}
   .track-journey-root .journey-context {
-    width: min(48rem, calc(100% - 2rem));
-    margin: 0.35rem auto 0;
-    padding: 0.65rem 0.95rem;
-    background: #fff;
-    border: 1px solid var(--color-printgo-border);
-    border-radius: 0.875rem;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+    width: 100%;
+    max-width: 540px;
+    margin: 0 auto;
+    padding: 0;
+    background: transparent;
+    border: none;
+    box-shadow: none;
   }
-  .track-journey-root .journey-context h2 { font-size: 1.15rem; font-weight: 700; margin: 0 0 0.2rem; }
-  .track-journey-root .journey-context p { margin: 0.2rem 0; font-size: 0.9rem; }
   @keyframes jumpDash { to { stroke-dashoffset: var(--dash-target); } }
   @media (prefers-reduced-motion: reduce) {
     .track-journey-root * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
@@ -143,7 +141,7 @@ export default function TrackJourney({
     <div className="track-journey-root min-h-screen w-full bg-printgo-bg text-printgo-primary flex flex-col font-sans relative overflow-x-hidden selection:bg-printgo-green selection:text-white">
       <style>{journeyCss}</style>
 
-      {hasOrderDetails && (
+      {!children && hasOrderDetails && (
         <header className="w-full px-5 py-3 md:px-10 md:py-4 flex justify-end items-center border-b border-printgo-border bg-printgo-bg z-20 relative shrink-0">
           <div className="flex flex-col lg:flex-row lg:items-end text-xs lg:text-sm gap-2 lg:gap-12 w-full lg:w-auto">
             <div className="flex flex-col items-start lg:items-end">

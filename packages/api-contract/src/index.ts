@@ -593,6 +593,7 @@ export interface CustomerTrackingData {
   orderStatus: CustomerTrackingStatus;
   statusLabel: string;
   statusMessage: string;
+  isPriority?: boolean;
   submittedAt: string;
   paidAt: string;
   printSummary: CustomerTrackingPrintSummary;

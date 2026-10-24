@@ -1259,21 +1259,25 @@ export function App() {
       window.history.pushState(null, "", "/");
     };
 
+    const handleTrackSubmit = (e: React.FormEvent) => {
+      e.preventDefault();
+      const trimmed = trackBoxCode.trim().toUpperCase();
+      if (trimmed) {
+        window.history.pushState(
+          null,
+          "",
+          `/track/${encodeURIComponent(trimmed)}`,
+        );
+        setTrackingJobCode(trimmed);
+      }
+    };
+
     if (isPickupPattern || !hasPrivateToken) {
       return (
         <div
           className="tracking-page-container"
           style={{ backgroundColor: "#f7f4ec", minHeight: "100vh" }}
         >
-          <div
-            style={{
-              maxWidth: "1000px",
-              margin: "0 auto",
-              padding: "0 1.25rem",
-            }}
-          >
-            {shopHeader}
-          </div>
           <PricingModal
             isOpen={showPricing}
             config={config}
@@ -1291,6 +1295,11 @@ export function App() {
               onBack={handleResetToHome}
               shopPhone={config?.contactPhone ?? undefined}
               shopOpeningTime={config?.pickupSchedule?.openingTime}
+              shopName={config?.shopName}
+              onOpenPricing={() => setShowPricing(true)}
+              trackBoxCode={trackBoxCode}
+              onTrackBoxCodeChange={setTrackBoxCode}
+              onTrackSubmit={handleTrackSubmit}
             />
           </Suspense>
         </div>
@@ -1302,15 +1311,6 @@ export function App() {
         className="tracking-page-container"
         style={{ backgroundColor: "#f7f4ec", minHeight: "100vh" }}
       >
-        <div
-          style={{
-            maxWidth: "1000px",
-            margin: "0 auto",
-            padding: "0 1.25rem",
-          }}
-        >
-          {shopHeader}
-        </div>
         <PricingModal
           isOpen={showPricing}
           config={config}
@@ -1328,6 +1328,11 @@ export function App() {
             onBack={handleResetToHome}
             shopPhone={config?.contactPhone ?? undefined}
             shopOpeningTime={config?.pickupSchedule?.openingTime}
+            shopName={config?.shopName}
+            onOpenPricing={() => setShowPricing(true)}
+            trackBoxCode={trackBoxCode}
+            onTrackBoxCodeChange={setTrackBoxCode}
+            onTrackSubmit={handleTrackSubmit}
           />
         </Suspense>
       </div>

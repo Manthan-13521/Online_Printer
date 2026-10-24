@@ -2,6 +2,7 @@ dist
 coverage
 node_modules
 .wrangler
+.gemini
 pnpm-lock.yaml
 
 # Project constitution is edited deliberately, not mechanically reformatted.

@@ -3,12 +3,18 @@ import type { PublicOrderTrackingData } from "@printgo/api-contract";
 import { customerApi } from "./api";
 import TrackJourney from "./track-journey/TrackJourney";
 import { getFigmaStageIndexPublic } from "./track-journey/TrackViewModel";
+import { TrackOrderStatusSection } from "./components";
 
 export interface PublicTrackingPageProps {
   pickupCode: string;
   onBack?: (() => void) | undefined;
   shopPhone?: string | undefined;
   shopOpeningTime?: string | undefined;
+  shopName?: string | undefined;
+  onOpenPricing?: (() => void) | undefined;
+  trackBoxCode?: string | undefined;
+  onTrackBoxCodeChange?: ((code: string) => void) | undefined;
+  onTrackSubmit?: ((e: React.FormEvent) => void) | undefined;
 }
 
 export function PublicTrackingPage({
@@ -16,6 +22,11 @@ export function PublicTrackingPage({
   onBack,
   shopPhone,
   shopOpeningTime,
+  shopName,
+  onOpenPricing,
+  trackBoxCode,
+  onTrackBoxCodeChange,
+  onTrackSubmit,
 }: PublicTrackingPageProps) {
   const [data, setData] = useState<PublicOrderTrackingData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -360,17 +371,39 @@ export function PublicTrackingPage({
       }}
       onBack={handleBack}
     >
-      <h2>{data.statusLabel}</h2>
-      <p>{data.statusMessage}</p>
-      {data.pickupCode && renderPickupCodeBadge(data.pickupCode)}
-      {renderPickupCallout()}
+      <TrackOrderStatusSection
+        orderNumber={data.pickupCode}
+        pickupCode={data.pickupCode}
+        statusLabel={data.statusLabel}
+        statusMessage={data.statusMessage}
+        isPriority={Boolean(
+          data.isPriority ||
+          data.statusLabel.toLowerCase().includes("priority"),
+        )}
+        status={data.status}
+        shopName={shopName}
+        onOpenPricing={onOpenPricing}
+        trackBoxCode={trackBoxCode}
+        onTrackBoxCodeChange={onTrackBoxCodeChange}
+        onTrackSubmit={onTrackSubmit}
+        renderPickupCallout={renderPickupCallout}
+      />
       {data.totalFiles > 1 && (
-        <p>
+        <p className="mt-2 text-center text-xs text-slate-500 font-medium">
           {data.completedFiles} of {data.totalFiles} files printed
         </p>
       )}
       {error && (
-        <p role="alert">
+        <p
+          role="alert"
+          style={{
+            textAlign: "center",
+            marginTop: "0.5rem",
+            color: "#b45309",
+            fontSize: "0.875rem",
+            fontWeight: 500,
+          }}
+        >
           Status could not be refreshed. Showing the last known update.
         </p>
       )}

@@ -22,6 +22,7 @@ import {
   ShopUnavailableState,
   UploadPdfsStep,
   WhatsAppFloatingButton,
+  TrackOrderStatusSection,
   customerErrorMessage,
   humanFileSize,
   isValidPhone,
@@ -813,6 +814,138 @@ describe("Customer Components & Helpers", () => {
       expect(document.querySelector(".priority-circuit-svg")).toBeTruthy();
       expect(document.querySelector(".priority-check-tick")).toBeTruthy();
       expect(screen.getByRole("checkbox")).toHaveProperty("checked", true);
+    });
+  });
+
+  describe("TrackOrderStatusSection", () => {
+    it("renders electrified priority shell and high-voltage bolt when isPriority is true", () => {
+      const onOpenPricing = vi.fn();
+      render(
+        <TrackOrderStatusSection
+          orderNumber="PA-037"
+          pickupCode="PA-037"
+          statusLabel="Queued"
+          statusMessage="Your order is queued for printing."
+          isPriority={true}
+          status="QUEUED"
+          shopName="PRINT_GO 🔥"
+          onOpenPricing={onOpenPricing}
+        />,
+      );
+
+      // High-voltage electric border shell
+      expect(document.querySelector(".queued-electric-shell")).toBeTruthy();
+      // Unclipped animated bolt
+      expect(document.querySelector(".priority-bolt-active")).toBeTruthy();
+      // Glow backlight
+      expect(document.querySelector(".track-brand-bolt-glow")).toBeTruthy();
+      // Priority badge
+      expect(screen.getByText("⚡ PRIORITY #1")).toBeTruthy();
+      // Monospace code
+      expect(screen.getByText("PA - 037")).toBeTruthy();
+      // Active counter subtext
+      expect(
+        screen.getByText(
+          "⚡ Priority Print Active • Show this code at counter",
+        ),
+      ).toBeTruthy();
+
+      // Click pricing button
+      const pricingBtn = screen.getByRole("button", {
+        name: "ⓘ Pricing & Info",
+      });
+      fireEvent.click(pricingBtn);
+      expect(onOpenPricing).toHaveBeenCalledTimes(1);
+    });
+
+    it("renders clean standard presentation without electric shell when isPriority is false", () => {
+      render(
+        <TrackOrderStatusSection
+          orderNumber="PA-015"
+          pickupCode="PA-015"
+          statusLabel="Queued"
+          statusMessage="Your order is queued for printing."
+          isPriority={false}
+          status="QUEUED"
+          shopName="PrintGo Demo"
+        />,
+      );
+
+      // Electric shell & animated bolt should NOT be present
+      expect(document.querySelector(".queued-electric-shell")).toBeNull();
+      expect(document.querySelector(".priority-bolt-active")).toBeNull();
+      expect(screen.queryByText("⚡ PRIORITY #1")).toBeNull();
+      expect(screen.getByText("PA - 015")).toBeTruthy();
+      expect(
+        screen.getByText("Show this code at the shop counter"),
+      ).toBeTruthy();
+    });
+
+    it("adapts status language and badge dynamically for printing and ready states", () => {
+      const { rerender } = render(
+        <TrackOrderStatusSection
+          orderNumber="PG-JOB99"
+          statusLabel="Printing"
+          statusMessage="Your document is currently being printed."
+          isPriority={true}
+          status="PRINTING"
+        />,
+      );
+
+      expect(
+        screen.getByRole("heading", { level: 2, name: /Printing/i }),
+      ).toBeTruthy();
+      expect(
+        screen.getByText("Your document is currently being printed."),
+      ).toBeTruthy();
+      expect(screen.getByText("⚡ PRIORITY PRINTING")).toBeTruthy();
+
+      rerender(
+        <TrackOrderStatusSection
+          orderNumber="PG-JOB99"
+          pickupCode="PA-088"
+          statusLabel="Ready for Pickup"
+          statusMessage="Your order is ready for pickup at the counter."
+          isPriority={true}
+          status="READY_FOR_PICKUP"
+        />,
+      );
+
+      expect(
+        screen.getByRole("heading", { level: 2, name: /Ready for Pickup/i }),
+      ).toBeTruthy();
+      expect(
+        screen.getByText("Your order is ready for pickup at the counter."),
+      ).toBeTruthy();
+      expect(screen.getByText("⚡ READY FOR PICKUP")).toBeTruthy();
+      expect(screen.getByText("PA - 088")).toBeTruthy();
+    });
+
+    it("renders search form and handles track search submit", () => {
+      const onTrackSubmit = vi.fn((e: React.FormEvent) => {
+        e.preventDefault();
+      });
+      const onTrackBoxCodeChange = vi.fn();
+      render(
+        <TrackOrderStatusSection
+          orderNumber="PA-037"
+          statusLabel="Queued"
+          statusMessage="Your order is queued for printing."
+          isPriority={true}
+          trackBoxCode="PA-099"
+          onTrackBoxCodeChange={onTrackBoxCodeChange}
+          onTrackSubmit={onTrackSubmit}
+        />,
+      );
+
+      const input = screen.getByLabelText("Track your order code");
+      expect(input).toHaveProperty("value", "PA-099");
+      fireEvent.change(input, { target: { value: "PA-100" } });
+      expect(onTrackBoxCodeChange).toHaveBeenCalledWith("PA-100");
+
+      const trackBtn = screen.getByRole("button", { name: "Track" });
+      fireEvent.click(trackBtn);
+      expect(onTrackSubmit).toHaveBeenCalledTimes(1);
     });
   });
 });

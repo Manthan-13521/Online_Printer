@@ -143,6 +143,7 @@ export class TrackingService {
       orderStatus: status.code,
       statusLabel: status.label,
       statusMessage: status.message,
+      isPriority: Boolean(order.isPriority),
       submittedAt: new Date(order.submittedAtMs).toISOString(),
       paidAt: new Date(order.paidAtMs).toISOString(),
       printSummary: {

@@ -7,6 +7,7 @@ import { trackingStorageKey } from "./tracking-token";
 
 import TrackJourney from "./track-journey/TrackJourney";
 import { getFigmaStageIndex } from "./track-journey/TrackViewModel";
+import { TrackOrderStatusSection } from "./components";
 
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/u;
 
@@ -25,6 +26,11 @@ export interface TrackingPageProps {
   onBack?: (() => void) | undefined;
   shopPhone?: string | undefined;
   shopOpeningTime?: string | undefined;
+  shopName?: string | undefined;
+  onOpenPricing?: (() => void) | undefined;
+  trackBoxCode?: string | undefined;
+  onTrackBoxCodeChange?: ((code: string) => void) | undefined;
+  onTrackSubmit?: ((e: React.FormEvent) => void) | undefined;
 }
 
 export function TrackingPage({
@@ -32,6 +38,11 @@ export function TrackingPage({
   onBack,
   shopPhone,
   shopOpeningTime,
+  shopName,
+  onOpenPricing,
+  trackBoxCode,
+  onTrackBoxCodeChange,
+  onTrackSubmit,
 }: TrackingPageProps) {
   const [data, setData] = useState<CustomerTrackingData | null>(null);
   const [state, setState] = useState<"loading" | "invalid" | "network">(
@@ -434,12 +445,34 @@ export function TrackingPage({
       }}
       onBack={onBack}
     >
-      <h2>{data.statusLabel}</h2>
-      <p>{data.statusMessage}</p>
-      {data.pickupCode && renderPickupCodeBadge(data.pickupCode)}
-      {renderPickupCallout()}
+      <TrackOrderStatusSection
+        orderNumber={data.jobCode}
+        pickupCode={data.pickupCode}
+        statusLabel={data.statusLabel}
+        statusMessage={data.statusMessage}
+        isPriority={Boolean(
+          data.isPriority ||
+          data.statusLabel.toLowerCase().includes("priority"),
+        )}
+        status={data.orderStatus}
+        shopName={shopName}
+        onOpenPricing={onOpenPricing}
+        trackBoxCode={trackBoxCode}
+        onTrackBoxCodeChange={onTrackBoxCodeChange}
+        onTrackSubmit={onTrackSubmit}
+        renderPickupCallout={renderPickupCallout}
+      />
       {state === "network" && (
-        <p role="alert">
+        <p
+          role="alert"
+          style={{
+            textAlign: "center",
+            marginTop: "0.5rem",
+            color: "#b45309",
+            fontSize: "0.875rem",
+            fontWeight: 500,
+          }}
+        >
           Status could not be refreshed. Showing the last known update.
         </p>
       )}
