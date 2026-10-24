@@ -108,10 +108,145 @@ const journeyCss = `${rawCss}
     0% { transform: scale(1.15) rotate(-4deg); filter: drop-shadow(0 0 7px #F59E0B) drop-shadow(0 0 12px #FDE047); }
     100% { transform: scale(1.24) rotate(0deg); filter: drop-shadow(0 0 14px #EA580C) drop-shadow(0 0 22px #F59E0B); }
   }
+
+  /* Golden Electric Perimeter Border (Priority Screen Chassis) */
+  .priority-chassis-active {
+    border: 2.5px solid #FACC15 !important;
+    box-shadow:
+      0 0 18px rgba(250, 204, 21, 0.45),
+      0 0 38px rgba(245, 158, 11, 0.25),
+      inset 0 0 14px rgba(250, 204, 21, 0.2) !important;
+    animation: ambientGlowPulse 3.0s ease-in-out infinite;
+  }
+  @keyframes ambientGlowPulse {
+    0%, 100% {
+      box-shadow:
+        0 0 16px rgba(250, 204, 21, 0.4),
+        0 0 32px rgba(245, 158, 11, 0.2),
+        inset 0 0 12px rgba(250, 204, 21, 0.18);
+      border-color: #FACC15;
+    }
+    50% {
+      box-shadow:
+        0 0 24px rgba(250, 204, 21, 0.65),
+        0 0 46px rgba(245, 158, 11, 0.35),
+        inset 0 0 18px rgba(250, 204, 21, 0.28);
+      border-color: #FEF08A;
+    }
+  }
+
+  .priority-perimeter-border-shell {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 40;
+    border-radius: inherit;
+    overflow: hidden;
+  }
+
+  .priority-perimeter-runner {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 3px;
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask-composite: exclude;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  .priority-perimeter-runner::before {
+    content: "";
+    position: absolute;
+    top: -150%;
+    left: -150%;
+    width: 400%;
+    height: 400%;
+    background: conic-gradient(
+      from 0deg,
+      transparent 0%,
+      transparent 70%,
+      #FDE047 88%,
+      #F59E0B 96%,
+      transparent 100%
+    );
+    animation: spinPerimeterBeam 6.0s linear infinite;
+  }
+  @keyframes spinPerimeterBeam {
+    to { transform: rotate(360deg); }
+  }
+
+  .priority-perimeter-crackle {
+    position: absolute;
+    pointer-events: none;
+    filter: drop-shadow(0 0 6px #FFFFFF) drop-shadow(0 0 12px #F59E0B);
+  }
+  .priority-crackle-top {
+    top: 0;
+    left: 8%;
+    right: 8%;
+    height: 2.5px;
+    background: linear-gradient(90deg, transparent, #FFFFFF 40%, #FEF08A 70%, transparent);
+    animation: dischargeTop 0.72s ease-in-out infinite;
+  }
+  .priority-crackle-bottom {
+    bottom: 0;
+    left: 12%;
+    right: 12%;
+    height: 2.5px;
+    background: linear-gradient(90deg, transparent, #FEF08A 30%, #FFFFFF 60%, transparent);
+    animation: dischargeBottom 0.65s ease-in-out infinite 0.25s;
+  }
+  .priority-crackle-left {
+    left: 0;
+    top: 15%;
+    bottom: 15%;
+    width: 2.5px;
+    background: linear-gradient(180deg, transparent, #FFFFFF 45%, #FACC15 75%, transparent);
+    animation: dischargeSide 0.78s ease-in-out infinite 0.42s;
+  }
+  .priority-crackle-right {
+    right: 0;
+    top: 20%;
+    bottom: 20%;
+    width: 2.5px;
+    background: linear-gradient(180deg, transparent, #FACC15 25%, #FFFFFF 55%, transparent);
+    animation: dischargeSide 0.68s ease-in-out infinite 0.12s;
+  }
+
+  @keyframes dischargeTop {
+    0%, 100% { opacity: 0; transform: scaleX(0.2); }
+    46% { opacity: 0; }
+    49% { opacity: 0.95; transform: scaleX(1); }
+    53% { opacity: 0.2; }
+    56% { opacity: 0.85; }
+    59% { opacity: 0; }
+  }
+  @keyframes dischargeBottom {
+    0%, 100% { opacity: 0; transform: scaleX(0.2); }
+    56% { opacity: 0; }
+    59% { opacity: 0.95; transform: scaleX(1); }
+    63% { opacity: 0.15; }
+    66% { opacity: 0.8; }
+    69% { opacity: 0; }
+  }
+  @keyframes dischargeSide {
+    0%, 100% { opacity: 0; transform: scaleY(0.2); }
+    62% { opacity: 0; }
+    65% { opacity: 0.9; transform: scaleY(1); }
+    68% { opacity: 0.1; }
+    71% { opacity: 0.85; }
+    74% { opacity: 0; }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .track-journey-root * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
     .track-journey-root animateMotion, .track-journey-root animate { display: none; }
     .thunder-icon-active { animation: none !important; filter: drop-shadow(0 0 8px #f59e0b); }
+    .priority-perimeter-runner::before { animation: none !important; }
+    .priority-chassis-active { animation: none !important; }
+    .priority-perimeter-crackle { display: none !important; }
   }`;
 
 export default function TrackJourney({
@@ -896,12 +1031,37 @@ function FinishedScreen({
 
   return (
     <div
-      className="fixed inset-0 bg-printgo-green text-printgo-paper flex flex-col items-center justify-center font-sans p-4 md:p-6 text-center overflow-hidden z-50 select-none"
+      id="phoneDevice"
+      className={`fixed inset-0 bg-printgo-green text-printgo-paper flex flex-col items-center justify-center font-sans p-4 md:p-6 text-center overflow-hidden z-50 select-none ${
+        isPriority ? "priority-chassis-active" : "border border-slate-900/40"
+      }`}
       style={{
         background:
           "radial-gradient(circle at 50% 28%, #187949 0%, #13663c 45%, #0e4e2e 100%)",
+        boxShadow: isPriority
+          ? "0 0 18px rgba(250, 204, 21, 0.45), 0 0 38px rgba(245, 158, 11, 0.25), inset 0 0 14px rgba(250, 204, 21, 0.2)"
+          : undefined,
+        borderColor: isPriority ? "#FACC15" : undefined,
       }}
     >
+      <style>{journeyCss}</style>
+
+      {/* Animated Golden Electric Perimeter Border (Priority Orders) */}
+      {isPriority && (
+        <div
+          className="priority-perimeter-border-shell pointer-events-none absolute inset-0 z-40 overflow-hidden"
+          aria-hidden="true"
+        >
+          {/* Rotating Conic Electric Current Runner (6.0s medium speed) */}
+          <div className="priority-perimeter-runner absolute inset-0" />
+
+          {/* Periodic Subtle Electric Lightning Discharges (500ms - 800ms) */}
+          <div className="priority-perimeter-crackle priority-crackle-top" />
+          <div className="priority-perimeter-crackle priority-crackle-bottom" />
+          <div className="priority-perimeter-crackle priority-crackle-left" />
+          <div className="priority-perimeter-crackle priority-crackle-right" />
+        </div>
+      )}
       {/* Top Left Back Button */}
       <div
         style={{
