@@ -961,8 +961,13 @@ function FinishedScreen({
         transition={{ duration: 0.8, ease: "easeOut" }}
         className="flex flex-col items-center justify-center relative z-10 w-full max-w-[85%] md:max-w-md mx-auto my-auto"
       >
-        <div className="bg-white text-[#146b41] rounded-full p-2.5 md:p-4 mb-2 md:mb-5 shadow-xl flex items-center justify-center w-14 h-14 md:w-16 md:h-16">
-          <Check className="w-7 h-7 md:w-8 md:h-8" strokeWidth={3.5} />
+        <div className="bg-white rounded-full p-2.5 md:p-4 mb-3 md:mb-5 shadow-xl flex items-center justify-center w-14 h-14 md:w-16 md:h-16 shrink-0">
+          <Check
+            className="w-7 h-7 md:w-8 md:h-8"
+            strokeWidth={3.5}
+            color="#146b41"
+            style={{ stroke: "#146b41" }}
+          />
         </div>
 
         <div className="flex items-center justify-center gap-2 mb-1.5 md:mb-2">
@@ -996,7 +1001,7 @@ function FinishedScreen({
           Your order is printed, finished, and waiting.
         </p>
 
-        {/* Frosted Translucent Card: NO gold border! Clean white/translucent border with matching emerald/glass bg */}
+        {/* Frosted Translucent Card: Clean white/translucent border containing only the pickup code */}
         <div className="border-[2px] border-white/30 bg-white/10 rounded-[1.25rem] md:rounded-[1.5rem] p-5 md:p-10 w-full shadow-2xl backdrop-blur-md">
           <p className="text-white text-[10px] md:text-sm uppercase tracking-widest font-bold mb-2 md:mb-4">
             {orderDetails.pickupCode ? "Pickup code" : "Order code"}
@@ -1015,18 +1020,17 @@ function FinishedScreen({
           <p className="text-white/80 text-xs md:text-sm font-medium tracking-wide">
             Take a screenshot or remember this code for pickup
           </p>
-
-          {/* Premium Customer line at down of card when priority is selected */}
-          {isPriority && (
-            <>
-              <div className="h-px bg-white/20 w-full my-3 md:my-4" />
-              <div className="flex items-center justify-center gap-1.5 text-amber-300 font-semibold text-xs md:text-sm tracking-wide">
-                <span className="text-amber-400">⚡</span>
-                <span>Thanks for being our premium customer</span>
-              </div>
-            </>
-          )}
         </div>
+
+        {/* Down of the pickup code card in gold when priority is selected */}
+        {isPriority && (
+          <div className="mt-4 md:mt-5 flex items-center justify-center">
+            <div className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-amber-400/15 border border-amber-300/40 backdrop-blur-sm text-amber-300 shadow-sm text-xs md:text-sm font-semibold tracking-wide">
+              <span className="text-amber-400">⚡</span>
+              <span>Thanks for being our premium customer</span>
+            </div>
+          </div>
+        )}
       </motion.div>
     </div>
   );
