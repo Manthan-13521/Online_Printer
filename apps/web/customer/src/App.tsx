@@ -11,6 +11,7 @@ import {
   ShopUnavailableState,
   UploadPdfsStep,
   FloatingLoadingIndicator,
+  TrackingErrorBoundary,
   customerErrorMessage,
   humanFileSize,
   isValidPhone,
@@ -205,15 +206,82 @@ export function App() {
       .finally(() => setLoading(false));
   }, []);
 
+  const handleResetToHome = useCallback(() => {
+    try {
+      if (typeof sessionStorage !== "undefined") {
+        sessionStorage.removeItem(DRAFT_TOKEN_KEY);
+        for (let i = sessionStorage.length - 1; i >= 0; i--) {
+          const key = sessionStorage.key(i);
+          if (
+            key &&
+            (key.startsWith(PENDING_TRACKING_TOKEN_PREFIX) ||
+              key === DRAFT_TOKEN_KEY)
+          ) {
+            sessionStorage.removeItem(key);
+          }
+        }
+      }
+    } catch {
+      // ignore storage errors
+    }
+
+    setTrackingJobCode(null);
+    if (typeof window !== "undefined") {
+      if (window.location.hash) {
+        window.history.replaceState(null, "", window.location.pathname);
+      }
+      window.history.pushState(null, "", "/");
+    }
+
+    setCustomerName("");
+    setCustomerPhone("");
+    setInstructions("");
+    setSelectedAddonIds([]);
+    setPhoneError(null);
+    setFileError(null);
+
+    abortControllers.current.forEach((c) => c.abort());
+    abortControllers.current.clear();
+    setFiles([]);
+    filesRef.current = [];
+    setSelectedFileIndex(0);
+    setIsInspectingFiles(false);
+
+    setQuote(null);
+    setDraftToken(null);
+    setPaymentSuccess(null);
+    setCashWaitingData(null);
+    setPendingPaymentRecovery(null);
+
+    setStatus(null);
+    setBusy(false);
+    setPaymentBusy(false);
+    setIsPriority(false);
+    setTrackBoxCode("");
+    setShowPricing(false);
+
+    setIsPickup(
+      Boolean(
+        config?.pickupSchedule?.enabled && !config?.pickupSchedule?.isShopOpen,
+      ),
+    );
+  }, [config]);
+
   useEffect(() => {
     loadShopConfig();
   }, [loadShopConfig]);
 
   useEffect(() => {
-    const handlePopState = () => setTrackingJobCode(trackingCodeFromPath());
+    const handlePopState = () => {
+      const code = trackingCodeFromPath();
+      setTrackingJobCode(code);
+      if (!code) {
+        handleResetToHome();
+      }
+    };
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
-  }, []);
+  }, [handleResetToHome]);
 
   useEffect(() => {
     if (config?.appName || config?.shopName)
@@ -235,6 +303,16 @@ export function App() {
         ) {
           const code = draft.publicJobCode;
           sessionStorage.removeItem(DRAFT_TOKEN_KEY);
+          // If customer is on root "/" and the order has finished or is ready for pickup, don't trap them
+          if (
+            typeof window !== "undefined" &&
+            window.location.pathname === "/" &&
+            (draft.status === "COMPLETED" ||
+              draft.status === "READY_FOR_PICKUP" ||
+              draft.status === "PRINTED")
+          ) {
+            return;
+          }
           // Preserve tracking authorization by linking any pending tracking token from this checkout session
           if (typeof sessionStorage !== "undefined") {
             for (let i = 0; i < sessionStorage.length; i++) {
@@ -246,6 +324,12 @@ export function App() {
                     trackingStorageKey(code),
                     pendingToken,
                   );
+                  if (draft.publicJobCode) {
+                    sessionStorage.setItem(
+                      trackingStorageKey(draft.publicJobCode),
+                      pendingToken,
+                    );
+                  }
                 }
                 sessionStorage.removeItem(key);
                 break;
@@ -900,8 +984,15 @@ export function App() {
         trackingStorageKey(result.jobCode),
         result.trackingToken,
       );
+      if (result.pickupCode) {
+        sessionStorage.setItem(
+          trackingStorageKey(result.pickupCode),
+          result.trackingToken,
+        );
+      }
       sessionStorage.removeItem(pendingKey);
       sessionStorage.removeItem(DRAFT_TOKEN_KEY);
+      setPendingPaymentRecovery(null);
 
       // Auto-navigate to tracking page
       const code = result.pickupCode ?? result.jobCode;
@@ -910,8 +1001,9 @@ export function App() {
     } catch (caught) {
       setPaymentPhase("IDLE");
       setStatus(paymentErrorMessage(caught));
-      setPaymentBusy(false);
       setPendingPaymentRecovery({ token, response });
+    } finally {
+      setPaymentBusy(false);
     }
   }
 
@@ -939,6 +1031,18 @@ export function App() {
               const pendingToken = sessionStorage.getItem(key);
               if (pendingToken && /^[A-Za-z0-9_-]{43}$/u.test(pendingToken)) {
                 sessionStorage.setItem(trackingStorageKey(code), pendingToken);
+                if (draftStatus.publicJobCode) {
+                  sessionStorage.setItem(
+                    trackingStorageKey(draftStatus.publicJobCode),
+                    pendingToken,
+                  );
+                }
+                if (draftStatus.pickupCode) {
+                  sessionStorage.setItem(
+                    trackingStorageKey(draftStatus.pickupCode),
+                    pendingToken,
+                  );
+                }
               }
               sessionStorage.removeItem(key);
               break;
@@ -976,6 +1080,7 @@ export function App() {
   ) {
     await loadRazorpayCheckout();
     if (!window.Razorpay) throw new Error("CHECKOUT_LOAD_FAILED");
+    let paymentSuccessHandled = false;
     const instance = new window.Razorpay({
       key: checkout.razorpayKeyId,
       order_id: checkout.razorpayOrderId,
@@ -988,10 +1093,15 @@ export function App() {
         contact: checkout.customerPhone,
       },
       handler: (response: RazorpaySuccessResponse) => {
+        if (paymentSuccessHandled) return;
+        paymentSuccessHandled = true;
         void verifyCheckoutPayment(token, response);
       },
       modal: {
         ondismiss: () => {
+          // If payment was already captured and handler triggered, modal dismiss is the normal
+          // completion sequence: do NOT cancel the order!
+          if (paymentSuccessHandled) return;
           setPaymentPhase("IDLE");
           setPaymentBusy(true);
           setStatus("Recording payment cancellation…");
@@ -1236,28 +1346,10 @@ export function App() {
     />
   );
   if (trackingJobCode) {
-    const isPickupPattern = /^[A-Za-z]{2}-\d{3}$/i.test(trackingJobCode);
     const hasPrivateToken =
       typeof window !== "undefined" &&
       (/^[A-Za-z0-9_-]{43}$/.test(window.location.hash.slice(1)) ||
         Boolean(sessionStorage.getItem(`printgo.tracking.${trackingJobCode}`)));
-
-    const handleResetToHome = () => {
-      setTrackingJobCode(null);
-      setFiles([]);
-      setSelectedFileIndex(0);
-      setQuote(null);
-      setDraftToken(null);
-      setPaymentSuccess(null);
-      setCashWaitingData(null);
-      setIsPickup(
-        Boolean(
-          config?.pickupSchedule?.enabled &&
-          !config?.pickupSchedule?.isShopOpen,
-        ),
-      );
-      window.history.pushState(null, "", "/");
-    };
 
     const handleTrackSubmit = (e: React.FormEvent) => {
       e.preventDefault();
@@ -1272,7 +1364,7 @@ export function App() {
       }
     };
 
-    if (isPickupPattern || !hasPrivateToken) {
+    if (hasPrivateToken) {
       return (
         <div
           className="tracking-page-container"
@@ -1290,17 +1382,19 @@ export function App() {
               </div>
             }
           >
-            <PublicTrackingPage
-              pickupCode={trackingJobCode}
-              onBack={handleResetToHome}
-              shopPhone={config?.contactPhone ?? undefined}
-              shopOpeningTime={config?.pickupSchedule?.openingTime}
-              shopName={config?.shopName}
-              onOpenPricing={() => setShowPricing(true)}
-              trackBoxCode={trackBoxCode}
-              onTrackBoxCodeChange={setTrackBoxCode}
-              onTrackSubmit={handleTrackSubmit}
-            />
+            <TrackingErrorBoundary onReset={handleResetToHome}>
+              <TrackingPage
+                jobCode={trackingJobCode}
+                onBack={handleResetToHome}
+                shopPhone={config?.contactPhone ?? undefined}
+                shopOpeningTime={config?.pickupSchedule?.openingTime}
+                shopName={config?.shopName}
+                onOpenPricing={() => setShowPricing(true)}
+                trackBoxCode={trackBoxCode}
+                onTrackBoxCodeChange={setTrackBoxCode}
+                onTrackSubmit={handleTrackSubmit}
+              />
+            </TrackingErrorBoundary>
           </Suspense>
         </div>
       );
@@ -1323,17 +1417,19 @@ export function App() {
             </div>
           }
         >
-          <TrackingPage
-            jobCode={trackingJobCode}
-            onBack={handleResetToHome}
-            shopPhone={config?.contactPhone ?? undefined}
-            shopOpeningTime={config?.pickupSchedule?.openingTime}
-            shopName={config?.shopName}
-            onOpenPricing={() => setShowPricing(true)}
-            trackBoxCode={trackBoxCode}
-            onTrackBoxCodeChange={setTrackBoxCode}
-            onTrackSubmit={handleTrackSubmit}
-          />
+          <TrackingErrorBoundary onReset={handleResetToHome}>
+            <PublicTrackingPage
+              pickupCode={trackingJobCode}
+              onBack={handleResetToHome}
+              shopPhone={config?.contactPhone ?? undefined}
+              shopOpeningTime={config?.pickupSchedule?.openingTime}
+              shopName={config?.shopName}
+              onOpenPricing={() => setShowPricing(true)}
+              trackBoxCode={trackBoxCode}
+              onTrackBoxCodeChange={setTrackBoxCode}
+              onTrackSubmit={handleTrackSubmit}
+            />
+          </TrackingErrorBoundary>
         </Suspense>
       </div>
     );

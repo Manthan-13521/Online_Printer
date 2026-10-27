@@ -120,7 +120,7 @@ export function PickupOrdersPage({
     }
   };
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: string, manualPrintRequested?: boolean) => {
     switch (status) {
       case "PRINTED":
         return {
@@ -130,6 +130,17 @@ export function PickupOrdersPage({
             background: "#dcfce7",
             color: "#166534",
             border: "1px solid #86efac",
+          },
+        };
+      case "CLAIMED":
+      case "SPOOLING":
+        return {
+          label: "Sending to Printer…",
+          className: "badge-status-spooling",
+          style: {
+            background: "#e0f2fe",
+            color: "#0369a1",
+            border: "1px solid #7dd3fc",
           },
         };
       case "PRINTING":
@@ -142,7 +153,29 @@ export function PickupOrdersPage({
             border: "1px solid #93c5fd",
           },
         };
+      case "QUEUED":
+        return manualPrintRequested
+          ? {
+              label: "Queued for Printing",
+              className: "badge-status-queued",
+              style: {
+                background: "#fef3c7",
+                color: "#92400e",
+                border: "1px solid #fcd34d",
+              },
+            }
+          : {
+              label: "Awaiting Print",
+              className: "badge-status-awaiting",
+              style: {
+                background: "#fef3c7",
+                color: "#92400e",
+                border: "1px solid #fcd34d",
+              },
+            };
       case "PRINT_FAILED":
+      case "PRINT_BLOCKED":
+      case "RETRY_PENDING":
         return {
           label: "Print Failed",
           className: "badge-status-failed",
@@ -150,6 +183,27 @@ export function PickupOrdersPage({
             background: "#fee2e2",
             color: "#991b1b",
             border: "1px solid #fca5a5",
+          },
+        };
+      case "COMPLETION_UNKNOWN":
+        return {
+          label: "Completion Unknown",
+          className: "badge-status-unknown",
+          style: {
+            background: "#ffedd5",
+            color: "#c2410c",
+            border: "1px solid #fdba74",
+          },
+        };
+      case "ADMIN_ACTION_REQUIRED":
+      case "NEEDS_ADMIN":
+        return {
+          label: "Admin Action Required",
+          className: "badge-status-warning",
+          style: {
+            background: "#ffedd5",
+            color: "#c2410c",
+            border: "1px solid #fdba74",
           },
         };
       case "COMPLETED":
@@ -316,7 +370,10 @@ export function PickupOrdersPage({
       ) : (
         <div style={{ display: "grid", gap: "1rem" }}>
           {orders.map((order) => {
-            const badge = getStatusBadge(order.status);
+            const badge = getStatusBadge(
+              order.status,
+              order.pickupManualPrintRequested,
+            );
             const isBusy = actionBusyId === order.orderId;
 
             return (
@@ -511,7 +568,29 @@ export function PickupOrdersPage({
                     >
                       {isBusy ? "Marking…" : "Mark as Collected"}
                     </button>
-                  ) : order.status === "PRINT_FAILED" ? (
+                  ) : order.status === "COMPLETED" ? null : [
+                      "CLAIMED",
+                      "SPOOLING",
+                      "PRINTING",
+                    ].includes(order.status) ? (
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      disabled={true}
+                      style={{ opacity: 0.7, cursor: "not-allowed" }}
+                    >
+                      {order.status === "PRINTING"
+                        ? "Printing in Progress…"
+                        : "Sending to Printer…"}
+                    </button>
+                  ) : [
+                      "PRINT_FAILED",
+                      "PRINT_BLOCKED",
+                      "RETRY_PENDING",
+                      "COMPLETION_UNKNOWN",
+                      "ADMIN_ACTION_REQUIRED",
+                      "NEEDS_ADMIN",
+                    ].includes(order.status) ? (
                     <button
                       type="button"
                       className="secondary-button"
@@ -524,10 +603,19 @@ export function PickupOrdersPage({
                     <button
                       type="button"
                       className="primary-button"
-                      disabled={isBusy}
+                      disabled={
+                        isBusy ||
+                        (order.status === "QUEUED" &&
+                          order.pickupManualPrintRequested)
+                      }
                       onClick={() => void handlePrintNow(order.orderId)}
                     >
-                      {isBusy ? "Queuing…" : "Print Now"}
+                      {isBusy
+                        ? "Queuing…"
+                        : order.status === "QUEUED" &&
+                            order.pickupManualPrintRequested
+                          ? "Queued for Printing…"
+                          : "Print Now"}
                     </button>
                   )}
                 </div>

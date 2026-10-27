@@ -13,3 +13,4 @@ export * from "./BowingStaffIllustration";
 export * from "./WhatsAppFloatingButton";
 export * from "./PriorityPrintingCard";
 export * from "./TrackOrderStatusSection";
+export * from "./TrackingErrorBoundary";

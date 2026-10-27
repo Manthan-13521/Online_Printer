@@ -68,9 +68,18 @@ export class RetentionService {
 
     // 1. Process expired PDF deletions in R2
     for (const upload of expiredUploads) {
-      // Defense in depth: branding is never part of the customer PDF lifecycle.
-      if (upload.r2ObjectKey.startsWith("branding/")) {
-        failedUploads++;
+      // Defense in depth: branding and saved print master templates are never part of order PDF lifecycle.
+      if (
+        upload.r2ObjectKey.startsWith("branding/") ||
+        upload.r2ObjectKey.startsWith("saved-prints/")
+      ) {
+        // Protect permanent master assets: mark upload record processed in D1 without deleting R2 asset
+        await this.repository.recordUploadDeleted(
+          upload.id,
+          upload.orderId,
+          nowMs,
+        );
+        deletedUploads++;
         continue;
       }
       const locked = await this.repository.markUploadDeletePending(

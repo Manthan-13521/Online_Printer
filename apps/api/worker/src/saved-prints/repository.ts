@@ -174,7 +174,7 @@ export class D1SavedPrintsRepository {
             paper_size, color_mode, sides, total_amount_paise, currency,
             status, queued_at_ms, created_at_ms, updated_at_ms,
             printer_id, public_job_code, cleanup_state, is_pickup)
-           VALUES (?, 'SAVED_PRINT', ?, ?, '', ?, ?, ?, ?, ?, ?, ?, 0, 'INR', 'QUEUED', ?, ?, ?, ?, ?, 'ACTIVE', 0)`,
+           VALUES (?, 'SAVED_PRINT', ?, ?, 'SHOP_ADMIN', ?, ?, ?, ?, ?, ?, ?, 0, 'INR', 'QUEUED', ?, ?, ?, ?, ?, 'ACTIVE', 0)`,
         )
         .bind(
           orderId,
@@ -199,8 +199,8 @@ export class D1SavedPrintsRepository {
            (id, order_id, position, original_filename, r2_object_key,
             expected_size_bytes, size_bytes, source_page_count, selected_pages,
             selected_page_count, copies, paper_size, color_mode, sides,
-            upload_status, print_status, created_at_ms, updated_at_ms)
-           VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'UPLOADED', 'QUEUED', ?, ?)`,
+            upload_status, print_status, uploaded_at_ms, created_at_ms, updated_at_ms)
+           VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'UPLOADED', 'PENDING', ?, ?, ?)`,
         )
         .bind(
           fileId,
@@ -218,13 +218,14 @@ export class D1SavedPrintsRepository {
           input.sides,
           input.nowMs,
           input.nowMs,
+          input.nowMs,
         ),
       this.db
         .prepare(
           `INSERT INTO uploads
            (id, order_id, r2_object_key, original_filename, storage_status,
-            retention_reason, expected_size_bytes, size_bytes, created_at_ms, updated_at_ms)
-           VALUES (?, ?, ?, ?, 'UPLOADED', 'COMPLETED', ?, ?, ?, ?)`,
+            expected_size_bytes, size_bytes, uploaded_at_ms, created_at_ms, updated_at_ms)
+           VALUES (?, ?, ?, ?, 'UPLOADED', ?, ?, ?, ?, ?)`,
         )
         .bind(
           uploadId,
@@ -233,6 +234,7 @@ export class D1SavedPrintsRepository {
           doc.originalFilename,
           doc.fileSizeBytes,
           doc.fileSizeBytes,
+          input.nowMs,
           input.nowMs,
           input.nowMs,
         ),

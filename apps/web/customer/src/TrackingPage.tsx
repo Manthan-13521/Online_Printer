@@ -89,7 +89,6 @@ export function TrackingPage({
     setState("loading");
 
     const fetchStatus = () => {
-      if (typeof document !== "undefined" && document.hidden) return;
       if (terminalReachedRef.current || busy || !active) return;
       if (timer) clearTimeout(timer);
       busy = true;
@@ -98,7 +97,6 @@ export function TrackingPage({
         .then((tracking) => {
           if (!active) return;
           setData(tracking);
-          setState("loading");
           if (isTerminalStatus(tracking.orderStatus)) {
             terminalReachedRef.current = true;
             // Stop polling permanently once terminal status is reached
@@ -133,34 +131,45 @@ export function TrackingPage({
     const scheduleNextPoll = () => {
       if (!active || terminalReachedRef.current) return;
       if (timer) clearTimeout(timer);
+      // Suspend recurring background polling when page is hidden to save D1 reads
+      if (typeof document !== "undefined" && document.hidden) return;
       const delayMs = Date.now() - mountTime < 60_000 ? 10_000 : 30_000;
       timer = setTimeout(fetchStatus, delayMs);
     };
 
-    // Initial fetch
+    // Initial fetch always runs on mount
     fetchStatus();
 
-    const handleVisibilityChange = () => {
-      if (timer) clearTimeout(timer);
+    const handleWakeup = () => {
       if (typeof document !== "undefined" && !document.hidden && active) {
-        if (!terminalReachedRef.current) {
+        if (!terminalReachedRef.current && !busy) {
           fetchStatus();
+        }
+      } else {
+        if (timer) {
+          clearTimeout(timer);
+          timer = null;
         }
       }
     };
 
     if (typeof document !== "undefined") {
-      document.addEventListener("visibilitychange", handleVisibilityChange);
+      document.addEventListener("visibilitychange", handleWakeup);
+    }
+    if (typeof window !== "undefined") {
+      window.addEventListener("pageshow", handleWakeup);
+      window.addEventListener("focus", handleWakeup);
     }
 
     return () => {
       active = false;
       if (timer) clearTimeout(timer);
       if (typeof document !== "undefined") {
-        document.removeEventListener(
-          "visibilitychange",
-          handleVisibilityChange,
-        );
+        document.removeEventListener("visibilitychange", handleWakeup);
+      }
+      if (typeof window !== "undefined") {
+        window.removeEventListener("pageshow", handleWakeup);
+        window.removeEventListener("focus", handleWakeup);
       }
     };
   }, [jobCode, retryTick]);
@@ -234,6 +243,13 @@ export function TrackingPage({
                     : "primary-button fit"
                 }
                 style={{ textDecoration: "none" }}
+                onClick={() => {
+                  try {
+                    sessionStorage.removeItem("printgo.customerDraftToken");
+                  } catch {
+                    // ignore
+                  }
+                }}
               >
                 Print Another Document
               </a>
@@ -422,6 +438,13 @@ export function TrackingPage({
                 href="/"
                 className="primary-button fit"
                 style={{ textDecoration: "none" }}
+                onClick={() => {
+                  try {
+                    sessionStorage.removeItem("printgo.customerDraftToken");
+                  } catch {
+                    // ignore
+                  }
+                }}
               >
                 Print Another Document
               </a>
@@ -458,7 +481,7 @@ export function TrackingPage({
         statusMessage={data.statusMessage}
         isPriority={Boolean(
           data.isPriority ||
-          data.statusLabel.toLowerCase().includes("priority"),
+          data.statusLabel?.toLowerCase().includes("priority"),
         )}
         status={data.orderStatus}
         shopName={shopName}

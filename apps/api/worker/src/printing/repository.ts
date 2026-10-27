@@ -658,10 +658,13 @@ export class D1PrintingRepository implements PrintingRepository {
               )
               AND busy.physical_device_id = ?
           )
-          AND EXISTS (
-          SELECT 1 FROM payments WHERE order_id = orders.id AND status = 'PAID'
-            AND provider_payment_id IS NOT NULL AND verified_at_ms IS NOT NULL
-        ) AND EXISTS (
+          AND (
+            (orders.order_type = 'CUSTOMER' AND EXISTS (
+              SELECT 1 FROM payments WHERE order_id = orders.id AND status = 'PAID'
+                AND provider_payment_id IS NOT NULL AND verified_at_ms IS NOT NULL
+            ))
+            OR (orders.order_type = 'SAVED_PRINT' AND orders.admin_authorized_by IS NOT NULL)
+          ) AND EXISTS (
           SELECT 1 FROM order_files WHERE id = ? AND order_id = orders.id
             AND upload_status = 'UPLOADED' AND size_bytes IS NOT NULL
         ) AND EXISTS (
@@ -880,17 +883,40 @@ export class D1PrintingRepository implements PrintingRepository {
       .prepare(
         `SELECT 1 FROM (
            SELECT 1 FROM orders
-           WHERE status IN ('QUEUED','CLAIMED','SPOOLING','PRINTING')
+           WHERE status IN ('CLAIMED','SPOOLING','PRINTING')
+              OR (
+                status = 'QUEUED'
+                AND (
+                  (order_type != 'SAVED_PRINT' AND EXISTS (SELECT 1 FROM payments p WHERE p.order_id = orders.id AND p.status = 'PAID'))
+                  OR (order_type = 'SAVED_PRINT' AND admin_authorized_by IS NOT NULL)
+                )
+                AND (
+                  is_pickup = 0
+                  OR pickup_manual_print_requested = 1
+                  OR (
+                    (SELECT pickup_auto_print_enabled FROM installation WHERE id = 1) = 1
+                    AND (pickup_target_time_ms IS NULL OR pickup_target_time_ms <= ?)
+                  )
+                )
+              )
            UNION ALL
            SELECT 1 FROM orders
            WHERE status IN ('PRINT_BLOCKED','RETRY_PENDING')
              AND (next_retry_at_ms IS NULL OR next_retry_at_ms <= ?)
+             AND (
+               is_pickup = 0
+               OR pickup_manual_print_requested = 1
+               OR (
+                 (SELECT pickup_auto_print_enabled FROM installation WHERE id = 1) = 1
+                 AND (pickup_target_time_ms IS NULL OR pickup_target_time_ms <= ?)
+               )
+             )
            UNION ALL
            SELECT 1 FROM orders
            WHERE status = 'PRINT_FAILED' AND cleanup_state = 'ACTIVE' AND updated_at_ms <= ?
          ) LIMIT 1`,
       )
-      .bind(nowMs, nowMs - 60_000)
+      .bind(nowMs, nowMs, nowMs, nowMs - 60_000)
       .first();
     if (!work) return [];
 
@@ -1048,7 +1074,14 @@ export class D1PrintingRepository implements PrintingRepository {
             (o.order_type = 'CUSTOMER' AND pay.id IS NOT NULL)
             OR (o.order_type = 'SAVED_PRINT' AND o.admin_authorized_by IS NOT NULL)
           )
-          AND (o.is_pickup = 0 OR (o.is_pickup = 1 AND (i.pickup_auto_print_enabled = 1 OR o.pickup_manual_print_requested = 1)))
+          AND (
+            o.is_pickup = 0
+            OR o.pickup_manual_print_requested = 1
+            OR (
+              i.pickup_auto_print_enabled = 1
+              AND (o.pickup_target_time_ms IS NULL OR o.pickup_target_time_ms <= ?)
+            )
+          )
           AND o.public_job_code IS NOT NULL
           AND o.cleanup_state = 'ACTIVE' AND f.upload_status = 'UPLOADED'
           AND f.size_bytes IS NOT NULL
@@ -1140,7 +1173,7 @@ export class D1PrintingRepository implements PrintingRepository {
           p.id ASC
         LIMIT 1`,
         )
-        .bind(agentId, nowMs - 90_000, nowMs)
+        .bind(agentId, nowMs - 90_000, nowMs, nowMs)
         .first<CandidateRow>();
       if (!candidate) break;
 

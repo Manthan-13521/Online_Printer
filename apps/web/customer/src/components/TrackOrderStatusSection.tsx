@@ -29,13 +29,13 @@ export function TrackOrderStatusSection({
   onTrackSubmit,
   renderPickupCallout,
 }: TrackOrderStatusSectionProps) {
-  const displayCode = pickupCode ?? orderNumber;
+  const displayCode = pickupCode ?? orderNumber ?? "";
   const formattedCode = /^[A-Z]{2}-\d{3}$/i.test(displayCode)
     ? displayCode.replace(/^([A-Z]{2})-(\d{3})$/i, "$1 - $2")
     : displayCode;
 
   const priorityBadgeText = (() => {
-    const norm = (status || statusLabel).toLowerCase();
+    const norm = (status || statusLabel || "").toLowerCase();
     if (norm.includes("ready") || norm.includes("complete")) {
       return "⚡ READY FOR PICKUP";
     }
@@ -49,7 +49,7 @@ export function TrackOrderStatusSection({
   })();
 
   const statusDotClass = (() => {
-    const norm = (status || statusLabel).toLowerCase();
+    const norm = (status || statusLabel || "").toLowerCase();
     if (norm.includes("ready") || norm.includes("complete")) {
       return "bg-emerald-500 shadow-[0_0_8px_#10b981]";
     }

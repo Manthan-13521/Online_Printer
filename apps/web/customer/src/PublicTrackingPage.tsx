@@ -31,6 +31,7 @@ export function PublicTrackingPage({
   const [data, setData] = useState<PublicOrderTrackingData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [retryTick, setRetryTick] = useState(0);
   const terminalReachedRef = useRef(false);
   const [contactPhone, setContactPhone] = useState<string | null>(
     shopPhone ?? null,
@@ -56,7 +57,6 @@ export function PublicTrackingPage({
     terminalReachedRef.current = false;
 
     async function fetchTracking() {
-      if (typeof document !== "undefined" && document.hidden) return;
       if (terminalReachedRef.current || busy || !active) return;
       busy = true;
       try {
@@ -97,34 +97,62 @@ export function PublicTrackingPage({
     function scheduleNext() {
       if (!active || terminalReachedRef.current) return;
       if (timer) clearTimeout(timer);
+      // Suspend periodic background polling when page is hidden to save D1 reads
+      if (typeof document !== "undefined" && document.hidden) return;
       timer = setTimeout(() => {
         void fetchTracking();
       }, 20_000);
     }
 
+    // Initial fetch always executes on mount (even if tab is momentarily hidden during app switch)
     void fetchTracking();
 
-    const handleVisibility = () => {
+    const handleWakeup = () => {
       if (typeof document !== "undefined" && !document.hidden && active) {
-        if (!terminalReachedRef.current) {
+        if (!terminalReachedRef.current && !busy) {
           void fetchTracking();
         }
       }
     };
     if (typeof document !== "undefined") {
-      document.addEventListener("visibilitychange", handleVisibility);
+      document.addEventListener("visibilitychange", handleWakeup);
+    }
+    if (typeof window !== "undefined") {
+      window.addEventListener("pageshow", handleWakeup);
+      window.addEventListener("focus", handleWakeup);
     }
 
     return () => {
       active = false;
       if (timer) clearTimeout(timer);
       if (typeof document !== "undefined") {
-        document.removeEventListener("visibilitychange", handleVisibility);
+        document.removeEventListener("visibilitychange", handleWakeup);
+      }
+      if (typeof window !== "undefined") {
+        window.removeEventListener("pageshow", handleWakeup);
+        window.removeEventListener("focus", handleWakeup);
       }
     };
-  }, [pickupCode]);
+  }, [pickupCode, retryTick]);
 
   function handleBack() {
+    try {
+      if (typeof sessionStorage !== "undefined") {
+        sessionStorage.removeItem("printgo.customerDraftToken");
+        for (let i = sessionStorage.length - 1; i >= 0; i--) {
+          const key = sessionStorage.key(i);
+          if (
+            key &&
+            (key.startsWith("printgo.pendingTracking.") ||
+              key === "printgo.customerDraftToken")
+          ) {
+            sessionStorage.removeItem(key);
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
     if (onBack) {
       onBack();
     } else {
@@ -158,20 +186,83 @@ export function PublicTrackingPage({
         >
           <h2>Order Not Found</h2>
           <p style={{ margin: "1rem 0", color: "#5E6A63" }}>{error}</p>
-          <button
-            type="button"
-            className="primary-button"
-            onClick={handleBack}
-            style={{ marginTop: "1rem" }}
+          <div
+            style={{
+              display: "flex",
+              gap: "0.75rem",
+              justifyContent: "center",
+              flexWrap: "wrap",
+              marginTop: "1rem",
+            }}
           >
-            Track Another Order
-          </button>
+            <button
+              type="button"
+              className="primary-button fit"
+              onClick={() => {
+                setLoading(true);
+                setError(null);
+                setRetryTick((t) => t + 1);
+              }}
+            >
+              Retry
+            </button>
+            <button
+              type="button"
+              className="secondary-button fit"
+              onClick={handleBack}
+            >
+              Track Another Order
+            </button>
+          </div>
         </section>
       </main>
     );
   }
 
-  if (!data) return null;
+  if (!data) {
+    return (
+      <main className="page-shell tracking-shell">
+        <section
+          className="step"
+          style={{ textAlign: "center", padding: "3rem 1.5rem" }}
+        >
+          <h2>Loading order details…</h2>
+          <p className="muted" style={{ margin: "1rem 0" }}>
+            Checking status for pickup code{" "}
+            <strong>{pickupCode.toUpperCase()}</strong>…
+          </p>
+          <div
+            style={{
+              display: "flex",
+              gap: "0.75rem",
+              justifyContent: "center",
+              flexWrap: "wrap",
+              marginTop: "1.25rem",
+            }}
+          >
+            <button
+              type="button"
+              className="primary-button fit"
+              onClick={() => {
+                setLoading(true);
+                setError(null);
+                setRetryTick((t) => t + 1);
+              }}
+            >
+              Retry Status
+            </button>
+            <button
+              type="button"
+              className="secondary-button fit"
+              onClick={handleBack}
+            >
+              Back to Home
+            </button>
+          </div>
+        </section>
+      </main>
+    );
+  }
 
   const pickupTimeDisplay = data?.pickupFormatted
     ? data.pickupFormatted.replace(", from ", " at ")
@@ -353,6 +444,29 @@ export function PublicTrackingPage({
               href="/"
               className="primary-button fit"
               style={{ textDecoration: "none" }}
+              onClick={(e) => {
+                try {
+                  if (typeof sessionStorage !== "undefined") {
+                    sessionStorage.removeItem("printgo.customerDraftToken");
+                    for (let i = sessionStorage.length - 1; i >= 0; i--) {
+                      const key = sessionStorage.key(i);
+                      if (
+                        key &&
+                        (key.startsWith("printgo.pendingTracking.") ||
+                          key === "printgo.customerDraftToken")
+                      ) {
+                        sessionStorage.removeItem(key);
+                      }
+                    }
+                  }
+                } catch {
+                  // ignore
+                }
+                if (onBack) {
+                  e.preventDefault();
+                  onBack();
+                }
+              }}
             >
               Print a Document
             </a>
@@ -384,7 +498,7 @@ export function PublicTrackingPage({
         statusMessage={data.statusMessage}
         isPriority={Boolean(
           data.isPriority ||
-          data.statusLabel.toLowerCase().includes("priority"),
+          data.statusLabel?.toLowerCase().includes("priority"),
         )}
         status={data.status}
         shopName={shopName}

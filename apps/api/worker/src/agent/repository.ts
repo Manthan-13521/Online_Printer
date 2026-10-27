@@ -410,18 +410,41 @@ export class D1AgentRepository implements AgentRepository {
            OR EXISTS(SELECT 1 FROM agent_control_commands cc WHERE cc.agent_id = agents.id AND cc.status = 'PENDING')) has_pending_command,
           (EXISTS(
             SELECT 1 FROM orders
-            WHERE status IN ('QUEUED','CLAIMED','SPOOLING','PRINTING')
+            WHERE status IN ('CLAIMED','SPOOLING','PRINTING')
+               OR (
+                 status = 'QUEUED'
+                 AND (
+                   (order_type != 'SAVED_PRINT' AND EXISTS (SELECT 1 FROM payments p WHERE p.order_id = orders.id AND p.status = 'PAID'))
+                   OR (order_type = 'SAVED_PRINT' AND admin_authorized_by IS NOT NULL)
+                 )
+                 AND (
+                   is_pickup = 0
+                   OR pickup_manual_print_requested = 1
+                   OR (
+                     (SELECT pickup_auto_print_enabled FROM installation WHERE id = 1) = 1
+                     AND (pickup_target_time_ms IS NULL OR pickup_target_time_ms <= ?)
+                   )
+                 )
+               )
           ) OR EXISTS(
             SELECT 1 FROM orders
             WHERE status IN ('PRINT_BLOCKED','RETRY_PENDING')
               AND (next_retry_at_ms IS NULL OR next_retry_at_ms <= ?)
+              AND (
+                is_pickup = 0
+                OR pickup_manual_print_requested = 1
+                OR (
+                  (SELECT pickup_auto_print_enabled FROM installation WHERE id = 1) = 1
+                  AND (pickup_target_time_ms IS NULL OR pickup_target_time_ms <= ?)
+                )
+              )
           ) OR EXISTS(
             SELECT 1 FROM orders
             WHERE status = 'PRINT_FAILED' AND cleanup_state = 'ACTIVE' AND updated_at_ms <= (? - 60000)
           )) has_print_work
          FROM agents WHERE credential_hash = ?`,
       )
-      .bind(nowMs, nowMs, credentialHash)
+      .bind(nowMs, nowMs, nowMs, nowMs, credentialHash)
       .first<{
         id: string;
         display_name: string;

@@ -81,6 +81,8 @@ export class D1RetentionRepository implements RetentionRepository {
            AND delete_after_ms IS NOT NULL
            AND delete_after_ms <= ?
            AND (next_cleanup_attempt_at_ms IS NULL OR next_cleanup_attempt_at_ms <= ?)
+           AND r2_object_key NOT LIKE 'saved-prints/%'
+           AND r2_object_key NOT LIKE 'branding/%'
          ORDER BY delete_after_ms ASC
          LIMIT ?`,
       )

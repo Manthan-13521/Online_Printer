@@ -1,12 +1,12 @@
 {
-  "generatedAt": "2026-10-20T17:34:15.355Z",
+  "generatedAt": "2026-10-27T16:37:58.603Z",
   "totalOrders": 600,
   "completedOrders": 595,
   "unpaidOrdersQuarantined": 5,
   "duplicatePrintSubmissions": 0,
   "d1Metrics": {
-    "queries": 30584,
-    "reads": 16902,
+    "queries": 30578,
+    "reads": 16897,
     "writes": 10720
   },
   "idleLatencyMetricsMs": {

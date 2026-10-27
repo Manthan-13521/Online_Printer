@@ -149,6 +149,66 @@ describe("PickupOrdersPage", () => {
     });
 
     expect(printPickupOrder).toHaveBeenCalledWith("ord-pickup-1");
+
+    await waitFor(() => {
+      expect(screen.getByText("Queued for Printing")).toBeDefined();
+      const queuedBtn = screen.getByRole("button", {
+        name: "Queued for Printing…",
+      });
+      expect((queuedBtn as HTMLButtonElement).disabled).toBe(true);
+    });
+  });
+
+  it("disables print button and renders Sending to Printer… for active CLAIMED and SPOOLING orders", async () => {
+    const activeOrder: AdminPickupOrder = {
+      ...samplePickupOrder,
+      status: "SPOOLING",
+      pickupManualPrintRequested: true,
+    };
+
+    getPickupOrders.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        orders: [activeOrder],
+        autoPrintEnabled: false,
+        nextCursor: null,
+      },
+    });
+
+    render(<PickupOrdersPage onSessionExpired={onSessionExpired} />);
+
+    await waitFor(() => {
+      const spoolingBtn = screen.getByRole("button", {
+        name: "Sending to Printer…",
+      });
+      expect((spoolingBtn as HTMLButtonElement).disabled).toBe(true);
+      expect(
+        screen.getAllByText("Sending to Printer…").length,
+      ).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  it("renders Completion Unknown badge and Retry button for COMPLETION_UNKNOWN orders", async () => {
+    const unknownOrder: AdminPickupOrder = {
+      ...samplePickupOrder,
+      status: "COMPLETION_UNKNOWN",
+    };
+
+    getPickupOrders.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        orders: [unknownOrder],
+        autoPrintEnabled: false,
+        nextCursor: null,
+      },
+    });
+
+    render(<PickupOrdersPage onSessionExpired={onSessionExpired} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Completion Unknown")).toBeDefined();
+      expect(screen.getByRole("button", { name: "Retry" })).toBeDefined();
+    });
   });
 
   it("toggles Print Automatically and updates backend setting", async () => {

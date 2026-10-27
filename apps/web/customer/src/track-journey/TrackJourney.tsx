@@ -886,6 +886,23 @@ function FinishedScreen({
   const isPriority = Boolean(orderDetails.isPriority);
 
   const handleBackAction = () => {
+    try {
+      if (typeof sessionStorage !== "undefined") {
+        sessionStorage.removeItem("printgo.customerDraftToken");
+        for (let i = sessionStorage.length - 1; i >= 0; i--) {
+          const key = sessionStorage.key(i);
+          if (
+            key &&
+            (key.startsWith("printgo.pendingTracking.") ||
+              key === "printgo.customerDraftToken")
+          ) {
+            sessionStorage.removeItem(key);
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
     if (onBack) {
       onBack();
     } else {
@@ -1046,6 +1063,19 @@ function FinishedScreen({
             </span>
           </div>
         )}
+
+        {/* Prominent Print Again Call to Action Button */}
+        <div className="mt-5 md:mt-8 w-full flex justify-center">
+          <button
+            type="button"
+            onClick={handleBackAction}
+            aria-label="Print again"
+            className="w-full md:w-auto min-w-[200px] inline-flex items-center justify-center gap-2 px-6 py-3 rounded-full bg-white text-printgo-green hover:bg-white/90 active:bg-white/80 font-bold text-sm md:text-base shadow-lg transition-all active:scale-95 cursor-pointer"
+          >
+            <RefreshCw className="w-4 h-4 stroke-[2.4]" />
+            <span>Print Again</span>
+          </button>
+        </div>
       </motion.div>
     </div>
   );
